@@ -12,7 +12,6 @@ return new class extends Migration
     public function up(): void
 {
     Schema::table('users', function (Blueprint $table) {
-        // Adiciona a coluna papel. O default 'user' evita erros em registros que já existem.
         $table->string('papel')->default('user')->after('email');
     });
 }
@@ -20,7 +19,6 @@ return new class extends Migration
 public function down(): void
 {
     Schema::table('users', function (Blueprint $table) {
-        // Remove a coluna caso você precise dar um rollback
         $table->dropColumn('papel');
     });
 }

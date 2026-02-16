@@ -8,6 +8,12 @@ class Servico extends Model
 {
     protected $guarded = ['id'];
 
+   
+    protected $casts = [
+        'configuracoes' => 'array',
+        'ativo' => 'boolean',
+    ];
+
     public function estabelecimento()
     {
         return $this->belongsTo(Estabelecimento::class);

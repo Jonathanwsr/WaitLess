@@ -22,17 +22,21 @@ class User extends Authenticatable
         'remember_token',
     ];
 
-    public function estabelecimentosGerenciados()
+public function estabelecimentosGerenciados()
 {
-    // Estabelecimentos onde ele é dono/admin (Tabela Pivô)
-    return $this->belongsToMany(Estabelecimento::class, 'estabelecimento_usuario')
-                ->withPivot('tipo')
-                ->withTimestamps();
+    return $this->belongsToMany(
+        Estabelecimento::class, 
+        'estabelecimento_usuario',
+        'usuario_id',             
+        'estabelecimento_id'      
+    )
+    ->withPivot('tipo')
+    ->withTimestamps();
 }
 
 public function estabelecimentosComoCliente()
 {
-    // Estabelecimentos que ele frequenta
+    
     return $this->belongsToMany(Estabelecimento::class, 'cliente_estabelecimento')
                 ->withTimestamps();
 }

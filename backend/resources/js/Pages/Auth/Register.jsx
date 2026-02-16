@@ -10,6 +10,7 @@ export default function Register() {
         email: '',
         password: '',
         password_confirmation: '',
+        papel: '', // Estado inicial para o papel
     });
 
     const submit = (e) => {
@@ -24,14 +25,12 @@ export default function Register() {
         <div className="relative min-h-screen flex flex-col justify-center items-center bg-gray-50 selection:bg-indigo-500 selection:text-white overflow-hidden py-10">
             <Head title="Criar Conta - WaitLess" />
 
-            {/* --- Elementos de Fundo (Blobs) --- */}
+           
             <div className="absolute top-0 -left-10 w-72 h-72 bg-purple-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob"></div>
             <div className="absolute top-0 -right-10 w-72 h-72 bg-indigo-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-2000"></div>
             <div className="absolute -bottom-32 left-20 w-72 h-72 bg-pink-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-4000"></div>
 
-           
             <div className="w-full sm:max-w-md px-8 py-10 bg-white/80 backdrop-blur-xl shadow-2xl rounded-2xl border border-white/50 relative z-10">
-                
                 
                 <div className="mb-8 text-center">
                     <Link href="/" className="inline-flex justify-center mb-4">
@@ -46,7 +45,8 @@ export default function Register() {
                 </div>
 
                 <form onSubmit={submit} className="space-y-5">
-                   
+                    
+                 
                     <div>
                         <InputLabel htmlFor="name" value="Nome Completo" className="text-gray-700" />
                         <TextInput
@@ -80,6 +80,27 @@ export default function Register() {
                         <InputError message={errors.email} className="mt-2" />
                     </div>
 
+                  
+                    <div>
+                        <InputLabel htmlFor="papel" value="Tipo de Usuário" className="text-gray-700" />
+                        <select
+                            id="papel"
+                            name="papel"
+                            value={data.papel}
+                            className="mt-1 block w-full py-3 border-gray-200 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg bg-gray-50/50 text-gray-600"
+                            onChange={(e) => setData('papel', e.target.value)}
+                            required
+                        >
+                            <option value="" disabled>Selecione seu cargo</option>
+                            <option value="admin">Administrador</option>
+                            <option value="socio">Sócio</option>
+                            <option value="gerente">Gerente</option>
+                            <option value="atendente">Atendente</option>
+                            <option value="user">Usuário Comum / Cliente</option>
+                        </select>
+                        <InputError message={errors.papel} className="mt-2" />
+                    </div>
+
                    
                     <div>
                         <InputLabel htmlFor="password" value="Senha" className="text-gray-700" />
@@ -97,7 +118,7 @@ export default function Register() {
                         <InputError message={errors.password} className="mt-2" />
                     </div>
 
-                  
+                   
                     <div>
                         <InputLabel htmlFor="password_confirmation" value="Confirmar Senha" className="text-gray-700" />
                         <TextInput
@@ -114,7 +135,6 @@ export default function Register() {
                         <InputError message={errors.password_confirmation} className="mt-2" />
                     </div>
 
-                 
                     <div className="pt-2">
                         <PrimaryButton 
                              className="w-full justify-center py-3 text-base bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 shadow-lg shadow-indigo-600/20 transition-all rounded-xl" 
@@ -125,7 +145,6 @@ export default function Register() {
                     </div>
                 </form>
 
-                
                 <div className="mt-8 pt-6 border-t border-gray-100 text-center">
                     <p className="text-sm text-gray-500">
                         Já tem uma conta?{' '}
@@ -139,7 +158,6 @@ export default function Register() {
                 </div>
             </div>
             
-             
              <p className="mt-8 text-xs text-gray-400">
                 © {new Date().getFullYear()} WaitLess. Todos os direitos reservados.
             </p>

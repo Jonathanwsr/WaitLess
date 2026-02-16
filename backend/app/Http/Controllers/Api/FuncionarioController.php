@@ -5,90 +5,78 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Funcionario;
 use Illuminate\Http\Request;
+use App\Models\User;
+use App\Models\Estabelecimento;
+use Illuminate\Support\Facades\Hash;
 
 class FuncionarioController extends Controller
 {
-    /**
-     * GET /api/funcionarios?estabelecimento_id=1
-     * Lista os funcionários ativos de um estabelecimento.
-     */
-    public function index(Request $request)
+    public function store(Request $request, Estabelecimento $estabelecimento)
     {
-        $query = Funcionario::query();
+        $validated = $request->validate([
+            'nome'     => 'required|string|max:255',
+            'telefone' => 'nullable|string|max:20',
+            'cargo'    => 'required|string|max:255',
+            'email'    => 'required|email|unique:users,email',
+            'password' => 'required|string|min:8',
+        ]);
 
-        if ($request->has('estabelecimento_id')) {
-            $query->where('estabelecimento_id', $request->estabelecimento_id);
+        $user = User::create([
+            'name'     => $validated['nome'],
+            'email'    => $validated['email'],
+            'password' => Hash::make($validated['password']),
+            'papel'    => $validated['cargo'], 
+        ]);
+
+        $estabelecimento->funcionarios()->create([
+            'usuario_id' => $user->id,
+            'nome'       => $validated['nome'],
+            'telefone'   => $validated['telefone'],
+            'cargo'      => $validated['cargo'],
+        ]);
+
+        return redirect()->back()->with('success', 'Funcionário e conta de acesso criados!');
+    }
+
+    public function update(Request $request, Funcionario $funcionario)
+    {
+        $validated = $request->validate([
+            'nome'     => 'required|string|max:255',
+            'telefone' => 'nullable|string|max:20',
+            'cargo'    => 'required|string|max:255',
+            'email'    => 'nullable|email|unique:users,email,' . $funcionario->usuario_id,
+            'password' => 'nullable|string|min:8',
+        ]);
+
+        $funcionario->update([
+            'nome'     => $validated['nome'],
+            'telefone' => $validated['telefone'],
+            'cargo'    => $validated['cargo'],
+        ]);
+
+        if ($funcionario->usuario_id) {
+            $user = User::find($funcionario->usuario_id);
+            if ($user) {
+                $user->name = $validated['nome'];
+                $user->papel = $validated['cargo'];
+                
+                if (!empty($validated['email'])) {
+                    $user->email = $validated['email'];
+                }
+                if (!empty($validated['password'])) {
+                    $user->password = Hash::make($validated['password']);
+                }
+                $user->save();
+            }
         }
 
-        return response()->json($query->where('ativo', true)->get());
+        return redirect()->back()->with('success', 'Funcionário atualizado!');
     }
 
-    /**
-     * POST /api/funcionarios
-     * Cadastra um novo funcionário.
-     */
-    public function store(Request $request)
+    public function destroy(Funcionario $funcionario)
     {
-        $validated = $request->validate([
-            'estabelecimento_id' => 'required|exists:estabelecimentos,id',
-            'usuario_id' => 'nullable|exists:users,id', // Se o funcionário tiver login no sistema
-            'nome' => 'required|string|max:255',
-            'telefone' => 'nullable|string|max:20',
-            'cargo' => 'nullable|string|max:255',
-            'ativo' => 'boolean'
-        ]);
-
-        $funcionario = Funcionario::create($validated);
-
-        return response()->json([
-            'message' => 'Funcionário cadastrado com sucesso!',
-            'data' => $funcionario
-        ], 201);
-    }
-
-    /**
-     * GET /api/funcionarios/{id}
-     * Detalhes de um funcionário específico.
-     */
-    public function show(string $id)
-    {
-        $funcionario = Funcionario::findOrFail($id);
-        return response()->json($funcionario);
-    }
-
-    /**
-     * PUT ou PATCH /api/funcionarios/{id}
-     * Atualiza dados (ex: mudou de telefone ou de cargo).
-     */
-    public function update(Request $request, string $id)
-    {
-        $funcionario = Funcionario::findOrFail($id);
-
-        $validated = $request->validate([
-            'usuario_id' => 'sometimes|nullable|exists:users,id',
-            'nome' => 'sometimes|string|max:255',
-            'telefone' => 'sometimes|nullable|string|max:20',
-            'cargo' => 'sometimes|nullable|string|max:255',
-            'ativo' => 'sometimes|boolean'
-        ]);
-
-        $funcionario->update($validated);
-
-        return response()->json([
-            'message' => 'Dados do funcionário atualizados!',
-            'data' => $funcionario
-        ]);
-    }
-
-    /**
-     * DELETE /api/funcionarios/{id}
-     * Inativa o funcionário (Soft Delete lógico).
-     */
-    public function destroy(string $id)
-    {
-        $funcionario = Funcionario::findOrFail($id);
-        $funcionario->update(['ativo' => false]); // Preserva o histórico de atendimentos dele
-
-        return response()->json(['message' => 'Funcionário inativado com sucesso!']);
+        $funcionario->update(['ativo' => false]);
+        
+        return redirect()->back()->with('success', 'Funcionário removido da equipe.');
     }
 }
