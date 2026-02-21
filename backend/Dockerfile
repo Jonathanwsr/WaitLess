@@ -24,4 +24,4 @@ RUN npm install && npm run build
 ENV PORT=10000
 
 # Inicia o servidor do Laravel
-CMD php artisan serve --host=0.0.0.0 --port=$PORT
+CMD php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=$PORT
