@@ -6,7 +6,13 @@ use Illuminate\Database\Eloquent\Model;
 
 class Agendamento extends Model
 {
+    
     protected $guarded = ['id'];
+
+   
+    protected $casts = [
+        'status_pagamento' => 'string',
+    ];
 
     public function usuario()
     {
@@ -28,8 +34,9 @@ class Agendamento extends Model
         return $this->belongsTo(Funcionario::class);
     }
 
+ 
     public function pagamento()
     {
-        return $this->hasOne(Pagamento::class);
+        return $this->belongsTo(Pagamento::class, 'pagamento_id');
     }
 }

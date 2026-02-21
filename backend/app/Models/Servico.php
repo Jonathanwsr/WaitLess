@@ -12,6 +12,7 @@ class Servico extends Model
     protected $casts = [
         'configuracoes' => 'array',
         'ativo' => 'boolean',
+        'horarios_disponiveis' => 'array',
     ];
 
     public function estabelecimento()

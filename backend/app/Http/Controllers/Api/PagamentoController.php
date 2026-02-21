@@ -3,107 +3,69 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Models\Pagamento;
 use Illuminate\Http\Request;
+// Removemos as chamadas diretas ao MercadoPagoConfig e PaymentClient para evitar o erro 500
+use App\Models\Agendamento;
+use App\Models\Pagamento;
+use App\Services\MercadoPagoService;
 
 class PagamentoController extends Controller
 {
-    /**
-     * GET /api/pagamentos
-     * Lista pagamentos. Pode filtrar por estabelecimento ou por cliente.
-     */
-    public function index(Request $request)
+    protected $mpService;
+
+    // Injetamos o Service que você criou
+    public function __construct(MercadoPagoService $mpService)
     {
-        $query = Pagamento::with(['usuario:id,name', 'agendamento:id,data_agendamento']);
-
-        if ($request->has('estabelecimento_id')) {
-            $query->where('estabelecimento_id', $request->estabelecimento_id);
-        }
-
-        if ($request->has('usuario_id')) {
-            $query->where('usuario_id', $request->usuario_id);
-        }
-
-        return response()->json($query->latest()->paginate(20));
+        $this->mpService = $mpService;
     }
 
-    /**
-     * POST /api/pagamentos
-     * Gera uma nova intenção de pagamento (ex: quando o cliente agenda um serviço pago antecipadamente).
-     */
-    public function store(Request $request)
+    public function processar(Request $request)
     {
-        $validated = $request->validate([
-            'estabelecimento_id' => 'required|exists:estabelecimentos,id',
-            'agendamento_id' => 'nullable|exists:agendamentos,id',
-            'valor' => 'required|numeric|min:0.01',
-            'metodo_pagamento' => 'required|string', // pix, cartao, etc
-        ]);
+        // 1. Busca o agendamento no banco
+        $agendamento = Agendamento::findOrFail($request->agendamento_id);
 
-        $validated['usuario_id'] = $request->user()->id;
-        $validated['status'] = 'pendente';
-        
-        // Num cenário real, a taxa viria da configuração do Gateway
-        $validated['taxa'] = 0; 
-        $validated['valor_liquido'] = $validated['valor'] - $validated['taxa'];
+        try {
+            // 2. Chamamos o Service para processar o pagamento via API (Sem depender da SDK travada)
+            // Passamos todos os dados (token, valor, payer) para o Service
+            $payment = $this->mpService->processarPagamentoBrick($request->all(), $agendamento);
 
-        $pagamento = Pagamento::create($validated);
+            // 3. Salva o resultado no seu banco de dados (Mantendo sua lógica original)
+            Pagamento::create([
+                'agendamento_id' => $agendamento->id,
+                'transacao_id'   => $payment->id,
+                'metodo'         => $request->payment_method_id,
+                'status'         => $payment->status, 
+                'valor'          => $payment->transaction_amount
+            ]);
 
-        return response()->json([
-            'message' => 'Cobrança gerada com sucesso!',
-            'data' => $pagamento
-        ], 201);
-    }
+            // VARIÁVEL PARA ARMAZENAR O PIN
+            $codigoPin = null;
 
-    /**
-     * GET /api/pagamentos/{id}
-     */
-    public function show(string $id)
-    {
-        return response()->json(Pagamento::findOrFail($id));
-    }
+            // 4. Atualiza o status do agendamento se for aprovado (Mantendo sua lógica original)
+            if ($payment->status === 'approved') {
+                // GERAÇÃO DO PIN DE 4 DÍGITOS
+                $codigoPin = str_pad(mt_rand(0, 9999), 4, '0', STR_PAD_LEFT);
 
-    /**
-     * PUT/PATCH /api/pagamentos/{id}
-     * Atualiza o estado (Muito usado por Webhooks do Stripe/Asaas para confirmar que o PIX caiu).
-     */
-    public function update(Request $request, string $id)
-    {
-        $pagamento = Pagamento::findOrFail($id);
+                $agendamento->update([
+                    'status_pagamento' => 'pago',
+                    'status' => 'pendente',
+                    'codigo_verificacao' => $codigoPin
+                ]);
+            }
 
-        $validated = $request->validate([
-            'status' => 'sometimes|in:pendente,pago,cancelado,estornado',
-            'gateway_pagamento' => 'sometimes|string',
-            'id_transacao_gateway' => 'sometimes|string',
-            'taxa' => 'sometimes|numeric',
-        ]);
+            return response()->json([
+                'status'   => $payment->status,
+                'message'  => 'Pagamento processado com sucesso!',
+                'id'       => $payment->id,
+                'codigo_pin' => $codigoPin 
+            ]);
 
-        // Se o status mudar para pago, regista a data/hora exata do pagamento
-        if (isset($validated['status']) && $validated['status'] === 'pago' && $pagamento->status !== 'pago') {
-            $validated['data_pagamento'] = now();
+        } catch (\Exception $e) {
+            // Caso o Service retorne erro (ex: token inválido ou cartão recusado)
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Erro ao processar pagamento: ' . $e->getMessage()
+            ], 400);
         }
-
-        if (isset($validated['taxa'])) {
-            $validated['valor_liquido'] = $pagamento->valor - $validated['taxa'];
-        }
-
-        $pagamento->update($validated);
-
-        return response()->json([
-            'message' => 'Estado do pagamento atualizado.',
-            'data' => $pagamento
-        ]);
-    }
-
-    /**
-     * DELETE /api/pagamentos/{id}
-     * Não apaga do banco, apenas cancela a cobrança.
-     */
-    public function destroy(string $id)
-    {
-        $pagamento = Pagamento::findOrFail($id);
-        $pagamento->update(['status' => 'cancelado']);
-
-        return response()->json(['message' => 'Cobrança cancelada.']);
     }
 }

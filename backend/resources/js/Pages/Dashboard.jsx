@@ -14,7 +14,7 @@ export default function Dashboard({ auth, estabelecimentos, metricas }) {
 
             <div className="space-y-8">
                 
-                {/* --- SEÇÃO 1: Métricas Globais (KPIs) --- */}
+               
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     {/* Card 1 */}
                     <div className="bg-white dark:bg-gray-800 overflow-hidden shadow-sm sm:rounded-2xl border border-gray-100 dark:border-gray-700 p-6 flex items-center gap-4">

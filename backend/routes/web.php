@@ -4,7 +4,12 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Api\DashboardController;
 use App\Http\Controllers\Api\EstabelecimentoController;
 use App\Http\Controllers\Api\AgendamentoController;
+use App\Http\Controllers\Api\ClienteAgendamentoController;
+use App\Http\Controllers\Api\ClienteExplorarController;
+use App\Http\Controllers\Api\PagamentoController;
 use App\Http\Controllers\Api\ServicoController;
+
+use App\Services\MercadoPagoService; 
 use App\Http\Controllers\Api\FuncionarioController;
 use Illuminate\Foundation\Application; 
 use Illuminate\Support\Facades\Route;  
@@ -50,13 +55,41 @@ Route::middleware(['auth', 'verified'])->group(function () {
     // Agendamentos
     Route::put('/agendamentos/{agendamento}/status', [AgendamentoController::class, 'updateStatus'])->name('agendamentos.status.update');
 
+    // --- Rotas da Visão do CLIENTE ---
+    // Acessar a página da loja para agendar
+    Route::get('/agendar/{estabelecimento}', [ClienteAgendamentoController::class, 'show'])->name('cliente.agendar');
+    
+    // Confirmar o agendamento
+    Route::post('/agendar/{estabelecimento}', [ClienteAgendamentoController::class, 'store'])->name('cliente.agendar.store');
+
+    // Rotas de retorno do Mercado Pago
+Route::get('/pagamento/sucesso/{agendamento}', [ClienteAgendamentoController::class, 'pagamentoSucesso'])->name('pagamento.sucesso');
+Route::get('/pagamento/falha/{agendamento}', [ClienteAgendamentoController::class, 'pagamentoFalha'])->name('pagamento.falha');
+
+Route::post('/pagamento/processar', [App\Http\Controllers\Api\PagamentoController::class, 'processar'])->name('pagamento.processar');
+
+    // explorar estabelecimentos
+    Route::get('/explorar', [ClienteExplorarController::class, 'index'])->name('cliente.explorar');
+    Route::post('/agendamentos/{agendamento}/finalizar', [AgendamentoController::class, 'finalizarComCodigo'])->name('agendamentos.finalizar');
+
     // Serviços
     Route::post('/estabelecimentos/servicos', [ServicoController::class, 'store'])->name('servicos.store');
+    Route::put('/servicos/{servico}', [ServicoController::class, 'update'])->name('servicos.update');
 
     // Funcionários
     Route::post('/estabelecimentos/{estabelecimento}/funcionarios', [FuncionarioController::class, 'store'])->name('funcionarios.store');
     Route::put('/funcionarios/{funcionario}', [FuncionarioController::class, 'update'])->name('funcionarios.update');
     Route::delete('/funcionarios/{funcionario}', [FuncionarioController::class, 'destroy'])->name('funcionarios.destroy');
+
+    // Tela da Fila do Estabelecimento
+   
+   
+    // Tela da Fila do Estabelecimento
+    Route::get('/estabelecimentos/{estabelecimento}/fila', [EstabelecimentoController::class, 'fila'])->name('estabelecimentos.fila');
+    
+    // Ações na Fila (Botões do dono estabelecimento ou admin/socio)
+    Route::patch('/agendamentos/{agendamento}/status', [AgendamentoController::class, 'updateStatus'])->name('agendamentos.update-status');
+    Route::patch('/agendamentos/{agendamento}/funcionario', [AgendamentoController::class, 'updateFuncionario'])->name('agendamentos.update-funcionario');
 
 });
 
