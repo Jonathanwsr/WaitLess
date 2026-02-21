@@ -7,16 +7,30 @@ import { Head, useForm, Link, router } from '@inertiajs/react';
 import { useState } from 'react';
 
 export default function Configuracoes({ auth, estabelecimento, meusEstabelecimentos, funcionarios, servicos }) {
-    const [activeTab, setActiveTab] = useState('detalhes'); // Inicia na aba de perfil
-    const [isEditingFuncionario, setIsEditingFuncionario] = useState(false);
+    const [activeTab, setActiveTab] = useState('detalhes'); 
+    const [mensagemSucesso, setMensagemSucesso] = useState('');
+
+    // Função para mostrar mensagem temporária
+    const mostrarMensagem = (msg) => {
+        setMensagemSucesso(msg);
+        setTimeout(() => setMensagemSucesso(''), 3000);
+    };
 
     // ==========================================
-    // ESTADOS PARA PAGINAÇÃO DAS FILIAIS
+    // PAGINAÇÃO: FILIAIS / ESTABELECIMENTOS
     // ==========================================
     const itensPorPagina = 4;
     const [paginaFiliais, setPaginaFiliais] = useState(1);
     const totalPaginasFiliais = Math.ceil(meusEstabelecimentos.length / itensPorPagina);
     const filiaisPaginadas = meusEstabelecimentos.slice((paginaFiliais - 1) * itensPorPagina, paginaFiliais * itensPorPagina);
+
+    // ==========================================
+    // PAGINAÇÃO: EQUIPE / FUNCIONÁRIOS
+    // ==========================================
+    const itensPorPaginaFunc = 5;
+    const [paginaFuncionarios, setPaginaFuncionarios] = useState(1);
+    const totalPaginasFuncionarios = Math.ceil(funcionarios.length / itensPorPaginaFunc);
+    const funcionariosPaginados = funcionarios.slice((paginaFuncionarios - 1) * itensPorPaginaFunc, paginaFuncionarios * itensPorPaginaFunc);
 
     // ==========================================
     // FORM 1: DETALHES DO ESTABELECIMENTO
@@ -38,10 +52,10 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         e.preventDefault();
         formDetalhes.put(route('estabelecimentos.update', estabelecimento.id), {
             preserveScroll: true,
+            onSuccess: () => mostrarMensagem('Configurações da loja salvas com sucesso!'),
         });
     };
 
-    // Função que chama o banco de dados para ligar/desligar o estabelecimento
     const toggleStatusEstabelecimento = () => {
         const acao = estabelecimento.ativo ? 'desativar' : 'ativar';
         if (confirm(`Tem a certeza que deseja ${acao} este estabelecimento?`)) {
@@ -50,30 +64,10 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
     };
 
     // ==========================================
-    // FORM 2: SERVIÇOS
+    // FORM 2: EQUIPE / FUNCIONÁRIOS
     // ==========================================
-    const formServico = useForm({
-        nome: '',
-        descricao: '',
-        valor: '',
-        duracao_minutos: '30',
-        funcionario_id: '',
-        tipo_pagamento: 'hibrido',
-        dias_disponiveis: ['segunda', 'terca', 'quarta', 'quinta', 'sexta'],
-        estabelecimentos_ids: [estabelecimento.id],
-    });
-
-    const submitServico = (e) => {
-        e.preventDefault();
-        formServico.post(route('servicos.store'), {
-            preserveScroll: true,
-            onSuccess: () => formServico.reset('nome', 'descricao', 'valor'),
-        });
-    };
-
-    // ==========================================
-    // FORM 3: EQUIPE / FUNCIONÁRIOS
-    // ==========================================
+    const [isEditingFuncionario, setIsEditingFuncionario] = useState(false);
+    
     const formFuncionario = useForm({
         id: null,
         nome: '',
@@ -88,12 +82,18 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         if (isEditingFuncionario) {
             formFuncionario.put(route('funcionarios.update', formFuncionario.data.id), {
                 preserveScroll: true,
-                onSuccess: () => cancelarEdicaoFuncionario(),
+                onSuccess: () => {
+                    cancelarEdicaoFuncionario();
+                    mostrarMensagem('Funcionário atualizado com sucesso!');
+                },
             });
         } else {
             formFuncionario.post(route('funcionarios.store', estabelecimento.id), {
                 preserveScroll: true,
-                onSuccess: () => formFuncionario.reset('nome', 'telefone', 'email', 'password'),
+                onSuccess: () => {
+                    formFuncionario.reset('nome', 'telefone', 'email', 'password');
+                    mostrarMensagem('Funcionário criado com sucesso!');
+                },
             });
         }
     };
@@ -120,6 +120,96 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         if (confirm('Tem certeza que deseja desativar/remover este funcionário?')) {
             router.delete(route('funcionarios.destroy', id), { preserveScroll: true });
         }
+    };
+
+    // ==========================================
+    // FORM 3: CATÁLOGO DE SERVIÇOS
+    // ==========================================
+    const [isEditingServico, setIsEditingServico] = useState(false);
+    const [novoHorario, setNovoHorario] = useState(''); // Estado para o input dinâmico de horas
+
+    const formServico = useForm({
+        id: null,
+        nome: '',
+        tipo_servico: '', // Novo Campo
+        descricao: '',
+        valor: '',
+        duracao_minutos: '30',
+        funcionario_id: '',
+        tipo_pagamento: 'hibrido',
+        dias_disponiveis: ['segunda', 'terca', 'quarta', 'quinta', 'sexta'],
+        horarios_disponiveis: [], // Novo Campo Array
+        estabelecimentos_ids: [estabelecimento.id],
+    });
+
+    // Funções para gerir os horários dinâmicos
+    const adicionarHorario = () => {
+        if (novoHorario && !formServico.data.horarios_disponiveis.includes(novoHorario)) {
+            const listaAtualizada = [...formServico.data.horarios_disponiveis, novoHorario].sort();
+            formServico.setData('horarios_disponiveis', listaAtualizada);
+            setNovoHorario(''); 
+        }
+    };
+
+    const removerHorario = (horarioParaRemover) => {
+        formServico.setData('horarios_disponiveis', formServico.data.horarios_disponiveis.filter(h => h !== horarioParaRemover));
+    };
+
+    const submitServico = (e) => {
+        e.preventDefault();
+        if (isEditingServico) {
+            formServico.put(route('servicos.update', formServico.data.id), {
+                preserveScroll: true,
+                onSuccess: () => {
+                    cancelarEdicaoServico();
+                    mostrarMensagem('Serviço editado com sucesso!');
+                },
+            });
+        } else {
+            formServico.post(route('servicos.store'), {
+                preserveScroll: true,
+                onSuccess: () => {
+                    formServico.reset('nome', 'tipo_servico', 'descricao', 'valor', 'duracao_minutos', 'horarios_disponiveis');
+                    setNovoHorario('');
+                    mostrarMensagem('Serviço cadastrado com sucesso!');
+                },
+            });
+        }
+    };
+
+    const editarServico = (servico) => {
+        setIsEditingServico(true);
+        
+        let config = { dias_disponiveis: [], tipo_pagamento: 'hibrido', funcionario_padrao: '' };
+        let horarios = [];
+        try {
+            config = typeof servico.configuracoes === 'string' ? JSON.parse(servico.configuracoes) : (servico.configuracoes || config);
+            horarios = typeof servico.horarios_disponiveis === 'string' ? JSON.parse(servico.horarios_disponiveis) : (servico.horarios_disponiveis || []);
+        } catch (error) {}
+
+        formServico.setData({
+            id: servico.id,
+            nome: servico.nome,
+            tipo_servico: servico.tipo_servico || '',
+            descricao: servico.descricao || '',
+            valor: servico.valor,
+            duracao_minutos: servico.duracao_minutos,
+            funcionario_id: config.funcionario_padrao || '',
+            tipo_pagamento: config.tipo_pagamento || 'hibrido',
+            dias_disponiveis: config.dias_disponiveis || ['segunda', 'terca', 'quarta', 'quinta', 'sexta'],
+            horarios_disponiveis: horarios,
+            estabelecimentos_ids: [estabelecimento.id], 
+        });
+        
+        window.scrollTo({ top: 0, behavior: 'smooth' }); 
+    };
+
+    const cancelarEdicaoServico = () => {
+        setIsEditingServico(false);
+        formServico.reset();
+        formServico.setData('estabelecimentos_ids', [estabelecimento.id]);
+        setNovoHorario('');
+        formServico.clearErrors();
     };
 
     const handleDiaToggle = (dia) => {
@@ -165,7 +255,17 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         >
             <Head title={`Configurações - ${estabelecimento.nome}`} />
 
-            <div className="max-w-7xl mx-auto mt-6 flex flex-col md:flex-row gap-8 pb-12">
+            {/* MENSAGEM DE SUCESSO GLOBAL */}
+            {mensagemSucesso && (
+                <div className="max-w-7xl mx-auto mt-4 px-4 sm:px-6 lg:px-8">
+                    <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded-xl relative flex items-center shadow-sm animate-in fade-in slide-in-from-top-4 duration-300" role="alert">
+                        <strong className="font-bold mr-2">Concluído!</strong>
+                        <span className="block sm:inline">{mensagemSucesso}</span>
+                    </div>
+                </div>
+            )}
+
+            <div className="max-w-7xl mx-auto mt-6 flex flex-col md:flex-row gap-8 pb-12 px-4 sm:px-6 lg:px-8">
                 
                 {/* --- MENU LATERAL (TABS) --- */}
                 <aside className="w-full md:w-64 shrink-0">
@@ -398,7 +498,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                 </form>
                             </div>
 
-                            {/* Lista de Equipe com Status Visual */}
+                            {/* Lista de Equipe com Status Visual e Paginação */}
                             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
                                 <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
                                     <h3 className="text-lg font-bold text-gray-900 dark:text-white">Equipe Atual ({funcionarios.length})</h3>
@@ -407,7 +507,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                     {funcionarios.length === 0 ? (
                                         <p className="p-6 text-gray-500 text-center">Nenhum profissional cadastrado.</p>
                                     ) : (
-                                        funcionarios.map(func => (
+                                        funcionariosPaginados.map(func => (
                                             <div key={func.id} className={`p-6 flex flex-col sm:flex-row sm:justify-between sm:items-center transition ${func.ativo ? 'hover:bg-gray-50 dark:hover:bg-gray-700/50' : 'bg-red-50/50 dark:bg-red-900/10 opacity-75'}`}>
                                                 <div className="flex items-center gap-4 mb-4 sm:mb-0">
                                                     <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold uppercase ${func.ativo ? 'bg-indigo-100 text-indigo-700' : 'bg-red-100 text-red-700'}`}>
@@ -422,7 +522,9 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                                 <span className="bg-red-100 text-red-700 text-[10px] px-2 py-0.5 rounded-md font-bold uppercase">Desativado</span>
                                                             )}
                                                         </div>
-                                                        <p className="text-sm text-gray-500 font-medium">{func.cargo} {func.telefone && `• ${func.telefone}`}</p>
+                                                        <p className="text-sm text-gray-500 font-medium">
+                                                            {func.cargo} {func.telefone && `• ${func.telefone}`} • Criado em: {func.created_at ? new Date(func.created_at).toLocaleDateString('pt-BR') : 'N/D'}
+                                                        </p>
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center gap-3 border-t sm:border-0 border-gray-100 pt-4 sm:pt-0">
@@ -435,6 +537,28 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                         ))
                                     )}
                                 </div>
+                                {/* Controles de Paginação Funcionários */}
+                                {totalPaginasFuncionarios > 1 && (
+                                    <div className="flex items-center justify-between p-6 border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                                        <span className="text-sm text-gray-500">Página {paginaFuncionarios} de {totalPaginasFuncionarios}</span>
+                                        <div className="flex gap-2">
+                                            <button 
+                                                onClick={() => setPaginaFuncionarios(p => Math.max(1, p - 1))}
+                                                disabled={paginaFuncionarios === 1}
+                                                className="px-4 py-2 text-sm font-bold bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition"
+                                            >
+                                                Anterior
+                                            </button>
+                                            <button 
+                                                onClick={() => setPaginaFuncionarios(p => Math.min(totalPaginasFuncionarios, p + 1))}
+                                                disabled={paginaFuncionarios === totalPaginasFuncionarios}
+                                                className="px-4 py-2 text-sm font-bold bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50 transition"
+                                            >
+                                                Próxima
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}
@@ -446,30 +570,79 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                     {activeTab === 'servicos' && (
                         <div className="space-y-8 animate-in fade-in duration-300">
                             <div className="bg-white dark:bg-gray-800 p-6 sm:p-8 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700">
-                                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-6">Adicionar Novo Serviço</h3>
+                                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-6">
+                                    {isEditingServico ? '✏️ Editar Serviço' : 'Adicionar Novo Serviço'}
+                                </h3>
                                 <form onSubmit={submitServico} className="space-y-6">
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        <div className="md:col-span-2">
-                                            <InputLabel value="Nome do Serviço" />
-                                            <TextInput className="mt-1 w-full" value={formServico.data.nome} onChange={e => formServico.setData('nome', e.target.value)} required />
+                                        
+                                        <div className="md:col-span-1">
+                                            <InputLabel value="Categoria / Tipo de Serviço *" />
+                                            <select 
+                                                className="mt-1 w-full border-gray-300 dark:bg-gray-900 dark:border-gray-700 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-gray-700 dark:text-gray-300"
+                                                value={formServico.data.tipo_servico} 
+                                                onChange={e => formServico.setData('tipo_servico', e.target.value)} 
+                                                required
+                                            >
+                                                <option value="" disabled>Selecione uma categoria...</option>
+                                                <option value="Beleza e Estética">Beleza e Estética</option>
+                                                <option value="Saúde e Bem-Estar">Saúde e Bem-Estar</option>
+                                                <option value="Serviços Automotivos">Serviços Automotivos</option>
+                                                <option value="Assistência Técnica e Manutenção">Assistência Técnica e Manutenção</option>
+                                                <option value="Serviços Educacionais">Serviços Educacionais</option>
+                                                <option value="Serviços Esportivos">Serviços Esportivos</option>
+                                                <option value="Gastronomia e Reservas">Gastronomia e Reservas</option>
+                                                <option value="Serviços para Pets">Serviços para Pets</option>
+                                                <option value="Hospedagem">Hospedagem</option>
+                                                <option value="Eventos e Locação de Espaços">Eventos e Locação de Espaços</option>
+                                                <option value="Serviços Profissionais e Consultoria">Serviços Profissionais e Consultoria</option>
+                                                <option value="Serviços Residenciais">Serviços Residenciais</option>
+                                                <option value="Serviços Empresariais">Serviços Empresariais</option>
+                                                <option value="Turismo e Lazer">Turismo e Lazer</option>
+                                                <option value="Outros Serviços Personalizados">Outros Serviços Personalizados</option>
+                                            </select>
+                                            <InputError message={formServico.errors.tipo_servico} />
+                                        </div>
+
+                                        <div className="md:col-span-1">
+                                            <InputLabel value="Nome Específico do Serviço *" />
+                                            <TextInput className="mt-1 w-full" value={formServico.data.nome} onChange={e => formServico.setData('nome', e.target.value)} placeholder="Ex: Corte Degradê" required />
                                             <InputError message={formServico.errors.nome} />
                                         </div>
+
                                         <div>
-                                            <InputLabel value="Valor (R$)" />
+                                            <InputLabel value="Valor (R$) *" />
                                             <TextInput type="number" step="0.01" className="mt-1 w-full" value={formServico.data.valor} onChange={e => formServico.setData('valor', e.target.value)} required />
                                             <InputError message={formServico.errors.valor} />
                                         </div>
+
                                         <div>
-                                            <InputLabel value="Duração Estimada (minutos)" />
+                                            <InputLabel value="Duração Estimada (minutos) *" />
                                             <TextInput type="number" className="mt-1 w-full" value={formServico.data.duracao_minutos} onChange={e => formServico.setData('duracao_minutos', e.target.value)} required />
+                                            <InputError message={formServico.errors.duracao_minutos} />
                                         </div>
+
                                         <div className="md:col-span-2">
+                                            <InputLabel value="Descrição" />
+                                            <textarea 
+                                                className="mt-1 w-full border-gray-300 dark:bg-gray-900 dark:border-gray-700 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-md shadow-sm" 
+                                                rows="3" 
+                                                maxLength="300"
+                                                value={formServico.data.descricao} 
+                                                onChange={e => formServico.setData('descricao', e.target.value)} 
+                                                placeholder="Descreva os detalhes do serviço..."
+                                            ></textarea>
+                                            <InputError message={formServico.errors.descricao} />
+                                        </div>
+
+                                        <div className="md:col-span-2 border-t border-gray-100 dark:border-gray-700 pt-6">
                                             <InputLabel value="Profissional Responsável (Opcional)" />
                                             <select className="mt-1 w-full border-gray-300 dark:bg-gray-900 dark:border-gray-700 rounded-lg shadow-sm" value={formServico.data.funcionario_id} onChange={e => formServico.setData('funcionario_id', e.target.value)}>
                                                 <option value="">Qualquer profissional disponível</option>
                                                 {funcionarios.map(func => (<option key={func.id} value={func.id}>{func.nome} ({func.cargo})</option>))}
                                             </select>
                                         </div>
+
                                         <div className="md:col-span-2">
                                             <InputLabel value="Dias Disponíveis para este serviço" className="mb-2" />
                                             <div className="flex flex-wrap gap-2">
@@ -477,15 +650,52 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                     <button type="button" key={dia} onClick={() => handleDiaToggle(dia)} className={`px-4 py-2 rounded-lg text-sm font-bold capitalize transition-colors border ${formServico.data.dias_disponiveis.includes(dia) ? 'bg-indigo-100 text-indigo-700 border-indigo-300' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}>{dia.substring(0, 3)}</button>
                                                 ))}
                                             </div>
+                                            <InputError message={formServico.errors.dias_disponiveis} />
                                         </div>
-                                        <div className="md:col-span-2">
+
+                                        <div className="md:col-span-2 p-5 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl">
+                                            <InputLabel value="Horários Disponíveis *" className="mb-2 text-gray-800 dark:text-gray-200" />
+                                            <p className="text-xs text-gray-500 mb-3">Adicione os horários em que os clientes podem agendar este serviço.</p>
+                                            
+                                            <div className="flex items-center gap-3 mb-4">
+                                                <TextInput 
+                                                    type="time" 
+                                                    value={novoHorario} 
+                                                    onChange={e => setNovoHorario(e.target.value)} 
+                                                    className="w-32 text-center"
+                                                />
+                                                <button 
+                                                    type="button" 
+                                                    onClick={adicionarHorario} 
+                                                    className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white font-bold text-sm rounded-lg hover:bg-gray-300 dark:hover:bg-gray-600 transition"
+                                                >
+                                                    + Adicionar Horário
+                                                </button>
+                                            </div>
+                                            
+                                            <div className="flex flex-wrap gap-2">
+                                                {formServico.data.horarios_disponiveis.length === 0 && (
+                                                    <span className="text-sm text-red-500 italic">Nenhum horário adicionado.</span>
+                                                )}
+                                                {formServico.data.horarios_disponiveis.map(h => (
+                                                    <span key={h} className="inline-flex items-center gap-2 bg-indigo-600 text-white px-3 py-1 rounded-full text-sm font-bold shadow-sm">
+                                                        {h}
+                                                        <button type="button" onClick={() => removerHorario(h)} className="text-indigo-200 hover:text-white transition">✕</button>
+                                                    </span>
+                                                ))}
+                                            </div>
+                                            <InputError message={formServico.errors.horarios_disponiveis} className="mt-2" />
+                                        </div>
+
+                                        <div className="md:col-span-2 border-t border-gray-100 dark:border-gray-700 pt-6">
                                             <InputLabel value="Regra de Pagamento" className="mb-2" />
                                             <div className="flex flex-col sm:flex-row gap-4">
                                                 <label className="flex items-center gap-2 cursor-pointer p-3 border rounded-lg hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-900 w-full transition"><input type="radio" name="pagamento" value="hibrido" checked={formServico.data.tipo_pagamento === 'hibrido'} onChange={e => formServico.setData('tipo_pagamento', e.target.value)} className="text-indigo-600" /><span className="text-sm font-medium text-gray-700 dark:text-gray-300">Cliente escolhe</span></label>
                                                 <label className="flex items-center gap-2 cursor-pointer p-3 border rounded-lg hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-900 w-full transition"><input type="radio" name="pagamento" value="online" checked={formServico.data.tipo_pagamento === 'online'} onChange={e => formServico.setData('tipo_pagamento', e.target.value)} className="text-indigo-600" /><span className="text-sm font-medium text-gray-700 dark:text-gray-300">Obrigatório Online</span></label>
                                             </div>
                                         </div>
-                                        {meusEstabelecimentos.length > 1 && (
+
+                                        {meusEstabelecimentos.length > 1 && !isEditingServico && (
                                             <div className="md:col-span-2 p-4 bg-blue-50 dark:bg-blue-900/30 rounded-xl border border-blue-100 dark:border-blue-800">
                                                 <h4 className="font-bold text-blue-900 dark:text-blue-200 mb-2">💡 Oferece este serviço em outras filiais?</h4>
                                                 <div className="flex flex-wrap gap-4">
@@ -496,8 +706,13 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                             </div>
                                         )}
                                     </div>
-                                    <div className="flex justify-end pt-4">
-                                        <PrimaryButton className="px-8 py-3 bg-indigo-600 rounded-xl shadow-lg" disabled={formServico.processing}>+ Salvar Serviço</PrimaryButton>
+                                    <div className="flex justify-end pt-4 gap-4">
+                                        {isEditingServico && (
+                                            <button type="button" onClick={cancelarEdicaoServico} className="px-6 py-3 text-gray-600 font-bold hover:text-gray-900 transition">Cancelar</button>
+                                        )}
+                                        <PrimaryButton className="px-8 py-3 bg-indigo-600 rounded-xl shadow-lg" disabled={formServico.processing}>
+                                            {isEditingServico ? 'Salvar Alterações' : '+ Salvar Serviço'}
+                                        </PrimaryButton>
                                     </div>
                                 </form>
                             </div>
@@ -513,10 +728,15 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                         servicos.map(s => (
                                             <div key={s.id} className="p-6 flex justify-between items-center hover:bg-gray-50 dark:hover:bg-gray-700/50 transition">
                                                 <div>
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                        <span className="text-[10px] font-bold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-md uppercase tracking-wide">
+                                                            {s.tipo_servico || 'Serviço'}
+                                                        </span>
+                                                    </div>
                                                     <h4 className="font-bold text-gray-900 dark:text-white">{s.nome}</h4>
                                                     <p className="text-sm text-gray-500 font-medium">{s.duracao_minutos} min • R$ {s.valor}</p>
                                                 </div>
-                                                <button className="text-indigo-600 hover:text-indigo-800 font-bold text-sm bg-indigo-50 px-3 py-1.5 rounded-lg transition">Editar</button>
+                                                <button onClick={() => editarServico(s)} className="text-indigo-600 hover:text-indigo-800 font-bold text-sm bg-indigo-50 px-3 py-1.5 rounded-lg transition">Editar</button>
                                             </div>
                                         ))
                                     )}

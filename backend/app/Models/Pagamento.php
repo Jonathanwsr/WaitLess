@@ -8,7 +8,7 @@ class Pagamento extends Model
 {
     protected $guarded = ['id'];
 
-    // Garante que o Laravel trate esse campo como um objeto Carbon (Data/Hora)
+   
     protected $casts = [
         'data_pagamento' => 'datetime',
     ];
