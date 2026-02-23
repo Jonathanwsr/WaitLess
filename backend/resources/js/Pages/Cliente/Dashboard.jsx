@@ -1,16 +1,16 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import TextInput from '@/Components/TextInput';
 
 export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
     const [busca, setBusca] = useState('');
     const [categoria, setCategoria] = useState('');
     
-   
-    const [loadingId, setLoadingId] = useState(null); 
+    // Estados de loading para os botões não travarem
+    const [loadingPagar, setLoadingPagar] = useState(null); 
+    const [loadingCancelar, setLoadingCancelar] = useState(null); 
     
-   
     const { flash = {} } = usePage().props;
 
     const fazerBusca = (e) => {
@@ -30,7 +30,7 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
 
     const verificarExpiracao = (agendamento) => {
         if (!agendamento || !agendamento.data_agendamento || !agendamento.hora_agendamento || 
-            agendamento.status_pagamento === 'pago' || agendamento.status_pagamento === 'presencial' || agendamento.status === 'cancelado') {
+            agendamento.status_pagamento === 'pago' || agendamento.status_pagamento === 'presencial' || agendamento.status === 'cancelado' || agendamento.status_pagamento === 'estornado') {
             return { expirou: false, cancelado: agendamento?.status === 'cancelado' };
         }
 
@@ -45,15 +45,26 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
     };
 
     const pagarNovamente = (agendamentoId) => {
-        router.post(
-            route('pagamento.tentar_novamente', { agendamento: agendamentoId }), 
-            {}, 
-            {
-                preserveScroll: true, 
-                onStart: () => setLoadingId(agendamentoId), 
-                onFinish: () => setLoadingId(null), 
-            }
-        );
+        router.post(route('pagamento.tentar_novamente', { agendamento: agendamentoId }), {}, {
+            preserveScroll: true, 
+            onStart: () => setLoadingPagar(agendamentoId), 
+            onFinish: () => setLoadingPagar(null),
+        });
+    };
+
+    // 👉 NOVA FUNÇÃO DE CANCELAR VAGA
+    const cancelarVaga = (agendamentoId, isPago) => {
+        const mensagem = isPago 
+            ? 'Tem certeza que deseja cancelar? O valor será estornado para a sua conta.' 
+            : 'Tem certeza que deseja cancelar esta reserva?';
+            
+        if (window.confirm(mensagem)) {
+            router.post(route('cliente.agendamento.cancelar', { id: agendamentoId }), {}, {
+                preserveScroll: true,
+                onStart: () => setLoadingCancelar(agendamentoId),
+                onFinish: () => setLoadingCancelar(null),
+            });
+        }
     };
 
     const primeiroNome = (usuario?.name || auth?.user?.name || 'Cliente').split(' ')[0];
@@ -64,22 +75,9 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
 
             <div className="max-w-7xl mx-auto mt-6 px-4 sm:px-6 lg:px-8 pb-12 space-y-8">
                 
-              
-                {flash?.success && (
-                    <div className="p-4 text-green-800 bg-green-100 border border-green-200 rounded-xl shadow-sm animate-in fade-in slide-in-from-top-2">
-                        <strong>✅ Sucesso:</strong> {flash.success}
-                    </div>
-                )}
-                {flash?.warning && (
-                    <div className="p-4 text-yellow-800 bg-yellow-100 border border-yellow-200 rounded-xl shadow-sm animate-in fade-in slide-in-from-top-2">
-                        <strong>⚠️ Atenção:</strong> {flash.warning}
-                    </div>
-                )}
-                {flash?.error && (
-                    <div className="p-4 text-red-800 bg-red-100 border border-red-200 rounded-xl shadow-sm animate-in fade-in slide-in-from-top-2">
-                        <strong>❌ Oops:</strong> {flash.error}
-                    </div>
-                )}
+                {flash?.success && <div className="p-4 text-green-800 bg-green-100 border border-green-200 rounded-xl shadow-sm animate-in fade-in"><strong>✅ Sucesso:</strong> {flash.success}</div>}
+                {flash?.warning && <div className="p-4 text-yellow-800 bg-yellow-100 border border-yellow-200 rounded-xl shadow-sm animate-in fade-in"><strong>⚠️ Atenção:</strong> {flash.warning}</div>}
+                {flash?.error && <div className="p-4 text-red-800 bg-red-100 border border-red-200 rounded-xl shadow-sm animate-in fade-in"><strong>❌ Oops:</strong> {flash.error}</div>}
 
                 <div className="bg-indigo-600 rounded-3xl p-8 shadow-lg relative">
                     <h3 className="text-2xl font-extrabold text-white mb-2">Encontre e agende um serviço</h3>
@@ -105,12 +103,14 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
                             {agendamentos.map((agendamento) => {
                                 const statusTempo = verificarExpiracao(agendamento);
                                 const isPago = agendamento.status_pagamento === 'pago';
+                                const isEstornado = agendamento.status_pagamento === 'estornado';
                                 const isPresencial = agendamento.status_pagamento === 'presencial';
                                 const isConfirmado = isPago || isPresencial;
-                                const isCanceladoDefinitivo = statusTempo.cancelado || (statusTempo.expirou && !isConfirmado);
+                                const isCanceladoDefinitivo = statusTempo.cancelado || isEstornado || (statusTempo.expirou && !isConfirmado);
                                 const isAguardandoPagamento = agendamento.status === 'aguardando_pagamento' && !isCanceladoDefinitivo && !isConfirmado;
 
-                                const isCarregando = loadingId === agendamento.id;
+                                const isCarregandoPagamento = loadingPagar === agendamento.id;
+                                const isCarregandoCancelamento = loadingCancelar === agendamento.id;
 
                                 return (
                                     <div key={agendamento.id} className={`rounded-2xl overflow-hidden border shadow-sm flex flex-col transition-all ${isCanceladoDefinitivo ? 'bg-gray-50 dark:bg-gray-900/50 border-gray-300 dark:border-gray-700 opacity-80' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
@@ -119,8 +119,8 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
                                             <div className="flex justify-between items-center">
                                                 <div>
                                                     <p className={`text-sm font-medium ${isCanceladoDefinitivo ? 'text-gray-600 dark:text-gray-400' : (isAguardandoPagamento ? 'text-yellow-700 dark:text-yellow-500' : 'text-green-100')}`}>Status do Agendamento</p>
-                                                    <h4 className={`text-xl font-extrabold ${isCanceladoDefinitivo ? 'text-gray-800 dark:text-gray-300' : (isAguardandoPagamento ? 'text-yellow-800 dark:text-yellow-400' : 'text-white')}`}>
-                                                        {isCanceladoDefinitivo ? '❌ Cancelado' : isAguardandoPagamento ? '⚠️ Pagamento Online Pendente' : (isPresencial ? '✅ Pagar no Local' : '✅ Confirmado (Pago)')}
+                                                    <h4 className={`text-xl font-extrabold ${isCanceladoDefinitivo ? (isEstornado ? '❌ Cancelado & Estornado' : '❌ Cancelado') : (isAguardandoPagamento ? '⚠️ Pagamento Online Pendente' : (isPresencial ? '✅ Pagar no Local' : '✅ Confirmado (Pago)'))}`}>
+                                                        {isCanceladoDefinitivo ? (isEstornado ? '❌ Reembolsado' : '❌ Cancelado') : (isAguardandoPagamento ? '⚠️ Pendente' : (isPresencial ? '✅ Pagar no Local' : '✅ Confirmado'))}
                                                     </h4>
                                                 </div>
                                                 <div className="text-right">
@@ -142,7 +142,7 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
                                                 <p className="text-sm font-bold text-indigo-600 dark:text-indigo-400">{formatarMoeda(agendamento?.valor_final)}</p>
                                             </div>
 
-                                            {isConfirmado && agendamento?.codigo_verificacao && (
+                                            {isConfirmado && !isCanceladoDefinitivo && agendamento?.codigo_verificacao && (
                                                 <div className="mb-4 p-4 border border-dashed border-green-300 bg-green-50 dark:bg-green-900/20 rounded-xl flex justify-between items-center">
                                                     <div>
                                                         <p className="text-[10px] uppercase font-bold text-green-600 dark:text-green-400">PIN de Liberação</p>
@@ -151,30 +151,29 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
                                                 </div>
                                             )}
 
-                                            {isAguardandoPagamento && (
-                                                <div className="mt-auto space-y-3">
-                                                    <p className="text-xs text-yellow-600 dark:text-yellow-400 font-medium text-center">Finalize o pagamento online para garantir sua vaga!</p>
-                                                    <button 
-                                                        type="button" 
-                                                        onClick={() => pagarNovamente(agendamento.id)} 
-                                                        disabled={isCarregando}
-                                                        className={`w-full py-3 text-white font-bold rounded-xl shadow-sm transition ${isCarregando ? 'bg-gray-400 dark:bg-gray-600 cursor-not-allowed' : 'bg-yellow-500 hover:bg-yellow-600 dark:bg-yellow-600 dark:hover:bg-yellow-500'}`}
-                                                    >
-                                                        {isCarregando ? '⏳ A gerar link...' : '💳 Pagar Agora'}
+                                            <div className="mt-auto space-y-3">
+                                                {/* Botão de Pagar (Se estiver pendente) */}
+                                                {isAguardandoPagamento && (
+                                                    <button type="button" onClick={() => pagarNovamente(agendamento.id)} disabled={isCarregandoPagamento || isCarregandoCancelamento} className="w-full py-3 text-white font-bold rounded-xl shadow-sm transition bg-yellow-500 hover:bg-yellow-600">
+                                                        {isCarregandoPagamento ? '⏳ A gerar link...' : '💳 Pagar Agora'}
                                                     </button>
-                                                </div>
-                                            )}
+                                                )}
 
-                                            {isCanceladoDefinitivo && (
-                                                <div className="mt-auto space-y-3">
-                                                    <p className="text-xs text-red-500 font-medium text-center">O prazo de pagamento expirou.</p>
-                                                    {route().has('cliente.agendar') && agendamento?.estabelecimento_id && (
-                                                        <Link href={route('cliente.agendar', agendamento.estabelecimento_id)} className="block text-center w-full py-3 bg-gray-900 dark:bg-gray-700 hover:bg-gray-800 text-white font-bold rounded-xl shadow-sm transition">
-                                                            🔄 Agendar em outro horário
-                                                        </Link>
-                                                    )}
-                                                </div>
-                                            )}
+                                                {/* Botão de Cancelar (Apenas se não estiver já cancelado) */}
+                                                {!isCanceladoDefinitivo && (
+                                                    <button type="button" onClick={() => cancelarVaga(agendamento.id, isPago)} disabled={isCarregandoCancelamento || isCarregandoPagamento} className="w-full py-3 text-red-600 bg-red-50 hover:bg-red-100 font-bold rounded-xl shadow-sm transition border border-red-200">
+                                                        {isCarregandoCancelamento ? '⏳ A cancelar...' : '❌ Cancelar Reserva'}
+                                                    </button>
+                                                )}
+
+                                                {/* Botão de Agendar Novamente (Se estiver cancelado) */}
+                                                {isCanceladoDefinitivo && route().has('cliente.agendar') && agendamento?.estabelecimento_id && (
+                                                    <Link href={route('cliente.agendar', agendamento.estabelecimento_id)} className="block text-center w-full py-3 bg-gray-900 dark:bg-gray-700 hover:bg-gray-800 text-white font-bold rounded-xl shadow-sm transition">
+                                                        🔄 Agendar em outro horário
+                                                    </Link>
+                                                )}
+                                            </div>
+
                                         </div>
                                     </div>
                                 );

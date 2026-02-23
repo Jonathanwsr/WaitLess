@@ -14,7 +14,7 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
         servico_id: '',
         data_agendamento: new Date().toISOString().split('T')[0],
         hora_agendamento: '',
-        forma_pagamento: '', // Nova variável!
+        forma_pagamento: '', 
     });
 
     const diasSemanaMap = ['domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado'];

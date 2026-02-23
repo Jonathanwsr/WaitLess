@@ -6,17 +6,18 @@ use Illuminate\Database\Eloquent\Model;
 
 class Estabelecimento extends Model
 {
+    
     protected $guarded = ['id'];
 
     public function proprietarios()
-{
-    return $this->belongsToMany(
-        User::class, 
-        'estabelecimento_usuario', 
-        'estabelecimento_id',       
-        'usuario_id'               
-    )->withPivot('tipo')->withTimestamps();
-}
+    {
+        return $this->belongsToMany(
+            User::class, 
+            'estabelecimento_usuario', 
+            'estabelecimento_id',       
+            'usuario_id'               
+        )->withPivot('tipo')->withTimestamps();
+    }
 
     public function clientes()
     {
