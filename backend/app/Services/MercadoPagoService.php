@@ -7,46 +7,65 @@ use Exception;
 
 class MercadoPagoService
 {
-    /**
-     * Gera o link de pagamento (Preference) no Mercado Pago.
-     */
-    public function criarCheckout($agendamento, $servico)
+    
+    public function criarCheckout($agendamento, $servico, $taxaPlataforma = 0, $tokenSalao = null)
     {
-        $token = env('MERCADOPAGO_ACCESS_TOKEN');
+       
+        $tokenToUse = $tokenSalao ? $tokenSalao : env('MERCADOPAGO_ACCESS_TOKEN');
         
-        if (!$token) {
-            throw new Exception('Token do Mercado Pago não configurado no .env');
+        if (!$tokenToUse) {
+            throw new Exception('Token do Mercado Pago não configurado.');
         }
 
-      
         $urlRetorno = route('pagamento.callback');
 
-        $response = Http::withToken($token)
-            ->withoutVerifying()
-            ->post('https://api.mercadopago.com/checkout/preferences', [
-                'items' => [
-                    [
-                        'id' => (string) $servico->id,
-                        'title' => 'Serviço: ' . $servico->nome,
-                        'quantity' => 1,
-                        'unit_price' => (float) $servico->valor,
-                        'currency_id' => 'BRL'
-                    ]
-                ],
-                'back_urls' => [
-                    'success' => $urlRetorno, 
-                    'failure' => $urlRetorno, 
-                    'pending' => $urlRetorno, 
-                ],
+       
+        $payload = [
+            'items' => [
+                [
+                    'id' => (string) $servico->id,
+                    'title' => 'Serviço: ' . $servico->nome,
+                    'quantity' => 1,
+                    'unit_price' => (float) $servico->valor,
+                    'currency_id' => 'BRL'
+                ]
+            ],
+            'back_urls' => [
+                'success' => $urlRetorno,
+                'failure' => $urlRetorno,
+                'pending' => $urlRetorno,
+            ],
+            'auto_return' => 'approved',
+            'external_reference' => (string) $agendamento->id, 
+        ];
 
-                'auto_return' => 'approved',
-                
-               
-                'external_reference' => (string) $agendamento->id, 
-            ]);
+        
+        if ($tokenSalao && $taxaPlataforma > 0) {
+            $payload['marketplace_fee'] = (float) $taxaPlataforma;
+        }
+
+        $response = Http::withToken($tokenToUse)
+            ->withoutVerifying()
+            ->post('https://api.mercadopago.com/checkout/preferences', $payload);
 
         if ($response->failed()) {
-            throw new Exception('Erro ao comunicar com o Mercado Pago. Detalhes: ' . $response->body());
+            throw new Exception('Erro ao criar checkout no MP: ' . $response->body());
+        }
+
+        return $response->json();
+    }
+
+    
+    public function estornarPagamento($paymentId, $tokenSalao = null)
+    {
+        $tokenToUse = $tokenSalao ? $tokenSalao : env('MERCADOPAGO_ACCESS_TOKEN');
+
+        $response = Http::withToken($tokenToUse)
+            ->withoutVerifying()
+            ->post("https://api.mercadopago.com/v1/payments/{$paymentId}/refunds");
+
+        if ($response->failed()) {
+            throw new Exception('Erro ao tentar estornar: ' . $response->body());
         }
 
         return $response->json();

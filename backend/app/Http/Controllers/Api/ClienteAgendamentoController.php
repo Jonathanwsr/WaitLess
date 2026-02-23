@@ -17,6 +17,8 @@ use Exception;
 class ClienteAgendamentoController extends Controller
 {
     protected $mpService;
+    
+    protected $taxaApp = 0.10; 
 
     public function __construct(MercadoPagoService $mpService)
     {
@@ -25,15 +27,10 @@ class ClienteAgendamentoController extends Controller
 
     public function show(Estabelecimento $estabelecimento)
     {
-        if (!$estabelecimento->ativo) {
-            abort(404, 'Este estabelecimento está temporariamente fechado para agendamentos.');
-        }
-
-        $servicos = $estabelecimento->servicos()->where('ativo', true)->get();
-
+        if (!$estabelecimento->ativo) abort(404, 'Este estabelecimento está fechado.');
         return Inertia::render('Agendamentos/Agendar', [
             'estabelecimento' => $estabelecimento->only(['id', 'nome', 'foto_perfil', 'bairro', 'cidade', 'estado', 'telefone']),
-            'servicos' => $servicos
+            'servicos' => $estabelecimento->servicos()->where('ativo', true)->get()
         ]);
     }
 
@@ -47,9 +44,7 @@ class ClienteAgendamentoController extends Controller
         ]);
 
         $dataHoraAgendada = Carbon::parse($validated['data_agendamento'] . ' ' . $validated['hora_agendamento']);
-        if ($dataHoraAgendada->isPast()) {
-            return back()->withErrors(['hora_agendamento' => 'Não é possível agendar um horário que já passou!']);
-        }
+        if ($dataHoraAgendada->isPast()) return back()->withErrors(['hora_agendamento' => 'Não é possível agendar no passado!']);
 
         $servico = $estabelecimento->servicos()->findOrFail($validated['servico_id']);
         
@@ -66,8 +61,12 @@ class ClienteAgendamentoController extends Controller
 
             $formaEscolhida = $validated['forma_pagamento'];
             $isPresencial = ($formaEscolhida === 'presencial');
-
             $codigoPin = $isPresencial ? str_pad(mt_rand(0, 9999), 4, '0', STR_PAD_LEFT) : null;
+
+        
+            $valorTotal = $servico->valor;
+            $valorTaxaApp = $isPresencial ? 0 : round($valorTotal * $this->taxaApp, 2); 
+            $valorLiquidoSalao = $valorTotal - $valorTaxaApp;
 
             $agendamento = Agendamento::create([
                 'estabelecimento_id' => $estabelecimento->id,
@@ -78,7 +77,7 @@ class ClienteAgendamentoController extends Controller
                 'hora_agendamento'   => $validated['hora_agendamento'],
                 'status'             => $isPresencial ? 'pendente' : 'aguardando_pagamento', 
                 'status_pagamento'   => $isPresencial ? 'presencial' : 'pendente',
-                'valor_final'        => $servico->valor,
+                'valor_final'        => $valorTotal,
                 'codigo_verificacao' => $codigoPin,
             ]);
 
@@ -87,38 +86,29 @@ class ClienteAgendamentoController extends Controller
                 'estabelecimento_id' => $estabelecimento->id,
                 'agendamento_id'     => $agendamento->id,
                 'gateway_pagamento'  => $isPresencial ? null : 'mercadopago',
-                'valor'              => $servico->valor,
-                'taxa'               => 0, 
-                'valor_liquido'      => $servico->valor,
+                'valor'              => $valorTotal,
+                'taxa'               => $valorTaxaApp,      
+                'valor_liquido'      => $valorLiquidoSalao, 
                 'status'             => 'pendente',
                 'metodo_pagamento'   => $isPresencial ? 'presencial' : 'online', 
             ]);
 
             $preference = null;
-            // 👉 CORREÇÃO AQUI: Só chama o Mercado Pago se a escolha for pagar AGORA
             if ($formaEscolhida === 'online_agora') {
-                $preference = $this->mpService->criarCheckout($agendamento, $servico);
-                if (!isset($preference['init_point'])) {
-                    throw new Exception('A API do Mercado Pago não devolveu o link de pagamento.');
-                }
+               
+                $tokenSalao = $estabelecimento->token_mercadopago ?? null; 
+                
+                $preference = $this->mpService->criarCheckout($agendamento, $servico, $valorTaxaApp, $tokenSalao);
+                
+                if (!isset($preference['init_point'])) throw new Exception('API do Mercado Pago não devolveu o link.');
                 $pagamento->update(['id_transacao_gateway' => $preference['id']]);
             }
 
             DB::commit();
 
-          
-            if ($formaEscolhida === 'online_agora') {
-            
-                return Inertia::location($preference['init_point']);
-            } 
-            elseif ($formaEscolhida === 'online_depois') {
-              
-                return redirect()->route('dashboard')->with('warning', 'Sua vaga está reservada! Finalize o pagamento online pelo painel antes que o prazo expire.');
-            } 
-            else { 
-              
-                return redirect()->route('dashboard')->with('success', 'Agendamento confirmado! O pagamento será realizado no local. Seu PIN já está disponível.');
-            }
+            if ($formaEscolhida === 'online_agora') return Inertia::location($preference['init_point']);
+            elseif ($formaEscolhida === 'online_depois') return redirect()->route('dashboard')->with('warning', 'Vaga reservada! Pague online pelo painel antes do prazo expirar.');
+            else return redirect()->route('dashboard')->with('success', 'Agendamento confirmado para pagamento no local! PIN gerado.');
 
         } catch (Exception $e) {
             DB::rollBack(); 
@@ -129,21 +119,19 @@ class ClienteAgendamentoController extends Controller
     public function callbackMercadoPago(Request $request)
     {
         $statusMP = $request->query('status'); 
-        $agendamentoId = $request->query('external_reference');
-        $agendamento = Agendamento::find($agendamentoId);
+        $agendamento = Agendamento::find($request->query('external_reference'));
 
         if (!$agendamento) return redirect()->route('dashboard')->with('warning', 'Agendamento não localizado.');
 
         if ($statusMP === 'approved') {
             if ($agendamento->status_pagamento !== 'pago') {
-                $codigoPin = str_pad(mt_rand(0, 9999), 4, '0', STR_PAD_LEFT);
-                DB::transaction(function () use ($agendamento, $request, $codigoPin) {
+                DB::transaction(function () use ($agendamento, $request) {
                     $pagamento = Pagamento::where('agendamento_id', $agendamento->id)->first();
                     $agendamento->update([
                         'status' => 'pendente', 
                         'status_pagamento' => 'pago',
                         'pagamento_id' => $pagamento ? $pagamento->id : null,
-                        'codigo_verificacao' => $codigoPin,
+                        'codigo_verificacao' => str_pad(mt_rand(0, 9999), 4, '0', STR_PAD_LEFT),
                     ]);
                     if ($pagamento) {
                         $pagamento->update([
@@ -157,66 +145,92 @@ class ClienteAgendamentoController extends Controller
             }
             return redirect()->route('dashboard')->with('success', 'Pagamento aprovado! O seu PIN de segurança foi gerado.');
         } 
-        elseif (in_array($statusMP, ['pending', 'in_process'])) {
-            return redirect()->route('dashboard')->with('warning', 'Estamos processando seu pagamento. Assim que confirmado, avisaremos!');
-        } else {
-            return redirect()->route('dashboard')->with('warning', 'O pagamento não foi concluído. Você pode tentar novamente pelo painel.');
-        }
+        elseif (in_array($statusMP, ['pending', 'in_process'])) return redirect()->route('dashboard')->with('warning', 'Processando pagamento. Avisaremos assim que confirmar!');
+        else return redirect()->route('dashboard')->with('error', 'O pagamento não foi concluído. Tente novamente.');
     }
 
-     // FUNÇÃO FINAL: Com redirecionamento e mensagens amigáveis em caso de erro
     public function pagarNovamente($id)
     {
         try {
-            $agendamento = Agendamento::find($id);
-            
-            if (!$agendamento) {
-                return back()->with('error', 'Agendamento não encontrado.');
-            }
+            $agendamento = Agendamento::with(['servico', 'estabelecimento'])->find($id);
+            if (!$agendamento) return back()->with('error', 'Agendamento não encontrado.');
+            if ($agendamento->usuario_id != Auth::id()) return back()->with('error', 'Acesso negado.');
+            if ($agendamento->status_pagamento === 'pago') return back()->with('success', 'Já está pago!');
+            if ($agendamento->status === 'cancelado') return back()->with('error', 'Já foi cancelado.');
 
-            if ($agendamento->usuario_id != Auth::id()) {
-                return back()->with('error', 'Você não tem permissão para acessar este pagamento.');
-            }
+           
+            $dataAgendamento = Carbon::parse($agendamento->data_agendamento . ' ' . $agendamento->hora_agendamento);
+            $limite = ($agendamento->created_at ?: now())->diffInHours($dataAgendamento) > 2 ? $dataAgendamento->copy()->subHours(2) : $dataAgendamento;
 
-            if ($agendamento->status_pagamento === 'pago') {
-                return back()->with('success', 'Este agendamento já está pago!');
-            }
-
-            if ($agendamento->status === 'cancelado') {
-                return back()->with('error', 'Este agendamento já foi cancelado.');
-            }
-
-            $dataHoraAgendamento = Carbon::parse($agendamento->data_agendamento . ' ' . $agendamento->hora_agendamento);
-            $dataHoraCriacao = $agendamento->created_at ?: now();
-            
-            $horasDiferenca = $dataHoraCriacao->diffInHours($dataHoraAgendamento);
-            $limitePagamento = $horasDiferenca > 2 ? $dataHoraAgendamento->copy()->subHours(2) : $dataHoraAgendamento;
-
-            if (now()->isAfter($limitePagamento)) {
+            if (now()->isAfter($limite)) {
                 $agendamento->update(['status' => 'cancelado', 'status_pagamento' => 'cancelado']);
-                return back()->with('error', 'O tempo limite expirou. Agendamento cancelado.');
+                return back()->with('error', 'Tempo limite expirado. Agendamento cancelado.');
             }
 
-            $servico = $agendamento->servico;
-            if (!$servico) {
-                return back()->with('error', 'Erro: O serviço atrelado não existe mais.');
-            }
+            if (!$agendamento->servico) return back()->with('error', 'Serviço inexistente.');
 
-            $preference = $this->mpService->criarCheckout($agendamento, $servico);
+          
+            $pagamento = Pagamento::where('agendamento_id', $agendamento->id)->first();
+            $valorTaxaApp = $pagamento ? $pagamento->taxa : 0;
+            $tokenSalao = $agendamento->estabelecimento->token_mercadopago ?? null;
+
+            $preference = $this->mpService->criarCheckout($agendamento, $agendamento->servico, $valorTaxaApp, $tokenSalao);
             
-            if (!isset($preference['init_point'])) {
-               
-                return back()->with('error', 'Serviço de pagamento indisponível no momento. Tente novamente mais tarde.');
-            }
+            if (!isset($preference['init_point'])) return back()->with('error', 'Serviço indisponível no momento.');
 
-            Pagamento::where('agendamento_id', $agendamento->id)->update(['id_transacao_gateway' => $preference['id']]);
+            if ($pagamento) $pagamento->update(['id_transacao_gateway' => $preference['id']]);
             
             return Inertia::location($preference['init_point']);
 
         } catch (Exception $e) {
-           
-            return back()->with('error', 'Não foi possível gerar o pagamento no momento. Tente novamente mais tarde.');
+            return back()->with('error', 'Erro temporário ao gerar pagamento. Tente novamente.');
         }
     }
-    
+
+
+
+     
+    public function cancelar($id)
+    {
+        try {
+            $agendamento = Agendamento::with('estabelecimento')->find($id);
+            
+            if (!$agendamento) return back()->with('error', 'Agendamento não encontrado.');
+            if ($agendamento->usuario_id != Auth::id()) return back()->with('error', 'Você não tem permissão para cancelar este agendamento.');
+            if ($agendamento->status === 'cancelado') return back()->with('warning', 'Este agendamento já se encontra cancelado.');
+
+          
+            $pagamento = Pagamento::where('agendamento_id', $agendamento->id)->first();
+
+            if ($agendamento->status_pagamento === 'pago' && $pagamento && $pagamento->id_transacao_gateway) {
+                
+                $tokenSalao = $agendamento->estabelecimento->token_mercadopago ?? null;
+                
+                try {
+                   
+                    $this->mpService->estornarPagamento($pagamento->id_transacao_gateway, $tokenSalao);
+                } catch (Exception $e) {
+                    
+                    return back()->with('error', 'Falha ao processar o estorno no Mercado Pago. O cancelamento foi abortado por segurança.');
+                }
+
+              
+                $pagamento->update(['status' => 'estornado']);
+                $agendamento->update(['status' => 'cancelado', 'status_pagamento' => 'estornado']);
+                
+                return back()->with('success', 'Agendamento cancelado! O valor foi estornado e será devolvido à sua conta.');
+            }
+
+         
+            $agendamento->update(['status' => 'cancelado', 'status_pagamento' => 'cancelado']);
+            if ($pagamento && $pagamento->status !== 'pago') {
+                $pagamento->update(['status' => 'cancelado']);
+            }
+
+            return back()->with('success', 'Agendamento cancelado com sucesso. A sua vaga foi libertada.');
+
+        } catch (Exception $e) {
+            return back()->with('error', 'Ocorreu um erro ao tentar cancelar. Tente novamente.');
+        }
+    }
 }
