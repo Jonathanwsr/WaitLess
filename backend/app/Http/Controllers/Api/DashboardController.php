@@ -47,21 +47,23 @@ class DashboardController extends Controller
                 'servico:id,nome,valor,duracao_minutos'
             ])
             ->where('usuario_id', $user->id)
-            ->whereIn('status', ['pendente', 'confirmado'])
+            // 👉 A MÁGICA AQUI: Agora o banco de dados puxa os novos status!
+            ->whereIn('status', ['pendente', 'confirmado', 'aguardando_pagamento', 'cancelado'])
             ->orderBy('data_agendamento', 'asc')
             ->orderBy('hora_agendamento', 'asc')
             ->get();
 
-        // Lógica de Ouro: Calcular a posição na fila para cada agendamento
+       
         foreach ($meusAgendamentos as $agendamento) {
-            // Conta quantas pessoas estão na mesma loja, no mesmo dia, num horário mais cedo (e que ainda não foram atendidas)
+            
+        
             $pessoasNaFrente = Agendamento::where('estabelecimento_id', $agendamento->estabelecimento_id)
                 ->whereDate('data_agendamento', $agendamento->data_agendamento)
-                ->whereIn('status', ['pendente', 'confirmado'])
+               
+                ->whereIn('status', ['pendente', 'confirmado', 'aguardando_pagamento'])
                 ->where('hora_agendamento', '<', $agendamento->hora_agendamento)
                 ->count();
 
-           
             $agendamento->pessoas_na_frente = $pessoasNaFrente;
         }
 

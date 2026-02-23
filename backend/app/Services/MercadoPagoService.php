@@ -18,14 +18,8 @@ class MercadoPagoService
             throw new Exception('Token do Mercado Pago não configurado no .env');
         }
 
-        // 1. Pegamos as rotas originais geradas pelo Laravel
-        $urlSucesso = route('pagamento.sucesso', $agendamento->id);
-        $urlFalha = route('pagamento.falha', $agendamento->id);
-
-        // 2. O GRANDE TRUQUE: Trocamos '127.0.0.1' por 'localhost'
-        // Isso impede que o Mercado Pago bloqueie o retorno automático no seu computador!
-        $urlSucesso = str_replace('127.0.0.1', 'localhost', $urlSucesso);
-        $urlFalha = str_replace('127.0.0.1', 'localhost', $urlFalha);
+      
+        $urlRetorno = route('pagamento.callback');
 
         $response = Http::withToken($token)
             ->withoutVerifying()
@@ -40,14 +34,14 @@ class MercadoPagoService
                     ]
                 ],
                 'back_urls' => [
-                    'success' => $urlSucesso,
-                    'failure' => $urlFalha,
-                    'pending' => $urlSucesso,
+                    'success' => $urlRetorno, 
+                    'failure' => $urlRetorno, 
+                    'pending' => $urlRetorno, 
                 ],
-                // retorno automático para a URL de sucesso, sem necessidade de ação do usuário
-               
+
                 'auto_return' => 'approved',
                 
+               
                 'external_reference' => (string) $agendamento->id, 
             ]);
 
