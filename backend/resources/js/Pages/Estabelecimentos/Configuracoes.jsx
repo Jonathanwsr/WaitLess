@@ -34,7 +34,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
     const funcionariosPaginados = funcionarios.slice((paginaFuncionarios - 1) * itensPorPaginaFunc, paginaFuncionarios * itensPorPaginaFunc);
 
     // ==========================================
-    // FORM 1: DETALHES DO ESTABELECIMENTO
+    // FORM 1 & 4: DETALHES DA LOJA E FINANCEIRO
     // ==========================================
     const formDetalhes = useForm({
         nome: estabelecimento.nome || '',
@@ -47,13 +47,15 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         bairro: estabelecimento.bairro || '',
         cidade: estabelecimento.cidade || '',
         estado: estabelecimento.estado || '',
+        // 👉 NOVO CAMPO: Token do Mercado Pago
+        token_mercadopago: estabelecimento.token_mercadopago || '', 
     });
 
     const submitDetalhes = (e) => {
         e.preventDefault();
         formDetalhes.put(route('estabelecimentos.update', estabelecimento.id), {
             preserveScroll: true,
-            onSuccess: () => mostrarMensagem('Configurações da loja salvas com sucesso!'),
+            onSuccess: () => mostrarMensagem('Configurações salvas com sucesso!'),
         });
     };
 
@@ -317,6 +319,13 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                             className={`text-left px-4 py-3 rounded-xl text-sm font-bold transition whitespace-nowrap ${activeTab === 'servicos' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'}`}
                         >
                             3. Catálogo de Serviços
+                        </button>
+                        {/* 👉 NOVO BOTÃO: ABA FINANCEIRO */}
+                        <button 
+                            onClick={() => setActiveTab('financeiro')}
+                            className={`text-left px-4 py-3 rounded-xl text-sm font-bold transition whitespace-nowrap ${activeTab === 'financeiro' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'}`}
+                        >
+                            4. Financeiro / Recebimentos
                         </button>
                     </nav>
                 </aside>
@@ -698,6 +707,48 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                         ))
                                     )}
                                 </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* 👉 ABA 4: FINANCEIRO */}
+                    {activeTab === 'financeiro' && (
+                        <div className="space-y-8 animate-in fade-in duration-300">
+                            <div className="bg-white dark:bg-gray-800 p-6 sm:p-8 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700">
+                                <div className="flex items-center gap-3 mb-6">
+                                    <span className="text-2xl">💰</span>
+                                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">Recebimentos e Integração</h3>
+                                </div>
+                                
+                                <div className="p-4 mb-6 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-xl">
+                                    <h4 className="font-bold text-blue-800 dark:text-blue-300 mb-2">Como receber os meus pagamentos?</h4>
+                                    <p className="text-sm text-blue-700 dark:text-blue-400">
+                                        Para receber pagamentos online diretamente na sua conta, você precisa de uma conta no <strong>Mercado Pago</strong>. 
+                                        Copie o seu "Access Token" (Token de Acesso de Produção) no painel de desenvolvedor do Mercado Pago e cole abaixo. 
+                                        A plataforma retém automaticamente a taxa de serviço e o restante entra direto na sua conta, disponível na hora!
+                                    </p>
+                                </div>
+
+                                <form onSubmit={submitDetalhes} className="space-y-6">
+                                    <div>
+                                        <InputLabel value="Access Token do Mercado Pago (Produção) *" />
+                                        <TextInput 
+                                            type="password" 
+                                            className="mt-1 w-full font-mono text-sm" 
+                                            value={formDetalhes.data.token_mercadopago} 
+                                            onChange={e => formDetalhes.setData('token_mercadopago', e.target.value)} 
+                                            placeholder="APP_USR-123456789..." 
+                                        />
+                                        <InputError message={formDetalhes.errors.token_mercadopago} />
+                                        <p className="text-xs text-gray-500 mt-2">Mantenha este token em segredo. Ele é a chave para o seu dinheiro.</p>
+                                    </div>
+
+                                    <div className="flex justify-end pt-4">
+                                        <PrimaryButton className="px-8 py-3 bg-indigo-600 rounded-xl shadow-lg" disabled={formDetalhes.processing}>
+                                            Salvar Token Financeiro
+                                        </PrimaryButton>
+                                    </div>
+                                </form>
                             </div>
                         </div>
                     )}
