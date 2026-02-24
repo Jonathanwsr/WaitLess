@@ -8,9 +8,51 @@ use Illuminate\Http\Request;
 use App\Models\User;
 use App\Models\Estabelecimento;
 use Illuminate\Support\Facades\Hash;
+use Inertia\Inertia;
 
 class FuncionarioController extends Controller
+
 {
+
+
+
+    public function index(Request $request)
+    {
+        $meusEstabelecimentos = $request->user()->estabelecimentos()->get();
+        
+        // Magia do Laravel: Contamos e somamos dados das tabelas relacionadas na mesma busca
+        $funcionarios = Funcionario::with(['usuario', 'estabelecimento'])
+            ->whereIn('estabelecimento_id', $meusEstabelecimentos->pluck('id'))
+            
+            // 1. Conta quantos agendamentos finalizados esse funcionário tem
+            ->withCount(['agendamentos as total_atendimentos' => function ($query) {
+                $query->where('status', 'finalizado');
+            }])
+            
+           
+            ->withSum(['agendamentos as faturamento_total' => function ($query) {
+                $query->where('status', 'finalizado');
+            }], 'valor_final')
+            
+            ->get();
+
+        
+        foreach ($funcionarios as $func) {
+            $func->faturamento_total = $func->faturamento_total ?? 0; 
+            
+            $media = \DB::table('avaliacoes')
+                ->join('agendamentos', 'avaliacoes.agendamento_id', '=', 'agendamentos.id')
+                ->where('agendamentos.funcionario_id', $func->id)
+                ->avg('avaliacoes.nota');
+                
+            $func->avaliacao_media = $media;
+        }
+
+        return Inertia::render('Estabelecimentos/Funcionarios', [
+            'funcionarios' => $funcionarios,
+            'meusEstabelecimentos' => $meusEstabelecimentos
+        ]);
+    }
     public function store(Request $request, Estabelecimento $estabelecimento)
     {
         $validated = $request->validate([

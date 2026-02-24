@@ -85,6 +85,7 @@ Route::get('/pagamento/status', [ClienteAgendamentoController::class, 'callbackM
     // Serviços
     Route::post('/estabelecimentos/servicos', [ServicoController::class, 'store'])->name('servicos.store');
     Route::put('/servicos/{servico}', [ServicoController::class, 'update'])->name('servicos.update');
+    Route::delete('/servicos/{id}', [ServicoController::class, 'destroy'])->name('servicos.destroy');
     
 
     // Funcionários
@@ -102,6 +103,10 @@ Route::get('/pagamento/status', [ClienteAgendamentoController::class, 'callbackM
     Route::patch('/agendamentos/{agendamento}/status', [AgendamentoController::class, 'updateStatus'])->name('agendamentos.update-status');
     Route::patch('/agendamentos/{agendamento}/funcionario', [AgendamentoController::class, 'updateFuncionario'])->name('agendamentos.update-funcionario');
 
+     Route::post('/estabelecimentos/{estabelecimento}/funcionarios', [FuncionarioController::class, 'store'])->name('funcionarios.store');
+    Route::put('/funcionarios/{funcionario}', [FuncionarioController::class, 'update'])->name('funcionarios.update');
+    Route::delete('/funcionarios/{funcionario}', [FuncionarioController::class, 'destroy'])->name('funcionarios.destroy');
+     Route::get('/funcionarios', [FuncionarioController::class, 'index'])->name('funcionarios.index');
 });
 
 require __DIR__.'/auth.php';

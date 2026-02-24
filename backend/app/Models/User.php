@@ -51,4 +51,14 @@ public function pontos()
     return $this->hasMany(PontoUsuarioEstabelecimento::class);
 }
 
+public function estabelecimentos()
+    {
+        return $this->belongsToMany(
+            Estabelecimento::class, 
+            'estabelecimento_usuario', 
+            'usuario_id', 
+            'estabelecimento_id'
+        )->withPivot('tipo')->withTimestamps();
+    }
+
 }
