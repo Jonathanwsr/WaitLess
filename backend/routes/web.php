@@ -85,6 +85,7 @@ Route::get('/pagamento/status', [ClienteAgendamentoController::class, 'callbackM
     // Serviços
     Route::post('/estabelecimentos/servicos', [ServicoController::class, 'store'])->name('servicos.store');
     Route::put('/servicos/{servico}', [ServicoController::class, 'update'])->name('servicos.update');
+    Route::delete('/servicos/{id}', [ServicoController::class, 'destroy'])->name('servicos.destroy');
     
 
     // Funcionários
