@@ -7,6 +7,7 @@ use App\Models\Estabelecimento;
 use Illuminate\Http\Request;
 use App\Models\Agendamento;
 use Illuminate\Support\Facades\Auth;
+use App\Services\ImageKitService;
 use Inertia\Inertia;
 
 class EstabelecimentoController extends Controller
@@ -35,9 +36,16 @@ class EstabelecimentoController extends Controller
             'bairro'       => 'nullable|string|max:255',
             'cidade'       => 'nullable|string|max:255',
             'estado'       => 'nullable|string|size:2',  
-            'foto_perfil'  => 'nullable|string|max:255', 
+            'foto_perfil'  => 'nullable|image|max:2048', 
             'ativo'        => 'nullable|boolean',
         ]);
+
+       
+        if ($request->hasFile('foto_perfil')) {
+            $validated['foto_perfil'] = ImageKitService::upload($request->file('foto_perfil'), '/waitless/estabelecimentos');
+        } else {
+            $validated['foto_perfil'] = null; 
+        }
 
         $estabelecimento = Estabelecimento::create($validated);
 
@@ -47,8 +55,7 @@ class EstabelecimentoController extends Controller
         
         return redirect()->route('dashboard')->with('success', 'Estabelecimento criado com sucesso!');
     }
-
-    // 👉 FUNÇÃO UPDATE CORRIGIDA E ÚNICA (com o token do Mercado Pago)
+    
     public function update(Request $request, Estabelecimento $estabelecimento)
     {
         $validated = $request->validate([
@@ -62,9 +69,17 @@ class EstabelecimentoController extends Controller
             'bairro'            => 'nullable|string|max:255',
             'cidade'            => 'nullable|string|max:255',
             'estado'            => 'nullable|string|size:2',
-            // O token agora passa pela segurança!
+            'foto_perfil'       => 'nullable|image|max:2048', // Validando a imagem
             'token_mercadopago' => 'nullable|string', 
         ]);
+
+        // Se o dono enviou uma foto nova na edição, fazemos o upload
+        if ($request->hasFile('foto_perfil')) {
+            $validated['foto_perfil'] = ImageKitService::upload($request->file('foto_perfil'), '/waitless/estabelecimentos');
+        } else {
+            // Se não enviou foto nova, removemos a chave do array para NÃO apagar a foto antiga do banco
+            unset($validated['foto_perfil']); 
+        }
 
         $estabelecimento->update($validated);
         

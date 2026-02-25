@@ -6,12 +6,13 @@ use App\Http\Controllers\Controller;
 use App\Models\Agendamento;
 use App\Models\Pagamento;
 use App\Services\MercadoPagoService;
+use App\Services\ImageKitService; 
 use Carbon\Carbon;
 use Exception;
 use App\Models\Servico;
 use App\Models\Funcionario;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth; // 👉 Importante para verificar o usuário logado
+use Illuminate\Support\Facades\Auth;
 
 class ServicoController extends Controller
 {
@@ -44,12 +45,23 @@ class ServicoController extends Controller
             'funcionario_id'       => 'nullable|exists:funcionarios,id',
             'dias_disponiveis'     => 'nullable|array',
             'horarios_disponiveis' => 'nullable|array',
-            // 👉 Corrigido 'local' para 'presencial' para bater com o Frontend
             'tipo_pagamento'       => 'required|in:hibrido,online,presencial', 
+           
+            'fotos'                => 'nullable|array|max:5', 
+            'fotos.*'              => 'image|mimes:jpeg,png,jpg,webp|max:2048', 
         ]);
 
         $horarios = $validated['horarios_disponiveis'] ?? [];
         $dias = $validated['dias_disponiveis'] ?? [];
+
+       
+        $urlsFotos = [];
+        if ($request->hasFile('fotos')) {
+            foreach ($request->file('fotos') as $foto) {
+               
+                $urlsFotos[] = ImageKitService::upload($foto, '/waitless/servicos');
+            }
+        }
 
         foreach ($validated['estabelecimentos_ids'] as $est_id) {
             $funcionarioParaSalvar = null;
@@ -76,16 +88,18 @@ class ServicoController extends Controller
                     'dias_disponiveis'   => $dias,
                     'tipo_pagamento'     => $validated['tipo_pagamento'],
                     'funcionario_padrao' => $funcionarioParaSalvar
-                ])
+                ]),
+                // 👉 Salva a lista de URLs como formato JSON no banco
+                'fotos'                => json_encode($urlsFotos), 
             ]);
         }
 
-        return redirect()->back()->with('success', 'Serviço adicionado ao catálogo!');
+        return redirect()->back()->with('success', 'Serviço adicionado ao catálogo com imagens!');
     }
 
     public function update(Request $request, Servico $servico)
     {
-        // 1. Aciona a trava de segurança
+        
         $this->verificarPermissao();
 
         $validated = $request->validate([
@@ -97,14 +111,17 @@ class ServicoController extends Controller
             'funcionario_id'       => 'nullable|exists:funcionarios,id',
             'dias_disponiveis'     => 'nullable|array',
             'horarios_disponiveis' => 'nullable|array',
-            // 👉 Corrigido 'local' para 'presencial'
             'tipo_pagamento'       => 'required|in:hibrido,online,presencial', 
+           
+            'fotos'                => 'nullable|array|max:5',
+            'fotos.*'              => 'image|mimes:jpeg,png,jpg,webp|max:2048',
         ]);
 
         $horarios = $validated['horarios_disponiveis'] ?? [];
         $dias = $validated['dias_disponiveis'] ?? [];
 
-        $servico->update([
+       
+        $dadosParaAtualizar = [
             'nome'                 => $validated['nome'],
             'tipo_servico'         => $validated['tipo_servico'],
             'descricao'            => $validated['descricao'] ?? null,
@@ -116,24 +133,32 @@ class ServicoController extends Controller
                 'tipo_pagamento'     => $validated['tipo_pagamento'],
                 'funcionario_padrao' => $validated['funcionario_id'] ?? null
             ])
-        ]);
+        ];
+
+      
+        if ($request->hasFile('fotos')) {
+            $urlsFotos = [];
+            foreach ($request->file('fotos') as $foto) {
+                $urlsFotos[] = ImageKitService::upload($foto, '/waitless/servicos');
+            }
+            $dadosParaAtualizar['fotos'] = json_encode($urlsFotos);
+        }
+
+        $servico->update($dadosParaAtualizar);
 
         return redirect()->back()->with('success', 'Serviço atualizado com sucesso!');
     }
 
-    /**
-     * FASE 3: O "Botão Nuclear" - Apaga o serviço e cancela/estorna todos os agendamentos futuros.
-     */
+   
     public function destroy($id, MercadoPagoService $mpService)
     {
-        // 1. Aciona a trava de segurança
+        
         $this->verificarPermissao();
 
         try {
             $servico = Servico::findOrFail($id);
             $estabelecimento = $servico->estabelecimento;
 
-         
             $agendamentosAfetados = Agendamento::where('servico_id', $servico->id)
                 ->whereIn('status', ['pendente', 'aguardando_pagamento', 'confirmado'])
                 ->whereDate('data_agendamento', '>=', now()->toDateString())
@@ -142,18 +167,15 @@ class ServicoController extends Controller
             $estornosComSucesso = 0;
             $cancelamentosSimples = 0;
 
-           
             foreach ($agendamentosAfetados as $agendamento) {
                 $pagamento = Pagamento::where('agendamento_id', $agendamento->id)->first();
 
-               
                 if ($agendamento->status_pagamento === 'pago' && $pagamento && $pagamento->id_transacao_gateway) {
                     try {
                         $tokenSalao = $estabelecimento->token_mercadopago ?? null;
-                         // Executa o estorno no Mercado Pago
+                         
                         $mpService->estornarPagamento($pagamento->id_transacao_gateway, $tokenSalao);
                         
-                       
                         $pagamento->update(['status' => 'estornado']);
                         $agendamento->update(['status' => 'cancelado', 'status_pagamento' => 'estornado']);
                         
@@ -163,7 +185,6 @@ class ServicoController extends Controller
                         \Log::error("Falha ao estornar agendamento {$agendamento->id}: " . $e->getMessage());
                     }
                 } 
-               
                 else {
                     $agendamento->update(['status' => 'cancelado', 'status_pagamento' => 'cancelado']);
                     if ($pagamento && $pagamento->status !== 'pago') {
@@ -173,7 +194,6 @@ class ServicoController extends Controller
                 }
             }
 
-           
             $servico->delete(); 
 
             return back()->with('success', "Serviço removido com sucesso! $estornosComSucesso clientes foram reembolsados e $cancelamentosSimples vagas foram canceladas.");

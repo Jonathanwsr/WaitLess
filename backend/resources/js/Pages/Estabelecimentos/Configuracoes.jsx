@@ -4,37 +4,42 @@ import InputLabel from '@/Components/InputLabel';
 import PrimaryButton from '@/Components/PrimaryButton';
 import TextInput from '@/Components/TextInput';
 import { Head, useForm, Link, router, usePage } from '@inertiajs/react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 export default function Configuracoes({ auth, estabelecimento, meusEstabelecimentos, funcionarios, servicos }) {
-    const [activeTab, setActiveTab] = useState('detalhes'); 
+    // 1. RECUPERA A ABA ATIVA DO LOCALSTORAGE (OU USA 'DETALHES' COMO PADRÃO)
+    const [activeTab, setActiveTab] = useState(() => {
+        return localStorage.getItem('waitless_active_tab') || 'detalhes';
+    });
+
+    // 2. SEMPRE QUE A ABA MUDAR, SALVA NO NAVEGADOR
+    useEffect(() => {
+        localStorage.setItem('waitless_active_tab', activeTab);
+    }, [activeTab]);
+
     const [mensagemSucesso, setMensagemSucesso] = useState('');
     const { flash = {} } = usePage().props;
 
-    // Função para mostrar mensagem temporária
     const mostrarMensagem = (msg) => {
         setMensagemSucesso(msg);
         setTimeout(() => setMensagemSucesso(''), 5000);
     };
 
     // ==========================================
-    // PAGINAÇÃO: FILIAIS / ESTABELECIMENTOS
+    // PAGINAÇÃO
     // ==========================================
     const itensPorPagina = 4;
     const [paginaFiliais, setPaginaFiliais] = useState(1);
     const totalPaginasFiliais = Math.ceil(meusEstabelecimentos.length / itensPorPagina);
     const filiaisPaginadas = meusEstabelecimentos.slice((paginaFiliais - 1) * itensPorPagina, paginaFiliais * itensPorPagina);
 
-    // ==========================================
-    // PAGINAÇÃO: EQUIPE / FUNCIONÁRIOS
-    // ==========================================
     const itensPorPaginaFunc = 5;
     const [paginaFuncionarios, setPaginaFuncionarios] = useState(1);
     const totalPaginasFuncionarios = Math.ceil(funcionarios.length / itensPorPaginaFunc);
     const funcionariosPaginados = funcionarios.slice((paginaFuncionarios - 1) * itensPorPaginaFunc, paginaFuncionarios * itensPorPaginaFunc);
 
     // ==========================================
-    // FORM 1 & 4: DETALHES DA LOJA E FINANCEIRO
+    // FORM 1: DETALHES DA LOJA
     // ==========================================
     const formDetalhes = useForm({
         nome: estabelecimento.nome || '',
@@ -47,7 +52,6 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         bairro: estabelecimento.bairro || '',
         cidade: estabelecimento.cidade || '',
         estado: estabelecimento.estado || '',
-        // 👉 NOVO CAMPO: Token do Mercado Pago
         token_mercadopago: estabelecimento.token_mercadopago || '', 
     });
 
@@ -126,10 +130,13 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
     };
 
     // ==========================================
-    // FORM 3: CATÁLOGO DE SERVIÇOS
+    // FORM 3: CATÁLOGO DE SERVIÇOS (COM PERSISTÊNCIA E 5 FOTOS)
     // ==========================================
     const [isEditingServico, setIsEditingServico] = useState(false);
     const [novoHorario, setNovoHorario] = useState(''); 
+    
+    // Estado visual para as 5 caixinhas (quadrados)
+    const [quadradosFotos, setQuadradosFotos] = useState([null, null, null, null, null]);
 
     const formServico = useForm({
         id: null,
@@ -143,7 +150,67 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         dias_disponiveis: ['segunda', 'terca', 'quarta', 'quinta', 'sexta'],
         horarios_disponiveis: [], 
         estabelecimentos_ids: [estabelecimento.id],
+        fotos: [], 
     });
+
+    // --- LÓGICA DE SALVAMENTO AUTOMÁTICO (RASCUNHO) ---
+    // 1. Ao carregar a página, verifica se existe rascunho salvo
+    useEffect(() => {
+        if (!isEditingServico) { // Só recupera rascunho se for criação nova
+            const rascunho = localStorage.getItem('waitless_servico_draft');
+            if (rascunho) {
+                const dadosSalvos = JSON.parse(rascunho);
+                // Mescla os dados salvos com o form, ignorando fotos (não dá pra salvar files no storage)
+                formServico.setData(data => ({
+                    ...data,
+                    nome: dadosSalvos.nome || '',
+                    tipo_servico: dadosSalvos.tipo_servico || '',
+                    descricao: dadosSalvos.descricao || '',
+                    valor: dadosSalvos.valor || '',
+                    duracao_minutos: dadosSalvos.duracao_minutos || '30',
+                    horarios_disponiveis: dadosSalvos.horarios_disponiveis || [],
+                    dias_disponiveis: dadosSalvos.dias_disponiveis || [],
+                }));
+            }
+        }
+    }, []); // Executa apenas 1 vez ao montar
+
+    // 2. Sempre que o usuário digitar algo, salva no LocalStorage
+    useEffect(() => {
+        if (!isEditingServico) {
+            const dadosParaSalvar = {
+                nome: formServico.data.nome,
+                tipo_servico: formServico.data.tipo_servico,
+                descricao: formServico.data.descricao,
+                valor: formServico.data.valor,
+                duracao_minutos: formServico.data.duracao_minutos,
+                horarios_disponiveis: formServico.data.horarios_disponiveis,
+                dias_disponiveis: formServico.data.dias_disponiveis,
+            };
+            localStorage.setItem('waitless_servico_draft', JSON.stringify(dadosParaSalvar));
+        }
+    }, [formServico.data.nome, formServico.data.descricao, formServico.data.valor]); // Observa mudanças
+    // ----------------------------------------------------
+
+    // Lógica das caixinhas de foto
+    const handleFotoQuadrado = (index, arquivoSelecionado) => {
+        if (!arquivoSelecionado) return;
+        
+        const novaListaQuadrados = [...quadradosFotos];
+        novaListaQuadrados[index] = arquivoSelecionado;
+        setQuadradosFotos(novaListaQuadrados);
+
+        // Atualiza o form do Inertia removendo os nulos
+        formServico.setData('fotos', novaListaQuadrados.filter(f => f !== null));
+    };
+
+    const removerFotoQuadrado = (index) => {
+        const novaListaQuadrados = [...quadradosFotos];
+        novaListaQuadrados[index] = null;
+        setQuadradosFotos(novaListaQuadrados);
+        
+        formServico.setData('fotos', novaListaQuadrados.filter(f => f !== null));
+    };
 
     const adicionarHorario = () => {
         if (novoHorario && !formServico.data.horarios_disponiveis.includes(novoHorario)) {
@@ -160,27 +227,35 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
     const submitServico = (e) => {
         e.preventDefault();
         if (isEditingServico) {
-            formServico.put(route('servicos.update', formServico.data.id), {
+            formServico.post(route('servicos.update', formServico.data.id), {
                 preserveScroll: true,
+                data: { _method: 'put' },
                 onSuccess: () => {
                     cancelarEdicaoServico();
                     mostrarMensagem('Serviço editado com sucesso!');
+                    localStorage.removeItem('waitless_servico_draft'); // Limpa rascunho
                 },
+                onError: (errors) => formServico.setError(errors)
             });
         } else {
             formServico.post(route('servicos.store'), {
                 preserveScroll: true,
                 onSuccess: () => {
-                    formServico.reset('nome', 'tipo_servico', 'descricao', 'valor', 'duracao_minutos', 'horarios_disponiveis');
+                    formServico.reset();
+                    formServico.setData('estabelecimentos_ids', [estabelecimento.id]);
                     setNovoHorario('');
+                    setQuadradosFotos([null, null, null, null, null]);
                     mostrarMensagem('Serviço cadastrado com sucesso!');
+                    localStorage.removeItem('waitless_servico_draft'); // Limpa rascunho
                 },
+                onError: (errors) => formServico.setError(errors)
             });
         }
     };
 
     const editarServico = (servico) => {
         setIsEditingServico(true);
+        localStorage.removeItem('waitless_servico_draft'); // Não usar rascunho na edição
         
         let config = { dias_disponiveis: [], tipo_pagamento: 'hibrido', funcionario_padrao: '' };
         let horarios = [];
@@ -201,8 +276,10 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
             dias_disponiveis: config.dias_disponiveis || ['segunda', 'terca', 'quarta', 'quinta', 'sexta'],
             horarios_disponiveis: horarios,
             estabelecimentos_ids: [estabelecimento.id], 
+            fotos: [], 
         });
         
+        setQuadradosFotos([null, null, null, null, null]); 
         window.scrollTo({ top: 0, behavior: 'smooth' }); 
     };
 
@@ -212,9 +289,9 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         formServico.setData('estabelecimentos_ids', [estabelecimento.id]);
         setNovoHorario('');
         formServico.clearErrors();
+        setQuadradosFotos([null, null, null, null, null]);
     };
 
-    // 👉 A MÁGICA DA FASE 3: O BOTÃO NUCLEAR!
     const deletarServico = (id) => {
         const mensagem = "⚠️ ATENÇÃO: Tem certeza que deseja apagar este serviço?\n\nEsta ação irá CANCELAR todos os agendamentos futuros e ESTORNAR automaticamente o dinheiro dos clientes que já pagaram online.\n\nDeseja prosseguir?";
         if (window.confirm(mensagem)) {
@@ -233,13 +310,6 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
             ? formServico.data.dias_disponiveis.filter(d => d !== dia)
             : [...formServico.data.dias_disponiveis, dia];
         formServico.setData('dias_disponiveis', novosDias);
-    };
-
-    const handleFilialToggle = (id) => {
-        const novasFiliais = formServico.data.estabelecimentos_ids.includes(id)
-            ? formServico.data.estabelecimentos_ids.filter(estId => estId !== id)
-            : [...formServico.data.estabelecimentos_ids, id];
-        formServico.setData('estabelecimentos_ids', novasFiliais);
     };
 
     return (
@@ -302,29 +372,16 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                 {/* --- MENU LATERAL (TABS) --- */}
                 <aside className="w-full md:w-64 shrink-0">
                     <nav className="flex md:flex-col gap-2 overflow-x-auto pb-4 md:pb-0">
-                        <button 
-                            onClick={() => setActiveTab('detalhes')}
-                            className={`text-left px-4 py-3 rounded-xl text-sm font-bold transition whitespace-nowrap ${activeTab === 'detalhes' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'}`}
-                        >
+                        <button onClick={() => setActiveTab('detalhes')} className={`text-left px-4 py-3 rounded-xl text-sm font-bold transition whitespace-nowrap ${activeTab === 'detalhes' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'}`}>
                             1. Perfil da Loja
                         </button>
-                        <button 
-                            onClick={() => setActiveTab('equipe')}
-                            className={`text-left px-4 py-3 rounded-xl text-sm font-bold transition whitespace-nowrap ${activeTab === 'equipe' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'}`}
-                        >
+                        <button onClick={() => setActiveTab('equipe')} className={`text-left px-4 py-3 rounded-xl text-sm font-bold transition whitespace-nowrap ${activeTab === 'equipe' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'}`}>
                             2. Equipe / Profissionais
                         </button>
-                        <button 
-                            onClick={() => setActiveTab('servicos')}
-                            className={`text-left px-4 py-3 rounded-xl text-sm font-bold transition whitespace-nowrap ${activeTab === 'servicos' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'}`}
-                        >
+                        <button onClick={() => setActiveTab('servicos')} className={`text-left px-4 py-3 rounded-xl text-sm font-bold transition whitespace-nowrap ${activeTab === 'servicos' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'}`}>
                             3. Catálogo de Serviços
                         </button>
-                        {/* 👉 NOVO BOTÃO: ABA FINANCEIRO */}
-                        <button 
-                            onClick={() => setActiveTab('financeiro')}
-                            className={`text-left px-4 py-3 rounded-xl text-sm font-bold transition whitespace-nowrap ${activeTab === 'financeiro' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'}`}
-                        >
+                        <button onClick={() => setActiveTab('financeiro')} className={`text-left px-4 py-3 rounded-xl text-sm font-bold transition whitespace-nowrap ${activeTab === 'financeiro' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'}`}>
                             4. Financeiro / Recebimentos
                         </button>
                     </nav>
@@ -336,10 +393,8 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                     {/* ABA 1: DETALHES DA LOJA */}
                     {activeTab === 'detalhes' && (
                         <div className="space-y-8 animate-in fade-in duration-300">
-                            
                             <div className="bg-white dark:bg-gray-800 p-6 sm:p-8 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700">
                                 <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-6">Informações Básicas</h3>
-                                
                                 <form onSubmit={submitDetalhes} className="space-y-6">
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         <div className="md:col-span-2">
@@ -360,7 +415,6 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                     </div>
 
                                     <h3 className="text-lg font-bold text-gray-900 dark:text-white mt-8 mb-4 pt-6 border-t border-gray-100 dark:border-gray-700">Endereço</h3>
-                                    
                                     <div className="grid grid-cols-1 md:grid-cols-6 gap-6">
                                         <div className="md:col-span-2">
                                             <InputLabel value="CEP" />
@@ -399,7 +453,8 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                     </div>
                                 </form>
                             </div>
-
+                            
+                            {/* Card Desativar Estabelecimento */}
                             <div className={`p-6 sm:p-8 rounded-2xl shadow-sm border ${estabelecimento.ativo ? 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-800' : 'bg-green-50 dark:bg-green-900/10 border-green-200 dark:border-green-800'}`}>
                                 <h3 className={`text-lg font-bold mb-2 ${estabelecimento.ativo ? 'text-red-800 dark:text-red-400' : 'text-green-800 dark:text-green-400'}`}>
                                     {estabelecimento.ativo ? 'Desativar Estabelecimento' : 'Ativar Estabelecimento'}
@@ -409,19 +464,15 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                         ? 'Ao desativar, a sua loja deixará de aparecer para os clientes e não aceitará mais agendamentos. Pode reativar a qualquer momento.' 
                                         : 'A sua loja está fechada ao público. Clique no botão abaixo para ativar a loja e voltar a receber agendamentos online.'}
                                 </p>
-                                
-                                <button 
-                                    onClick={toggleStatusEstabelecimento}
-                                    className={`px-6 py-3 text-sm font-bold rounded-xl shadow-sm transition text-white ${estabelecimento.ativo ? 'bg-red-600 hover:bg-red-700 shadow-red-600/20' : 'bg-green-600 hover:bg-green-700 shadow-green-600/20'}`}
-                                >
+                                <button onClick={toggleStatusEstabelecimento} className={`px-6 py-3 text-sm font-bold rounded-xl shadow-sm transition text-white ${estabelecimento.ativo ? 'bg-red-600 hover:bg-red-700 shadow-red-600/20' : 'bg-green-600 hover:bg-green-700 shadow-green-600/20'}`}>
                                     {estabelecimento.ativo ? 'Desativar Estabelecimento' : 'Ativar Estabelecimento'}
                                 </button>
                             </div>
 
+                            {/* Navegar Filiais */}
                             {meusEstabelecimentos.length > 1 && (
                                 <div className="bg-white dark:bg-gray-800 p-6 sm:p-8 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 mt-8">
                                     <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Navegar entre minhas lojas</h3>
-                                    
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         {filiaisPaginadas.map(est => (
                                             <div key={est.id} className={`p-4 rounded-xl border ${est.id === estabelecimento.id ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : 'border-gray-200 dark:border-gray-700 hover:border-indigo-300'}`}>
@@ -443,7 +494,6 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                             </div>
                                         ))}
                                     </div>
-
                                     {totalPaginasFiliais > 1 && (
                                         <div className="flex items-center justify-between mt-6 pt-4 border-t border-gray-100 dark:border-gray-700">
                                             <span className="text-sm text-gray-500">Página {paginaFiliais} de {totalPaginasFiliais}</span>
@@ -455,7 +505,6 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                     )}
                                 </div>
                             )}
-
                         </div>
                     )}
 
@@ -466,7 +515,6 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                 <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-6">
                                     {isEditingFuncionario ? '✏️ Editar Profissional' : '👨‍🔧 Cadastrar Novo Profissional (Com Acesso)'}
                                 </h3>
-                                
                                 <form onSubmit={submitFuncionario} className="space-y-6">
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                         <div className="md:col-span-1">
@@ -572,6 +620,14 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                 <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-6">
                                     {isEditingServico ? '✏️ Editar Serviço' : 'Adicionar Novo Serviço'}
                                 </h3>
+                                
+                                {/* Aviso sobre persistência */}
+                                {!isEditingServico && (
+                                    <div className="mb-6 p-3 bg-blue-50 text-blue-700 text-xs rounded-lg flex items-center gap-2 border border-blue-100">
+                                        <span>💾</span> <span><strong>Rascunho Automático:</strong> O texto que você digita aqui é salvo no seu navegador. Se recarregar a página, ele não some (exceto as fotos).</span>
+                                    </div>
+                                )}
+
                                 <form onSubmit={submitServico} className="space-y-6">
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                         <div className="md:col-span-1">
@@ -641,12 +697,10 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
 
                                         <div className="md:col-span-2 p-5 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl">
                                             <InputLabel value="Horários Disponíveis *" className="mb-2 text-gray-800 dark:text-gray-200" />
-                                            
                                             <div className="flex items-center gap-3 mb-4">
                                                 <TextInput type="time" value={novoHorario} onChange={e => setNovoHorario(e.target.value)} className="w-32 text-center" />
                                                 <button type="button" onClick={adicionarHorario} className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white font-bold text-sm rounded-lg hover:bg-gray-300 transition">+ Adicionar Horário</button>
                                             </div>
-                                            
                                             <div className="flex flex-wrap gap-2">
                                                 {formServico.data.horarios_disponiveis.map(h => (
                                                     <span key={h} className="inline-flex items-center gap-2 bg-indigo-600 text-white px-3 py-1 rounded-full text-sm font-bold shadow-sm">
@@ -657,6 +711,61 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                             </div>
                                         </div>
 
+                                        {/* QUADRADOS PARA AS 5 FOTOS */}
+                                        <div className="md:col-span-2 border-t border-gray-100 dark:border-gray-700 pt-6">
+                                            <InputLabel value="Fotos de Demonstração do Serviço" />
+                                            <p className="text-xs text-gray-500 mb-4 mt-1">
+                                                Adicione até 5 fotos. Clique no quadro vazio para escolher a imagem. Formatos: JPG, PNG, WEBP (Max. 2MB).
+                                            </p>
+                                            
+                                            <div className="flex flex-wrap gap-4">
+                                                {[0, 1, 2, 3, 4].map((index) => {
+                                                    const arquivo = quadradosFotos[index];
+                                                    const previewUrl = arquivo ? URL.createObjectURL(arquivo) : null;
+
+                                                    return (
+                                                        <div key={index} className="relative w-24 h-24 sm:w-28 sm:h-28 flex-shrink-0">
+                                                            {arquivo ? (
+                                                                <>
+                                                                    <img src={previewUrl} alt={`Foto ${index + 1}`} className="w-full h-full object-cover rounded-xl border border-gray-200 shadow-sm" />
+                                                                    <button 
+                                                                        type="button" 
+                                                                        onClick={() => removerFotoQuadrado(index)}
+                                                                        className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center font-bold shadow-md transition text-xs"
+                                                                        title="Remover foto"
+                                                                    >
+                                                                        ✕
+                                                                    </button>
+                                                                </>
+                                                            ) : (
+                                                                <label className="cursor-pointer w-full h-full flex flex-col items-center justify-center border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 hover:border-indigo-400 transition">
+                                                                    <span className="text-gray-400 text-2xl font-light">+</span>
+                                                                    <span className="text-[10px] text-gray-400 font-medium mt-1 uppercase tracking-wider">Foto {index + 1}</span>
+                                                                    <input 
+                                                                        type="file" 
+                                                                        className="hidden" 
+                                                                        accept="image/*" 
+                                                                        onChange={(e) => handleFotoQuadrado(index, e.target.files[0])}
+                                                                    />
+                                                                </label>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+
+                                            {isEditingServico && (
+                                                <p className="text-xs text-yellow-600 font-bold mt-4">
+                                                    Aviso: Enviar novas fotos substituirá todas as imagens antigas deste serviço na vitrine.
+                                                </p>
+                                            )}
+
+                                            <InputError message={formServico.errors.fotos} className="mt-2" />
+                                            {Object.keys(formServico.errors).filter(key => key.startsWith('fotos.')).map(key => (
+                                                 <InputError key={key} message={formServico.errors[key]} className="mt-1" />
+                                            ))}
+                                        </div>
+
                                         <div className="md:col-span-2 border-t border-gray-100 dark:border-gray-700 pt-6">
                                             <InputLabel value="Regra de Pagamento" className="mb-2" />
                                             <div className="flex flex-col sm:flex-row gap-4">
@@ -665,7 +774,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                             </div>
                                         </div>
                                     </div>
-                                    <div className="flex justify-end pt-4 gap-4">
+                                    <div className="flex justify-end pt-4 gap-4 border-t border-gray-100 mt-6">
                                         {isEditingServico && (
                                             <button type="button" onClick={cancelarEdicaoServico} className="px-6 py-3 text-gray-600 font-bold hover:text-gray-900 transition">Cancelar</button>
                                         )}
@@ -697,8 +806,6 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                 </div>
                                                 <div className="flex items-center gap-3 border-t sm:border-0 border-gray-100 pt-4 sm:pt-0">
                                                     <button onClick={() => editarServico(s)} className="text-indigo-600 hover:text-indigo-800 font-bold text-sm bg-indigo-50 px-3 py-1.5 rounded-lg transition">Editar</button>
-                                                    
-                                                    {/* 👉 O BOTÃO NUCLEAR */}
                                                     <button onClick={() => deletarServico(s.id)} className="text-red-600 hover:text-red-800 font-bold text-sm bg-red-50 px-3 py-1.5 rounded-lg transition border border-red-100">
                                                         Remover (Apagar)
                                                     </button>
@@ -711,7 +818,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                         </div>
                     )}
 
-                    {/* 👉 ABA 4: FINANCEIRO */}
+                    {/* ABA 4: FINANCEIRO */}
                     {activeTab === 'financeiro' && (
                         <div className="space-y-8 animate-in fade-in duration-300">
                             <div className="bg-white dark:bg-gray-800 p-6 sm:p-8 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700">
@@ -719,7 +826,6 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                     <span className="text-2xl">💰</span>
                                     <h3 className="text-lg font-bold text-gray-900 dark:text-white">Recebimentos e Integração</h3>
                                 </div>
-                                
                                 <div className="p-4 mb-6 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-xl">
                                     <h4 className="font-bold text-blue-800 dark:text-blue-300 mb-2">Como receber os meus pagamentos?</h4>
                                     <p className="text-sm text-blue-700 dark:text-blue-400">
@@ -728,7 +834,6 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                         A plataforma retém automaticamente a taxa de serviço e o restante entra direto na sua conta, disponível na hora!
                                     </p>
                                 </div>
-
                                 <form onSubmit={submitDetalhes} className="space-y-6">
                                     <div>
                                         <InputLabel value="Access Token do Mercado Pago (Produção) *" />
@@ -742,7 +847,6 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                         <InputError message={formDetalhes.errors.token_mercadopago} />
                                         <p className="text-xs text-gray-500 mt-2">Mantenha este token em segredo. Ele é a chave para o seu dinheiro.</p>
                                     </div>
-
                                     <div className="flex justify-end pt-4">
                                         <PrimaryButton className="px-8 py-3 bg-indigo-600 rounded-xl shadow-lg" disabled={formDetalhes.processing}>
                                             Salvar Token Financeiro

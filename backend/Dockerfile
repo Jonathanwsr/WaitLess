@@ -25,3 +25,4 @@ ENV PORT=10000
 
 # Inicia o servidor do Laravel
 CMD php artisan config:clear && php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=$PORTT
+
