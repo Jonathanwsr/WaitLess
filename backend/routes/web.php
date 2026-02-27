@@ -8,7 +8,7 @@ use App\Http\Controllers\Api\ClienteAgendamentoController;
 use App\Http\Controllers\Api\ClienteExplorarController;
 use App\Http\Controllers\Api\PagamentoController;
 use App\Http\Controllers\Api\ServicoController;
-
+use App\Http\Controllers\Api\CarrinhoController;
 use App\Services\MercadoPagoService; 
 use App\Http\Controllers\Api\FuncionarioController;
 use Illuminate\Foundation\Application; 
@@ -107,6 +107,20 @@ Route::get('/pagamento/status', [ClienteAgendamentoController::class, 'callbackM
     Route::put('/funcionarios/{funcionario}', [FuncionarioController::class, 'update'])->name('funcionarios.update');
     Route::delete('/funcionarios/{funcionario}', [FuncionarioController::class, 'destroy'])->name('funcionarios.destroy');
      Route::get('/funcionarios', [FuncionarioController::class, 'index'])->name('funcionarios.index');
+
+     // Fila e Configurações (Aninhadas em Estabelecimentos)
+    Route::get('/estabelecimentos/{estabelecimento}/fila', [EstabelecimentoController::class, 'fila'])->name('estabelecimentos.fila');
+    Route::get('/estabelecimentos/{estabelecimento}/configuracoes', [EstabelecimentoController::class, 'configuracoes'])->name('estabelecimentos.configuracoes');
+    
+    //  Página da Loja (Visão do Dono/Gerente)
+    Route::get('/estabelecimentos/{estabelecimento}/loja', [EstabelecimentoController::class, 'loja'])->name('estabelecimentos.loja');
+
+    // --- Rotas do Carrinho ---
+    Route::get('/carrinho', [App\Http\Controllers\Api\CarrinhoController::class, 'index'])->name('cliente.carrinho');
+    Route::post('/carrinho/adicionar', [App\Http\Controllers\Api\CarrinhoController::class, 'store'])->name('cliente.carrinho.store');
+    Route::put('/carrinho/{id}', [App\Http\Controllers\Api\CarrinhoController::class, 'update'])->name('cliente.carrinho.update');
+    Route::patch('/carrinho/{id}', [App\Http\Controllers\Api\CarrinhoController::class, 'updatePatch'])->name('cliente.carrinho.patch');
+    Route::delete('/carrinho/{id}', [App\Http\Controllers\Api\CarrinhoController::class, 'destroy'])->name('cliente.carrinho.destroy');
 });
 
 require __DIR__.'/auth.php';

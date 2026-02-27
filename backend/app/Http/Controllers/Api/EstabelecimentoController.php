@@ -135,4 +135,25 @@ class EstabelecimentoController extends Controller
             'servicos'             => $servicos
         ]);
     }
+
+     public function loja(Estabelecimento $estabelecimento)
+    {
+        // Garante que o usuário tem acesso a este estabelecimento
+        $user = \Illuminate\Support\Facades\Auth::user();
+        
+        // Busca os serviços do estabelecimento com paginação (12 por página para ficar como o iFood)
+        // E já traz os agendamentos futuros atrelados a cada serviço para vermos a agenda
+        $servicos = $estabelecimento->servicos()
+            ->with(['agendamentos' => function ($query) {
+                // Traz apenas agendamentos de hoje para frente
+                $query->whereDate('data_agendamento', '>=', now()->toDateString())
+                      ->with(['usuario:id,name', 'funcionario:id,nome']); // Traz o nome do cliente e do funcionário
+            }])
+            ->paginate(12);
+
+        return Inertia::render('Estabelecimentos/Loja', [
+            'estabelecimento' => $estabelecimento,
+            'servicosPaginados' => $servicos
+        ]);
+    }
 }

@@ -1,15 +1,17 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link } from '@inertiajs/react';
+// 👉 Importando todos os ícones do Heroicons (Solid e Outline)
 import { 
-    HiUsers, 
-    HiCurrencyDollar, 
-    HiOfficeBuilding, 
-    HiPlus, 
-    HiStar, 
-    HiUserGroup, 
-    HiCog, 
-    HiArrowRight 
-} from 'react-icons/hi';
+    UsersIcon, 
+    CurrencyDollarIcon, 
+    BuildingOfficeIcon, 
+    PlusIcon, 
+    StarIcon, 
+    UserGroupIcon, 
+    Cog6ToothIcon, 
+    ArrowRightIcon,
+    ShoppingBagIcon 
+} from '@heroicons/react/24/solid';
 
 export default function Dashboard({ auth, estabelecimentos, metricas }) {
     return (
@@ -29,7 +31,7 @@ export default function Dashboard({ auth, estabelecimentos, metricas }) {
                     {/* Card 1 */}
                     <div className="bg-white dark:bg-gray-800 overflow-hidden shadow-sm sm:rounded-2xl border border-gray-100 dark:border-gray-700 p-6 flex items-center gap-4">
                         <div className="w-14 h-14 rounded-full bg-indigo-50 dark:bg-indigo-900/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
-                            <HiUsers className="w-7 h-7" />
+                            <UsersIcon className="w-7 h-7" />
                         </div>
                         <div>
                             <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Pessoas na Fila (Agora)</p>
@@ -42,7 +44,7 @@ export default function Dashboard({ auth, estabelecimentos, metricas }) {
                     {/* Card 2 */}
                     <div className="bg-white dark:bg-gray-800 overflow-hidden shadow-sm sm:rounded-2xl border border-gray-100 dark:border-gray-700 p-6 flex items-center gap-4">
                         <div className="w-14 h-14 rounded-full bg-green-50 dark:bg-green-900/50 flex items-center justify-center text-green-600 dark:text-green-400">
-                            <HiCurrencyDollar className="w-7 h-7" />
+                            <CurrencyDollarIcon className="w-7 h-7" />
                         </div>
                         <div>
                             <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Arrecadação Total</p>
@@ -55,7 +57,7 @@ export default function Dashboard({ auth, estabelecimentos, metricas }) {
                     {/* Card 3 */}
                     <div className="bg-white dark:bg-gray-800 overflow-hidden shadow-sm sm:rounded-2xl border border-gray-100 dark:border-gray-700 p-6 flex items-center gap-4">
                         <div className="w-14 h-14 rounded-full bg-blue-50 dark:bg-blue-900/50 flex items-center justify-center text-blue-600 dark:text-blue-400">
-                            <HiOfficeBuilding className="w-7 h-7" />
+                            <BuildingOfficeIcon className="w-7 h-7" />
                         </div>
                         <div>
                             <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Locais Ativos</p>
@@ -74,7 +76,7 @@ export default function Dashboard({ auth, estabelecimentos, metricas }) {
                             href={route('estabelecimentos.create')}
                             className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-bold rounded-lg hover:bg-indigo-700 transition shadow-md shadow-indigo-600/20"
                         >
-                            <HiPlus className="w-4 h-4" />
+                            <PlusIcon className="w-4 h-4" />
                             Novo Local
                         </Link>
                     </div>
@@ -83,7 +85,7 @@ export default function Dashboard({ auth, estabelecimentos, metricas }) {
                         {estabelecimentos.length === 0 ? (
                             // EMPTY STATE
                             <div className="text-center py-12">
-                                <HiOfficeBuilding className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
+                                <BuildingOfficeIcon className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
                                 <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Nenhum estabelecimento encontrado</h3>
                                 <p className="text-gray-500 dark:text-gray-400 max-w-sm mx-auto mb-6">
                                     Parece que você ainda não cadastrou nenhuma clínica, barbearia ou loja. Comece agora para gerenciar suas filas.
@@ -92,7 +94,7 @@ export default function Dashboard({ auth, estabelecimentos, metricas }) {
                                     href={route('estabelecimentos.create')}
                                     className="inline-flex items-center gap-2 px-6 py-3 bg-gray-900 dark:bg-white dark:text-gray-900 text-white font-bold rounded-xl hover:bg-gray-800 transition shadow-lg"
                                 >
-                                    <HiPlus className="w-5 h-5" />
+                                    <PlusIcon className="w-5 h-5" />
                                     Criar Meu Primeiro Estabelecimento
                                 </Link>
                             </div>
@@ -108,7 +110,7 @@ export default function Dashboard({ auth, estabelecimentos, metricas }) {
                                                 className="text-gray-400 hover:text-indigo-600 transition"
                                                 title="Configurações e Serviços"
                                             >
-                                                <HiCog className="w-5 h-5" />
+                                                <Cog6ToothIcon className="w-5 h-5" />
                                             </Link>
 
                                             {local.ativo ? (
@@ -122,21 +124,33 @@ export default function Dashboard({ auth, estabelecimentos, metricas }) {
                                         </div>
 
                                         <div className="flex items-center gap-4 mb-4">
-                                            <div className="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-lg flex items-center justify-center text-xl font-bold text-gray-500 uppercase">
-                                                {local.nome.charAt(0)}
+                                            {/* 👉 FOTO DE PERFIL / LOGO DO ESTABELECIMENTO */}
+                                            <div className="w-12 h-12 shrink-0 rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-700 flex items-center justify-center border border-gray-200 shadow-sm">
+                                                {local.foto_perfil ? (
+                                                    <img 
+                                                        src={local.foto_perfil} 
+                                                        alt={`Logo ${local.nome}`} 
+                                                        className="w-full h-full object-cover"
+                                                    />
+                                                ) : (
+                                                    <span className="text-xl font-bold text-gray-500 uppercase">
+                                                        {local.nome.charAt(0)}
+                                                    </span>
+                                                )}
                                             </div>
-                                            <div>
+                                            
+                                            <div className="flex-1 min-w-0">
                                                 <h4 className="font-bold text-gray-900 dark:text-white text-lg truncate pr-6">{local.nome}</h4>
                                                 
                                                 {/* Avaliação e Funcionários */}
                                                 <div className="flex items-center gap-3 text-sm mt-1">
                                                     <div className="text-yellow-500 font-medium flex items-center gap-1">
-                                                        <HiStar className="w-4 h-4" /> 
+                                                        <StarIcon className="w-4 h-4" /> 
                                                         {local.avaliacao_media}
                                                     </div>
                                                     <span className="text-gray-300 dark:text-gray-600">•</span>
                                                     <div className="text-gray-500 dark:text-gray-400 flex items-center gap-1.5" title="Funcionários cadastrados">
-                                                        <HiUserGroup className="w-4 h-4" />
+                                                        <UserGroupIcon className="w-4 h-4" />
                                                         {local.funcionarios_count || 0} Equipe
                                                     </div>
                                                 </div>
@@ -153,21 +167,27 @@ export default function Dashboard({ auth, estabelecimentos, metricas }) {
                                             </span>
                                             <span className="text-lg font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-2">
                                                 {local.fila_agora || 0}
-                                                <HiArrowRight className="w-4 h-4 opacity-0 group-hover/fila:opacity-100 transition-opacity -mr-1" />
+                                                <ArrowRightIcon className="w-4 h-4 opacity-0 group-hover/fila:opacity-100 transition-opacity -mr-1" />
                                             </span>
                                         </Link>
 
                                         {/* Botões de Ação Principais */}
-                                        <div className="grid grid-cols-2 gap-2">
+                                        <div className="grid grid-cols-3 gap-2">
                                             <Link 
                                                 href={route('estabelecimentos.fila', local.id)} 
-                                                className="text-center py-2.5 bg-indigo-600 border border-transparent rounded-lg text-sm font-bold text-white hover:bg-indigo-700 transition shadow-sm"
+                                                className="text-center py-2.5 bg-indigo-600 border border-transparent rounded-lg text-xs sm:text-sm font-bold text-white hover:bg-indigo-700 transition shadow-sm"
                                             >
                                                 Ver Fila
                                             </Link>
                                             <Link 
+                                                href={route('estabelecimentos.loja', local.id)} 
+                                                className="flex justify-center items-center gap-1 py-2.5 bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 rounded-lg text-xs sm:text-sm font-bold text-rose-700 dark:text-rose-400 hover:bg-rose-100 transition shadow-sm"
+                                            >
+                                                Vitrine
+                                            </Link>
+                                            <Link 
                                                 href={route('estabelecimentos.configuracoes', local.id)} 
-                                                className="text-center py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg text-sm font-bold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition"
+                                                className="text-center py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg text-xs sm:text-sm font-bold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition"
                                             >
                                                 Configurações
                                             </Link>

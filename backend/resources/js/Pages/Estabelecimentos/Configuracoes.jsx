@@ -39,8 +39,10 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
     const funcionariosPaginados = funcionarios.slice((paginaFuncionarios - 1) * itensPorPaginaFunc, paginaFuncionarios * itensPorPaginaFunc);
 
     // ==========================================
-    // FORM 1: DETALHES DA LOJA
+    // FORM 1: DETALHES DA LOJA (COM FOTO)
     // ==========================================
+    const [fotoPerfilPreview, setFotoPerfilPreview] = useState(estabelecimento.foto_perfil || null);
+
     const formDetalhes = useForm({
         nome: estabelecimento.nome || '',
         ramo_atuacao: estabelecimento.ramo_atuacao || '',
@@ -53,13 +55,33 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         cidade: estabelecimento.cidade || '',
         estado: estabelecimento.estado || '',
         token_mercadopago: estabelecimento.token_mercadopago || '', 
+        foto_perfil: null, 
     });
+
+    const handleFotoEstabelecimento = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            formDetalhes.setData('foto_perfil', file);
+            setFotoPerfilPreview(URL.createObjectURL(file)); 
+        }
+    };
 
     const submitDetalhes = (e) => {
         e.preventDefault();
-        formDetalhes.put(route('estabelecimentos.update', estabelecimento.id), {
+        
+        // 👉 CORREÇÃO: Usando router.post para garantir que a foto e o PUT funcionem perfeitamente
+        router.post(route('estabelecimentos.update', estabelecimento.id), {
+            _method: 'put',
+            ...formDetalhes.data
+        }, {
             preserveScroll: true,
-            onSuccess: () => mostrarMensagem('Configurações salvas com sucesso!'),
+            onSuccess: () => {
+                mostrarMensagem('Configurações salvas com sucesso!');
+                formDetalhes.setData('foto_perfil', null);
+            },
+            onError: (erros) => {
+                formDetalhes.setError(erros);
+            }
         });
     };
 
@@ -130,12 +152,12 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
     };
 
     // ==========================================
-    // FORM 3: CATÁLOGO DE SERVIÇOS (COM PERSISTÊNCIA E 5 FOTOS)
+    // FORM 3: CATÁLOGO DE SERVIÇOS
     // ==========================================
     const [isEditingServico, setIsEditingServico] = useState(false);
     const [novoHorario, setNovoHorario] = useState(''); 
     
-    // Estado visual para as 5 caixinhas (quadrados)
+    const [visualizandoServico, setVisualizandoServico] = useState(null);
     const [quadradosFotos, setQuadradosFotos] = useState([null, null, null, null, null]);
 
     const formServico = useForm({
@@ -153,14 +175,11 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         fotos: [], 
     });
 
-    // --- LÓGICA DE SALVAMENTO AUTOMÁTICO (RASCUNHO) ---
-    // 1. Ao carregar a página, verifica se existe rascunho salvo
     useEffect(() => {
-        if (!isEditingServico) { // Só recupera rascunho se for criação nova
+        if (!isEditingServico && !visualizandoServico) {
             const rascunho = localStorage.getItem('waitless_servico_draft');
             if (rascunho) {
                 const dadosSalvos = JSON.parse(rascunho);
-                // Mescla os dados salvos com o form, ignorando fotos (não dá pra salvar files no storage)
                 formServico.setData(data => ({
                     ...data,
                     nome: dadosSalvos.nome || '',
@@ -173,11 +192,10 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                 }));
             }
         }
-    }, []); // Executa apenas 1 vez ao montar
+    }, []); 
 
-    // 2. Sempre que o usuário digitar algo, salva no LocalStorage
     useEffect(() => {
-        if (!isEditingServico) {
+        if (!isEditingServico && !visualizandoServico) {
             const dadosParaSalvar = {
                 nome: formServico.data.nome,
                 tipo_servico: formServico.data.tipo_servico,
@@ -189,18 +207,13 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
             };
             localStorage.setItem('waitless_servico_draft', JSON.stringify(dadosParaSalvar));
         }
-    }, [formServico.data.nome, formServico.data.descricao, formServico.data.valor]); // Observa mudanças
-    // ----------------------------------------------------
+    }, [formServico.data.nome, formServico.data.descricao, formServico.data.valor]); 
 
-    // Lógica das caixinhas de foto
     const handleFotoQuadrado = (index, arquivoSelecionado) => {
         if (!arquivoSelecionado) return;
-        
         const novaListaQuadrados = [...quadradosFotos];
         novaListaQuadrados[index] = arquivoSelecionado;
         setQuadradosFotos(novaListaQuadrados);
-
-        // Atualiza o form do Inertia removendo os nulos
         formServico.setData('fotos', novaListaQuadrados.filter(f => f !== null));
     };
 
@@ -208,7 +221,6 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         const novaListaQuadrados = [...quadradosFotos];
         novaListaQuadrados[index] = null;
         setQuadradosFotos(novaListaQuadrados);
-        
         formServico.setData('fotos', novaListaQuadrados.filter(f => f !== null));
     };
 
@@ -226,14 +238,18 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
 
     const submitServico = (e) => {
         e.preventDefault();
+        
+        // 👉 CORREÇÃO AQUI TAMBÉM: usando router.post em vez de encadear transform
         if (isEditingServico) {
-            formServico.post(route('servicos.update', formServico.data.id), {
+            router.post(route('servicos.update', formServico.data.id), {
+                _method: 'put',
+                ...formServico.data
+            }, {
                 preserveScroll: true,
-                data: { _method: 'put' },
                 onSuccess: () => {
                     cancelarEdicaoServico();
                     mostrarMensagem('Serviço editado com sucesso!');
-                    localStorage.removeItem('waitless_servico_draft'); // Limpa rascunho
+                    localStorage.removeItem('waitless_servico_draft');
                 },
                 onError: (errors) => formServico.setError(errors)
             });
@@ -246,7 +262,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                     setNovoHorario('');
                     setQuadradosFotos([null, null, null, null, null]);
                     mostrarMensagem('Serviço cadastrado com sucesso!');
-                    localStorage.removeItem('waitless_servico_draft'); // Limpa rascunho
+                    localStorage.removeItem('waitless_servico_draft');
                 },
                 onError: (errors) => formServico.setError(errors)
             });
@@ -255,7 +271,8 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
 
     const editarServico = (servico) => {
         setIsEditingServico(true);
-        localStorage.removeItem('waitless_servico_draft'); // Não usar rascunho na edição
+        setVisualizandoServico(null); 
+        localStorage.removeItem('waitless_servico_draft'); 
         
         let config = { dias_disponiveis: [], tipo_pagamento: 'hibrido', funcionario_padrao: '' };
         let horarios = [];
@@ -283,6 +300,16 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         window.scrollTo({ top: 0, behavior: 'smooth' }); 
     };
 
+    const visualizarServico = (servico) => {
+        setVisualizandoServico(servico);
+        setIsEditingServico(false);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
+    const fecharVisualizacaoServico = () => {
+        setVisualizandoServico(null);
+    };
+
     const cancelarEdicaoServico = () => {
         setIsEditingServico(false);
         formServico.reset();
@@ -299,6 +326,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                 preserveScroll: true,
                 onSuccess: () => {
                     cancelarEdicaoServico();
+                    setVisualizandoServico(null);
                     mostrarMensagem('Comando executado! A agenda está a ser limpa.');
                 }
             });
@@ -310,6 +338,14 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
             ? formServico.data.dias_disponiveis.filter(d => d !== dia)
             : [...formServico.data.dias_disponiveis, dia];
         formServico.setData('dias_disponiveis', novosDias);
+    };
+
+    const parseJSONSeguro = (dados, fallback = []) => {
+        if (!dados) return fallback;
+        if (typeof dados === 'string') {
+            try { return JSON.parse(dados); } catch (e) { return fallback; }
+        }
+        return dados;
     };
 
     return (
@@ -369,7 +405,6 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
 
             <div className="max-w-7xl mx-auto mt-6 flex flex-col md:flex-row gap-8 pb-12 px-4 sm:px-6 lg:px-8">
                 
-                {/* --- MENU LATERAL (TABS) --- */}
                 <aside className="w-full md:w-64 shrink-0">
                     <nav className="flex md:flex-col gap-2 overflow-x-auto pb-4 md:pb-0">
                         <button onClick={() => setActiveTab('detalhes')} className={`text-left px-4 py-3 rounded-xl text-sm font-bold transition whitespace-nowrap ${activeTab === 'detalhes' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800'}`}>
@@ -387,16 +422,50 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                     </nav>
                 </aside>
 
-                {/* --- CONTEÚDO PRINCIPAL --- */}
                 <main className="flex-1 min-w-0">
 
                     {/* ABA 1: DETALHES DA LOJA */}
                     {activeTab === 'detalhes' && (
                         <div className="space-y-8 animate-in fade-in duration-300">
                             <div className="bg-white dark:bg-gray-800 p-6 sm:p-8 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700">
-                                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-6">Informações Básicas</h3>
                                 <form onSubmit={submitDetalhes} className="space-y-6">
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    
+                                    <div className="flex flex-col sm:flex-row items-center gap-6 pb-6 border-b border-gray-100 dark:border-gray-700">
+                                        <div className="relative group cursor-pointer w-24 h-24 sm:w-32 sm:h-32 shrink-0">
+                                            <label className="cursor-pointer w-full h-full block">
+                                                {fotoPerfilPreview ? (
+                                                    <img 
+                                                        src={fotoPerfilPreview} 
+                                                        alt="Logo da Loja" 
+                                                        className="w-full h-full object-cover rounded-2xl shadow-md border-2 border-white dark:border-gray-800"
+                                                    />
+                                                ) : (
+                                                    <div className="w-full h-full bg-gray-100 dark:bg-gray-700 rounded-2xl flex items-center justify-center border-2 border-dashed border-gray-300 dark:border-gray-600 shadow-sm text-3xl font-bold text-gray-400 uppercase">
+                                                        {formDetalhes.data.nome ? formDetalhes.data.nome.charAt(0) : 'L'}
+                                                    </div>
+                                                )}
+                                                
+                                                <div className="absolute inset-0 bg-black/50 rounded-2xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                                    <span className="text-white text-xs font-bold uppercase tracking-wider">Alterar</span>
+                                                </div>
+                                                
+                                                <input 
+                                                    type="file" 
+                                                    className="hidden" 
+                                                    accept="image/*"
+                                                    onChange={handleFotoEstabelecimento} 
+                                                />
+                                            </label>
+                                        </div>
+                                        
+                                        <div className="text-center sm:text-left">
+                                            <h3 className="text-lg font-bold text-gray-900 dark:text-white">Logo do Estabelecimento</h3>
+                                            <p className="text-sm text-gray-500 mt-1 max-w-md">Esta imagem será exibida para os clientes na tela de agendamento e buscas. Formatos: JPG, PNG, WEBP (Max: 2MB).</p>
+                                            <InputError message={formDetalhes.errors.foto_perfil} className="mt-2" />
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
                                         <div className="md:col-span-2">
                                             <InputLabel value="Nome do Estabelecimento *" />
                                             <TextInput className="mt-1 w-full" value={formDetalhes.data.nome} onChange={e => formDetalhes.setData('nome', e.target.value)} required />
@@ -454,7 +523,6 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                 </form>
                             </div>
                             
-                            {/* Card Desativar Estabelecimento */}
                             <div className={`p-6 sm:p-8 rounded-2xl shadow-sm border ${estabelecimento.ativo ? 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-800' : 'bg-green-50 dark:bg-green-900/10 border-green-200 dark:border-green-800'}`}>
                                 <h3 className={`text-lg font-bold mb-2 ${estabelecimento.ativo ? 'text-red-800 dark:text-red-400' : 'text-green-800 dark:text-green-400'}`}>
                                     {estabelecimento.ativo ? 'Desativar Estabelecimento' : 'Ativar Estabelecimento'}
@@ -469,7 +537,6 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                 </button>
                             </div>
 
-                            {/* Navegar Filiais */}
                             {meusEstabelecimentos.length > 1 && (
                                 <div className="bg-white dark:bg-gray-800 p-6 sm:p-8 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 mt-8">
                                     <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Navegar entre minhas lojas</h3>
@@ -616,205 +683,292 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                     {/* ABA 3: CATÁLOGO DE SERVIÇOS */}
                     {activeTab === 'servicos' && (
                         <div className="space-y-8 animate-in fade-in duration-300">
-                            <div className="bg-white dark:bg-gray-800 p-6 sm:p-8 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700">
-                                <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-6">
-                                    {isEditingServico ? '✏️ Editar Serviço' : 'Adicionar Novo Serviço'}
-                                </h3>
-                                
-                                {/* Aviso sobre persistência */}
-                                {!isEditingServico && (
-                                    <div className="mb-6 p-3 bg-blue-50 text-blue-700 text-xs rounded-lg flex items-center gap-2 border border-blue-100">
-                                        <span>💾</span> <span><strong>Rascunho Automático:</strong> O texto que você digita aqui é salvo no seu navegador. Se recarregar a página, ele não some (exceto as fotos).</span>
-                                    </div>
-                                )}
-
-                                <form onSubmit={submitServico} className="space-y-6">
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        <div className="md:col-span-1">
-                                            <InputLabel value="Categoria / Tipo de Serviço *" />
-                                            <select 
-                                                className="mt-1 w-full border-gray-300 dark:bg-gray-900 dark:border-gray-700 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-gray-700 dark:text-gray-300"
-                                                value={formServico.data.tipo_servico} 
-                                                onChange={e => formServico.setData('tipo_servico', e.target.value)} 
-                                                required
-                                            >
-                                                <option value="" disabled>Selecione uma categoria...</option>
-                                                <option value="Beleza e Estética">Beleza e Estética</option>
-                                                <option value="Saúde e Bem-Estar">Saúde e Bem-Estar</option>
-                                                <option value="Serviços Automotivos">Serviços Automotivos</option>
-                                                <option value="Assistência Técnica e Manutenção">Assistência Técnica e Manutenção</option>
-                                            </select>
-                                            <InputError message={formServico.errors.tipo_servico} />
-                                        </div>
-
-                                        <div className="md:col-span-1">
-                                            <InputLabel value="Nome Específico do Serviço *" />
-                                            <TextInput className="mt-1 w-full" value={formServico.data.nome} onChange={e => formServico.setData('nome', e.target.value)} placeholder="Ex: Corte Degradê" required />
-                                            <InputError message={formServico.errors.nome} />
-                                        </div>
-
-                                        <div>
-                                            <InputLabel value="Valor (R$) *" />
-                                            <TextInput type="number" step="0.01" className="mt-1 w-full" value={formServico.data.valor} onChange={e => formServico.setData('valor', e.target.value)} required />
-                                            <InputError message={formServico.errors.valor} />
-                                        </div>
-
-                                        <div>
-                                            <InputLabel value="Duração Estimada (minutos) *" />
-                                            <TextInput type="number" className="mt-1 w-full" value={formServico.data.duracao_minutos} onChange={e => formServico.setData('duracao_minutos', e.target.value)} required />
-                                            <InputError message={formServico.errors.duracao_minutos} />
-                                        </div>
-
-                                        <div className="md:col-span-2">
-                                            <InputLabel value="Descrição" />
-                                            <textarea 
-                                                className="mt-1 w-full border-gray-300 dark:bg-gray-900 dark:border-gray-700 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-md shadow-sm" 
-                                                rows="3" 
-                                                maxLength="300"
-                                                value={formServico.data.descricao} 
-                                                onChange={e => formServico.setData('descricao', e.target.value)} 
-                                                placeholder="Descreva os detalhes do serviço..."
-                                            ></textarea>
-                                            <InputError message={formServico.errors.descricao} />
-                                        </div>
-
-                                        <div className="md:col-span-2 border-t border-gray-100 dark:border-gray-700 pt-6">
-                                            <InputLabel value="Profissional Responsável (Opcional)" />
-                                            <select className="mt-1 w-full border-gray-300 dark:bg-gray-900 dark:border-gray-700 rounded-lg shadow-sm" value={formServico.data.funcionario_id} onChange={e => formServico.setData('funcionario_id', e.target.value)}>
-                                                <option value="">Qualquer profissional disponível</option>
-                                                {funcionarios.map(func => (<option key={func.id} value={func.id}>{func.nome} ({func.cargo})</option>))}
-                                            </select>
-                                        </div>
-
-                                        <div className="md:col-span-2">
-                                            <InputLabel value="Dias Disponíveis para este serviço" className="mb-2" />
-                                            <div className="flex flex-wrap gap-2">
-                                                {['domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado'].map(dia => (
-                                                    <button type="button" key={dia} onClick={() => handleDiaToggle(dia)} className={`px-4 py-2 rounded-lg text-sm font-bold capitalize transition-colors border ${formServico.data.dias_disponiveis.includes(dia) ? 'bg-indigo-100 text-indigo-700 border-indigo-300' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}>{dia.substring(0, 3)}</button>
-                                                ))}
+                            
+                            {visualizandoServico ? (
+                                <div className="bg-white dark:bg-gray-800 p-6 sm:p-8 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 animate-in fade-in slide-in-from-bottom-4">
+                                    <button 
+                                        onClick={fecharVisualizacaoServico} 
+                                        className="mb-6 flex items-center gap-2 text-sm font-bold text-gray-500 hover:text-indigo-600 transition"
+                                    >
+                                        ← Voltar para Lista
+                                    </button>
+                                    
+                                    <div className="border-b border-gray-100 dark:border-gray-700 pb-6 mb-6">
+                                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                                            <div>
+                                                <span className="text-xs font-bold bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full uppercase tracking-wider">
+                                                    {visualizandoServico.tipo_servico}
+                                                </span>
+                                                <h2 className="text-3xl font-black text-gray-900 dark:text-white mt-3">{visualizandoServico.nome}</h2>
+                                                <p className="text-gray-500 mt-2 text-sm max-w-2xl">{visualizandoServico.descricao || 'Nenhuma descrição detalhada informada para este serviço.'}</p>
                                             </div>
-                                        </div>
-
-                                        <div className="md:col-span-2 p-5 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl">
-                                            <InputLabel value="Horários Disponíveis *" className="mb-2 text-gray-800 dark:text-gray-200" />
-                                            <div className="flex items-center gap-3 mb-4">
-                                                <TextInput type="time" value={novoHorario} onChange={e => setNovoHorario(e.target.value)} className="w-32 text-center" />
-                                                <button type="button" onClick={adicionarHorario} className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white font-bold text-sm rounded-lg hover:bg-gray-300 transition">+ Adicionar Horário</button>
-                                            </div>
-                                            <div className="flex flex-wrap gap-2">
-                                                {formServico.data.horarios_disponiveis.map(h => (
-                                                    <span key={h} className="inline-flex items-center gap-2 bg-indigo-600 text-white px-3 py-1 rounded-full text-sm font-bold shadow-sm">
-                                                        {h}
-                                                        <button type="button" onClick={() => removerHorario(h)} className="text-indigo-200 hover:text-white transition">✕</button>
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        </div>
-
-                                        {/* QUADRADOS PARA AS 5 FOTOS */}
-                                        <div className="md:col-span-2 border-t border-gray-100 dark:border-gray-700 pt-6">
-                                            <InputLabel value="Fotos de Demonstração do Serviço" />
-                                            <p className="text-xs text-gray-500 mb-4 mt-1">
-                                                Adicione até 5 fotos. Clique no quadro vazio para escolher a imagem. Formatos: JPG, PNG, WEBP (Max. 2MB).
-                                            </p>
-                                            
-                                            <div className="flex flex-wrap gap-4">
-                                                {[0, 1, 2, 3, 4].map((index) => {
-                                                    const arquivo = quadradosFotos[index];
-                                                    const previewUrl = arquivo ? URL.createObjectURL(arquivo) : null;
-
-                                                    return (
-                                                        <div key={index} className="relative w-24 h-24 sm:w-28 sm:h-28 flex-shrink-0">
-                                                            {arquivo ? (
-                                                                <>
-                                                                    <img src={previewUrl} alt={`Foto ${index + 1}`} className="w-full h-full object-cover rounded-xl border border-gray-200 shadow-sm" />
-                                                                    <button 
-                                                                        type="button" 
-                                                                        onClick={() => removerFotoQuadrado(index)}
-                                                                        className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center font-bold shadow-md transition text-xs"
-                                                                        title="Remover foto"
-                                                                    >
-                                                                        ✕
-                                                                    </button>
-                                                                </>
-                                                            ) : (
-                                                                <label className="cursor-pointer w-full h-full flex flex-col items-center justify-center border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 hover:border-indigo-400 transition">
-                                                                    <span className="text-gray-400 text-2xl font-light">+</span>
-                                                                    <span className="text-[10px] text-gray-400 font-medium mt-1 uppercase tracking-wider">Foto {index + 1}</span>
-                                                                    <input 
-                                                                        type="file" 
-                                                                        className="hidden" 
-                                                                        accept="image/*" 
-                                                                        onChange={(e) => handleFotoQuadrado(index, e.target.files[0])}
-                                                                    />
-                                                                </label>
-                                                            )}
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-
-                                            {isEditingServico && (
-                                                <p className="text-xs text-yellow-600 font-bold mt-4">
-                                                    Aviso: Enviar novas fotos substituirá todas as imagens antigas deste serviço na vitrine.
+                                            <div className="bg-green-50 text-green-700 border border-green-200 px-6 py-4 rounded-xl text-right shrink-0 min-w-[160px]">
+                                                <p className="text-xs font-bold uppercase tracking-wider mb-1">Preço Atual</p>
+                                                <p className="text-2xl font-black">
+                                                    {Number(visualizandoServico.valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                                                 </p>
-                                            )}
-
-                                            <InputError message={formServico.errors.fotos} className="mt-2" />
-                                            {Object.keys(formServico.errors).filter(key => key.startsWith('fotos.')).map(key => (
-                                                 <InputError key={key} message={formServico.errors[key]} className="mt-1" />
-                                            ))}
-                                        </div>
-
-                                        <div className="md:col-span-2 border-t border-gray-100 dark:border-gray-700 pt-6">
-                                            <InputLabel value="Regra de Pagamento" className="mb-2" />
-                                            <div className="flex flex-col sm:flex-row gap-4">
-                                                <label className="flex items-center gap-2 cursor-pointer p-3 border rounded-lg hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-900 w-full transition"><input type="radio" name="pagamento" value="hibrido" checked={formServico.data.tipo_pagamento === 'hibrido'} onChange={e => formServico.setData('tipo_pagamento', e.target.value)} className="text-indigo-600" /><span className="text-sm font-medium text-gray-700 dark:text-gray-300">Cliente escolhe</span></label>
-                                                <label className="flex items-center gap-2 cursor-pointer p-3 border rounded-lg hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-900 w-full transition"><input type="radio" name="pagamento" value="online" checked={formServico.data.tipo_pagamento === 'online'} onChange={e => formServico.setData('tipo_pagamento', e.target.value)} className="text-indigo-600" /><span className="text-sm font-medium text-gray-700 dark:text-gray-300">Obrigatório Online</span></label>
+                                                <p className="text-xs text-green-600/80 mt-1 font-semibold">Duração: {visualizandoServico.duracao_minutos} minutos</p>
                                             </div>
                                         </div>
                                     </div>
-                                    <div className="flex justify-end pt-4 gap-4 border-t border-gray-100 mt-6">
-                                        {isEditingServico && (
-                                            <button type="button" onClick={cancelarEdicaoServico} className="px-6 py-3 text-gray-600 font-bold hover:text-gray-900 transition">Cancelar</button>
-                                        )}
-                                        <PrimaryButton className="px-8 py-3 bg-indigo-600 rounded-xl shadow-lg" disabled={formServico.processing}>
-                                            {isEditingServico ? 'Salvar Alterações' : '+ Salvar Serviço'}
-                                        </PrimaryButton>
-                                    </div>
-                                </form>
-                            </div>
 
-                            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
-                                <div className="p-6 border-b border-gray-100 dark:border-gray-700">
-                                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">Serviços Ativos neste Local ({servicos.length})</h3>
-                                </div>
-                                <div className="divide-y divide-gray-100 dark:divide-gray-700">
-                                    {servicos.length === 0 ? (
-                                        <p className="p-6 text-gray-500 text-center">Nenhum serviço cadastrado ainda.</p>
-                                    ) : (
-                                        servicos.map(s => (
-                                            <div key={s.id} className="p-6 flex flex-col sm:flex-row sm:justify-between sm:items-center hover:bg-gray-50 dark:hover:bg-gray-700/50 transition">
-                                                <div className="mb-4 sm:mb-0">
-                                                    <div className="flex items-center gap-2 mb-1">
-                                                        <span className="text-[10px] font-bold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-md uppercase tracking-wide">
-                                                            {s.tipo_servico || 'Serviço'}
-                                                        </span>
+                                    <div className="mb-8">
+                                        <h4 className="text-sm font-bold text-gray-900 dark:text-white mb-3 uppercase tracking-wider">Galeria de Fotos</h4>
+                                        <div className="flex gap-4 overflow-x-auto pb-4 snap-x">
+                                            {parseJSONSeguro(visualizandoServico.fotos).length > 0 ? (
+                                                parseJSONSeguro(visualizandoServico.fotos).map((url, i) => (
+                                                    <div key={i} className="relative shrink-0 snap-start">
+                                                        <img src={url} alt={`Foto ${i}`} className="w-40 h-40 object-cover rounded-xl shadow-sm border border-gray-200" />
+                                                        {i === 0 && (
+                                                            <span className="absolute top-2 left-2 bg-indigo-600 text-white text-[10px] px-2 py-0.5 rounded-full font-bold uppercase shadow-sm border border-white/20">
+                                                                ⭐ Capa
+                                                            </span>
+                                                        )}
                                                     </div>
-                                                    <h4 className="font-bold text-gray-900 dark:text-white text-lg">{s.nome}</h4>
-                                                    <p className="text-sm text-gray-500 font-medium">{s.duracao_minutos} min • R$ {s.valor}</p>
+                                                ))
+                                            ) : (
+                                                <div className="w-full p-8 border-2 border-dashed border-gray-200 rounded-xl text-center text-gray-400 text-sm font-medium bg-gray-50">
+                                                    Nenhuma foto cadastrada na vitrine deste serviço.
                                                 </div>
-                                                <div className="flex items-center gap-3 border-t sm:border-0 border-gray-100 pt-4 sm:pt-0">
-                                                    <button onClick={() => editarServico(s)} className="text-indigo-600 hover:text-indigo-800 font-bold text-sm bg-indigo-50 px-3 py-1.5 rounded-lg transition">Editar</button>
-                                                    <button onClick={() => deletarServico(s.id)} className="text-red-600 hover:text-red-800 font-bold text-sm bg-red-50 px-3 py-1.5 rounded-lg transition border border-red-100">
-                                                        Remover (Apagar)
-                                                    </button>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                        <div>
+                                            <h4 className="text-sm font-bold text-gray-900 dark:text-white mb-3 uppercase tracking-wider">Dias de Atendimento</h4>
+                                            <div className="flex flex-wrap gap-2">
+                                                {parseJSONSeguro(parseJSONSeguro(visualizandoServico.configuracoes).dias_disponiveis).map((dia, i) => (
+                                                    <span key={i} className="px-3 py-1 bg-gray-100 text-gray-700 rounded-lg text-sm font-semibold capitalize border border-gray-200">{dia}</span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <h4 className="text-sm font-bold text-gray-900 dark:text-white mb-3 uppercase tracking-wider">Agenda e Horários Livres</h4>
+                                            <div className="flex flex-wrap gap-2">
+                                                {parseJSONSeguro(visualizandoServico.horarios_disponiveis).map((hora, i) => (
+                                                    <span key={i} className="px-3 py-1 bg-indigo-50 text-indigo-700 rounded-lg text-sm font-bold border border-indigo-100">{hora}</span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <>
+                                    <div className="bg-white dark:bg-gray-800 p-6 sm:p-8 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700">
+                                        <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-6">
+                                            {isEditingServico ? '✏️ Editar Serviço' : 'Adicionar Novo Serviço'}
+                                        </h3>
+                                        
+                                        {!isEditingServico && (
+                                            <div className="mb-6 p-3 bg-blue-50 text-blue-700 text-xs rounded-lg flex items-center gap-2 border border-blue-100">
+                                                <span>💾</span> <span><strong>Rascunho Automático:</strong> O texto que você digita aqui é salvo no seu navegador. Se recarregar a página, ele não some (exceto as fotos).</span>
+                                            </div>
+                                        )}
+
+                                        <form onSubmit={submitServico} className="space-y-6">
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                                <div className="md:col-span-1">
+                                                    <InputLabel value="Categoria / Tipo de Serviço *" />
+                                                    <select 
+                                                        className="mt-1 w-full border-gray-300 dark:bg-gray-900 dark:border-gray-700 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-gray-700 dark:text-gray-300"
+                                                        value={formServico.data.tipo_servico} 
+                                                        onChange={e => formServico.setData('tipo_servico', e.target.value)} 
+                                                        required
+                                                    >
+                                                        <option value="" disabled>Selecione uma categoria...</option>
+                                                        <option value="Beleza e Estética">Beleza e Estética</option>
+                                                        <option value="Saúde e Bem-Estar">Saúde e Bem-Estar</option>
+                                                        <option value="Serviços Automotivos">Serviços Automotivos</option>
+                                                        <option value="Assistência Técnica e Manutenção">Assistência Técnica e Manutenção</option>
+                                                    </select>
+                                                    <InputError message={formServico.errors.tipo_servico} />
+                                                </div>
+
+                                                <div className="md:col-span-1">
+                                                    <InputLabel value="Nome Específico do Serviço *" />
+                                                    <TextInput className="mt-1 w-full" value={formServico.data.nome} onChange={e => formServico.setData('nome', e.target.value)} placeholder="Ex: Corte Degradê" required />
+                                                    <InputError message={formServico.errors.nome} />
+                                                </div>
+
+                                                <div>
+                                                    <InputLabel value="Valor (R$) *" />
+                                                    <TextInput type="number" step="0.01" className="mt-1 w-full" value={formServico.data.valor} onChange={e => formServico.setData('valor', e.target.value)} required />
+                                                    <InputError message={formServico.errors.valor} />
+                                                </div>
+
+                                                <div>
+                                                    <InputLabel value="Duração Estimada (minutos) *" />
+                                                    <TextInput type="number" className="mt-1 w-full" value={formServico.data.duracao_minutos} onChange={e => formServico.setData('duracao_minutos', e.target.value)} required />
+                                                    <InputError message={formServico.errors.duracao_minutos} />
+                                                </div>
+
+                                                <div className="md:col-span-2">
+                                                    <InputLabel value="Descrição" />
+                                                    <textarea 
+                                                        className="mt-1 w-full border-gray-300 dark:bg-gray-900 dark:border-gray-700 dark:text-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-md shadow-sm" 
+                                                        rows="3" 
+                                                        maxLength="300"
+                                                        value={formServico.data.descricao} 
+                                                        onChange={e => formServico.setData('descricao', e.target.value)} 
+                                                        placeholder="Descreva os detalhes do serviço..."
+                                                    ></textarea>
+                                                    <InputError message={formServico.errors.descricao} />
+                                                </div>
+
+                                                <div className="md:col-span-2 border-t border-gray-100 dark:border-gray-700 pt-6">
+                                                    <InputLabel value="Profissional Responsável (Opcional)" />
+                                                    <select className="mt-1 w-full border-gray-300 dark:bg-gray-900 dark:border-gray-700 rounded-lg shadow-sm" value={formServico.data.funcionario_id} onChange={e => formServico.setData('funcionario_id', e.target.value)}>
+                                                        <option value="">Qualquer profissional disponível</option>
+                                                        {funcionarios.map(func => (<option key={func.id} value={func.id}>{func.nome} ({func.cargo})</option>))}
+                                                    </select>
+                                                </div>
+
+                                                <div className="md:col-span-2">
+                                                    <InputLabel value="Dias Disponíveis para este serviço" className="mb-2" />
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {['domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado'].map(dia => (
+                                                            <button type="button" key={dia} onClick={() => handleDiaToggle(dia)} className={`px-4 py-2 rounded-lg text-sm font-bold capitalize transition-colors border ${formServico.data.dias_disponiveis.includes(dia) ? 'bg-indigo-100 text-indigo-700 border-indigo-300' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}>{dia.substring(0, 3)}</button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+
+                                                <div className="md:col-span-2 p-5 bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 rounded-xl">
+                                                    <InputLabel value="Horários Disponíveis *" className="mb-2 text-gray-800 dark:text-gray-200" />
+                                                    <div className="flex items-center gap-3 mb-4">
+                                                        <TextInput type="time" value={novoHorario} onChange={e => setNovoHorario(e.target.value)} className="w-32 text-center" />
+                                                        <button type="button" onClick={adicionarHorario} className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white font-bold text-sm rounded-lg hover:bg-gray-300 transition">+ Adicionar Horário</button>
+                                                    </div>
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {formServico.data.horarios_disponiveis.map(h => (
+                                                            <span key={h} className="inline-flex items-center gap-2 bg-indigo-600 text-white px-3 py-1 rounded-full text-sm font-bold shadow-sm">
+                                                                {h}
+                                                                <button type="button" onClick={() => removerHorario(h)} className="text-indigo-200 hover:text-white transition">✕</button>
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                </div>
+
+                                                <div className="md:col-span-2 border-t border-gray-100 dark:border-gray-700 pt-6">
+                                                    <InputLabel value="Fotos de Demonstração do Serviço" />
+                                                    <p className="text-xs text-gray-500 mb-4 mt-1">
+                                                        Adicione até 5 fotos. <strong className="text-indigo-600">A primeira foto (quadro em destaque) será usada como a capa principal do serviço.</strong> Clique no quadro vazio para escolher a imagem. Formatos: JPG, PNG, WEBP (Max. 2MB).
+                                                    </p>
+                                                    
+                                                    <div className="flex flex-wrap gap-4">
+                                                        {[0, 1, 2, 3, 4].map((index) => {
+                                                            const arquivo = quadradosFotos[index];
+                                                            const previewUrl = arquivo ? URL.createObjectURL(arquivo) : null;
+                                                            const isCapa = index === 0; 
+
+                                                            return (
+                                                                <div key={index} className="relative w-24 h-24 sm:w-28 sm:h-28 flex-shrink-0">
+                                                                    {arquivo ? (
+                                                                        <>
+                                                                            <img src={previewUrl} alt={`Foto ${index + 1}`} className={`w-full h-full object-cover rounded-xl shadow-sm ${isCapa ? 'border-2 border-indigo-500' : 'border border-gray-200'}`} />
+                                                                            
+                                                                            {isCapa && (
+                                                                                <div className="absolute bottom-0 left-0 w-full bg-indigo-600/90 text-white text-[9px] font-bold text-center py-1 rounded-b-xl uppercase tracking-widest backdrop-blur-sm">
+                                                                                    Principal
+                                                                                </div>
+                                                                            )}
+
+                                                                            <button 
+                                                                                type="button" 
+                                                                                onClick={() => removerFotoQuadrado(index)}
+                                                                                className="absolute -top-2 -right-2 bg-red-500 hover:bg-red-600 text-white rounded-full w-6 h-6 flex items-center justify-center font-bold shadow-md transition text-xs z-10"
+                                                                                title="Remover foto"
+                                                                            >
+                                                                                ✕
+                                                                            </button>
+                                                                        </>
+                                                                    ) : (
+                                                                        <label className={`cursor-pointer w-full h-full flex flex-col items-center justify-center border-2 border-dashed rounded-xl transition ${isCapa ? 'border-indigo-300 dark:border-indigo-600 bg-indigo-50/50 dark:bg-indigo-900/10 hover:border-indigo-500 hover:bg-indigo-50' : 'border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 hover:border-indigo-400'}`}>
+                                                                            <span className={`text-2xl font-light ${isCapa ? 'text-indigo-400' : 'text-gray-400'}`}>+</span>
+                                                                            <span className={`text-[10px] font-bold mt-1 uppercase tracking-wider text-center px-1 ${isCapa ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400 font-medium'}`}>
+                                                                                {isCapa ? '⭐ Capa' : `Foto ${index + 1}`}
+                                                                            </span>
+                                                                            <input 
+                                                                                type="file" 
+                                                                                className="hidden" 
+                                                                                accept="image/*" 
+                                                                                onChange={(e) => handleFotoQuadrado(index, e.target.files[0])}
+                                                                            />
+                                                                        </label>
+                                                                    )}
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+
+                                                    {isEditingServico && (
+                                                        <p className="text-xs text-yellow-600 font-bold mt-4">
+                                                            Aviso: Enviar novas fotos substituirá todas as imagens antigas deste serviço na vitrine.
+                                                        </p>
+                                                    )}
+
+                                                    <InputError message={formServico.errors.fotos} className="mt-2" />
+                                                    {Object.keys(formServico.errors).filter(key => key.startsWith('fotos.')).map(key => (
+                                                         <InputError key={key} message={formServico.errors[key]} className="mt-1" />
+                                                    ))}
+                                                </div>
+
+                                                <div className="md:col-span-2 border-t border-gray-100 dark:border-gray-700 pt-6">
+                                                    <InputLabel value="Regra de Pagamento" className="mb-2" />
+                                                    <div className="flex flex-col sm:flex-row gap-4">
+                                                        <label className="flex items-center gap-2 cursor-pointer p-3 border rounded-lg hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-900 w-full transition"><input type="radio" name="pagamento" value="hibrido" checked={formServico.data.tipo_pagamento === 'hibrido'} onChange={e => formServico.setData('tipo_pagamento', e.target.value)} className="text-indigo-600" /><span className="text-sm font-medium text-gray-700 dark:text-gray-300">Cliente escolhe</span></label>
+                                                        <label className="flex items-center gap-2 cursor-pointer p-3 border rounded-lg hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-900 w-full transition"><input type="radio" name="pagamento" value="online" checked={formServico.data.tipo_pagamento === 'online'} onChange={e => formServico.setData('tipo_pagamento', e.target.value)} className="text-indigo-600" /><span className="text-sm font-medium text-gray-700 dark:text-gray-300">Obrigatório Online</span></label>
+                                                    </div>
                                                 </div>
                                             </div>
-                                        ))
-                                    )}
-                                </div>
-                            </div>
+                                            <div className="flex justify-end pt-4 gap-4 border-t border-gray-100 mt-6">
+                                                {isEditingServico && (
+                                                    <button type="button" onClick={cancelarEdicaoServico} className="px-6 py-3 text-gray-600 font-bold hover:text-gray-900 transition">Cancelar</button>
+                                                )}
+                                                <PrimaryButton className="px-8 py-3 bg-indigo-600 rounded-xl shadow-lg" disabled={formServico.processing}>
+                                                    {isEditingServico ? 'Salvar Alterações' : '+ Salvar Serviço'}
+                                                </PrimaryButton>
+                                            </div>
+                                        </form>
+                                    </div>
+
+                                    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden mt-8">
+                                        <div className="p-6 border-b border-gray-100 dark:border-gray-700">
+                                            <h3 className="text-lg font-bold text-gray-900 dark:text-white">Serviços Ativos neste Local ({servicos.length})</h3>
+                                        </div>
+                                        <div className="divide-y divide-gray-100 dark:divide-gray-700">
+                                            {servicos.length === 0 ? (
+                                                <p className="p-6 text-gray-500 text-center">Nenhum serviço cadastrado ainda.</p>
+                                            ) : (
+                                                servicos.map(s => (
+                                                    <div key={s.id} className="p-6 flex flex-col sm:flex-row sm:justify-between sm:items-center hover:bg-gray-50 dark:hover:bg-gray-700/50 transition">
+                                                        <div className="mb-4 sm:mb-0">
+                                                            <div className="flex items-center gap-2 mb-1">
+                                                                <span className="text-[10px] font-bold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-md uppercase tracking-wide">
+                                                                    {s.tipo_servico || 'Serviço'}
+                                                                </span>
+                                                            </div>
+                                                            <h4 className="font-bold text-gray-900 dark:text-white text-lg">{s.nome}</h4>
+                                                            <p className="text-sm text-gray-500 font-medium">{s.duracao_minutos} min • R$ {s.valor}</p>
+                                                        </div>
+                                                        <div className="flex items-center flex-wrap gap-2 border-t sm:border-0 border-gray-100 pt-4 sm:pt-0">
+                                                            <button onClick={() => visualizarServico(s)} className="text-blue-600 hover:text-blue-800 font-bold text-sm bg-blue-50 px-3 py-1.5 rounded-lg transition border border-blue-100">
+                                                                Ver Detalhes
+                                                            </button>
+                                                            <button onClick={() => editarServico(s)} className="text-indigo-600 hover:text-indigo-800 font-bold text-sm bg-indigo-50 px-3 py-1.5 rounded-lg transition border border-indigo-100">
+                                                                Editar
+                                                            </button>
+                                                            <button onClick={() => deletarServico(s.id)} className="text-red-600 hover:text-red-800 font-bold text-sm bg-red-50 px-3 py-1.5 rounded-lg transition border border-red-100">
+                                                                Remover (Apagar)
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ))
+                                            )}
+                                        </div>
+                                    </div>
+                                </>
+                            )}
                         </div>
                     )}
 
