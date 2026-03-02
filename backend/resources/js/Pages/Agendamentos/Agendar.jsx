@@ -106,7 +106,7 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
         }
     }, [qtdLocal, servicoSelecionado]);
 
-    // 4. MENSAGENS DE SUCESSO
+    
     useEffect(() => {
         if (flash.success && flash.success.includes('PIN')) {
             setStatusFinalizacao('sucesso_local'); 
