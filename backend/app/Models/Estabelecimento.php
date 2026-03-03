@@ -49,4 +49,9 @@ class Estabelecimento extends Model
     {
         return $this->hasMany(Avaliacao::class);
     }
+
+    public function cupons() 
+    
+    { return $this->hasMany(Cupom::class); 
+    }
 }

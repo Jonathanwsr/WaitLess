@@ -9,7 +9,9 @@ use App\Http\Controllers\Api\ClienteExplorarController;
 use App\Http\Controllers\Api\PagamentoController;
 use App\Http\Controllers\Api\ServicoController;
 use App\Http\Controllers\Api\CarrinhoController;
+use App\Http\Controllers\Api\CupomController;
 use App\Services\MercadoPagoService; 
+use App\Http\Controllers\Api\CarteiraController;
 use App\Http\Controllers\Api\FuncionarioController;
 use Illuminate\Foundation\Application; 
 use Illuminate\Support\Facades\Route;  
@@ -33,6 +35,13 @@ Route::get('/', function () {
 |--------------------------------------------------------------------------
 */
 Route::middleware(['auth', 'verified'])->group(function () {
+
+
+
+// assminaturas 
+
+Route::post('/assinaturas/nova', [App\Http\Controllers\Api\AssinaturaController::class, 'assinar'])->name('assinatura.nova');
+    Route::post('/assinaturas/cancelar', [App\Http\Controllers\Api\AssinaturaController::class, 'cancelar'])->name('assinatura.cancelar'); 
     
     // Dashboard
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
@@ -121,6 +130,19 @@ Route::get('/pagamento/status', [ClienteAgendamentoController::class, 'callbackM
     Route::put('/carrinho/{id}', [App\Http\Controllers\Api\CarrinhoController::class, 'update'])->name('cliente.carrinho.update');
     Route::patch('/carrinho/{id}', [App\Http\Controllers\Api\CarrinhoController::class, 'updatePatch'])->name('cliente.carrinho.patch');
     Route::delete('/carrinho/{id}', [App\Http\Controllers\Api\CarrinhoController::class, 'destroy'])->name('cliente.carrinho.destroy');
-});
+
+    
+    
+    // ROTAS DE CUPONS / GAMIFICAÇÃO
+    Route::post('/estabelecimentos/{estabelecimento}/cupons', [CupomController::class, 'store'])->name('cupons.store');
+    Route::put('/cupons/{cupom}', [CupomController::class, 'update'])->name('cupons.update');
+    Route::delete('/cupons/{cupom}', [CupomController::class, 'destroy'])->name('cupons.destroy');
+    Route::get('/estabelecimentos/{estabelecimento}/marketing', [App\Http\Controllers\Api\EstabelecimentoController::class, 'cupons'])->name('estabelecimentos.cupons');
+
+    // ROTAS DA CARTEIRA E GAMIFICAÇÃO DO CLIENTE
+    Route::get('/minha-carteira', [CarteiraController::class, 'index'])->name('cliente.carteira');
+    Route::post('/minha-carteira/assinar-plus', [CarteiraController::class, 'assinarPlus'])->name('cliente.assinatura.plus');
+     Route::post('/minha-carteira/resgatar/{cupom}', [App\Http\Controllers\Api\CarteiraController::class, 'resgatarCupom'])->name('cliente.resgatar.cupom');
+    });
 
 require __DIR__.'/auth.php';

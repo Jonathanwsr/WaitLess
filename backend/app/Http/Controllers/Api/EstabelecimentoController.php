@@ -156,4 +156,15 @@ class EstabelecimentoController extends Controller
             'servicosPaginados' => $servicos
         ]);
     }
+
+
+    public function cupons(Estabelecimento $estabelecimento)
+    {
+        $cupons = $estabelecimento->cupons()->latest()->get();
+        
+        return Inertia::render('Estabelecimentos/Cupons', [
+            'estabelecimento' => $estabelecimento,
+            'cupons' => $cupons
+        ]);
+    }
 }

@@ -173,6 +173,11 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         horarios_disponiveis: [], 
         estabelecimentos_ids: [estabelecimento.id],
         fotos: [], 
+        // 👉 NOVOS CAMPOS PARA O CUPOM
+        tem_cupom: false,
+        tipo_desconto_cupom: 'percentual',
+        valor_cupom: '',
+        codigo_cupom: '',
     });
 
     useEffect(() => {
@@ -189,6 +194,11 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                     duracao_minutos: dadosSalvos.duracao_minutos || '30',
                     horarios_disponiveis: dadosSalvos.horarios_disponiveis || [],
                     dias_disponiveis: dadosSalvos.dias_disponiveis || [],
+                    // Restaura dados do cupom do rascunho
+                    tem_cupom: dadosSalvos.tem_cupom || false,
+                    tipo_desconto_cupom: dadosSalvos.tipo_desconto_cupom || 'percentual',
+                    valor_cupom: dadosSalvos.valor_cupom || '',
+                    codigo_cupom: dadosSalvos.codigo_cupom || '',
                 }));
             }
         }
@@ -204,10 +214,15 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                 duracao_minutos: formServico.data.duracao_minutos,
                 horarios_disponiveis: formServico.data.horarios_disponiveis,
                 dias_disponiveis: formServico.data.dias_disponiveis,
+                // Salva dados do cupom no rascunho
+                tem_cupom: formServico.data.tem_cupom,
+                tipo_desconto_cupom: formServico.data.tipo_desconto_cupom,
+                valor_cupom: formServico.data.valor_cupom,
+                codigo_cupom: formServico.data.codigo_cupom,
             };
             localStorage.setItem('waitless_servico_draft', JSON.stringify(dadosParaSalvar));
         }
-    }, [formServico.data.nome, formServico.data.descricao, formServico.data.valor]); 
+    }, [formServico.data.nome, formServico.data.descricao, formServico.data.valor, formServico.data.tem_cupom, formServico.data.valor_cupom]); 
 
     const handleFotoQuadrado = (index, arquivoSelecionado) => {
         if (!arquivoSelecionado) return;
@@ -234,6 +249,21 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
 
     const removerHorario = (horarioParaRemover) => {
         formServico.setData('horarios_disponiveis', formServico.data.horarios_disponiveis.filter(h => h !== horarioParaRemover));
+    };
+
+    // 👉 GERA O CÓDIGO AUTOMÁTICO DO CUPOM
+    const gerarCodigoCupom = () => {
+        const prefixo = estabelecimento.nome.replace(/[^A-Za-z0-9]/g, '').substring(0, 6).toUpperCase();
+        const aleatorio = Math.floor(1000 + Math.random() * 9000);
+        return `${prefixo}${aleatorio}`;
+    };
+
+    const handleToggleCupom = (checked) => {
+        formServico.setData(data => ({
+            ...data,
+            tem_cupom: checked,
+            codigo_cupom: checked && !data.codigo_cupom ? gerarCodigoCupom() : data.codigo_cupom
+        }));
     };
 
     const submitServico = (e) => {
@@ -274,7 +304,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         setVisualizandoServico(null); 
         localStorage.removeItem('waitless_servico_draft'); 
         
-        let config = { dias_disponiveis: [], tipo_pagamento: 'hibrido', funcionario_padrao: '' };
+        let config = { dias_disponiveis: [], tipo_pagamento: 'hibrido', funcionario_padrao: '', tem_cupom: false, tipo_desconto_cupom: 'percentual', valor_cupom: '', codigo_cupom: '' };
         let horarios = [];
         try {
             config = typeof servico.configuracoes === 'string' ? JSON.parse(servico.configuracoes) : (servico.configuracoes || config);
@@ -294,6 +324,11 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
             horarios_disponiveis: horarios,
             estabelecimentos_ids: [estabelecimento.id], 
             fotos: [], 
+            // Carrega os dados do cupom
+            tem_cupom: config.tem_cupom || false,
+            tipo_desconto_cupom: config.tipo_desconto_cupom || 'percentual',
+            valor_cupom: config.valor_cupom || '',
+            codigo_cupom: config.codigo_cupom || '',
         });
         
         setQuadradosFotos([null, null, null, null, null]); 
@@ -369,9 +404,15 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                             <p className="text-sm text-gray-500">{estabelecimento.nome}</p>
                         </div>
                     </div>
-                    <Link href={route('estabelecimentos.fila', estabelecimento.id)} className="text-sm font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 px-4 py-2 rounded-lg transition">
-                        Ver Fila →
-                    </Link>
+
+                    <div className="flex gap-2">
+                        <Link href={route('estabelecimentos.cupons', estabelecimento.id)} className="text-sm font-bold text-orange-600 hover:text-orange-800 bg-orange-50 border border-orange-100 px-4 py-2 rounded-lg transition flex items-center gap-2">
+                             Marketing & Cupons
+                        </Link>
+                        <Link href={route('estabelecimentos.fila', estabelecimento.id)} className="text-sm font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 border border-indigo-100 px-4 py-2 rounded-lg transition">
+                            Ver Fila →
+                        </Link>
+                    </div>
                 </div>
             }
         >
@@ -911,6 +952,40 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                     {Object.keys(formServico.errors).filter(key => key.startsWith('fotos.')).map(key => (
                                                          <InputError key={key} message={formServico.errors[key]} className="mt-1" />
                                                     ))}
+                                                </div>
+
+                                                {/* 👉 NOVA SEÇÃO: CUPOM DE DESCONTO */}
+                                                <div className="md:col-span-2 border-t border-gray-100 dark:border-gray-700 pt-6">
+                                                    <div className="flex items-center justify-between mb-4">
+                                                        <div>
+                                                            <InputLabel value="🎁 Habilitar Cupom de Desconto Automático?" />
+                                                            <p className="text-xs text-gray-500 mt-1">Crie um cupom exclusivo para os clientes usarem neste serviço.</p>
+                                                        </div>
+                                                        <label className="relative inline-flex items-center cursor-pointer">
+                                                            <input type="checkbox" className="sr-only peer" checked={formServico.data.tem_cupom} onChange={e => handleToggleCupom(e.target.checked)} />
+                                                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 dark:peer-focus:ring-indigo-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-orange-500"></div>
+                                                        </label>
+                                                    </div>
+
+                                                    {formServico.data.tem_cupom && (
+                                                        <div className="p-5 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-xl grid grid-cols-1 md:grid-cols-3 gap-4 animate-in fade-in slide-in-from-top-2">
+                                                            <div>
+                                                                <InputLabel value="Código Gerado (Automático)" />
+                                                                <TextInput className="mt-1 w-full bg-gray-100 text-gray-600 font-mono tracking-widest cursor-not-allowed border-gray-200" value={formServico.data.codigo_cupom} readOnly />
+                                                            </div>
+                                                            <div>
+                                                                <InputLabel value="Tipo de Desconto" />
+                                                                <select className="mt-1 w-full border-gray-300 dark:bg-gray-900 dark:border-gray-700 rounded-lg shadow-sm focus:border-indigo-500" value={formServico.data.tipo_desconto_cupom} onChange={e => formServico.setData('tipo_desconto_cupom', e.target.value)}>
+                                                                    <option value="percentual">Porcentagem (%)</option>
+                                                                    <option value="fixo">Valor Fixo (R$)</option>
+                                                                </select>
+                                                            </div>
+                                                            <div>
+                                                                <InputLabel value="Valor do Desconto *" />
+                                                                <TextInput type="number" step="0.01" className="mt-1 w-full" value={formServico.data.valor_cupom} onChange={e => formServico.setData('valor_cupom', e.target.value)} required={formServico.data.tem_cupom} placeholder="Ex: 10" />
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </div>
 
                                                 <div className="md:col-span-2 border-t border-gray-100 dark:border-gray-700 pt-6">

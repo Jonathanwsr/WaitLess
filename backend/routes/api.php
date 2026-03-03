@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\TriagemController;
 use App\Http\Controllers\Api\RespostaTriagemController;
 use App\Http\Controllers\Api\ContaPagamentoEstabelecimentoController;
 use App\Http\Controllers\Api\GamificacaoController;
+use App\Http\Controllers\Api\WebhookController;
 
  // Rotas públicas (não exigem autenticação)
 Route::post('/register', [AuthController::class, 'register']);
@@ -59,5 +60,8 @@ Route::apiResource('triagens', TriagemController::class);
 Route::apiResource('respostas-triagem', RespostaTriagemController::class);
 Route::apiResource('contas-bancarias', ContaPagamentoEstabelecimentoController::class);
 Route::apiResource('gamificacoes', GamificacaoController::class);
+
+
+Route::post('/webhook/mercadopago', [WebhookController::class, 'mercadopago']);
 
 });
