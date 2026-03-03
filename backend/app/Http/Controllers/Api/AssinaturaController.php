@@ -30,7 +30,7 @@ class AssinaturaController extends Controller
     public function assinar(Request $request)
     {
         $request->validate([
-            'plano' => 'required|string|array_keys:' . implode(',', array_keys(self::PLANOS))
+            'plano' => 'required|string|in:' . implode(',', array_keys(self::PLANOS))
         ]);
 
         $user = Auth::user();
