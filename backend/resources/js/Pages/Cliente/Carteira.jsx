@@ -1,15 +1,39 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link, useForm, usePage, router } from '@inertiajs/react';
 import { StarIcon, SparklesIcon, CheckBadgeIcon, TicketIcon, BoltIcon } from '@heroicons/react/24/solid';
+import { useState, useEffect } from 'react';
 
 export default function Carteira({ auth, recompensas = [], meusCupons = [] }) {
     const user = auth.user;
     const { flash = {} } = usePage().props;
     
-    // Identifica se é dono de loja/admin ou cliente
+    
     const isGestor = ['admin', 'socio', 'gerente'].includes(user?.papel);
 
+   
+    const [retornoMp, setRetornoMp] = useState(null);
+
     const { post, processing } = useForm({});
+
+    // 👉 LÊ A URL QUANDO VOLTA DO MERCADO PAGO
+    useEffect(() => {
+        const parametros = new URLSearchParams(window.location.search);
+        const statusMp = parametros.get('status'); // approved, pending, rejected, etc
+        const motivoMp = parametros.get('reason');
+
+        if (statusMp) {
+            if (statusMp === 'approved' || statusMp === 'authorized') {
+                setRetornoMp({ tipo: 'success', texto: '🎉 Pagamento aprovado! Os seus benefícios VIP já estão a ser ativados pelo sistema.' });
+            } else if (statusMp === 'pending' || statusMp === 'in_process') {
+                setRetornoMp({ tipo: 'warning', texto: '⏳ O seu pagamento está em análise. O plano será ativado assim que o banco confirmar.' });
+            } else {
+                setRetornoMp({ tipo: 'error', texto: '❌ O pagamento não foi concluído ou foi recusado. Tente novamente.' });
+            }
+            
+            // Limpa a URL para esconder os parâmetros feios do Mercado Pago
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+    }, []);
 
     const assinarPlano = (nomeDoPlano) => {
         post(route('assinatura.nova', { plano: nomeDoPlano }), {
@@ -30,7 +54,6 @@ export default function Carteira({ auth, recompensas = [], meusCupons = [] }) {
         }
     };
 
-    // 👉 NOVA FUNÇÃO: Resgatar o cupom com pontos
     const resgatarCupom = (cupom) => {
         if (window.confirm(`Deseja gastar ${cupom.pontos_custo} pontos para resgatar "${cupom.titulo}"?`)) {
             router.post(route('cliente.resgatar.cupom', cupom.id), {}, {
@@ -63,17 +86,35 @@ export default function Carteira({ auth, recompensas = [], meusCupons = [] }) {
 
             <div className="max-w-7xl mx-auto mt-6 px-4 sm:px-6 lg:px-8 pb-20">
                 
-                {flash?.success && (
+                {/* 👉 ALERTAS DO MERCADO PAGO */}
+                {retornoMp && retornoMp.tipo === 'success' && (
+                    <div className="mb-6 p-4 bg-green-100 border border-green-200 text-green-800 font-bold rounded-xl shadow-sm animate-in fade-in slide-in-from-top-4">
+                        {retornoMp.texto}
+                    </div>
+                )}
+                {retornoMp && retornoMp.tipo === 'warning' && (
+                    <div className="mb-6 p-4 bg-yellow-100 border border-yellow-200 text-yellow-800 font-bold rounded-xl shadow-sm animate-in fade-in slide-in-from-top-4">
+                        {retornoMp.texto}
+                    </div>
+                )}
+                {retornoMp && retornoMp.tipo === 'error' && (
+                    <div className="mb-6 p-4 bg-red-100 border border-red-200 text-red-800 font-bold rounded-xl shadow-sm animate-in fade-in slide-in-from-top-4">
+                        {retornoMp.texto}
+                    </div>
+                )}
+
+                {/* ALERTAS NORMAIS (FLASH) */}
+                {flash?.success && !retornoMp && (
                     <div className="mb-6 p-4 bg-green-100 border border-green-200 text-green-800 font-bold rounded-xl shadow-sm animate-in fade-in flex items-center gap-2">
                         <span>✨</span> {flash.success}
                     </div>
                 )}
-                {flash?.warning && (
+                {flash?.warning && !retornoMp && (
                     <div className="mb-6 p-4 bg-yellow-100 border border-yellow-200 text-yellow-800 font-bold rounded-xl shadow-sm animate-in fade-in">
                         ⚠️ {flash.warning}
                     </div>
                 )}
-                {flash?.error && (
+                {flash?.error && !retornoMp && (
                     <div className="mb-6 p-4 bg-red-100 border border-red-200 text-red-800 font-bold rounded-xl shadow-sm animate-in fade-in">
                         ❌ {flash.error}
                     </div>
@@ -152,7 +193,6 @@ export default function Carteira({ auth, recompensas = [], meusCupons = [] }) {
                     {!isGestor && (
                         <div className="flex-1 space-y-8">
                             
-                            {/* 👉 NOVO: INVENTÁRIO DE CUPONS (Meus Cupons) */}
                             {meusCupons && meusCupons.length > 0 && (
                                 <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6 sm:p-8">
                                     <h3 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-2">
