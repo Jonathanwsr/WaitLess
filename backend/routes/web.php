@@ -11,6 +11,9 @@ use App\Http\Controllers\Api\ServicoController;
 use App\Http\Controllers\Api\CarrinhoController;
 use App\Http\Controllers\Api\CupomController;
 use App\Services\MercadoPagoService; 
+use App\Http\Controllers\Api\AssinaturaController;
+use App\Http\Middleware\CheckAdmin;
+use App\Http\Controllers\Api\ClienteCupomController;
 use App\Http\Controllers\Api\CarteiraController;
 use App\Http\Controllers\Api\FuncionarioController;
 use Illuminate\Foundation\Application; 
@@ -143,6 +146,22 @@ Route::get('/pagamento/status', [ClienteAgendamentoController::class, 'callbackM
     Route::get('/minha-carteira', [CarteiraController::class, 'index'])->name('cliente.carteira');
     Route::post('/minha-carteira/assinar-plus', [CarteiraController::class, 'assinarPlus'])->name('cliente.assinatura.plus');
      Route::post('/minha-carteira/resgatar/{cupom}', [App\Http\Controllers\Api\CarteiraController::class, 'resgatarCupom'])->name('cliente.resgatar.cupom');
+
+     // Rota para abrir a tela de Mensagens/Sugestões
+Route::get('/cliente/mensagens', [ClienteCupomController::class, 'mensagens'])->name('cliente.mensagens');
+
+// Rota POST que o React vai chamar quando o cliente clicar em "Resgatar"
+Route::post('/cliente/cupons/{id}/resgatar', [ClienteCupomController::class, 'resgatar'])->name('cliente.resgatar.cupom');
+
+     Route::middleware(['auth', CheckAdmin::class])->group(function () {
+    
+    Route::get('/admin/assinaturas', [AssinaturaController::class, 'adminIndex'])
+        ->name('admin.assinaturas.index');
+        
+    Route::post('/admin/assinaturas/{id}/cancelar', [AssinaturaController::class, 'adminCancelar'])
+        ->name('admin.assinaturas.cancelar');
+    });
+
     });
 
 require __DIR__.'/auth.php';

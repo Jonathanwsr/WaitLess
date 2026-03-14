@@ -1,17 +1,21 @@
 import { useState, useEffect } from 'react';
 import Dropdown from '@/Components/Dropdown';
 import { Link, usePage, router } from '@inertiajs/react';
+import { ShieldCheckIcon, UsersIcon } from '@heroicons/react/24/solid'; // Importando ícones úteis
 
 export default function AuthenticatedLayout({ header, children }) {
     const user = usePage().props.auth.user;
     
-    // 👉 NOVO ESTADO: Controla a abertura e fecho do menu lateral
+    // Controla a abertura e fecho do menu lateral
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-    // Identifica se é dono de loja/admin ou cliente
+    // Identifica se é dono de loja/admin ou cliente (Gestores em geral)
     const isGestor = ['admin', 'socio', 'gerente'].includes(user?.papel);
+    
+    // 👉 NOVA CONSTANTE: Identifica se é EXCLUSIVAMENTE o Admin do sistema
+    const isAdminSupremo = user?.papel === 'admin';
 
-    // Fecha o menu automaticamente quando a rota muda (ao clicar num link)
+    // Fecha o menu automaticamente quando a rota muda
     useEffect(() => {
         const removeListener = router.on('navigate', () => {
             setIsSidebarOpen(false);
@@ -31,17 +35,13 @@ export default function AuthenticatedLayout({ header, children }) {
     return (
         <div className="min-h-screen bg-gray-50 dark:bg-gray-900 font-sans flex flex-col relative">
             
-            {/* ============================================================== */}
-            {/* BACKDROP (Fundo escuro ao abrir o menu)                        */}
-            {/* ============================================================== */}
+            {/* BACKDROP (Fundo escuro ao abrir o menu) */}
             <div 
                 onClick={() => setIsSidebarOpen(false)} 
                 className={`fixed inset-0 bg-gray-900/60 backdrop-blur-sm z-40 transition-all duration-300 ${isSidebarOpen ? 'opacity-100 visible' : 'opacity-0 invisible'}`}
             ></div>
 
-            {/* ============================================================== */}
-            {/* MENU LATERAL RETRÁTIL (GAVETA)                                 */}
-            {/* ============================================================== */}
+            {/* MENU LATERAL RETRÁTIL (GAVETA) */}
             <aside 
                 className={`fixed inset-y-0 left-0 z-50 w-[280px] bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 shadow-2xl transform transition-transform duration-300 ease-in-out flex flex-col ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
             >
@@ -75,7 +75,7 @@ export default function AuthenticatedLayout({ header, children }) {
                         Painel Geral
                     </Link>
 
-                    {/* 👉 LINKS DE CLIENTES */}
+                    {/* 👉 LINKS DE CLIENTES COMUNS */}
                     {!isGestor && (
                         <>
                             <Link 
@@ -94,8 +94,8 @@ export default function AuthenticatedLayout({ header, children }) {
                             </Link>
 
                             <Link 
-                                  href={route('cliente.carteira')} 
-                               className={`flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${route().current('cliente.carteira') ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600 hover:bg-gray-100'}`}
+                                href={route('cliente.carteira')} 
+                                className={`flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${route().current('cliente.carteira') ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600 hover:bg-gray-100'}`}
                             >
                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg>
                                Minha Carteira (Plus)
@@ -103,7 +103,7 @@ export default function AuthenticatedLayout({ header, children }) {
                         </>
                     )}
 
-                    {/* 👉 LINKS DE GESTORES */}
+                    {/* 👉 LINKS DE GESTORES (Dono da Loja, Gerente) */}
                     {isGestor && (
                         <>
                             <div className="pt-4 pb-2">
@@ -116,6 +116,16 @@ export default function AuthenticatedLayout({ header, children }) {
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
                                 Minhas Lojas
                             </Link>
+
+                            {/* TELA DE FUNCIONÁRIOS DE VOLTA! */}
+                            <Link 
+                                href={route('funcionarios.index')} 
+                                className={`flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${route().current('funcionarios.index') ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-400' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700'}`}
+                            >
+                                <UsersIcon className="w-5 h-5" />
+                                Equipe / Funcionários
+                            </Link>
+
                             <Link 
                                 href="#" 
                                 className="flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700"
@@ -123,7 +133,6 @@ export default function AuthenticatedLayout({ header, children }) {
                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                                 Extrato Financeiro
                             </Link>
-                            {/* 👉 NOVA ABA PARA OS GESTORES VEREM E ESCOLHEREM OS PLANOS */}
                             <Link 
                                 href={route('cliente.carteira')} 
                                 className={`flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${route().current('cliente.carteira') ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600 hover:bg-gray-100'}`}
@@ -133,6 +142,23 @@ export default function AuthenticatedLayout({ header, children }) {
                             </Link>
                         </>
                     )}
+
+                    {/* 👉 LINKS EXCLUSIVOS DO ADMIN SUPREMO (O DONO DA PLATAFORMA) */}
+                    {isAdminSupremo && (
+                        <>
+                            <div className="pt-4 pb-2">
+                                <p className="px-4 text-[10px] font-bold uppercase text-red-400">Administração</p>
+                            </div>
+                            <Link 
+                                href={route('admin.assinaturas.index')} 
+                                className={`flex items-center gap-3 px-4 py-3 rounded-xl font-bold transition-colors ${route().current('admin.assinaturas.index') ? 'bg-red-50 text-red-700' : 'text-gray-600 hover:bg-gray-100'}`}
+                            >
+                                <ShieldCheckIcon className="w-5 h-5 text-red-500" />
+                                Todas as Assinaturas
+                            </Link>
+                        </>
+                    )}
+
                 </div>
 
                 {/* Área de Perfil no Fundo do Menu (Ótimo para Mobile) */}
@@ -153,9 +179,7 @@ export default function AuthenticatedLayout({ header, children }) {
                 </div>
             </aside>
 
-            {/* ============================================================== */}
-            {/* CONTAINER PRINCIPAL (TELA INTEIRA)                             */}
-            {/* ============================================================== */}
+            {/* CONTAINER PRINCIPAL (TELA INTEIRA) */}
             <div className="flex-1 flex flex-col min-w-0">
                 
                 {/* --- Navbar Principal (Sticky + Glass Effect) --- */}
@@ -203,7 +227,7 @@ export default function AuthenticatedLayout({ header, children }) {
                                     </Link>
                                 )}
 
-                                {/* Dropdown de Perfil Rápido (Oculto em telemóveis pequenos para poupar espaço) */}
+                                {/* Dropdown de Perfil Rápido */}
                                 <div className="hidden sm:block relative">
                                     <Dropdown>
                                         <Dropdown.Trigger>

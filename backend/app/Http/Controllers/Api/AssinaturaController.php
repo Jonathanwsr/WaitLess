@@ -1,64 +1,108 @@
 <?php
 
-namespace App\Services;
+namespace App\Http\Controllers\Api;
 
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
+use App\Http\Controllers\Controller;
 use App\Models\Assinatura;
-use App\Models\User;
+use App\Services\MercadoPagoAssinaturaService;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Inertia\Inertia;
 
-class MercadoPagoAssinaturaService
+class AssinaturaController extends Controller
 {
-   
-    public function criarLinkAssinatura(Assinatura $assinatura, User $user)
+    protected $mpService;
+
+    // Catálogo oficial de preços e planos
+    const PLANOS = [
+        'plus'         => ['valor' => 9.90,  'tipo' => 'cliente'],
+        'basico'       => ['valor' => 20.00, 'tipo' => 'estabelecimento'],
+        'profissional' => ['valor' => 49.90, 'tipo' => 'estabelecimento'],
+        'premium'      => ['valor' => 99.90, 'tipo' => 'estabelecimento'],
+    ];
+
+    public function __construct(MercadoPagoAssinaturaService $mpService)
     {
-        $token = env('MERCADOPAGO_ACCESS_TOKEN');
+        $this->mpService = $mpService;
+    }
 
-        if (!$token) {
-            Log::error('MERCADOPAGO_ACCESS_TOKEN não está definido no .env');
-            throw new \Exception("Erro de configuração do Mercado Pago. Contate o suporte.");
-        }
-
-      
-        $payload = [
-            'reason' => 'Plano WaitLess ' . ucfirst($assinatura->nome_plano),
-            'auto_recurring' => [
-                'frequency' => 1,
-                'frequency_type' => 'months',
-                'transaction_amount' => (float) $assinatura->valor_mensal,
-                'currency_id' => 'BRL',
-            ],
-            'payer_email' => $user->email,
-            
-          
-            'back_url' => route('cliente.carteira'),
-            
-            'status' => 'pending',
-        ];
-
-       
-        $response = Http::withToken($token)
-            ->post('https://api.mercadopago.com/preapproval', $payload);
-
-      
-        if ($response->successful()) {
-            $data = $response->json();
-            
-          
-            $assinatura->update([
-                'gateway_assinatura_id' => $data['id']
-            ]);
-
-        
-            return $data['init_point'];
-        }
-
-      
-        Log::error(' Erro ao criar assinatura no Mercado Pago', [
-            'status' => $response->status(),
-            'body' => $response->json()
+    public function assinar(Request $request)
+    {
+        $request->validate([
+            'plano' => 'required|string|in:' . implode(',', array_keys(self::PLANOS))
         ]);
 
-        throw new \Exception('Não foi possível gerar o link de pagamento. Tente novamente mais tarde.');
+        $user = Auth::user();
+        $planoEscolhido = $request->plano;
+        $detalhesPlano = self::PLANOS[$planoEscolhido];
+
+        $assinaturaAtiva = $user->assinaturas()
+            ->where('status', 'ativa')
+            ->where('nome_plano', $planoEscolhido)
+            ->first();
+
+        if ($assinaturaAtiva) {
+            return redirect()->back()->with('warning', 'Você já possui este plano ativo!');
+        }
+
+        $assinatura = Assinatura::create([
+            'user_id' => $user->id,
+            'nome_plano' => $planoEscolhido,
+            'tipo_publico' => $detalhesPlano['tipo'],
+            'valor_mensal' => $detalhesPlano['valor'],
+            'status' => 'pendente'
+        ]);
+
+        try {
+            $linkPagamento = $this->mpService->criarLinkAssinatura($assinatura, $user);
+            return Inertia::location($linkPagamento);
+        } catch (\Exception $e) {
+            $assinatura->delete();
+            return redirect()->back()->with('error', $e->getMessage());
+        }
+    }
+
+    /**
+     * TELA DO ADMIN: Lista todas as assinaturas da plataforma
+     */
+    public function adminIndex()
+    {
+        if (Auth::user()->papel !== 'admin') {
+            abort(403, 'Acesso restrito a administradores da plataforma.');
+        }
+
+        $assinaturas = Assinatura::with('user')->latest()->paginate(15);
+
+        return Inertia::render('Admin/Assinaturas', [
+            'assinaturas' => $assinaturas
+        ]);
+    }
+
+    /**
+     * TELA DO ADMIN: Força o cancelamento de uma assinatura
+     */
+    public function adminCancelar($id)
+    {
+        if (Auth::user()->papel !== 'admin') {
+            abort(403);
+        }
+
+        $assinatura = Assinatura::findOrFail($id);
+
+        try {
+            if ($assinatura->gateway_assinatura_id && $assinatura->status === 'ativa') {
+                $this->mpService->cancelarAssinaturaNoMP($assinatura->gateway_assinatura_id);
+            }
+
+            $assinatura->update(['status' => 'cancelada']);
+            
+            if ($assinatura->user) {
+                $assinatura->user->update(['plano_assinatura' => 'gratuito']);
+            }
+
+            return redirect()->back()->with('success', 'Assinatura cancelada com sucesso!');
+        } catch (\Exception $e) {
+            return redirect()->back()->with('error', $e->getMessage());
+        }
     }
 }

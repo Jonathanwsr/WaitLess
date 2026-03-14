@@ -1,6 +1,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { Head, router } from '@inertiajs/react';
+import { Head, router, usePage } from '@inertiajs/react';
 import { useState, useEffect } from 'react';
+import { StarIcon } from '@heroicons/react/24/solid'; // Ícone de estrela para os pontos
 
 // ==============================================================================
 // SUB-COMPONENTE: Linha da Tabela (Gerencia o estado do PIN para cada linha)
@@ -8,14 +9,27 @@ import { useState, useEffect } from 'react';
 const LinhaAgendamento = ({ item, funcionarios, atribuirFuncionario, atualizarStatus, formatarMoeda }) => {
     const [pedindoPin, setPedindoPin] = useState(false);
     const [pinDigitado, setPinDigitado] = useState('');
+    const [processandoPin, setProcessandoPin] = useState(false);
 
     const confirmarComPin = () => {
         if (pinDigitado.length !== 4) return alert('O código deve ter 4 números.');
         
-        router.post(route('agendamentos.finalizar', item.id), { codigo: pinDigitado }, {
+        setProcessandoPin(true);
+        
+        // 👉 CHAMA A NOVA ROTA DO NOSSO BACKEND QUE VERIFICA O PIN E DÁ PONTOS
+        router.post(route('lojista.agendamento.finalizarPin', item.id), { 
+            codigo_pin: pinDigitado 
+        }, {
             preserveScroll: true,
-            onSuccess: () => { setPedindoPin(false); setPinDigitado(''); },
-            onError: (err) => { alert(err.codigo || 'Código incorreto!'); setPinDigitado(''); }
+            onSuccess: () => { 
+                setPedindoPin(false); 
+                setPinDigitado(''); 
+                setProcessandoPin(false);
+            },
+            onError: () => { 
+                setPinDigitado(''); 
+                setProcessandoPin(false);
+            }
         });
     };
 
@@ -38,8 +52,11 @@ const LinhaAgendamento = ({ item, funcionarios, atribuirFuncionario, atualizarSt
                         {item.usuario?.name?.charAt(0) || '?'}
                     </div>
                     <div>
-                        <div className="font-semibold text-gray-900 dark:text-white">
+                        <div className="font-semibold text-gray-900 dark:text-white flex items-center gap-1">
                             {item.usuario?.name || 'Cliente'}
+                            {item.usuario?.plano_assinatura === 'plus' && (
+                                <span className="bg-yellow-400 text-yellow-900 text-[9px] font-black px-1.5 py-0.5 rounded-full uppercase tracking-wider">VIP</span>
+                            )}
                         </div>
                         <div className="text-xs text-gray-500">
                             {item.usuario?.telefone || 'S/ telefone'}
@@ -64,6 +81,7 @@ const LinhaAgendamento = ({ item, funcionarios, atribuirFuncionario, atualizarSt
                     className="w-full text-xs border-gray-300 dark:border-gray-600 dark:bg-gray-800 rounded-lg shadow-sm focus:border-indigo-500 text-gray-700 dark:text-gray-300"
                     value={item.funcionario_id || ''}
                     onChange={(e) => atribuirFuncionario(item.id, e.target.value)}
+                    disabled={item.status === 'finalizado'}
                 >
                     <option value="">Qualquer um</option>
                     {funcionarios.map(f => (
@@ -74,13 +92,13 @@ const LinhaAgendamento = ({ item, funcionarios, atribuirFuncionario, atualizarSt
 
             {/* 5. PAGAMENTO */}
             <td className="px-6 py-4 text-center whitespace-nowrap">
-                {item.pagamento?.status === 'pago' ? (
+                {item.status_pagamento === 'pago_online' ? (
                     <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-green-100 text-green-700">
-                        <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span> Pago
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span> Pago Online
                     </span>
                 ) : (
                     <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-yellow-100 text-yellow-700">
-                        <span className="w-1.5 h-1.5 rounded-full bg-yellow-500"></span> Pendente
+                        <span className="w-1.5 h-1.5 rounded-full bg-yellow-500"></span> Receber no Local
                     </span>
                 )}
             </td>
@@ -89,7 +107,7 @@ const LinhaAgendamento = ({ item, funcionarios, atribuirFuncionario, atualizarSt
             <td className="px-6 py-4 text-center whitespace-nowrap">
                 {item.status === 'pendente' && <span className="inline-flex px-3 py-1 rounded-full text-xs font-bold bg-gray-100 text-gray-600 border border-gray-200">Aguardando</span>}
                 {item.status === 'confirmado' && <span className="inline-flex px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-700 border border-blue-200 animate-pulse">Em Atendimento</span>}
-                {item.status === 'finalizado' && <span className="inline-flex px-3 py-1 rounded-full text-xs font-bold bg-green-50 text-green-600 border border-green-200">Finalizado</span>}
+                {item.status === 'concluido' && <span className="inline-flex px-3 py-1 rounded-full text-xs font-bold bg-green-50 text-green-600 border border-green-200">Finalizado</span>}
                 {item.status === 'cancelado' && <span className="inline-flex px-3 py-1 rounded-full text-xs font-bold bg-red-50 text-red-600 border border-red-200">Cancelado</span>}
             </td>
 
@@ -105,9 +123,10 @@ const LinhaAgendamento = ({ item, funcionarios, atribuirFuncionario, atualizarSt
                             maxLength={4}
                             value={pinDigitado}
                             onChange={e => setPinDigitado(e.target.value.replace(/\D/g, ''))}
+                            autoFocus
                         />
-                        <button onClick={confirmarComPin} className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-sm font-bold rounded-lg shadow-sm transition">
-                            OK
+                        <button onClick={confirmarComPin} disabled={processandoPin} className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-sm font-bold rounded-lg shadow-sm transition disabled:opacity-50">
+                            {processandoPin ? '...' : 'OK'}
                         </button>
                         <button onClick={() => setPedindoPin(false)} className="px-3 py-1.5 bg-gray-200 hover:bg-gray-300 text-gray-700 text-sm font-bold rounded-lg transition">
                             ✕
@@ -126,10 +145,10 @@ const LinhaAgendamento = ({ item, funcionarios, atribuirFuncionario, atualizarSt
                                 </button>
                             </>
                         ) : item.status === 'confirmado' ? (
-                            <button onClick={() => setPedindoPin(true)} className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-bold rounded-lg shadow-sm transition flex items-center gap-2">
-                                ✔️ Finalizar
+                            <button onClick={() => setPedindoPin(true)} className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-bold rounded-lg shadow-sm transition flex items-center gap-2 animate-bounce hover:animate-none">
+                                ✔️ Finalizar c/ PIN
                             </button>
-                        ) : item.status === 'finalizado' ? (
+                        ) : item.status === 'concluido' ? (
                             <span className="px-4 py-2 text-gray-400 text-sm font-bold rounded-lg">✔️ Concluído</span>
                         ) : (
                             <span className="px-4 py-2 text-red-400 text-sm font-bold rounded-lg">✕ Cancelado</span>
@@ -147,6 +166,9 @@ const LinhaAgendamento = ({ item, funcionarios, atribuirFuncionario, atualizarSt
 // ==============================================================================
 export default function Fila({ auth, estabelecimento, agendamentos, filtros, funcionarios = [] }) {
     
+    // Pega as mensagens de sessão (Flash messages do Backend)
+    const { flash = {}, errors } = usePage().props;
+
     const [params, setParams] = useState({
         periodo: filtros?.periodo || 'hoje',
         ordem: filtros?.ordem || 'asc',
@@ -155,7 +177,7 @@ export default function Fila({ auth, estabelecimento, agendamentos, filtros, fun
         per_page: filtros?.per_page || '10',
     });
 
-    // Auto-refresh silencioso
+    // Auto-refresh silencioso (só recarrega os dados, não a página inteira)
     useEffect(() => {
         const interval = setInterval(() => {
             router.reload({ only: ['agendamentos'] });
@@ -175,7 +197,7 @@ export default function Fila({ auth, estabelecimento, agendamentos, filtros, fun
         });
     };
 
-    // Atualiza o status
+    // Atualiza o status básico (Aguardando -> Em Atendimento / Cancelar)
     const atualizarStatus = (id, novoStatus) => {
         router.patch(route('agendamentos.update-status', id), { status: novoStatus }, {
             preserveScroll: true,
@@ -195,6 +217,9 @@ export default function Fila({ auth, estabelecimento, agendamentos, filtros, fun
         return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor);
     };
 
+    // Extrai o primeiro erro (ex: PIN incorreto)
+    const errorMsg = flash?.error || (Object.keys(errors).length > 0 ? Object.values(errors)[0] : null);
+
     return (
         <AuthenticatedLayout
             user={auth.user}
@@ -213,7 +238,25 @@ export default function Fila({ auth, estabelecimento, agendamentos, filtros, fun
 
             <div className="max-w-7xl mx-auto mt-6 space-y-6 pb-12 px-4 sm:px-6 lg:px-8">
                 
-                
+                {/* --- AVISOS GLOBAIS DE SUCESSO (COMEMORAÇÃO DE PONTOS) --- */}
+                {flash?.success && (
+                    <div className="bg-green-100 border border-green-200 text-green-800 p-4 rounded-xl shadow-sm flex items-center gap-3 animate-in fade-in slide-in-from-top-4">
+                        <StarIcon className="w-8 h-8 text-yellow-500 shrink-0" />
+                        <div>
+                            <p className="font-bold text-lg">Sensacional!</p>
+                            <p className="text-sm font-medium">{flash.success}</p>
+                        </div>
+                    </div>
+                )}
+
+                {/* --- AVISO DE ERRO (PIN INCORRETO) --- */}
+                {errorMsg && (
+                    <div className="bg-red-100 border border-red-200 text-red-800 p-4 rounded-xl shadow-sm font-bold animate-in fade-in slide-in-from-top-4">
+                        ❌ {errorMsg}
+                    </div>
+                )}
+
+                {/* --- ABAS DE PERÍODO --- */}
                 <div className="flex gap-6 border-b border-gray-200 dark:border-gray-700 pt-2">
                     <button 
                         onClick={() => updateFiltros('periodo', 'hoje')}
@@ -251,7 +294,7 @@ export default function Fila({ auth, estabelecimento, agendamentos, filtros, fun
                                 <option value="todos">Todos</option>
                                 <option value="pendente">Aguardando</option>
                                 <option value="confirmado">Em Atendimento</option>
-                                <option value="finalizado">Finalizados</option>
+                                <option value="concluido">Finalizados</option>
                             </select>
                         </div>
 
@@ -263,8 +306,8 @@ export default function Fila({ auth, estabelecimento, agendamentos, filtros, fun
                                 className="border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 rounded-lg text-sm shadow-sm focus:ring-indigo-500 min-w-[140px]"
                             >
                                 <option value="todos">Todos</option>
-                                <option value="pago">Já Pagos</option>
-                                <option value="pendente">Pendente</option>
+                                <option value="pago_online">Online (App)</option>
+                                <option value="pendente">No Local</option>
                             </select>
                         </div>
 

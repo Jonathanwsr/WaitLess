@@ -4,7 +4,7 @@ import InputLabel from '@/Components/InputLabel';
 import PrimaryButton from '@/Components/PrimaryButton'; 
 import { Head, useForm, usePage, Link, router } from '@inertiajs/react'; 
 import { useState, useEffect } from 'react';
-import { CheckCircleIcon, ClockIcon, CreditCardIcon, CalendarIcon, ArrowLeftIcon, PencilSquareIcon } from '@heroicons/react/24/solid';
+import { CheckCircleIcon, ClockIcon, CreditCardIcon, CalendarIcon, ArrowLeftIcon, PencilSquareIcon, TagIcon } from '@heroicons/react/24/solid';
 
 export default function Agendar({ auth, estabelecimento, servicos = [] }) {
     const [servicoSelecionado, setServicoSelecionado] = useState(null);
@@ -12,11 +12,10 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
     const [editandoDataHora, setEditandoDataHora] = useState(false);
     const [statusFinalizacao, setStatusFinalizacao] = useState(null); 
     
-    // ESTADOS PARA CONTROLE DE PREÇO/CARRINHO
-    const [totalPersonalizado, setTotalPersonalizado] = useState(null);
-    const [qtdLocal, setQtdLocal] = useState(1); // Controla a quantidade diretamente nesta tela
+    // ESTADOS PARA CONTROLE DE PREÇO E CUPOM
+    const [qtdLocal, setQtdLocal] = useState(1); 
+    const [cupomAtivo, setCupomAtivo] = useState(null); // Guarda o cupom que veio da URL
 
-    const { url } = usePage(); 
     const { flash = {} } = usePage().props; 
 
     const { data, setData, post, processing, errors } = useForm({
@@ -25,7 +24,8 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
         hora_agendamento: '',
         forma_pagamento: '', 
         valor_final: '', 
-        quantidade: 1, // Envia para o backend a quantidade final
+        quantidade: 1, 
+        cupom_codigo: '', // Envia o código para o backend dar a baixa
     });
 
     const diasSemanaMap = { 0: 'domingo', 1: 'segunda', 2: 'terca', 3: 'quarta', 4: 'quinta', 5: 'sexta', 6: 'sabado' };
@@ -38,16 +38,31 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
         return dados;
     };
 
-    // 1. O MOTOR DE AUTOPREENCHIMENTO
+    // 1. O MOTOR DE AUTOPREENCHIMENTO E CAPTURA DO CUPOM
     useEffect(() => {
         const parametros = new URLSearchParams(window.location.search);
         const urlServicoId = parametros.get('servico_id');
         const urlData = parametros.get('data');
         const urlHora = parametros.get('hora');
         const urlQtd = parametros.get('quantidade_carrinho'); 
+        
+        // Captura os dados do cupom vindos da tela de Mensagens
+        const urlCupom = parametros.get('cupom');
+        const urlDesconto = parametros.get('desconto');
+        const urlTipoDesconto = parametros.get('tipo_desconto');
 
         let newState = { ...data };
         let mudouAlgo = false;
+
+        if (urlCupom && urlDesconto) {
+            setCupomAtivo({
+                codigo: urlCupom,
+                valor: Number(urlDesconto),
+                tipo: urlTipoDesconto || 'percentual'
+            });
+            newState.cupom_codigo = urlCupom;
+            mudouAlgo = true;
+        }
 
         if (urlServicoId) {
             const servicoEncontrado = servicos.find(s => s.id.toString() === urlServicoId);
@@ -61,16 +76,8 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
             }
         }
 
-        if (urlData) {
-            newState.data_agendamento = urlData;
-            mudouAlgo = true;
-        }
-
-        if (urlHora) {
-            newState.hora_agendamento = urlHora;
-            mudouAlgo = true;
-        }
-
+        if (urlData) { newState.data_agendamento = urlData; mudouAlgo = true; }
+        if (urlHora) { newState.hora_agendamento = urlHora; mudouAlgo = true; }
         if (urlQtd) {
             const qtdNum = Number(urlQtd);
             setQtdLocal(qtdNum);
@@ -84,9 +91,7 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
             setEditandoDataHora(true); 
         }
 
-        if (mudouAlgo) {
-            setData(newState);
-        }
+        if (mudouAlgo) setData(newState);
     }, []); 
 
     // 2. DETETOR DE DIAS DA SEMANA
@@ -98,15 +103,26 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
         }
     }, [data.data_agendamento]);
 
-    
+    // 3. O MOTOR DE CÁLCULO DE PREÇO E DESCONTO
     useEffect(() => {
         if (servicoSelecionado) {
-            const valorCalculado = Number(servicoSelecionado.valor) * qtdLocal;
+            let valorCalculado = Number(servicoSelecionado.valor) * qtdLocal;
+
+            // Aplica a matemática mágica do cupom no valor final!
+            if (cupomAtivo) {
+                if (cupomAtivo.tipo === 'percentual') {
+                    valorCalculado = valorCalculado - (valorCalculado * (cupomAtivo.valor / 100));
+                } else {
+                    valorCalculado = valorCalculado - cupomAtivo.valor;
+                }
+            }
+
+            if (valorCalculado < 0) valorCalculado = 0; // Evita que o valor fique negativo
+
             setData(prev => ({ ...prev, valor_final: valorCalculado, quantidade: qtdLocal }));
         }
-    }, [qtdLocal, servicoSelecionado]);
+    }, [qtdLocal, servicoSelecionado, cupomAtivo]);
 
-    
     useEffect(() => {
         if (flash.success && flash.success.includes('PIN')) {
             setStatusFinalizacao('sucesso_local'); 
@@ -156,7 +172,7 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
         setServicoSelecionado(servico);
         setData('servico_id', servico.id);
         setData('hora_agendamento', ''); 
-        setQtdLocal(1); // Reseta a quantidade para 1 ao trocar de serviço
+        setQtdLocal(1); 
         setEditandoDataHora(true); 
         
         const tipo = extrairConfiguracoes(servico.configuracoes).tipoPagamentoRaw;
@@ -166,9 +182,7 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
 
     const alterarQuantidade = (valor) => {
         const novaQtd = qtdLocal + valor;
-        if (novaQtd >= 1) {
-            setQtdLocal(novaQtd);
-        }
+        if (novaQtd >= 1) setQtdLocal(novaQtd);
     };
 
     const submitAgendamento = (e) => {
@@ -215,7 +229,9 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
         ? servicos.filter(s => s.id !== servicoSelecionado.id).slice(0, 4) 
         : servicos.slice(0, 4);
 
-    const valorAExibir = servicoSelecionado ? (Number(servicoSelecionado.valor) * qtdLocal) : 0;
+    // Variáveis de visualização do Preço Final no Resumo
+    const valorOriginalBruto = servicoSelecionado ? (Number(servicoSelecionado.valor) * qtdLocal) : 0;
+    const temDescontoVisivel = cupomAtivo && valorOriginalBruto > data.valor_final;
 
     if (statusFinalizacao) {
         return (
@@ -271,9 +287,24 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
 
                 <form onSubmit={submitAgendamento} className="space-y-6">
                     
+                    {/* 👉 NOVO: BANNER DE CUPOM FIXO NO TOPO */}
+                    {cupomAtivo && (
+                        <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 p-5 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm animate-in fade-in slide-in-from-top-4">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-green-100 text-green-600 rounded-full flex items-center justify-center shrink-0">
+                                    <TagIcon className="w-5 h-5" />
+                                </div>
+                                <div>
+                                    <p className="text-green-800 font-black text-lg">Cupom {cupomAtivo.codigo} Ativado!</p>
+                                    <p className="text-green-700 text-sm font-medium">Os preços abaixo já incluem o seu desconto.</p>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {/* RESUMO DO PEDIDO */}
                     {servicoSelecionado && data.hora_agendamento && !editandoDataHora ? (
-                        <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm relative overflow-hidden group">
+                        <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm relative overflow-hidden group animate-in fade-in">
                             <div className="absolute top-0 left-0 w-1.5 h-full bg-indigo-600"></div>
                             
                             <div className="flex justify-between items-start mb-6">
@@ -284,12 +315,10 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
                             </div>
 
                             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-gray-50 p-4 rounded-xl border border-gray-100">
-                                
                                 <div className="flex-1">
                                     <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Serviço Escolhido</p>
                                     <h4 className="text-xl font-black text-gray-900">{servicoSelecionado.nome}</h4>
                                     
-                                    {/* 👉 CONTROLO DE QUANTIDADE NO RESUMO */}
                                     <div className="flex items-center gap-3 mt-3">
                                         <span className="text-sm text-gray-600 font-medium">Quantidade:</span>
                                         <div className="flex items-center bg-white rounded-lg border border-gray-200 shadow-sm">
@@ -323,15 +352,40 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
                             <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
                                 <h3 className="text-lg font-bold text-gray-900 mb-4">1. Escolha o Serviço</h3>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    {servicos?.map(s => (
-                                        <div key={s.id} onClick={() => handleSelectServico(s)} className={`cursor-pointer p-4 rounded-xl border-2 transition-all flex justify-between items-center ${data.servico_id === s.id ? 'border-indigo-600 bg-indigo-50 shadow-sm' : 'border-gray-100 bg-white hover:border-indigo-200'}`}>
-                                            <div>
-                                                <h4 className="font-bold text-gray-900">{s.nome}</h4>
-                                                <p className="text-xs text-gray-500 mt-0.5">{s.duracao_minutos} min</p>
+                                    {servicos?.map(s => {
+                                        // 👉 MATEMÁTICA AO VIVO NA LISTA DE SERVIÇOS
+                                        let precoOriginal = Number(s.valor);
+                                        let precoComDesconto = precoOriginal;
+                                        
+                                        if (cupomAtivo) {
+                                            if (cupomAtivo.tipo === 'percentual') {
+                                                precoComDesconto -= precoComDesconto * (cupomAtivo.valor / 100);
+                                            } else {
+                                                precoComDesconto -= cupomAtivo.valor;
+                                            }
+                                            if (precoComDesconto < 0) precoComDesconto = 0;
+                                        }
+
+                                        return (
+                                            <div key={s.id} onClick={() => handleSelectServico(s)} className={`cursor-pointer p-4 rounded-xl border-2 transition-all flex justify-between items-center ${data.servico_id === s.id ? 'border-indigo-600 bg-indigo-50 shadow-sm' : 'border-gray-100 bg-white hover:border-indigo-200'}`}>
+                                                <div>
+                                                    <h4 className="font-bold text-gray-900">{s.nome}</h4>
+                                                    <p className="text-xs text-gray-500 mt-0.5">{s.duracao_minutos} min</p>
+                                                </div>
+                                                
+                                                <div className="text-right">
+                                                    {cupomAtivo && precoComDesconto < precoOriginal ? (
+                                                        <>
+                                                            <span className="text-xs text-gray-400 line-through block mb-0.5">{formatarMoeda(precoOriginal)}</span>
+                                                            <span className="font-black text-green-600 text-lg">{formatarMoeda(precoComDesconto)}</span>
+                                                        </>
+                                                    ) : (
+                                                        <span className="font-bold text-indigo-600 text-lg">{formatarMoeda(precoOriginal)}</span>
+                                                    )}
+                                                </div>
                                             </div>
-                                            <span className="font-bold text-indigo-600">{formatarMoeda(s.valor)}</span>
-                                        </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             </div>
 
@@ -340,8 +394,6 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
                                 <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm animate-in fade-in">
                                     <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 border-b border-gray-100 pb-4 gap-4">
                                         <h3 className="text-lg font-bold text-gray-900">2. Defina os Detalhes</h3>
-                                        
-                                        {/* 👉 CONTROLO DE QUANTIDADE NA EDIÇÃO MANUAL */}
                                         <div className="flex items-center gap-3 bg-gray-50 px-3 py-2 rounded-xl border border-gray-100">
                                             <span className="text-sm text-gray-700 font-bold">Quantidade:</span>
                                             <div className="flex items-center bg-white rounded-lg border border-gray-200 shadow-sm">
@@ -419,11 +471,20 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
                     {servicoSelecionado && data.hora_agendamento && (
                         <div className="bg-white p-6 sm:p-8 rounded-2xl border border-gray-200 shadow-sm animate-in fade-in slide-in-from-bottom-4">
                             
-                            <div className="flex justify-between items-center mb-6 border-b border-gray-100 pb-4">
+                            {/* 👉 EXIBIÇÃO DO PREÇO COM DESCONTO NO FINAL */}
+                            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6 border-b border-gray-100 pb-6 gap-4">
                                 <h3 className="text-xl font-bold text-gray-900">Total a pagar</h3>
-                                <div className="text-3xl font-black text-gray-900">
-                                    <span className="text-lg text-gray-400 font-normal mr-1">R$</span>
-                                    {Number(valorAExibir).toFixed(2).replace('.', ',')}
+                                
+                                <div className="flex items-center gap-3">
+                                    {temDescontoVisivel && (
+                                        <span className="text-lg text-gray-400 line-through font-medium">
+                                            R$ {Number(valorOriginalBruto).toFixed(2).replace('.', ',')}
+                                        </span>
+                                    )}
+                                    <div className={`text-4xl font-black ${temDescontoVisivel ? 'text-green-600' : 'text-gray-900'}`}>
+                                        <span className="text-xl font-normal mr-1 opacity-70">R$</span>
+                                        {Number(data.valor_final).toFixed(2).replace('.', ',')}
+                                    </div>
                                 </div>
                             </div>
 
@@ -464,9 +525,9 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
 
                             {/* BOTÃO FINAL GIGANTE */}
                             <div className="mt-8 pt-6 border-t border-gray-100 flex flex-col items-end animate-in fade-in slide-in-from-bottom-2">
-                                <PrimaryButton className="w-full sm:w-auto px-12 py-5 text-xl font-bold bg-gray-900 rounded-xl shadow-xl hover:scale-[1.02] transition disabled:opacity-50 flex items-center justify-center gap-3" disabled={processing || !servicoDisponivelNesteDia || !data.forma_pagamento}>
+                                <PrimaryButton className={`w-full sm:w-auto px-12 py-5 text-xl font-bold rounded-xl shadow-xl hover:scale-[1.02] transition disabled:opacity-50 flex items-center justify-center gap-3 ${temDescontoVisivel ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-gray-900 text-white'}`} disabled={processing || !servicoDisponivelNesteDia || !data.forma_pagamento}>
                                     {processing && <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>}
-                                    {textoBotao}
+                                    {temDescontoVisivel ? 'Confirmar c/ Desconto!' : textoBotao}
                                 </PrimaryButton>
                             </div>
                         </div>

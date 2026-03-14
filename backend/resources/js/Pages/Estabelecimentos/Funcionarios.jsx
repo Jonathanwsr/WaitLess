@@ -2,8 +2,10 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, useForm, router } from '@inertiajs/react';
 import { useState } from 'react';
 import { 
-    HiSearch, HiPlus, HiPencil, HiTrash, HiX, HiUser, HiMail, HiLockClosed, HiBriefcase, HiOfficeBuilding, HiPhone, HiEye, HiStar, HiCurrencyDollar, HiCalendar, HiChartBar
-} from 'react-icons/hi';
+    MagnifyingGlassIcon, PlusIcon, PencilSquareIcon, TrashIcon, XMarkIcon, 
+    UserIcon, EnvelopeIcon, LockClosedIcon, BriefcaseIcon, BuildingOfficeIcon, 
+    PhoneIcon, EyeIcon, StarIcon, CurrencyDollarIcon, CalendarIcon, ChartBarIcon 
+} from '@heroicons/react/24/solid';
 import PrimaryButton from '@/Components/PrimaryButton';
 import InputError from '@/Components/InputError';
 
@@ -114,13 +116,13 @@ export default function Funcionarios({ auth, funcionarios = [], meusEstabelecime
                         onClick={abrirModalNovo}
                         className="w-full sm:w-auto flex items-center justify-center gap-2 bg-indigo-600 text-white px-5 py-2.5 rounded-lg font-bold hover:bg-indigo-700 transition shadow-sm"
                     >
-                        <HiPlus className="w-5 h-5" />
+                        <PlusIcon className="w-5 h-5" />
                         Novo Funcionário
                     </button>
 
                     <div className="relative w-full sm:w-72">
                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <HiSearch className="text-gray-400 w-5 h-5" />
+                            <MagnifyingGlassIcon className="text-gray-400 w-5 h-5" />
                         </div>
                         <input 
                             type="text" 
@@ -175,7 +177,7 @@ export default function Funcionarios({ auth, funcionarios = [], meusEstabelecime
                                         {/* Coluna 3: Atendimentos (Nova) */}
                                         <td className="p-4 text-center">
                                             <span className="inline-flex items-center justify-center bg-gray-100 text-gray-700 font-bold px-3 py-1 rounded-lg">
-                                                <HiBriefcase className="w-4 h-4 mr-1 text-gray-400" />
+                                                <BriefcaseIcon className="w-4 h-4 mr-1 text-gray-400" />
                                                 {func.total_atendimentos || 0}
                                             </span>
                                         </td>
@@ -183,7 +185,7 @@ export default function Funcionarios({ auth, funcionarios = [], meusEstabelecime
                                         {/* Coluna 4: Avaliação (Nova) */}
                                         <td className="p-4 text-center">
                                             <div className="flex items-center justify-center gap-1 font-bold">
-                                                <HiStar className="w-4 h-4 text-yellow-400" />
+                                                <StarIcon className="w-4 h-4 text-yellow-400" />
                                                 {func.avaliacao_media ? Number(func.avaliacao_media).toFixed(1) : 'Novo'}
                                             </div>
                                         </td>
@@ -201,14 +203,14 @@ export default function Funcionarios({ auth, funcionarios = [], meusEstabelecime
                                         <td className="p-4 text-right">
                                             <div className="flex items-center justify-end gap-1">
                                                 <button onClick={() => abrirModalDetalhes(func)} className="p-2 text-indigo-500 hover:bg-indigo-50 rounded-lg transition" title="Ver Desempenho">
-                                                    <HiEye className="w-5 h-5" />
+                                                    <EyeIcon className="w-5 h-5" />
                                                 </button>
                                                 <button onClick={() => abrirModalEdicao(func)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition" title="Editar">
-                                                    <HiPencil className="w-5 h-5" />
+                                                    <PencilSquareIcon className="w-5 h-5" />
                                                 </button>
                                                 {func.ativo && (
                                                     <button onClick={() => deletarFuncionario(func.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition" title="Inativar">
-                                                        <HiTrash className="w-5 h-5" />
+                                                        <TrashIcon className="w-5 h-5" />
                                                     </button>
                                                 )}
                                             </div>
@@ -236,7 +238,7 @@ export default function Funcionarios({ auth, funcionarios = [], meusEstabelecime
                                 </div>
                             </div>
                             <button onClick={fecharModais} className="text-white/70 hover:text-white transition">
-                                <HiX className="w-6 h-6" />
+                                <XMarkIcon className="w-6 h-6" />
                             </button>
                         </div>
                         
@@ -246,14 +248,14 @@ export default function Funcionarios({ auth, funcionarios = [], meusEstabelecime
                             <div className="grid grid-cols-2 gap-4 mb-6">
                                 <div className="bg-indigo-50 rounded-xl p-4 border border-indigo-100">
                                     <div className="flex items-center gap-2 text-indigo-600 mb-1">
-                                        <HiChartBar className="w-5 h-5" /> <span className="font-bold text-sm">Atendimentos</span>
+                                        <ChartBarIcon className="w-5 h-5" /> <span className="font-bold text-sm">Atendimentos</span>
                                     </div>
                                     <div className="text-2xl font-black text-gray-900">{funcionarioSelecionado.total_atendimentos || 0}</div>
                                 </div>
                                 
                                 <div className="bg-green-50 rounded-xl p-4 border border-green-100">
                                     <div className="flex items-center gap-2 text-green-600 mb-1">
-                                        <HiCurrencyDollar className="w-5 h-5" /> <span className="font-bold text-sm">Faturamento</span>
+                                        <CurrencyDollarIcon className="w-5 h-5" /> <span className="font-bold text-sm">Faturamento</span>
                                     </div>
                                     <div className="text-2xl font-black text-gray-900">{formatarMoeda(funcionarioSelecionado.faturamento_total)}</div>
                                 </div>
@@ -261,15 +263,15 @@ export default function Funcionarios({ auth, funcionarios = [], meusEstabelecime
 
                             <div className="space-y-3 text-sm">
                                 <div className="flex justify-between border-b border-gray-100 pb-2">
-                                    <span className="text-gray-500 flex items-center gap-2"><HiStar className="w-4 h-4 text-yellow-400" /> Avaliação Média</span>
+                                    <span className="text-gray-500 flex items-center gap-2"><StarIcon className="w-4 h-4 text-yellow-400" /> Avaliação Média</span>
                                     <span className="font-bold text-gray-900">{funcionarioSelecionado.avaliacao_media ? Number(funcionarioSelecionado.avaliacao_media).toFixed(1) : 'Sem avaliações'}</span>
                                 </div>
                                 <div className="flex justify-between border-b border-gray-100 pb-2">
-                                    <span className="text-gray-500 flex items-center gap-2"><HiCalendar className="w-4 h-4 text-gray-400" /> Contratado em</span>
+                                    <span className="text-gray-500 flex items-center gap-2"><CalendarIcon className="w-4 h-4 text-gray-400" /> Contratado em</span>
                                     <span className="font-bold text-gray-900">{formatarData(funcionarioSelecionado.created_at)}</span>
                                 </div>
                                 <div className="flex justify-between border-b border-gray-100 pb-2">
-                                    <span className="text-gray-500 flex items-center gap-2"><HiMail className="w-4 h-4 text-gray-400" /> Acesso (Email)</span>
+                                    <span className="text-gray-500 flex items-center gap-2"><EnvelopeIcon className="w-4 h-4 text-gray-400" /> Acesso (Email)</span>
                                     <span className="font-bold text-gray-900">{funcionarioSelecionado.usuario?.email || 'N/A'}</span>
                                 </div>
                             </div>
@@ -284,14 +286,13 @@ export default function Funcionarios({ auth, funcionarios = [], meusEstabelecime
             {/* --- MODAL 2: CRIAÇÃO / EDIÇÃO (CÓDIGO MANTIDO) --- */}
             {isModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
-                    {/* ... (O código deste modal continua exatamente o mesmo de antes) ... */}
                     <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
                         <div className="flex justify-between items-center p-6 border-b border-gray-100 sticky top-0 bg-white z-10">
                             <h3 className="text-xl font-bold text-gray-900">
                                 {modoEdicao ? 'Editar Funcionário' : 'Novo Funcionário'}
                             </h3>
                             <button onClick={fecharModais} className="text-gray-400 hover:text-gray-600 transition">
-                                <HiX className="w-6 h-6" />
+                                <XMarkIcon className="w-6 h-6" />
                             </button>
                         </div>
 
@@ -299,7 +300,7 @@ export default function Funcionarios({ auth, funcionarios = [], meusEstabelecime
                             {!modoEdicao && (
                                 <div>
                                     <label className="flex items-center gap-2 text-sm font-bold text-gray-700 mb-2">
-                                        <HiOfficeBuilding className="text-gray-400" /> Estabelecimento
+                                        <BuildingOfficeIcon className="w-5 h-5 text-gray-400" /> Estabelecimento
                                     </label>
                                     <select 
                                         className="w-full rounded-lg border-gray-300 focus:border-indigo-500 focus:ring-indigo-500" 
@@ -318,7 +319,7 @@ export default function Funcionarios({ auth, funcionarios = [], meusEstabelecime
 
                             <div>
                                 <label className="flex items-center gap-2 text-sm font-bold text-gray-700 mb-2">
-                                    <HiUser className="text-gray-400" /> Nome Completo
+                                    <UserIcon className="w-5 h-5 text-gray-400" /> Nome Completo
                                 </label>
                                 <input type="text" className="w-full rounded-lg border-gray-300 focus:border-indigo-500 focus:ring-indigo-500" value={data.nome} onChange={e => setData('nome', e.target.value)} required />
                                 <InputError message={errors.nome} className="mt-1" />
@@ -327,14 +328,14 @@ export default function Funcionarios({ auth, funcionarios = [], meusEstabelecime
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="flex items-center gap-2 text-sm font-bold text-gray-700 mb-2">
-                                        <HiMail className="text-gray-400" /> E-mail (Acesso)
+                                        <EnvelopeIcon className="w-5 h-5 text-gray-400" /> E-mail (Acesso)
                                     </label>
                                     <input type="email" className="w-full rounded-lg border-gray-300 focus:border-indigo-500 focus:ring-indigo-500" value={data.email} onChange={e => setData('email', e.target.value)} required />
                                     <InputError message={errors.email} className="mt-1" />
                                 </div>
                                 <div>
                                     <label className="flex items-center gap-2 text-sm font-bold text-gray-700 mb-2">
-                                        <HiPhone className="text-gray-400" /> Telefone
+                                        <PhoneIcon className="w-5 h-5 text-gray-400" /> Telefone
                                     </label>
                                     <input type="text" className="w-full rounded-lg border-gray-300 focus:border-indigo-500 focus:ring-indigo-500" value={data.telefone} onChange={e => setData('telefone', e.target.value)} placeholder="(DD) 99999-9999" />
                                     <InputError message={errors.telefone} className="mt-1" />
@@ -344,7 +345,7 @@ export default function Funcionarios({ auth, funcionarios = [], meusEstabelecime
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="flex items-center gap-2 text-sm font-bold text-gray-700 mb-2">
-                                        <HiLockClosed className="text-gray-400" /> Senha (Min. 8)
+                                        <LockClosedIcon className="w-5 h-5 text-gray-400" /> Senha (Min. 8)
                                     </label>
                                     <input 
                                         type="password" 
@@ -358,7 +359,7 @@ export default function Funcionarios({ auth, funcionarios = [], meusEstabelecime
                                 </div>
                                 <div>
                                     <label className="flex items-center gap-2 text-sm font-bold text-gray-700 mb-2">
-                                        <HiBriefcase className="text-gray-400" /> Cargo
+                                        <BriefcaseIcon className="w-5 h-5 text-gray-400" /> Cargo
                                     </label>
                                     <select className="w-full rounded-lg border-gray-300 focus:border-indigo-500 focus:ring-indigo-500" value={data.cargo} onChange={e => setData('cargo', e.target.value)}>
                                         <option value="Atendente">Atendente</option>

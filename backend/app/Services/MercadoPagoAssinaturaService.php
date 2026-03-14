@@ -9,9 +9,17 @@ use Illuminate\Support\Facades\Log;
 
 class MercadoPagoAssinaturaService
 {
+    /**
+     * Cria a intenção de assinatura na API do Mercado Pago
+     */
     public function criarLinkAssinatura(Assinatura $assinatura, User $user)
     {
         $token = env('MERCADOPAGO_ACCESS_TOKEN');
+
+        if (!$token) {
+            Log::error('MERCADOPAGO_ACCESS_TOKEN não está definido no .env');
+            throw new \Exception("Erro de configuração do Mercado Pago. Contate o suporte.");
+        }
 
         $response = Http::withToken($token)->post('https://api.mercadopago.com/preapproval', [
             'reason' => 'WaitLess - Plano ' . ucfirst($assinatura->nome_plano),
@@ -21,7 +29,7 @@ class MercadoPagoAssinaturaService
                 'transaction_amount' => (float) $assinatura->valor_mensal,
                 'currency_id' => 'BRL'
             ],
-            'back_url' => route('dashboard'), 
+            'back_url' => route('cliente.carteira'), 
             'payer_email' => $user->email,
             'external_reference' => (string) $assinatura->id
         ]);
@@ -36,12 +44,14 @@ class MercadoPagoAssinaturaService
         throw new \Exception('Não foi possível gerar o link de pagamento. Tente novamente.');
     }
 
-    // 👉 NOVA FUNÇÃO: Cancela a cobrança automática no Mercado Pago
-    public function cancelarAssinaturaNoMP($assinaturaIdMP)
+    /**
+     * Cancela a assinatura diretamente na API do Mercado Pago
+     */
+    public function cancelarAssinaturaNoMP($preapprovalId)
     {
         $token = env('MERCADOPAGO_ACCESS_TOKEN');
 
-        $response = Http::withToken($token)->put("https://api.mercadopago.com/preapproval/{$assinaturaIdMP}", [
+        $response = Http::withToken($token)->put("https://api.mercadopago.com/preapproval/{$preapprovalId}", [
             'status' => 'cancelled'
         ]);
 

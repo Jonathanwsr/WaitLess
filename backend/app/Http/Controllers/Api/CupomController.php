@@ -7,12 +7,35 @@ use App\Models\Cupom;
 use App\Models\Estabelecimento;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Inertia\Inertia;
 
 class CupomController extends Controller
 {
+  
+    public function index()
+    {
+        $user = Auth::user();
+        if (!in_array($user->papel, ['admin', 'socio', 'gerente'])) {
+            abort(403, 'Acesso não autorizado.');
+        }
+
+        // Pega as lojas do lojista (ajuste a consulta conforme a sua regra de negócio)
+        $estabelecimentos = Estabelecimento::where('usuario_id', $user->id)->get();
+        
+        // Pega os cupons que pertencem às lojas deste lojista
+        $cupons = Cupom::with('estabelecimento')
+            ->whereIn('estabelecimento_id', $estabelecimentos->pluck('id'))
+            ->latest()
+            ->get();
+
+        return Inertia::render('Lojista/Cupons', [
+            'cupons' => $cupons,
+            'meusEstabelecimentos' => $estabelecimentos
+        ]);
+    }
+
     public function store(Request $request, Estabelecimento $estabelecimento)
     {
-       
         $user = Auth::user();
         if (!in_array($user->papel, ['admin', 'socio', 'gerente'])) {
             abort(403, 'Ação não autorizada.');

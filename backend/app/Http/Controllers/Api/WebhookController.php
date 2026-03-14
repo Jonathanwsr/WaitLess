@@ -45,7 +45,7 @@ class WebhookController extends Controller
             return response()->json(['status' => 'sucesso'], 200);
 
         } catch (\Exception $e) {
-            Log::error('❌ Erro no Webhook MP: ' . $e->getMessage());
+            Log::error(' Erro no Webhook MP: ' . $e->getMessage());
             return response()->json(['status' => 'erro'], 500);
         }
     }
@@ -116,7 +116,7 @@ class WebhookController extends Controller
                     $assinatura->update(['data_vencimento' => now()->addMonth()]);
                     $assinatura->user->update(['plano_expira_em' => now()->addMonth()]);
 
-                    // Mail::to($assinatura->user->email)->send(new RenovacaoAssinaturaMail($assinatura->user));
+                  
                     Log::info("🔄 Assinatura {$assinatura->id} RENOVADA por mais um mês!");
                 }
             }

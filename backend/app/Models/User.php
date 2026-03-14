@@ -5,6 +5,7 @@ namespace App\Models;
 use Laravel\Sanctum\HasApiTokens;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use App\Models\Cupom;
 
 class User extends Authenticatable
 {
@@ -24,6 +25,13 @@ class User extends Authenticatable
         'password',
         'remember_token',
     ];
+
+    public function cupons()
+    {
+        return $this->belongsToMany(Cupom::class, 'cupom_user')
+                    ->withPivot('usado')
+                    ->withTimestamps();
+    }
 
 public function estabelecimentosGerenciados()
 {
