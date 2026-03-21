@@ -2,18 +2,27 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 import TextInput from '@/Components/TextInput';
-import { TicketIcon, StarIcon, ExclamationTriangleIcon, CheckCircleIcon, XCircleIcon, ClockIcon, CalendarIcon, BellAlertIcon } from '@heroicons/react/24/solid';
+import { TicketIcon, StarIcon, ExclamationTriangleIcon, CheckCircleIcon, XCircleIcon, ClockIcon, CalendarIcon, BellAlertIcon, ChatBubbleBottomCenterTextIcon } from '@heroicons/react/24/solid';
+import { StarIcon as StarOutlineIcon } from '@heroicons/react/24/outline'; 
 
 export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
     const [busca, setBusca] = useState('');
     const [categoria, setCategoria] = useState('');
     
     // Controle das Abas de Agendamentos
-    const [abaAtiva, setAbaAtiva] = useState('proximos'); // proximos, pendentes, concluidos, cancelados
+    const [abaAtiva, setAbaAtiva] = useState('proximos'); 
 
     // Estados de loading para os botões não travarem
     const [loadingPagar, setLoadingPagar] = useState(null); 
     const [loadingCancelar, setLoadingCancelar] = useState(null); 
+
+    // Estados do Pop-up de Avaliação
+    const [modalAvaliacaoOpen, setModalAvaliacaoOpen] = useState(false);
+    const [agendamentoParaAvaliar, setAgendamentoParaAvaliar] = useState(null);
+    const [nota, setNota] = useState(5);
+    const [comentario, setComentario] = useState('');
+    const [hoverNota, setHoverNota] = useState(0);
+    const [enviandoAvaliacao, setEnviandoAvaliacao] = useState(false);
     
     const { flash = {} } = usePage().props;
 
@@ -70,9 +79,35 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
         }
     };
 
+    // Funções de Avaliação
+    const abrirModalAvaliacao = (agendamento) => {
+        setAgendamentoParaAvaliar(agendamento);
+        setNota(5);
+        setComentario('');
+        setModalAvaliacaoOpen(true);
+    };
+
+    const fecharModalAvaliacao = () => {
+        setModalAvaliacaoOpen(false);
+        setTimeout(() => setAgendamentoParaAvaliar(null), 300);
+    };
+
+    const submitAvaliacao = (e) => {
+        e.preventDefault();
+        setEnviandoAvaliacao(true);
+        router.post(route('cliente.agendamento.avaliar', agendamentoParaAvaliar.id), {
+            nota: nota,
+            comentario: comentario
+        }, {
+            preserveScroll: true,
+            onSuccess: () => fecharModalAvaliacao(),
+            onFinish: () => setEnviandoAvaliacao(false)
+        });
+    };
+
     const primeiroNome = (usuario?.name || auth?.user?.name || 'Cliente').split(' ')[0];
 
-    // LÓGICA DE FILTRAGEM PARA AS ABAS
+    // Separa os agendamentos nas abas correspondentes
     const agsProximos = [];
     const agsPendentes = [];
     const agsConcluidos = [];
@@ -104,11 +139,10 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
 
             <div className="max-w-7xl mx-auto mt-6 px-4 sm:px-6 lg:px-8 pb-12 space-y-8">
                 
-                {flash?.success && <div className="p-4 text-green-800 bg-green-100 border border-green-200 rounded-xl shadow-sm animate-in fade-in"><strong>✅ Sucesso:</strong> {flash.success}</div>}
-                {flash?.warning && <div className="p-4 text-yellow-800 bg-yellow-100 border border-yellow-200 rounded-xl shadow-sm animate-in fade-in"><strong>⚠️ Atenção:</strong> {flash.warning}</div>}
-                {flash?.error && <div className="p-4 text-red-800 bg-red-100 border border-red-200 rounded-xl shadow-sm animate-in fade-in"><strong>❌ Oops:</strong> {flash.error}</div>}
+                {flash?.success && <div className="p-4 text-green-800 bg-green-100 border border-green-200 rounded-xl shadow-sm animate-in fade-in flex items-center gap-2"><CheckCircleIcon className="w-6 h-6"/> {flash.success}</div>}
+                {flash?.warning && <div className="p-4 text-yellow-800 bg-yellow-100 border border-yellow-200 rounded-xl shadow-sm animate-in fade-in flex items-center gap-2"><ExclamationTriangleIcon className="w-6 h-6"/> {flash.warning}</div>}
+                {flash?.error && <div className="p-4 text-red-800 bg-red-100 border border-red-200 rounded-xl shadow-sm animate-in fade-in flex items-center gap-2"><XCircleIcon className="w-6 h-6"/> {flash.error}</div>}
 
-                {/* 👉 BOTÃO DE ATALHO PARA MENSAGENS E SUGESTÕES */}
                 <div className="flex justify-end animate-in fade-in slide-in-from-top-4">
                     <Link 
                         href={route('cliente.mensagens')} 
@@ -119,7 +153,6 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
                     </Link>
                 </div>
 
-                {/* CAIXA DE BUSCA HERO */}
                 <div className="bg-indigo-600 rounded-3xl p-8 shadow-lg relative overflow-hidden">
                     <div className="relative z-10">
                         <h3 className="text-2xl font-extrabold text-white mb-2">Encontre e agende um serviço</h3>
@@ -132,54 +165,55 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
                             <button type="submit" className="bg-gray-900 text-white px-8 py-3 font-bold rounded-xl shadow-md hover:bg-gray-800 transition">Procurar</button>
                         </form>
                     </div>
-                    {/* Elemento de decoração */}
                     <TicketIcon className="absolute -right-6 -top-6 w-48 h-48 text-indigo-500 opacity-50 transform rotate-12 pointer-events-none" />
                 </div>
 
-                {/* SEÇÃO DE AGENDAMENTOS */}
                 <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
                     
-                    {/* CABEÇALHO E ABAS */}
                     <div className="p-6 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50">
                         <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-6">📅 Meus Agendamentos</h3>
                         
                         <div className="flex overflow-x-auto gap-2 scrollbar-hide pb-2">
                             <button 
                                 onClick={() => setAbaAtiva('proximos')} 
-                                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition whitespace-nowrap ${abaAtiva === 'proximos' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300'}`}
+                                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition whitespace-nowrap ${abaAtiva === 'proximos' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'}`}
                             >
                                 <ClockIcon className="w-5 h-5" /> Próximos 
-                                <span className="bg-white/20 text-inherit px-2 py-0.5 rounded-full text-xs">{agsProximos.length}</span>
+                                {agsProximos.length > 0 && <span className="bg-gray-100 text-gray-800 px-2 py-0.5 rounded-full text-xs ml-1">{agsProximos.length}</span>}
                             </button>
+                            
                             <button 
                                 onClick={() => setAbaAtiva('pendentes')} 
-                                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition whitespace-nowrap ${abaAtiva === 'pendentes' ? 'bg-yellow-500 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300'}`}
+                                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition whitespace-nowrap ${abaAtiva === 'pendentes' ? 'bg-yellow-500 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'}`}
                             >
                                 <ExclamationTriangleIcon className="w-5 h-5" /> Faltam Pagar
-                                {agsPendentes.length > 0 && <span className="bg-red-500 text-white px-2 py-0.5 rounded-full text-xs animate-pulse">{agsPendentes.length}</span>}
+                                {agsPendentes.length > 0 && <span className="bg-red-500 text-white px-2 py-0.5 rounded-full text-xs animate-pulse ml-1">{agsPendentes.length}</span>}
                             </button>
+
+                            {/* 👉 ABA HISTÓRICO COM O CONTADOR DOS AGENDAMENTOS TESTE */}
                             <button 
                                 onClick={() => setAbaAtiva('concluidos')} 
-                                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition whitespace-nowrap ${abaAtiva === 'concluidos' ? 'bg-green-600 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300'}`}
+                                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition whitespace-nowrap ${abaAtiva === 'concluidos' ? 'bg-green-600 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'}`}
                             >
                                 <CheckCircleIcon className="w-5 h-5" /> Histórico
+                                {agsConcluidos.length > 0 && <span className="bg-gray-100 text-gray-800 px-2 py-0.5 rounded-full text-xs ml-1">{agsConcluidos.length}</span>}
                             </button>
+
                             <button 
                                 onClick={() => setAbaAtiva('cancelados')} 
-                                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition whitespace-nowrap ${abaAtiva === 'cancelados' ? 'bg-red-600 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300'}`}
+                                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition whitespace-nowrap ${abaAtiva === 'cancelados' ? 'bg-red-600 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'}`}
                             >
                                 <XCircleIcon className="w-5 h-5" /> Cancelados
                             </button>
                         </div>
                     </div>
 
-                    {/* LISTA DE AGENDAMENTOS */}
                     <div className="p-6 bg-gray-50 dark:bg-gray-900/20 min-h-[300px]">
                         {agendamentosExibidos.length === 0 ? (
                             <div className="text-center py-16">
                                 <span className="text-6xl mb-4 block opacity-30">👻</span>
                                 <h4 className="text-xl font-bold mb-2 text-gray-700 dark:text-gray-300">Nenhum agendamento nesta aba</h4>
-                                <p className="text-gray-500 text-sm">Que tal explorar lojas e marcar um horário?</p>
+                                <p className="text-gray-500 text-sm">Clique nas abas acima para ver outros serviços.</p>
                             </div>
                         ) : (
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -188,91 +222,120 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
                                     const isPago = agendamento.status_pagamento === 'pago_online';
                                     const isEstornado = agendamento.status_pagamento === 'estornado';
                                     const isPresencial = agendamento.status_pagamento === 'presencial';
-                                    const isConfirmado = (isPago || isPresencial || agendamento.status === 'confirmado') && !statusTempo.cancelado && agendamento.status !== 'concluido';
+                                    
+                                    const isConcluido = agendamento.status === 'concluido' || agendamento.status === 'finalizado';
+                                    
+                                    const isConfirmado = (isPago || isPresencial || agendamento.status === 'confirmado') && !statusTempo.cancelado && !isConcluido;
                                     const isCanceladoDefinitivo = statusTempo.cancelado || isEstornado || (statusTempo.expirou && !isConfirmado);
                                     const isAguardandoPagamento = agendamento.status === 'aguardando_pagamento' && !isCanceladoDefinitivo && !isConfirmado;
-                                    const isConcluido = agendamento.status === 'concluido';
-
-                                    const isCarregandoPagamento = loadingPagar === agendamento.id;
-                                    const isCarregandoCancelamento = loadingCancelar === agendamento.id;
 
                                     return (
-                                        <div key={agendamento.id} className={`rounded-2xl overflow-hidden border shadow-sm flex flex-col transition-all ${isCanceladoDefinitivo ? 'bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700 opacity-70 grayscale' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:shadow-md'}`}>
+                                        <div key={agendamento.id} className={`rounded-2xl overflow-hidden border shadow-sm flex flex-col transition-all ${isCanceladoDefinitivo ? 'bg-gray-100 border-gray-200 opacity-70 grayscale' : 'bg-white border-gray-200 hover:shadow-md'}`}>
                                             
-                                            {/* CABEÇALHO DO CARD (CORES DINÂMICAS) */}
-                                            <div className={`p-5 border-b ${
-                                                isCanceladoDefinitivo ? 'bg-gray-200 dark:bg-gray-700' : 
+                                            <div className={`p-5 border-b flex justify-between items-center ${
+                                                isCanceladoDefinitivo ? 'bg-gray-200 text-gray-600' : 
                                                 isConcluido ? 'bg-gray-900 text-white' :
                                                 isAguardandoPagamento ? 'bg-yellow-400 text-yellow-900' : 
                                                 'bg-indigo-600 text-white'
                                             }`}>
-                                                <div className="flex justify-between items-center">
-                                                    <div>
-                                                        <p className="text-sm font-bold opacity-80 uppercase tracking-wider mb-1">Status</p>
-                                                        <h4 className="text-xl font-black">
-                                                            {isCanceladoDefinitivo ? (isEstornado ? '❌ Reembolsado' : '❌ Cancelado') : 
-                                                             isConcluido ? '✅ Concluído' :
-                                                             isAguardandoPagamento ? '⚠️ Pagar no App' : 
-                                                             (isPresencial ? '✔️ Pagar no Local' : '🚀 Confirmado')}
-                                                        </h4>
-                                                    </div>
-                                                    <div className="text-right">
-                                                        <span className={`text-xl font-bold py-1.5 px-4 rounded-xl shadow-inner ${isCanceladoDefinitivo ? 'bg-gray-300 text-gray-500' : 'bg-white/20 text-inherit backdrop-blur-sm'}`}>
-                                                            {agendamento?.hora_agendamento ? agendamento.hora_agendamento.substring(0, 5) : '--:--'}
-                                                        </span>
-                                                    </div>
+                                                <div>
+                                                    <p className="text-sm font-bold opacity-80 uppercase tracking-wider mb-1">Status</p>
+                                                    <h4 className="text-xl font-black">
+                                                        {isCanceladoDefinitivo ? (isEstornado ? '❌ Reembolsado' : '❌ Cancelado') : 
+                                                         isConcluido ? '✅ Concluído' :
+                                                         isAguardandoPagamento ? '⚠️ Pagar no App' : 
+                                                         (isPresencial ? '✔️ Pagar no Local' : '🚀 Confirmado')}
+                                                    </h4>
+                                                </div>
+                                                <div className="text-right">
+                                                    <span className={`text-xl font-bold py-1.5 px-4 rounded-xl shadow-inner ${isCanceladoDefinitivo ? 'bg-gray-300 text-gray-500' : 'bg-white/20 text-inherit backdrop-blur-sm'}`}>
+                                                        {agendamento?.hora_agendamento ? agendamento.hora_agendamento.substring(0, 5) : '--:--'}
+                                                    </span>
                                                 </div>
                                             </div>
 
                                             <div className="p-6 flex-1 flex flex-col">
-                                                <h4 className="font-black text-gray-900 dark:text-white text-xl mb-1">{agendamento?.estabelecimento?.nome || 'Loja Indisponível'}</h4>
+                                                <h4 className="font-black text-gray-900 text-xl mb-1">{agendamento?.estabelecimento?.nome || 'Loja Indisponível'}</h4>
                                                 
-                                                <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 my-4 flex justify-between items-center border border-gray-100 dark:border-gray-600">
+                                                <div className="bg-gray-50 rounded-xl p-4 my-4 flex justify-between items-center border border-gray-100">
                                                     <div>
-                                                        <p className="text-sm font-bold text-gray-900 dark:text-white">{agendamento?.servico?.nome || 'Serviço Indisponível'}</p>
+                                                        <p className="text-sm font-bold text-gray-900">{agendamento?.servico?.nome || 'Serviço Indisponível'}</p>
                                                         <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
                                                             <CalendarIcon className="w-3 h-3" /> {formatarData(agendamento?.data_agendamento)}
                                                         </p>
                                                     </div>
-                                                    <p className="text-lg font-black text-indigo-600 dark:text-indigo-400">{formatarMoeda(agendamento?.valor_final)}</p>
+                                                    <p className="text-lg font-black text-indigo-600">{formatarMoeda(agendamento?.valor_final)}</p>
                                                 </div>
 
-                                                {/* 👉 A MÁGICA DA GAMIFICAÇÃO: O CÓDIGO PIN GIGANTE AQUI! */}
-                                                {isConfirmado && agendamento?.codigo_confirmacao && (
-                                                    <div className="mb-6 bg-gradient-to-r from-amber-100 to-yellow-100 dark:from-yellow-900/30 dark:to-amber-900/30 rounded-xl p-5 border-2 border-yellow-400 border-dashed text-center relative overflow-hidden group">
+                                                {/* GAMIFICAÇÃO: CÓDIGO PIN */}
+                                                {isConfirmado && agendamento?.codigo_confirmacao && !isConcluido && (
+                                                    <div className="mb-6 bg-gradient-to-r from-amber-100 to-yellow-100 rounded-xl p-5 border-2 border-yellow-400 border-dashed text-center relative overflow-hidden group">
                                                         <StarIcon className="absolute -left-4 -top-4 w-16 h-16 text-yellow-300/50 group-hover:rotate-12 transition-transform duration-500" />
                                                         <StarIcon className="absolute -right-4 -bottom-4 w-16 h-16 text-yellow-300/50 group-hover:-rotate-12 transition-transform duration-500" />
-                                                        
-                                                        <p className="text-xs font-bold text-yellow-800 dark:text-yellow-500 uppercase tracking-widest mb-2">Seu PIN de Atendimento</p>
-                                                        <div className="text-5xl font-black text-gray-900 dark:text-white tracking-[0.2em] font-mono">
+                                                        <p className="text-xs font-bold text-yellow-800 uppercase tracking-widest mb-2">Seu PIN de Atendimento</p>
+                                                        <div className="text-5xl font-black text-gray-900 tracking-[0.2em] font-mono">
                                                             {agendamento.codigo_confirmacao}
                                                         </div>
-                                                        <p className="text-xs text-yellow-700 dark:text-yellow-600 mt-3 font-medium flex items-center justify-center gap-1">
-                                                            <StarIcon className="w-4 h-4 text-yellow-500" />
-                                                            Mostre ao profissional para ganhar pontos!
+                                                        <p className="text-xs text-yellow-700 mt-3 font-medium flex items-center justify-center gap-1">
+                                                            <StarIcon className="w-4 h-4 text-yellow-500" /> Mostre ao profissional para ganhar pontos!
                                                         </p>
                                                     </div>
                                                 )}
 
-                                                <div className="mt-auto space-y-3 pt-4 border-t border-gray-100 dark:border-gray-700">
-                                                    
-                                                    {/* Botão de Pagar (Se estiver pendente online) */}
+                                                {/* 👉 AVALIAÇÃO DE 5 ESTRELAS */}
+                                                {isConcluido && (
+                                                    <div className="mt-2 mb-4">
+                                                        {!agendamento.nota ? (
+                                                            <button 
+                                                                onClick={() => abrirModalAvaliacao(agendamento)} 
+                                                                className="w-full py-4 px-4 bg-gradient-to-r from-orange-400 to-orange-500 hover:from-orange-500 hover:to-orange-600 text-white font-black rounded-xl shadow-md transition transform hover:-translate-y-0.5 flex flex-col sm:flex-row items-center justify-center gap-2 animate-bounce hover:animate-none"
+                                                            >
+                                                                <div className="flex gap-1">
+                                                                    <StarIcon className="w-5 h-5 text-yellow-200" />
+                                                                    <StarIcon className="w-5 h-5 text-yellow-200" />
+                                                                    <StarIcon className="w-5 h-5 text-yellow-200" />
+                                                                </div>
+                                                                Avaliar e Ganhar 50 Pontos
+                                                            </button>
+                                                        ) : (
+                                                            <div className="bg-gradient-to-b from-gray-50 to-white border border-gray-200 rounded-2xl p-5 shadow-sm relative overflow-hidden">
+                                                                <div className="absolute top-0 right-0 bg-green-500 text-white text-[10px] font-black px-3 py-1 rounded-bl-lg">Avaliado</div>
+                                                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-3">Sua Experiência</p>
+                                                                <div className="flex items-center gap-1 mb-3">
+                                                                    {[1, 2, 3, 4, 5].map((estrela) => (
+                                                                        agendamento.nota >= estrela 
+                                                                        ? <StarIcon key={estrela} className="w-6 h-6 text-yellow-400 drop-shadow-sm" /> 
+                                                                        : <StarOutlineIcon key={estrela} className="w-6 h-6 text-gray-300" />
+                                                                    ))}
+                                                                    <span className="ml-2 font-black text-gray-900 text-lg">{agendamento.nota}.0</span>
+                                                                </div>
+                                                                {agendamento.comentario_avaliacao ? (
+                                                                    <div className="bg-gray-100/50 p-3 rounded-xl border border-gray-100">
+                                                                        <p className="text-sm text-gray-600 italic">"{agendamento.comentario_avaliacao}"</p>
+                                                                    </div>
+                                                                ) : (
+                                                                    <p className="text-xs text-gray-400 italic">Nenhum comentário deixado.</p>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+
+                                                <div className="mt-auto space-y-3 pt-4 border-t border-gray-100">
                                                     {isAguardandoPagamento && (
-                                                        <button type="button" onClick={() => pagarNovamente(agendamento.id)} disabled={isCarregandoPagamento || isCarregandoCancelamento} className="w-full py-3 text-white font-bold rounded-xl shadow-md transition bg-gray-900 hover:bg-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600 transform hover:-translate-y-0.5">
-                                                            {isCarregandoPagamento ? '⏳ A gerar link seguro...' : '💳 Pagar Agora (Mercado Pago)'}
+                                                        <button type="button" onClick={() => pagarNovamente(agendamento.id)} disabled={loadingPagar === agendamento.id || loadingCancelar === agendamento.id} className="w-full py-3 text-white font-bold rounded-xl shadow-md transition bg-gray-900 hover:bg-gray-800">
+                                                            {loadingPagar === agendamento.id ? '⏳ A gerar link...' : '💳 Pagar Agora'}
                                                         </button>
                                                     )}
 
-                                                    {/* Botão de Cancelar (Apenas se não estiver cancelado ou concluído) */}
                                                     {!isCanceladoDefinitivo && !isConcluido && (
-                                                        <button type="button" onClick={() => cancelarVaga(agendamento.id, isPago)} disabled={isCarregandoCancelamento || isCarregandoPagamento} className="w-full py-3 text-red-500 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 font-bold rounded-xl transition border border-red-100 dark:border-red-800/50">
-                                                            {isCarregandoCancelamento ? '⏳ A cancelar...' : 'Cancelar Agendamento'}
+                                                        <button type="button" onClick={() => cancelarVaga(agendamento.id, isPago)} disabled={loadingCancelar === agendamento.id || loadingPagar === agendamento.id} className="w-full py-3 text-red-500 bg-red-50 hover:bg-red-100 font-bold rounded-xl transition border border-red-100">
+                                                            {loadingCancelar === agendamento.id ? '⏳ A cancelar...' : 'Cancelar Agendamento'}
                                                         </button>
                                                     )}
 
-                                                    {/* Botão de Agendar Novamente (Se estiver cancelado/concluído) */}
                                                     {(isCanceladoDefinitivo || isConcluido) && route().has('cliente.agendar') && agendamento?.estabelecimento_id && (
-                                                        <Link href={route('cliente.agendar', agendamento.estabelecimento_id)} className="flex items-center justify-center gap-2 w-full py-3 bg-white dark:bg-gray-800 border-2 border-indigo-100 dark:border-gray-600 hover:border-indigo-600 dark:hover:border-indigo-500 text-indigo-700 dark:text-indigo-400 font-bold rounded-xl transition">
+                                                        <Link href={route('cliente.agendar', agendamento.estabelecimento_id)} className="flex items-center justify-center gap-2 w-full py-3 bg-white border-2 border-indigo-100 hover:border-indigo-600 text-indigo-700 font-bold rounded-xl transition">
                                                             <ClockIcon className="w-5 h-5" /> Agendar Novamente
                                                         </Link>
                                                     )}
@@ -287,6 +350,64 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
                     </div>
                 </div>
             </div>
+
+            {/* 👉 MODAL DE AVALIAÇÃO (O POP-UP DE 5 ESTRELAS) */}
+            {modalAvaliacaoOpen && agendamentoParaAvaliar && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all">
+                        <div className="bg-gradient-to-br from-indigo-600 to-purple-600 p-8 text-center relative overflow-hidden">
+                            <StarIcon className="w-16 h-16 text-yellow-400 mx-auto mb-4 drop-shadow-md" />
+                            <h3 className="text-2xl font-black text-white">Como foi o serviço?</h3>
+                            <p className="text-indigo-100 text-sm mt-2">Avalie o atendimento de <strong>{agendamentoParaAvaliar.estabelecimento?.nome}</strong> e ganhe 50 pontos na hora!</p>
+                        </div>
+                        
+                        <form onSubmit={submitAvaliacao} className="p-8">
+                            <div className="flex justify-center gap-2 mb-6">
+                                {[1, 2, 3, 4, 5].map((estrela) => (
+                                    <button 
+                                        type="button" 
+                                        key={estrela}
+                                        onClick={() => setNota(estrela)}
+                                        onMouseEnter={() => setHoverNota(estrela)}
+                                        onMouseLeave={() => setHoverNota(0)}
+                                        className="transition-transform hover:scale-110 focus:outline-none"
+                                    >
+                                        {(hoverNota || nota) >= estrela ? (
+                                            <StarIcon className="w-12 h-12 text-yellow-400 drop-shadow" />
+                                        ) : (
+                                            <StarOutlineIcon className="w-12 h-12 text-gray-300" />
+                                        )}
+                                    </button>
+                                ))}
+                            </div>
+
+                            <div className="mb-6">
+                                <label className="block text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
+                                    <ChatBubbleBottomCenterTextIcon className="w-4 h-4 text-gray-400" />
+                                    Deixe um elogio (Opcional)
+                                </label>
+                                <textarea 
+                                    className="w-full rounded-xl border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 shadow-sm"
+                                    rows="3"
+                                    placeholder="O serviço foi incrível..."
+                                    value={comentario}
+                                    onChange={(e) => setComentario(e.target.value)}
+                                    maxLength={500}
+                                ></textarea>
+                            </div>
+
+                            <div className="flex gap-3">
+                                <button type="button" onClick={fecharModalAvaliacao} className="px-5 py-3 font-bold text-gray-500 hover:bg-gray-100 rounded-xl transition w-1/3">
+                                    Cancelar
+                                </button>
+                                <button type="submit" disabled={enviandoAvaliacao} className="px-5 py-3 font-bold text-white bg-gray-900 hover:bg-black rounded-xl shadow-md transition w-2/3 disabled:opacity-50 flex justify-center items-center gap-2">
+                                    {enviandoAvaliacao ? 'A enviar...' : 'Enviar Avaliação'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </AuthenticatedLayout>
     );
 }

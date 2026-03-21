@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\PagamentoController;
 use App\Http\Controllers\Api\ServicoController;
 use App\Http\Controllers\Api\CarrinhoController;
 use App\Http\Controllers\Api\CupomController;
+use App\Http\Controllers\Api\FilaController;
 use App\Services\MercadoPagoService; 
 use App\Http\Controllers\Api\AssinaturaController;
 use App\Http\Middleware\CheckAdmin;
@@ -109,11 +110,20 @@ Route::get('/pagamento/status', [ClienteAgendamentoController::class, 'callbackM
    
    
     // Tela da Fila do Estabelecimento
-    Route::get('/estabelecimentos/{estabelecimento}/fila', [EstabelecimentoController::class, 'fila'])->name('estabelecimentos.fila');
+Route::match(['get', 'post'], '/estabelecimentos/{estabelecimento}/agenda-equipe', [App\Http\Controllers\Api\FilaController::class, 'agendaFuncionarios'])->name('estabelecimentos.agenda-equipe');
+ //equipe global (visão do dono/gerente)
+Route::get('/minha-equipe', [App\Http\Controllers\Api\FilaController::class, 'equipeGlobal'])->name('equipe.global');
+// Rota para atribuir TODOS os clientes em espera a um funcionário específico
+Route::post('/estabelecimentos/{estabelecimento}/atribuir-todos', [App\Http\Controllers\Api\AgendamentoController::class, 'atribuirTodosEspera'])->name('estabelecimentos.atribuir-todos');
+
+// agenda dos funcionários (visão do dono/gerente)
+Route::get('/estabelecimentos/{estabelecimento}/agenda-equipe', [App\Http\Controllers\Api\FilaController::class, 'agendaFuncionarios'])->name('estabelecimentos.agenda-equipe');
     
     // Ações na Fila (Botões do dono estabelecimento ou admin/socio)
     Route::patch('/agendamentos/{agendamento}/status', [AgendamentoController::class, 'updateStatus'])->name('agendamentos.update-status');
     Route::patch('/agendamentos/{agendamento}/funcionario', [AgendamentoController::class, 'updateFuncionario'])->name('agendamentos.update-funcionario');
+
+    Route::post('/cliente/agendamentos/{id}/avaliar', [App\Http\Controllers\Api\ClienteCupomController::class, 'avaliar'])->name('cliente.agendamento.avaliar');
 
      Route::post('/estabelecimentos/{estabelecimento}/funcionarios', [FuncionarioController::class, 'store'])->name('funcionarios.store');
     Route::put('/funcionarios/{funcionario}', [FuncionarioController::class, 'update'])->name('funcionarios.update');

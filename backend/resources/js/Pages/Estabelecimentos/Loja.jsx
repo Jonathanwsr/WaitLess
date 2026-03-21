@@ -122,8 +122,6 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
         }, {
             preserveScroll: true,
             onFinish: () => setAdicionandoAoCarrinho(false),
-            // Opcional: Se o seu backend retornar with('success', '...'), o layout base cuida disso, 
-            // ou você pode tratar um alert visual aqui.
         });
     };
 
@@ -223,7 +221,16 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
                                             <div className="flex-1 flex flex-col items-center text-center">
                                                 <div className="text-indigo-600 font-bold text-lg mb-1">R$ {Number(servico.valor).toFixed(2).replace('.', ',')}</div>
                                                 <h4 className="font-bold text-gray-900 leading-tight">{servico.nome}</h4>
-                                                <p className="text-xs text-gray-500 mt-1 uppercase tracking-wide">{servico.tipo_servico}</p>
+                                                
+                                                {/* 👉 AVALIAÇÃO ADICIONADA AQUI */}
+                                                <div className="flex items-center gap-2 mt-1">
+                                                    <p className="text-xs text-gray-500 uppercase tracking-wide">{servico.tipo_servico}</p>
+                                                    <span className="text-gray-300 text-xs">•</span>
+                                                    <div className="flex items-center gap-1 text-xs font-bold text-yellow-600">
+                                                        <StarIcon className="w-3.5 h-3.5 text-yellow-500" />
+                                                        {(Number(servico.avaliacao_media) || 0).toFixed(1)}
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
                                     );
@@ -283,14 +290,19 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
                                     {servicoSelecionado.tipo_servico}
                                 </p>
 
-                                {/* Avaliação e Tempo + 👉 BOTÃO DE CARRINHO (Wireframe Amarelo) */}
+                                {/* Avaliação e Tempo + 👉 BOTÃO DE CARRINHO */}
                                 <div className="flex items-center justify-between border-b border-gray-200 pb-6 mb-6">
                                     <div className="flex items-center gap-4 text-sm text-gray-600">
-                                        <div className="flex items-center gap-1">
-                                            <StarIcon className="w-4 h-4 text-gray-800" /><StarIcon className="w-4 h-4 text-gray-800" /><StarIcon className="w-4 h-4 text-gray-800" /><StarIcon className="w-4 h-4 text-gray-800" /><StarIcon className="w-4 h-4 text-gray-300" />
+                                        
+                                        {/* 👉 AVALIAÇÃO ADICIONADA AQUI (MÉDIA E TOTAL) */}
+                                        <div className="flex items-center gap-1 font-bold text-yellow-600">
+                                            <StarIcon className="w-5 h-5 text-yellow-500" />
+                                            <span className="text-base">{(Number(servicoSelecionado.avaliacao_media) || 0).toFixed(1)}</span>
+                                            <span className="text-xs text-gray-400 ml-1 font-normal">({servicoSelecionado.total_avaliacoes || 0} avaliações)</span>
                                         </div>
-                                        <span className="text-gray-400">|</span>
-                                        <span className="flex items-center gap-1"><ClockIcon className="w-4 h-4"/> {servicoSelecionado.duracao_minutos} minutos</span>
+
+                                        <span className="text-gray-300">|</span>
+                                        <span className="flex items-center gap-1"><ClockIcon className="w-4 h-4 text-gray-400"/> {servicoSelecionado.duracao_minutos} minutos</span>
                                     </div>
                                     
                                     {/* 👉 BOTÃO ADICIONAR AO CARRINHO (Icone) */}
@@ -436,7 +448,16 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
                                                     R$ {Number(outroServico.valor).toFixed(2)}
                                                 </div>
                                                 <h4 className="font-bold text-gray-900 text-center">{outroServico.nome}</h4>
-                                                <p className="text-xs text-gray-500 mt-1">{outroServico.duracao_minutos} min</p>
+                                                
+                                                {/* 👉 AVALIAÇÃO ADICIONADA AQUI (Outros Serviços) */}
+                                                <div className="flex items-center justify-center gap-2 mt-1">
+                                                    <p className="text-xs text-gray-500 font-medium">{outroServico.duracao_minutos} min</p>
+                                                    <span className="text-gray-300 text-xs">•</span>
+                                                    <div className="flex items-center gap-1 text-xs font-bold text-yellow-600">
+                                                        <StarIcon className="w-3.5 h-3.5 text-yellow-500" />
+                                                        {(Number(outroServico.avaliacao_media) || 0).toFixed(1)}
+                                                    </div>
+                                                </div>
                                             </div>
                                         );
                                     })}

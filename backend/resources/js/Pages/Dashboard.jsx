@@ -72,13 +72,27 @@ export default function Dashboard({ auth, estabelecimentos, metricas }) {
                 <div className="bg-white dark:bg-gray-800 overflow-hidden shadow-sm sm:rounded-2xl border border-gray-100 dark:border-gray-700">
                     <div className="p-6 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
                         <h3 className="text-lg font-bold text-gray-900 dark:text-white">Meus Estabelecimentos</h3>
-                        <Link 
-                            href={route('estabelecimentos.create')}
-                            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-bold rounded-lg hover:bg-indigo-700 transition shadow-md shadow-indigo-600/20"
-                        >
-                            <PlusIcon className="w-4 h-4" />
-                            Novo Local
-                        </Link>
+                        
+                        <div className="flex gap-2">
+                            {/* O primeiro estabelecimento é usado para o atalho de Equipa no cabeçalho */}
+                            {estabelecimentos.length > 0 && (
+                                <Link 
+                                    href={route('estabelecimentos.agenda-equipe', estabelecimentos[0].id)} 
+                                    className="hidden sm:flex items-center gap-2 px-4 py-2 bg-gray-900 text-white text-sm font-bold rounded-lg hover:bg-black transition shadow-sm"
+                                >
+                                    <UserGroupIcon className="w-4 h-4" />
+                                    Equipe
+                                </Link>
+                            )}
+
+                            <Link 
+                                href={route('estabelecimentos.create')}
+                                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-bold rounded-lg hover:bg-indigo-700 transition shadow-md shadow-indigo-600/20"
+                            >
+                                <PlusIcon className="w-4 h-4" />
+                                Novo Local
+                            </Link>
+                        </div>
                     </div>
 
                     <div className="p-6">
@@ -172,7 +186,7 @@ export default function Dashboard({ auth, estabelecimentos, metricas }) {
                                         </Link>
 
                                         {/* Botões de Ação Principais */}
-                                        <div className="grid grid-cols-3 gap-2">
+                                        <div className="grid grid-cols-2 gap-2 mb-2">
                                             <Link 
                                                 href={route('estabelecimentos.fila', local.id)} 
                                                 className="text-center py-2.5 bg-indigo-600 border border-transparent rounded-lg text-xs sm:text-sm font-bold text-white hover:bg-indigo-700 transition shadow-sm"
@@ -185,9 +199,19 @@ export default function Dashboard({ auth, estabelecimentos, metricas }) {
                                             >
                                                 Vitrine
                                             </Link>
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-2">
+                                            {/* 👉 BOTÃO EQUIPA INJETADO AQUI */}
+                                            <Link 
+                                                href={route('estabelecimentos.agenda-equipe', local.id)} 
+                                                className="text-center py-2.5 bg-gray-900 border border-transparent rounded-lg text-xs sm:text-sm font-bold text-white hover:bg-black transition shadow-sm"
+                                            >
+                                                Equipe
+                                            </Link>
                                             <Link 
                                                 href={route('estabelecimentos.configuracoes', local.id)} 
-                                                className="text-center py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg text-xs sm:text-sm font-bold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition"
+                                                className="text-center py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg text-xs sm:text-sm font-bold text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition shadow-sm"
                                             >
                                                 Configurações
                                             </Link>

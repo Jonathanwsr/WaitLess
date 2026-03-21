@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import Dropdown from '@/Components/Dropdown';
 import { Link, usePage, router } from '@inertiajs/react';
-import { ShieldCheckIcon, UsersIcon } from '@heroicons/react/24/solid'; // Importando ícones úteis
+import { ShieldCheckIcon, UsersIcon, UserGroupIcon } from '@heroicons/react/24/solid'; // Importando ícones úteis
 
 export default function AuthenticatedLayout({ header, children }) {
     const user = usePage().props.auth.user;
@@ -117,7 +117,16 @@ export default function AuthenticatedLayout({ header, children }) {
                                 Minhas Lojas
                             </Link>
 
-                            {/* TELA DE FUNCIONÁRIOS DE VOLTA! */}
+                            {/* 👉 NOVO: GESTÃO GLOBAL (RH) */}
+                            <Link 
+                                href={route('equipe.global')} 
+                                className={`flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${route().current('equipe.global') ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-400' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700'}`}
+                            >
+                                <UserGroupIcon className="w-5 h-5" />
+                                Visão Global (RH)
+                            </Link>
+
+                            {/* TELA DE FUNCIONÁRIOS */}
                             <Link 
                                 href={route('funcionarios.index')} 
                                 className={`flex items-center gap-3 px-4 py-3 rounded-xl font-medium transition-colors ${route().current('funcionarios.index') ? 'bg-indigo-50 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-400' : 'text-gray-600 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700'}`}

@@ -1,10 +1,9 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import InputError from '@/Components/InputError';
-import InputLabel from '@/Components/InputLabel'; 
 import PrimaryButton from '@/Components/PrimaryButton'; 
 import { Head, useForm, usePage, Link, router } from '@inertiajs/react'; 
 import { useState, useEffect } from 'react';
-import { CheckCircleIcon, ClockIcon, CreditCardIcon, CalendarIcon, ArrowLeftIcon, PencilSquareIcon, TagIcon } from '@heroicons/react/24/solid';
+import { CheckCircleIcon, ClockIcon, CreditCardIcon, CalendarIcon, ArrowLeftIcon, PencilSquareIcon, TagIcon, InformationCircleIcon, StarIcon } from '@heroicons/react/24/solid';
 
 export default function Agendar({ auth, estabelecimento, servicos = [] }) {
     const [servicoSelecionado, setServicoSelecionado] = useState(null);
@@ -14,7 +13,7 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
     
     // ESTADOS PARA CONTROLE DE PREÇO E CUPOM
     const [qtdLocal, setQtdLocal] = useState(1); 
-    const [cupomAtivo, setCupomAtivo] = useState(null); // Guarda o cupom que veio da URL
+    const [cupomAtivo, setCupomAtivo] = useState(null); 
 
     const { flash = {} } = usePage().props; 
 
@@ -23,9 +22,9 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
         data_agendamento: new Date().toISOString().split('T')[0],
         hora_agendamento: '',
         forma_pagamento: '', 
-        valor_final: '', 
+        valor_final: 0, 
         quantidade: 1, 
-        cupom_codigo: '', // Envia o código para o backend dar a baixa
+        cupom_codigo: '', // Envia o código para o backend
     });
 
     const diasSemanaMap = { 0: 'domingo', 1: 'segunda', 2: 'terca', 3: 'quarta', 4: 'quinta', 5: 'sexta', 6: 'sabado' };
@@ -38,7 +37,6 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
         return dados;
     };
 
-    // 1. O MOTOR DE AUTOPREENCHIMENTO E CAPTURA DO CUPOM
     useEffect(() => {
         const parametros = new URLSearchParams(window.location.search);
         const urlServicoId = parametros.get('servico_id');
@@ -46,7 +44,6 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
         const urlHora = parametros.get('hora');
         const urlQtd = parametros.get('quantidade_carrinho'); 
         
-        // Captura os dados do cupom vindos da tela de Mensagens
         const urlCupom = parametros.get('cupom');
         const urlDesconto = parametros.get('desconto');
         const urlTipoDesconto = parametros.get('tipo_desconto');
@@ -57,7 +54,7 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
         if (urlCupom && urlDesconto) {
             setCupomAtivo({
                 codigo: urlCupom,
-                valor: Number(urlDesconto),
+                valor: Number(urlDesconto) || 0,
                 tipo: urlTipoDesconto || 'percentual'
             });
             newState.cupom_codigo = urlCupom;
@@ -79,7 +76,7 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
         if (urlData) { newState.data_agendamento = urlData; mudouAlgo = true; }
         if (urlHora) { newState.hora_agendamento = urlHora; mudouAlgo = true; }
         if (urlQtd) {
-            const qtdNum = Number(urlQtd);
+            const qtdNum = Number(urlQtd) || 1;
             setQtdLocal(qtdNum);
             newState.quantidade = qtdNum;
             mudouAlgo = true;
@@ -94,7 +91,6 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
         if (mudouAlgo) setData(newState);
     }, []); 
 
-    // 2. DETETOR DE DIAS DA SEMANA
     useEffect(() => {
         if (data.data_agendamento) {
             const [ano, mes, dia] = data.data_agendamento.split('-');
@@ -103,22 +99,19 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
         }
     }, [data.data_agendamento]);
 
-    // 3. O MOTOR DE CÁLCULO DE PREÇO E DESCONTO
     useEffect(() => {
         if (servicoSelecionado) {
-            let valorCalculado = Number(servicoSelecionado.valor) * qtdLocal;
+            let valorCalculado = (Number(servicoSelecionado.valor) || 0) * qtdLocal;
 
-            // Aplica a matemática mágica do cupom no valor final!
             if (cupomAtivo) {
                 if (cupomAtivo.tipo === 'percentual') {
-                    valorCalculado = valorCalculado - (valorCalculado * (cupomAtivo.valor / 100));
+                    valorCalculado = valorCalculado - (valorCalculado * ((Number(cupomAtivo.valor) || 0) / 100));
                 } else {
-                    valorCalculado = valorCalculado - cupomAtivo.valor;
+                    valorCalculado = valorCalculado - (Number(cupomAtivo.valor) || 0);
                 }
             }
 
-            if (valorCalculado < 0) valorCalculado = 0; // Evita que o valor fique negativo
-
+            if (valorCalculado < 0) valorCalculado = 0; 
             setData(prev => ({ ...prev, valor_final: valorCalculado, quantidade: qtdLocal }));
         }
     }, [qtdLocal, servicoSelecionado, cupomAtivo]);
@@ -193,16 +186,16 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
     const explorarOutroServico = (outroServico) => {
         if (servicoSelecionado) {
             localStorage.setItem('checkout_pendente_waitless', JSON.stringify({
-                estabelecimento_id: estabelecimento.id,
+                estabelecimento_id: estabelecimento?.id,
                 servico_id: data.servico_id,
                 data: data.data_agendamento,
                 hora: data.hora_agendamento
             }));
         }
-        router.visit(route('estabelecimentos.loja', { estabelecimento: estabelecimento.id, open_servico: outroServico.id }));
+        router.visit(route('estabelecimentos.loja', { estabelecimento: estabelecimento?.id, open_servico: outroServico.id }));
     };
 
-    const formatarMoeda = (valor) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor);
+    const formatarMoeda = (valor) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(valor) || 0);
     const dataApresentacao = data.data_agendamento ? new Date(data.data_agendamento + 'T00:00:00').toLocaleDateString('pt-BR') : '';
 
     let servicoDisponivelNesteDia = false;
@@ -221,17 +214,15 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
         horariosDoServico = horas;
     }
 
-    const textoBotao = processing ? 'A processar...' : 
-        (data.forma_pagamento === 'online_agora' ? 'Ir para Pagamento Seguro' : 
-        (data.forma_pagamento === 'online_depois' ? 'Reservar e Pagar Depois' : 'Confirmar Reserva no Local'));
+    const textoBotao = data.forma_pagamento === 'online_agora' ? 'Ir para Pagamento Seguro' : 
+        (data.forma_pagamento === 'online_depois' ? 'Reservar e Pagar Depois' : 'Confirmar Reserva no Local');
 
     const servicosOutros = servicoSelecionado 
         ? servicos.filter(s => s.id !== servicoSelecionado.id).slice(0, 4) 
         : servicos.slice(0, 4);
 
-    // Variáveis de visualização do Preço Final no Resumo
-    const valorOriginalBruto = servicoSelecionado ? (Number(servicoSelecionado.valor) * qtdLocal) : 0;
-    const temDescontoVisivel = cupomAtivo && valorOriginalBruto > data.valor_final;
+    const valorOriginalBruto = servicoSelecionado ? ((Number(servicoSelecionado.valor) || 0) * qtdLocal) : 0;
+    const temDescontoVisivel = cupomAtivo && valorOriginalBruto > (Number(data.valor_final) || 0);
 
     if (statusFinalizacao) {
         return (
@@ -240,25 +231,25 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
                 <div className="max-w-2xl mx-auto mt-12 px-4 pb-20 animate-in zoom-in duration-500">
                     <div className="bg-white rounded-3xl p-8 sm:p-12 text-center shadow-xl border border-gray-100">
                         {statusFinalizacao === 'sucesso_local' ? (
-                            <>
+                            <div className="flex flex-col items-center">
                                 <div className="w-24 h-24 bg-green-100 text-green-600 rounded-full flex items-center justify-center mx-auto mb-6">
                                     <CheckCircleIcon className="w-16 h-16" />
                                 </div>
                                 <h2 className="text-3xl font-black text-gray-900 mb-2">Reserva Confirmada!</h2>
                                 <p className="text-gray-600 mb-8">Sua vaga para <strong>{dataApresentacao} às {data.hora_agendamento}</strong> está garantida. Apresente-se no local no horário marcado para realizar o pagamento.</p>
-                            </>
+                            </div>
                         ) : (
-                            <>
+                            <div className="flex flex-col items-center">
                                 <div className="w-24 h-24 bg-yellow-100 text-yellow-600 rounded-full flex items-center justify-center mx-auto mb-6">
                                     <ClockIcon className="w-16 h-16" />
                                 </div>
                                 <h2 className="text-3xl font-black text-gray-900 mb-2">Pedido Pendente</h2>
                                 <p className="text-gray-600 mb-8">Sua vaga está reservada por <strong className="text-yellow-600">2 horas</strong>. Você precisa realizar o pagamento online no seu painel para não perder a vaga.</p>
-                            </>
+                            </div>
                         )}
                         <div className="flex flex-col sm:flex-row justify-center gap-4">
                             <Link href={route('dashboard')} className="px-8 py-3 bg-gray-900 hover:bg-gray-800 text-white font-bold rounded-xl shadow-md transition">Ver Meus Agendamentos</Link>
-                            <Link href={route('estabelecimentos.loja', estabelecimento.id)} className="px-8 py-3 bg-white border-2 border-gray-200 text-gray-700 hover:border-gray-300 font-bold rounded-xl transition">Voltar para a Loja</Link>
+                            <Link href={route('estabelecimentos.loja', estabelecimento?.id)} className="px-8 py-3 bg-white border-2 border-gray-200 text-gray-700 hover:border-gray-300 font-bold rounded-xl transition">Voltar para a Loja</Link>
                         </div>
                     </div>
                 </div>
@@ -274,7 +265,7 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
                         <ArrowLeftIcon className="w-5 h-5" />
                     </Link>
                     <div>
-                        <h2 className="text-xl font-bold leading-tight text-gray-900 dark:text-gray-100">Finalizar Agendamento</h2>
+                        <h2 className="text-xl font-bold leading-tight text-gray-900 dark:text-gray-100">Agendar Atendimento</h2>
                         <p className="text-sm text-gray-500">{estabelecimento?.nome}</p>
                     </div>
                 </div>
@@ -282,103 +273,109 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
         >
             <Head title={`Finalizar Pedido - ${estabelecimento?.nome}`} />
 
-            <div className="max-w-4xl mx-auto mt-6 px-4 pb-20">
-                {flash?.error && <div className="mb-6 p-4 text-red-800 bg-red-100 border border-red-200 rounded-xl">{flash.error}</div>}
+            <div className={`max-w-4xl mx-auto mt-6 px-4 pb-24 transition-opacity duration-300 ${processing ? 'opacity-30 pointer-events-none' : ''}`}>
+                {flash?.error && <div className="mb-6 p-4 text-red-800 bg-red-100 border border-red-200 rounded-xl font-medium">{flash.error}</div>}
 
-                <form onSubmit={submitAgendamento} className="space-y-6">
+                <form onSubmit={submitAgendamento} className="space-y-8">
                     
-                    {/* 👉 NOVO: BANNER DE CUPOM FIXO NO TOPO */}
                     {cupomAtivo && (
-                        <div className="bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 p-5 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm animate-in fade-in slide-in-from-top-4">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 bg-green-100 text-green-600 rounded-full flex items-center justify-center shrink-0">
-                                    <TagIcon className="w-5 h-5" />
+                        <div className="bg-gradient-to-r from-emerald-500 to-teal-500 rounded-3xl p-6 shadow-lg text-white flex flex-col sm:flex-row items-center justify-between gap-4 animate-in fade-in slide-in-from-top-4 relative overflow-hidden">
+                            <div className="absolute -right-6 -top-6 w-32 h-32 bg-white/10 rounded-full blur-2xl pointer-events-none"></div>
+                            <div className="flex items-center gap-4 relative z-10">
+                                <div className="w-14 h-14 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center shrink-0 border border-white/30">
+                                    <TagIcon className="w-7 h-7 text-white" />
                                 </div>
                                 <div>
-                                    <p className="text-green-800 font-black text-lg">Cupom {cupomAtivo.codigo} Ativado!</p>
-                                    <p className="text-green-700 text-sm font-medium">Os preços abaixo já incluem o seu desconto.</p>
+                                    <p className="text-white font-black text-xl tracking-tight">Cupom {cupomAtivo.codigo} Aplicado!</p>
+                                    <p className="text-emerald-50 text-sm font-medium">Os preços abaixo já estão com o seu desconto calculado.</p>
                                 </div>
                             </div>
                         </div>
                     )}
 
-                    {/* RESUMO DO PEDIDO */}
-                    {servicoSelecionado && data.hora_agendamento && !editandoDataHora ? (
-                        <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm relative overflow-hidden group animate-in fade-in">
-                            <div className="absolute top-0 left-0 w-1.5 h-full bg-indigo-600"></div>
-                            
-                            <div className="flex justify-between items-start mb-6">
-                                <h3 className="text-lg font-bold text-gray-900">Resumo do Pedido</h3>
-                                <button type="button" onClick={() => setEditandoDataHora(true)} className="flex items-center gap-1 text-sm font-bold text-indigo-600 hover:text-indigo-800 transition bg-indigo-50 px-3 py-1.5 rounded-lg">
+                    {!editandoDataHora && servicoSelecionado && data.hora_agendamento ? (
+                        <div className="bg-white p-6 md:p-8 rounded-3xl border border-gray-200 shadow-sm relative overflow-hidden animate-in fade-in">
+                            <div className="absolute top-0 left-0 w-2 h-full bg-indigo-600"></div>
+                            <div className="flex justify-between items-center mb-6">
+                                <h3 className="text-xl font-bold text-gray-900">Resumo da Reserva</h3>
+                                <button type="button" onClick={() => setEditandoDataHora(true)} className="flex items-center gap-2 text-sm font-bold text-indigo-600 hover:text-indigo-800 transition bg-indigo-50 px-4 py-2 rounded-xl">
                                     <PencilSquareIcon className="w-4 h-4" /> Alterar
                                 </button>
                             </div>
-
-                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-gray-50 p-4 rounded-xl border border-gray-100">
+                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-8 bg-gray-50/50 p-6 rounded-2xl border border-gray-100">
                                 <div className="flex-1">
-                                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Serviço Escolhido</p>
-                                    <h4 className="text-xl font-black text-gray-900">{servicoSelecionado.nome}</h4>
+                                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Serviço Escolhido</p>
+                                    <h4 className="text-2xl font-black text-gray-900 mb-4">{servicoSelecionado.nome}</h4>
                                     
-                                    <div className="flex items-center gap-3 mt-3">
-                                        <span className="text-sm text-gray-600 font-medium">Quantidade:</span>
-                                        <div className="flex items-center bg-white rounded-lg border border-gray-200 shadow-sm">
-                                            <button type="button" onClick={() => alterarQuantidade(-1)} disabled={qtdLocal <= 1} className="w-8 h-8 flex items-center justify-center font-bold text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 disabled:opacity-30 rounded-l-lg transition">-</button>
-                                            <span className="w-8 text-center text-sm font-bold text-gray-900">{qtdLocal}</span>
-                                            <button type="button" onClick={() => alterarQuantidade(1)} className="w-8 h-8 flex items-center justify-center font-bold text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-r-lg transition">+</button>
+                                    <div className="flex items-center gap-4">
+                                        <span className="text-sm text-gray-500 font-bold uppercase tracking-wider">Quantidade:</span>
+                                        <div className="flex items-center bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                                            <button type="button" onClick={() => alterarQuantidade(-1)} disabled={qtdLocal <= 1 || processing} className="w-10 h-10 flex items-center justify-center font-bold text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 disabled:opacity-30 disabled:hover:bg-transparent transition">-</button>
+                                            <span className="w-10 text-center text-sm font-bold text-gray-900 bg-gray-50 h-10 flex items-center justify-center border-x border-gray-100">{qtdLocal}</span>
+                                            <button type="button" onClick={() => alterarQuantidade(1)} disabled={processing} className="w-10 h-10 flex items-center justify-center font-bold text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 disabled:opacity-30 disabled:hover:bg-transparent transition">+</button>
                                         </div>
                                     </div>
                                 </div>
-
-                                <div className="hidden md:block w-px h-16 bg-gray-200"></div>
-                                
-                                <div>
-                                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Data e Hora</p>
-                                    <div className="flex items-center gap-2">
-                                        <CalendarIcon className="w-5 h-5 text-indigo-500" />
+                                <div className="hidden md:block w-px h-20 bg-gray-200"></div>
+                                <div className="flex-1 md:text-right">
+                                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Data e Hora</p>
+                                    <div className="flex items-center md:justify-end gap-3 mb-2">
+                                        <CalendarIcon className="w-5 h-5 text-indigo-400" />
                                         <span className="text-lg font-bold text-gray-900">{dataApresentacao}</span>
                                     </div>
-                                    <div className="flex items-center gap-2 mt-1">
-                                        <ClockIcon className="w-5 h-5 text-indigo-500" />
-                                        <span className="text-lg font-bold text-gray-900">{data.hora_agendamento}</span>
+                                    <div className="flex items-center md:justify-end gap-3">
+                                        <ClockIcon className="w-5 h-5 text-indigo-400" />
+                                        <span className="text-xl font-black text-indigo-600 bg-indigo-50 px-3 py-1 rounded-lg">{data.hora_agendamento}</span>
                                     </div>
                                 </div>
                             </div>
                         </div>
                     ) : (
-                        /* ESCOLHA E EDIÇÃO MANUAL */
-                        <div className="space-y-6">
-                            
-                            {/* Escolha de Serviço */}
-                            <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-                                <h3 className="text-lg font-bold text-gray-900 mb-4">1. Escolha o Serviço</h3>
+                        <div className="space-y-8">
+                            <div className="bg-white p-6 md:p-8 rounded-3xl border border-gray-100 shadow-sm">
+                                <h3 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-3">
+                                    <span className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm">1</span> 
+                                    Escolha o Serviço
+                                </h3>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     {servicos?.map(s => {
-                                        // 👉 MATEMÁTICA AO VIVO NA LISTA DE SERVIÇOS
-                                        let precoOriginal = Number(s.valor);
+                                        let precoOriginal = Number(s.valor) || 0;
                                         let precoComDesconto = precoOriginal;
                                         
                                         if (cupomAtivo) {
-                                            if (cupomAtivo.tipo === 'percentual') {
-                                                precoComDesconto -= precoComDesconto * (cupomAtivo.valor / 100);
-                                            } else {
-                                                precoComDesconto -= cupomAtivo.valor;
-                                            }
+                                            if (cupomAtivo.tipo === 'percentual') precoComDesconto -= precoComDesconto * ((Number(cupomAtivo.valor) || 0) / 100);
+                                            else precoComDesconto -= (Number(cupomAtivo.valor) || 0);
                                             if (precoComDesconto < 0) precoComDesconto = 0;
                                         }
 
+                                        const isSelected = data.servico_id === s.id;
+                                        // 👉 ADICIONADO AQUI O CÁLCULO DA MÉDIA
+                                        const mediaServico = Number(s.avaliacao_media) || 0;
+
                                         return (
-                                            <div key={s.id} onClick={() => handleSelectServico(s)} className={`cursor-pointer p-4 rounded-xl border-2 transition-all flex justify-between items-center ${data.servico_id === s.id ? 'border-indigo-600 bg-indigo-50 shadow-sm' : 'border-gray-100 bg-white hover:border-indigo-200'}`}>
+                                            <div key={s.id} onClick={() => { if(!processing) handleSelectServico(s); }} className={`cursor-pointer p-5 rounded-2xl border-2 transition-all flex justify-between items-center ${isSelected ? 'border-indigo-500 bg-indigo-50 shadow-md ring-4 ring-indigo-50' : 'border-gray-100 bg-white hover:border-indigo-200 hover:shadow-sm'}`}>
                                                 <div>
-                                                    <h4 className="font-bold text-gray-900">{s.nome}</h4>
-                                                    <p className="text-xs text-gray-500 mt-0.5">{s.duracao_minutos} min</p>
+                                                    <h4 className={`font-bold ${isSelected ? 'text-indigo-900' : 'text-gray-900'}`}>{s.nome}</h4>
+                                                    
+                                                    {/* 👉 AVALIAÇÃO EM ESTRELAS APARECE AQUI! */}
+                                                    <div className="flex items-center gap-3 text-xs text-gray-500 mt-1.5">
+                                                        <span className="flex items-center gap-1"><ClockIcon className="w-3.5 h-3.5"/> {s.duracao_minutos} min</span>
+                                                        
+                                                        {mediaServico > 0 ? (
+                                                            <span className="flex items-center gap-1 text-yellow-600 font-bold bg-yellow-50 px-1.5 py-0.5 rounded">
+                                                                <StarIcon className="w-3.5 h-3.5 text-yellow-500" /> {mediaServico.toFixed(1)} <span className="font-normal text-gray-400">({s.total_avaliacoes})</span>
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-[10px] bg-gray-100 text-gray-500 font-bold px-1.5 py-0.5 rounded uppercase tracking-wider">Novo</span>
+                                                        )}
+                                                    </div>
                                                 </div>
-                                                
                                                 <div className="text-right">
                                                     {cupomAtivo && precoComDesconto < precoOriginal ? (
-                                                        <>
-                                                            <span className="text-xs text-gray-400 line-through block mb-0.5">{formatarMoeda(precoOriginal)}</span>
-                                                            <span className="font-black text-green-600 text-lg">{formatarMoeda(precoComDesconto)}</span>
-                                                        </>
+                                                        <div className="flex flex-col items-end">
+                                                            <span className="text-[10px] text-gray-400 line-through mb-0.5">{formatarMoeda(precoOriginal)}</span>
+                                                            <span className="font-black text-emerald-600 text-lg bg-emerald-50 px-2 py-0.5 rounded-lg">{formatarMoeda(precoComDesconto)}</span>
+                                                        </div>
                                                     ) : (
                                                         <span className="font-bold text-indigo-600 text-lg">{formatarMoeda(precoOriginal)}</span>
                                                     )}
@@ -389,26 +386,28 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
                                 </div>
                             </div>
 
-                            {/* Escolha de Data e Hora */}
                             {servicoSelecionado && (
-                                <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm animate-in fade-in">
-                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 border-b border-gray-100 pb-4 gap-4">
-                                        <h3 className="text-lg font-bold text-gray-900">2. Defina os Detalhes</h3>
-                                        <div className="flex items-center gap-3 bg-gray-50 px-3 py-2 rounded-xl border border-gray-100">
-                                            <span className="text-sm text-gray-700 font-bold">Quantidade:</span>
-                                            <div className="flex items-center bg-white rounded-lg border border-gray-200 shadow-sm">
-                                                <button type="button" onClick={() => alterarQuantidade(-1)} disabled={qtdLocal <= 1} className="w-8 h-8 flex items-center justify-center font-bold text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 disabled:opacity-30 rounded-l-lg transition">-</button>
-                                                <span className="w-8 text-center text-sm font-bold text-gray-900">{qtdLocal}</span>
-                                                <button type="button" onClick={() => alterarQuantidade(1)} className="w-8 h-8 flex items-center justify-center font-bold text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-r-lg transition">+</button>
+                                <div className="bg-white p-6 md:p-8 rounded-3xl border border-gray-100 shadow-sm animate-in fade-in slide-in-from-bottom-4">
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 border-b border-gray-100 pb-6 gap-4">
+                                        <h3 className="text-xl font-bold text-gray-900 flex items-center gap-3">
+                                            <span className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm">2</span> 
+                                            Defina Data e Hora
+                                        </h3>
+                                        <div className="flex items-center gap-3 bg-gray-50 px-4 py-2 rounded-2xl border border-gray-100">
+                                            <span className="text-xs text-gray-500 font-bold uppercase tracking-widest">Pessoas:</span>
+                                            <div className="flex items-center bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                                                <button type="button" onClick={() => alterarQuantidade(-1)} disabled={qtdLocal <= 1 || processing} className="w-8 h-8 flex items-center justify-center font-bold text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 disabled:opacity-30 transition">-</button>
+                                                <span className="w-8 text-center text-sm font-bold text-gray-900 bg-gray-50 h-8 flex items-center justify-center border-x border-gray-100">{qtdLocal}</span>
+                                                <button type="button" onClick={() => alterarQuantidade(1)} disabled={processing} className="w-8 h-8 flex items-center justify-center font-bold text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 disabled:opacity-30 transition">+</button>
                                             </div>
                                         </div>
                                     </div>
                                     
-                                    <div className="mb-6">
-                                        <h4 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
-                                            <CalendarIcon className="w-4 h-4" /> Qual dia?
+                                    <div className="mb-8">
+                                        <h4 className="text-sm font-bold text-gray-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                            <CalendarIcon className="w-5 h-5 text-gray-400" /> Selecione o Dia
                                         </h4>
-                                        <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide">
+                                        <div className="flex gap-3 overflow-x-auto pb-4 scrollbar-hide snap-x">
                                             {diasParaMostrar.length > 0 ? (
                                                 diasParaMostrar.map(dia => {
                                                     const isSelected = data.data_agendamento === dia.dataOriginal;
@@ -416,32 +415,30 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
                                                         <button 
                                                             key={dia.dataOriginal}
                                                             type="button"
-                                                            onClick={() => {
-                                                                setData('data_agendamento', dia.dataOriginal);
-                                                                setData('hora_agendamento', ''); 
-                                                            }}
-                                                            className={`flex flex-col items-center justify-center min-w-[70px] p-3 rounded-xl border transition-all ${isSelected ? 'border-indigo-600 bg-indigo-600 text-white shadow-md scale-105' : 'border-gray-200 bg-white text-gray-700 hover:border-indigo-300 hover:bg-indigo-50'}`}
+                                                            disabled={processing}
+                                                            onClick={() => { setData('data_agendamento', dia.dataOriginal); setData('hora_agendamento', ''); }}
+                                                            className={`snap-start flex flex-col items-center justify-center min-w-[80px] p-4 rounded-2xl border-2 transition-all disabled:opacity-50 ${isSelected ? 'border-indigo-600 bg-indigo-600 text-white shadow-lg shadow-indigo-200 transform scale-105' : 'border-gray-100 bg-white text-gray-700 hover:border-indigo-200 hover:bg-indigo-50/50'}`}
                                                         >
                                                             <span className={`text-xs font-bold uppercase mb-1 ${isSelected ? 'text-indigo-200' : 'text-gray-400'}`}>{dia.diaSemana}</span>
-                                                            <span className="text-xl font-black">{dia.diaMes}</span>
-                                                            <span className={`text-[10px] uppercase font-bold mt-1 ${isSelected ? 'text-indigo-200' : 'text-gray-500'}`}>{dia.mes}</span>
+                                                            <span className="text-2xl font-black">{dia.diaMes}</span>
+                                                            <span className={`text-[10px] uppercase font-bold mt-1 tracking-widest ${isSelected ? 'text-indigo-200' : 'text-gray-400'}`}>{dia.mes}</span>
                                                         </button>
                                                     );
                                                 })
                                             ) : (
-                                                <span className="text-sm text-red-500">Nenhum dia disponível cadastrado.</span>
+                                                <div className="p-4 bg-red-50 text-red-600 rounded-xl text-sm border border-red-100 w-full text-center">Nenhum dia disponível cadastrado.</div>
                                             )}
                                         </div>
                                     </div>
 
                                     <div>
-                                        <h4 className="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2">
-                                            <ClockIcon className="w-4 h-4" /> Que horas?
+                                        <h4 className="text-sm font-bold text-gray-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+                                            <ClockIcon className="w-5 h-5 text-gray-400" /> Selecione o Horário
                                         </h4>
                                         {!servicoDisponivelNesteDia ? (
-                                            <div className="p-3 bg-red-50 text-red-600 rounded-xl text-sm border border-red-100">Serviço indisponível neste dia. Selecione outro acima.</div>
+                                            <div className="p-4 bg-yellow-50 text-yellow-700 rounded-2xl text-sm border border-yellow-200 text-center font-medium">Serviço indisponível neste dia. Selecione outra data.</div>
                                         ) : (
-                                            <div className="flex flex-wrap gap-2">
+                                            <div className="flex flex-wrap gap-3">
                                                 {horariosDoServico.length > 0 ? (
                                                     horariosDoServico.map(hora => {
                                                         const isSelected = data.hora_agendamento === hora;
@@ -449,15 +446,16 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
                                                             <button 
                                                                 type="button" 
                                                                 key={hora} 
+                                                                disabled={processing}
                                                                 onClick={() => { setData('hora_agendamento', hora); setEditandoDataHora(false); }} 
-                                                                className={`px-4 py-2 text-sm font-bold rounded-xl border-2 transition-all ${isSelected ? 'border-indigo-600 bg-indigo-600 text-white shadow-md' : 'border-gray-200 bg-white text-gray-700 hover:border-indigo-300 hover:bg-indigo-50'}`}
+                                                                className={`px-5 py-3 text-sm font-black rounded-2xl border-2 transition-all disabled:opacity-50 ${isSelected ? 'border-indigo-600 bg-indigo-600 text-white shadow-md' : 'border-gray-100 bg-gray-50 text-gray-700 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700'}`}
                                                             >
                                                                 {hora}
                                                             </button>
                                                         );
                                                     })
                                                 ) : (
-                                                    <span className="text-sm text-red-500">Nenhum horário cadastrado.</span>
+                                                    <div className="p-4 bg-gray-50 text-gray-500 rounded-2xl text-sm w-full text-center">Nenhum horário cadastrado para este dia.</div>
                                                 )}
                                             </div>
                                         )}
@@ -467,76 +465,87 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
                         </div>
                     )}
 
-                    {/* CHECKOUT: MÉTODO DE PAGAMENTO E TOTAL */}
-                    {servicoSelecionado && data.hora_agendamento && (
-                        <div className="bg-white p-6 sm:p-8 rounded-2xl border border-gray-200 shadow-sm animate-in fade-in slide-in-from-bottom-4">
-                            
-                            {/* 👉 EXIBIÇÃO DO PREÇO COM DESCONTO NO FINAL */}
-                            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6 border-b border-gray-100 pb-6 gap-4">
-                                <h3 className="text-xl font-bold text-gray-900">Total a pagar</h3>
-                                
-                                <div className="flex items-center gap-3">
-                                    {temDescontoVisivel && (
-                                        <span className="text-lg text-gray-400 line-through font-medium">
-                                            R$ {Number(valorOriginalBruto).toFixed(2).replace('.', ',')}
-                                        </span>
-                                    )}
-                                    <div className={`text-4xl font-black ${temDescontoVisivel ? 'text-green-600' : 'text-gray-900'}`}>
-                                        <span className="text-xl font-normal mr-1 opacity-70">R$</span>
-                                        {Number(data.valor_final).toFixed(2).replace('.', ',')}
+                    {servicoSelecionado && data.hora_agendamento && !editandoDataHora && (
+                        <div className="bg-white p-6 md:p-10 rounded-3xl border border-gray-100 shadow-xl animate-in fade-in slide-in-from-bottom-8">
+                            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end mb-8 border-b border-gray-100 pb-8 gap-4">
+                                <div>
+                                    <h3 className="text-xl font-bold text-gray-900 flex items-center gap-3 mb-2">
+                                        <span className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm">3</span> 
+                                        Finalização
+                                    </h3>
+                                    <p className="text-sm text-gray-500">Escolha como prefere pagar sua reserva.</p>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-1">Total a pagar</p>
+                                    <div className="flex items-center justify-end gap-3">
+                                        {temDescontoVisivel && (
+                                            <span className="text-xl text-gray-400 line-through font-medium">
+                                                R$ {(Number(valorOriginalBruto) || 0).toFixed(2).replace('.', ',')}
+                                            </span>
+                                        )}
+                                        <div className={`text-5xl font-black tracking-tight ${temDescontoVisivel ? 'text-emerald-600' : 'text-gray-900'}`}>
+                                            <span className="text-2xl font-normal mr-1 opacity-50">R$</span>
+                                            {(Number(data.valor_final) || 0).toFixed(2).replace('.', ',')}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
 
-                            <h4 className="text-sm font-bold mb-4 text-gray-500 uppercase tracking-wider">Forma de Pagamento</h4>
                             <InputError message={errors.forma_pagamento} className="mb-4" />
                             
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
                                 {(tipoPagamentoAtual === 'hibrido' || tipoPagamentoAtual === 'online') && (
                                     <>
-                                        <label className={`cursor-pointer border-2 rounded-xl p-5 flex flex-col items-center justify-center text-center transition relative overflow-hidden ${data.forma_pagamento === 'online_agora' ? 'border-indigo-600 bg-indigo-50/50 text-indigo-700' : 'border-gray-200 text-gray-600 hover:border-indigo-300 hover:bg-gray-50'}`}>
+                                        <label className={`cursor-pointer border-2 rounded-2xl p-6 flex flex-col items-center justify-center text-center transition-all relative overflow-hidden ${data.forma_pagamento === 'online_agora' ? 'border-indigo-600 bg-indigo-50/50 text-indigo-700 ring-4 ring-indigo-50' : 'border-gray-100 text-gray-600 hover:border-indigo-200 hover:bg-gray-50'}`}>
                                             {data.forma_pagamento === 'online_agora' && <div className="absolute top-0 right-0 w-8 h-8 bg-indigo-600 rounded-bl-2xl flex items-center justify-center text-white text-xs font-bold">✓</div>}
-                                            <input type="radio" className="hidden" name="forma_pagamento" value="online_agora" checked={data.forma_pagamento === 'online_agora'} onChange={e => setData('forma_pagamento', e.target.value)} />
-                                            <CreditCardIcon className="w-8 h-8 mb-3 text-indigo-500" />
-                                            <span className="font-bold text-base">Cartão ou Pix</span>
-                                            <span className="text-xs mt-1 text-gray-500 font-medium">Pagar agora, online</span>
+                                            <input type="radio" className="hidden" name="forma_pagamento" value="online_agora" checked={data.forma_pagamento === 'online_agora'} onChange={e => setData('forma_pagamento', e.target.value)} disabled={processing} />
+                                            <CreditCardIcon className={`w-10 h-10 mb-3 ${data.forma_pagamento === 'online_agora' ? 'text-indigo-600' : 'text-gray-400'}`} />
+                                            <span className="font-bold text-lg">Cartão / Pix</span>
+                                            <span className="text-xs mt-1 text-gray-500 font-medium">Pagar online pelo App</span>
                                         </label>
 
-                                        <label className={`cursor-pointer border-2 rounded-xl p-5 flex flex-col items-center justify-center text-center transition relative overflow-hidden ${data.forma_pagamento === 'online_depois' ? 'border-indigo-600 bg-indigo-50/50 text-indigo-700' : 'border-gray-200 text-gray-600 hover:border-indigo-300 hover:bg-gray-50'}`}>
+                                        <label className={`cursor-pointer border-2 rounded-2xl p-6 flex flex-col items-center justify-center text-center transition-all relative overflow-hidden ${data.forma_pagamento === 'online_depois' ? 'border-indigo-600 bg-indigo-50/50 text-indigo-700 ring-4 ring-indigo-50' : 'border-gray-100 text-gray-600 hover:border-indigo-200 hover:bg-gray-50'}`}>
                                             {data.forma_pagamento === 'online_depois' && <div className="absolute top-0 right-0 w-8 h-8 bg-indigo-600 rounded-bl-2xl flex items-center justify-center text-white text-xs font-bold">✓</div>}
-                                            <input type="radio" className="hidden" name="forma_pagamento" value="online_depois" checked={data.forma_pagamento === 'online_depois'} onChange={e => setData('forma_pagamento', e.target.value)} />
-                                            <ClockIcon className="w-8 h-8 mb-3 text-yellow-500" />
-                                            <span className="font-bold text-base">Pagar Depois</span>
-                                            <span className="text-xs mt-1 text-gray-500 font-medium">Reservar por 2h</span>
+                                            <input type="radio" className="hidden" name="forma_pagamento" value="online_depois" checked={data.forma_pagamento === 'online_depois'} onChange={e => setData('forma_pagamento', e.target.value)} disabled={processing} />
+                                            <ClockIcon className={`w-10 h-10 mb-3 ${data.forma_pagamento === 'online_depois' ? 'text-indigo-600' : 'text-gray-400'}`} />
+                                            <span className="font-bold text-lg">Pagar Depois</span>
+                                            <span className="text-xs mt-1 text-gray-500 font-medium">Reserva de 2h</span>
                                         </label>
                                     </>
                                 )}
 
                                 {(tipoPagamentoAtual === 'hibrido' || tipoPagamentoAtual === 'presencial') && (
-                                    <label className={`cursor-pointer border-2 rounded-xl p-5 flex flex-col items-center justify-center text-center transition relative overflow-hidden ${data.forma_pagamento === 'presencial' ? 'border-green-600 bg-green-50 text-green-700' : 'border-gray-200 text-gray-600 hover:border-green-300 hover:bg-gray-50'}`}>
-                                        {data.forma_pagamento === 'presencial' && <div className="absolute top-0 right-0 w-8 h-8 bg-green-600 rounded-bl-2xl flex items-center justify-center text-white text-xs font-bold">✓</div>}
-                                        <input type="radio" className="hidden" name="forma_pagamento" value="presencial" checked={data.forma_pagamento === 'presencial'} onChange={e => setData('forma_pagamento', e.target.value)} />
-                                        <span className="text-3xl mb-3">🤝</span>
-                                        <span className="font-bold text-base">No Local</span>
+                                    <label className={`cursor-pointer border-2 rounded-2xl p-6 flex flex-col items-center justify-center text-center transition-all relative overflow-hidden ${data.forma_pagamento === 'presencial' ? 'border-emerald-500 bg-emerald-50 text-emerald-800 ring-4 ring-emerald-50' : 'border-gray-100 text-gray-600 hover:border-emerald-200 hover:bg-gray-50'}`}>
+                                        {data.forma_pagamento === 'presencial' && <div className="absolute top-0 right-0 w-8 h-8 bg-emerald-500 rounded-bl-2xl flex items-center justify-center text-white text-xs font-bold">✓</div>}
+                                        <input type="radio" className="hidden" name="forma_pagamento" value="presencial" checked={data.forma_pagamento === 'presencial'} onChange={e => setData('forma_pagamento', e.target.value)} disabled={processing} />
+                                        <span className={`text-4xl mb-3 opacity-80 ${data.forma_pagamento === 'presencial' ? '' : 'grayscale'}`}>🤝</span>
+                                        <span className="font-bold text-lg">No Local</span>
                                         <span className="text-xs mt-1 text-gray-500 font-medium">Direto no Salão</span>
                                     </label>
                                 )}
                             </div>
 
-                            {/* BOTÃO FINAL GIGANTE */}
-                            <div className="mt-8 pt-6 border-t border-gray-100 flex flex-col items-end animate-in fade-in slide-in-from-bottom-2">
-                                <PrimaryButton className={`w-full sm:w-auto px-12 py-5 text-xl font-bold rounded-xl shadow-xl hover:scale-[1.02] transition disabled:opacity-50 flex items-center justify-center gap-3 ${temDescontoVisivel ? 'bg-green-600 hover:bg-green-700 text-white' : 'bg-gray-900 text-white'}`} disabled={processing || !servicoDisponivelNesteDia || !data.forma_pagamento}>
-                                    {processing && <svg className="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>}
-                                    {temDescontoVisivel ? 'Confirmar c/ Desconto!' : textoBotao}
+                            {cupomAtivo && (
+                                <div className="mb-6 flex items-start gap-3 bg-blue-50 text-blue-800 p-4 rounded-xl border border-blue-100 text-sm">
+                                    <InformationCircleIcon className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
+                                    <p><strong>Atenção:</strong> Ao confirmar, o cupom <strong>{cupomAtivo.codigo}</strong> será consumido.</p>
+                                </div>
+                            )}
+
+                            <div className="pt-6 border-t border-gray-100 flex flex-col items-end">
+                                <PrimaryButton 
+                                    className={`w-full sm:w-auto px-12 py-5 text-xl font-bold rounded-2xl shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:-translate-y-1 ${temDescontoVisivel && !processing ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200' : 'bg-gray-900 hover:bg-black text-white'}`} 
+                                    disabled={!data.forma_pagamento || processing}
+                                >
+                                    {temDescontoVisivel ? 'Confirmar c/ Desconto!' : 'Confirmar Reserva'}
                                 </PrimaryButton>
                             </div>
                         </div>
                     )}
                 </form>
 
-                {/* TELA DE BAIXO: SHOP SIMILAR */}
                 {servicosOutros.length > 0 && (
-                    <div className="mt-16 pt-12 border-t border-gray-200 animate-in fade-in">
+                    <div className="mt-20 pt-16 border-t border-gray-200 animate-in fade-in">
                         <h2 className="text-3xl font-normal text-center text-gray-900 mb-10 font-serif">Aproveite e adicione...</h2>
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                             {servicosOutros.map((outroServico) => {
@@ -547,16 +556,16 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
                                     <div 
                                         key={outroServico.id} 
                                         onClick={() => explorarOutroServico(outroServico)}
-                                        className="cursor-pointer group flex flex-col items-center bg-white p-4 rounded-xl shadow-sm hover:shadow-md transition border border-gray-100"
+                                        className="cursor-pointer group flex flex-col items-center bg-white p-5 rounded-3xl shadow-sm hover:shadow-xl transition-all duration-300 border border-gray-100 hover:border-indigo-100 hover:-translate-y-1"
                                     >
-                                        <div className="w-full aspect-square bg-gray-200 rounded-md overflow-hidden mb-4">
-                                            <img src={fotoCapaO} alt={outroServico.nome} className="w-full h-full object-cover group-hover:scale-105 transition duration-500"/>
+                                        <div className="w-full aspect-square bg-gray-100 rounded-2xl overflow-hidden mb-5">
+                                            <img src={fotoCapaO} alt={outroServico.nome} className="w-full h-full object-cover group-hover:scale-110 transition duration-700 ease-out"/>
                                         </div>
-                                        <div className="bg-gray-100 text-gray-800 text-xs font-bold px-3 py-1 rounded mb-3">
-                                            R$ {Number(outroServico.valor).toFixed(2)}
+                                        <div className="bg-gray-100 text-gray-800 text-xs font-bold px-3 py-1.5 rounded-lg mb-3 tracking-wider">
+                                            R$ {(Number(outroServico.valor) || 0).toFixed(2).replace('.', ',')}
                                         </div>
-                                        <h4 className="font-bold text-gray-900 text-center">{outroServico.nome}</h4>
-                                        <p className="text-xs text-gray-500 mt-1">{outroServico.duracao_minutos} minutos</p>
+                                        <h4 className="font-bold text-gray-900 text-center text-lg">{outroServico.nome}</h4>
+                                        <p className="text-xs text-gray-500 mt-1 font-medium">{outroServico.duracao_minutos} minutos</p>
                                     </div>
                                 );
                             })}
