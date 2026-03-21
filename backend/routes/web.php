@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\ServicoController;
 use App\Http\Controllers\Api\CarrinhoController;
 use App\Http\Controllers\Api\CupomController;
 use App\Http\Controllers\Api\FilaController;
+use App\Http\Controllers\Api\FuncionarioAreaController;
 use App\Services\MercadoPagoService; 
 use App\Http\Controllers\Api\AssinaturaController;
 use App\Http\Middleware\CheckAdmin;
@@ -41,7 +42,12 @@ Route::get('/', function () {
 Route::middleware(['auth', 'verified'])->group(function () {
 
 
-
+// funcionário - área de trabalho
+ Route::get('/meu-painel', [App\Http\Controllers\Api\FuncionarioAreaController::class, 'index'])->name('funcionario.dashboard');
+ Route::patch('/meu-painel/chamar/{id}', [App\Http\Controllers\Api\FuncionarioAreaController::class, 'chamarProximo'])->name('funcionario.chamar');
+Route::patch('/meu-painel/cancelar/{id}', [App\Http\Controllers\Api\FuncionarioAreaController::class, 'cancelarEstornar'])->name('funcionario.cancelar');
+Route::post('/meu-painel/pausa/{id}', [App\Http\Controllers\Api\FuncionarioAreaController::class, 'togglePausa'])->name('funcionario.pausa');
+Route::patch('/meu-painel/pular/{id}', [App\Http\Controllers\Api\FuncionarioAreaController::class, 'pularCliente'])->name('funcionario.pular');
 // assminaturas 
 
 Route::post('/assinaturas/nova', [App\Http\Controllers\Api\AssinaturaController::class, 'assinar'])->name('assinatura.nova');

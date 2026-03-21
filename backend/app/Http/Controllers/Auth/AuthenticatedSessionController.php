@@ -30,10 +30,23 @@ class AuthenticatedSessionController extends Controller
     public function store(LoginRequest $request): RedirectResponse
     {
         $request->authenticate();
-
         $request->session()->regenerate();
 
-        return redirect()->intended(route('dashboard', absolute: false));
+        $user = Auth::user();
+        
+        // 1. Limpa espaços invisíveis e converte para minúsculas (Blindagem total)
+        $papel = strtolower(trim($user->papel ?? ''));
+
+        // 2. Verifica se o ID deste usuário existe na tabela de funcionários
+        $isFuncionario = \App\Models\Funcionario::where('usuario_id', $user->id)->exists();
+
+        // 👉 SE FOR FUNCIONÁRIO, FORÇA A IDA PARA O PAINEL DELE
+        if ($papel === 'funcionario' || $papel === 'atendente' || $isFuncionario) {
+            return redirect()->to('/meu-painel'); // Vai direto para a URL do profissional
+        }
+
+        // Se for Cliente, Gerente ou Admin, vai para o Dashboard normal
+        return redirect()->intended('/dashboard');
     }
 
     /**
