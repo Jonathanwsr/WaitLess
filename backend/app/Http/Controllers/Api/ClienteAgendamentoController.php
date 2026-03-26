@@ -61,9 +61,10 @@ class ClienteAgendamentoController extends Controller
 
             $formaEscolhida = $validated['forma_pagamento'];
             $isPresencial = ($formaEscolhida === 'presencial');
-            $codigoPin = $isPresencial ? str_pad(mt_rand(0, 9999), 4, '0', STR_PAD_LEFT) : null;
+            
+            // 👉 GERA O PIN AUTOMATICAMENTE SE FOR PRESENCIAL
+            $codigoPin = $isPresencial ? (string) mt_rand(1000, 9999) : null;
 
-        
             $valorTotal = $servico->valor;
             $valorTaxaApp = $isPresencial ? 0 : round($valorTotal * $this->taxaApp, 2); 
             $valorLiquidoSalao = $valorTotal - $valorTaxaApp;
@@ -75,10 +76,11 @@ class ClienteAgendamentoController extends Controller
                 'funcionario_id'     => $funcionarioId,
                 'data_agendamento'   => $validated['data_agendamento'],
                 'hora_agendamento'   => $validated['hora_agendamento'],
+                // Fica "pendente" para entrar na fila da loja, mas o Frontend do cliente já o trata como confirmado
                 'status'             => $isPresencial ? 'pendente' : 'aguardando_pagamento', 
                 'status_pagamento'   => $isPresencial ? 'presencial' : 'pendente',
                 'valor_final'        => $valorTotal,
-                'codigo_verificacao' => $codigoPin,
+                'codigo_verificacao' => $codigoPin, // 👉 Nome correto da coluna aplicado aqui!
             ]);
 
             $pagamento = Pagamento::create([
@@ -95,7 +97,6 @@ class ClienteAgendamentoController extends Controller
 
             $preference = null;
             if ($formaEscolhida === 'online_agora') {
-               
                 $tokenSalao = $estabelecimento->token_mercadopago ?? null; 
                 
                 $preference = $this->mpService->criarCheckout($agendamento, $servico, $valorTaxaApp, $tokenSalao);
@@ -108,7 +109,7 @@ class ClienteAgendamentoController extends Controller
 
             if ($formaEscolhida === 'online_agora') return Inertia::location($preference['init_point']);
             elseif ($formaEscolhida === 'online_depois') return redirect()->route('dashboard')->with('warning', 'Vaga reservada! Pague online pelo painel antes do prazo expirar.');
-            else return redirect()->route('dashboard')->with('success', 'Agendamento confirmado para pagamento no local! PIN gerado.');
+            else return redirect()->route('dashboard')->with('success', 'Agendamento confirmado! O seu PIN de segurança foi gerado para pagamento no local.');
 
         } catch (Exception $e) {
             DB::rollBack(); 
@@ -124,14 +125,14 @@ class ClienteAgendamentoController extends Controller
         if (!$agendamento) return redirect()->route('dashboard')->with('warning', 'Agendamento não localizado.');
 
         if ($statusMP === 'approved') {
-            if ($agendamento->status_pagamento !== 'pago') {
+            if ($agendamento->status_pagamento !== 'pago_online') {
                 DB::transaction(function () use ($agendamento, $request) {
                     $pagamento = Pagamento::where('agendamento_id', $agendamento->id)->first();
                     $agendamento->update([
                         'status' => 'pendente', 
-                        'status_pagamento' => 'pago',
+                        'status_pagamento' => 'pago_online',
                         'pagamento_id' => $pagamento ? $pagamento->id : null,
-                        'codigo_verificacao' => str_pad(mt_rand(0, 9999), 4, '0', STR_PAD_LEFT),
+                        'codigo_verificacao' => (string) mt_rand(1000, 9999), // 👉 Nome correto da coluna aqui também!
                     ]);
                     if ($pagamento) {
                         $pagamento->update([
@@ -155,10 +156,9 @@ class ClienteAgendamentoController extends Controller
             $agendamento = Agendamento::with(['servico', 'estabelecimento'])->find($id);
             if (!$agendamento) return back()->with('error', 'Agendamento não encontrado.');
             if ($agendamento->usuario_id != Auth::id()) return back()->with('error', 'Acesso negado.');
-            if ($agendamento->status_pagamento === 'pago') return back()->with('success', 'Já está pago!');
+            if ($agendamento->status_pagamento === 'pago_online') return back()->with('success', 'Já está pago!');
             if ($agendamento->status === 'cancelado') return back()->with('error', 'Já foi cancelado.');
 
-           
             $dataAgendamento = Carbon::parse($agendamento->data_agendamento . ' ' . $agendamento->hora_agendamento);
             $limite = ($agendamento->created_at ?: now())->diffInHours($dataAgendamento) > 2 ? $dataAgendamento->copy()->subHours(2) : $dataAgendamento;
 
@@ -169,7 +169,6 @@ class ClienteAgendamentoController extends Controller
 
             if (!$agendamento->servico) return back()->with('error', 'Serviço inexistente.');
 
-          
             $pagamento = Pagamento::where('agendamento_id', $agendamento->id)->first();
             $valorTaxaApp = $pagamento ? $pagamento->taxa : 0;
             $tokenSalao = $agendamento->estabelecimento->token_mercadopago ?? null;
@@ -187,9 +186,6 @@ class ClienteAgendamentoController extends Controller
         }
     }
 
-
-
-     
     public function cancelar($id)
     {
         try {
@@ -199,29 +195,26 @@ class ClienteAgendamentoController extends Controller
             if ($agendamento->usuario_id != Auth::id()) return back()->with('error', 'Você não tem permissão para cancelar este agendamento.');
             if ($agendamento->status === 'cancelado') return back()->with('warning', 'Este agendamento já se encontra cancelado.');
 
-          
             $pagamento = Pagamento::where('agendamento_id', $agendamento->id)->first();
 
-            if ($agendamento->status_pagamento === 'pago' && $pagamento && $pagamento->id_transacao_gateway) {
+            // Se foi pago no app, tenta estornar
+            if ($agendamento->status_pagamento === 'pago_online' && $pagamento && $pagamento->id_transacao_gateway) {
                 
                 $tokenSalao = $agendamento->estabelecimento->token_mercadopago ?? null;
                 
                 try {
-                   
                     $this->mpService->estornarPagamento($pagamento->id_transacao_gateway, $tokenSalao);
                 } catch (Exception $e) {
-                    
                     return back()->with('error', 'Falha ao processar o estorno no Mercado Pago. O cancelamento foi abortado por segurança.');
                 }
 
-              
                 $pagamento->update(['status' => 'estornado']);
                 $agendamento->update(['status' => 'cancelado', 'status_pagamento' => 'estornado']);
                 
                 return back()->with('success', 'Agendamento cancelado! O valor foi estornado e será devolvido à sua conta.');
             }
 
-         
+            // Se foi pagamento no local ou pendente
             $agendamento->update(['status' => 'cancelado', 'status_pagamento' => 'cancelado']);
             if ($pagamento && $pagamento->status !== 'pago') {
                 $pagamento->update(['status' => 'cancelado']);

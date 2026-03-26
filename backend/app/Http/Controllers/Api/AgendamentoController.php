@@ -25,24 +25,32 @@ class AgendamentoController extends Controller
         return redirect()->back();
     }
 
-    public function finalizarComCodigo(Request $request, Agendamento $agendamento)
+    public function finalizarComCodigo(Request $request, $id)
     {
+        // Valida exatamente o campo enviado pelo Frontend React
         $request->validate([
-            'codigo' => 'required|string|size:4'
+            'codigo_pin' => 'required|string|size:4'
         ]);
 
-        if ($agendamento->codigo_verificacao !== $request->codigo) {
-            return redirect()->back()->withErrors(['codigo' => 'Código PIN inválido. Peça o código correto ao cliente.']);
+        $agendamento = Agendamento::findOrFail($id);
+
+        // Verifica se o PIN bate (convertido para string para não perder zeros à esquerda como "0123")
+        if ((string)$agendamento->codigo_verificacao !== (string)$request->codigo_pin) {
+            // Retorna o erro na chave 'error' para o Inertia capturar e exibir o alerta vermelho
+            return redirect()->back()->withErrors(['error' => 'PIN inválido! Peça ao cliente para verificar o código correto no aplicativo.']);
         }
 
+        // Tudo certo! Finaliza o agendamento
         $agendamento->update([
-            'status' => 'finalizado',
+            'status' => 'finalizado', // <- "finalizado" respeita a sua constraint do Postgres!
             'foi_realizado' => true,
             'hora_finalizacao' => now()->format('H:i'),
-            'finalizado_por' => Auth::id()
+            'finalizado_por' => Auth::id(),
+            // Se o pagamento era no local, atualiza para pago
+            'status_pagamento' => $agendamento->status_pagamento === 'presencial' ? 'pago_presencial' : $agendamento->status_pagamento
         ]);
 
-        return redirect()->back()->with('success', 'Serviço finalizado com sucesso! Pagamento liberado.');
+        return redirect()->back()->with('success', 'Atendimento concluído com sucesso! O cliente foi para o histórico.');
     }
 
     public function updateFuncionario(Request $request, Agendamento $agendamento)
@@ -50,6 +58,7 @@ class AgendamentoController extends Controller
         $validated = $request->validate([
             'funcionario_id' => 'nullable|exists:funcionarios,id',
         ]);
+        
         $agendamento->update(['funcionario_id' => $validated['funcionario_id']]);
         return redirect()->back();
     }
@@ -91,7 +100,7 @@ class AgendamentoController extends Controller
             }
         }
 
-        // 👉 3. NOVA LÓGICA: Atualiza a média e o total de avaliações do Serviço
+        // 3. Atualiza a média e o total de avaliações do Serviço
         if ($agendamento->servico_id) {
             $servico = \App\Models\Servico::find($agendamento->servico_id);
             if ($servico) {
@@ -110,14 +119,14 @@ class AgendamentoController extends Controller
             }
         }
 
-      
+        // Adiciona 50 pontos à carteira do usuário pela avaliação
         $user = Auth::user();
         $user->increment('pontos_saldo', 50);
 
         return back()->with('success', 'Muito obrigado pela sua avaliação! Você acabou de ganhar 50 pontos na sua carteira.');
     }
 
-     public function atribuirTodosEspera(Request $request, $estabelecimentoId)
+    public function atribuirTodosEspera(Request $request, $estabelecimentoId)
     {
         $request->validate([
             'funcionario_id' => 'required|exists:funcionarios,id',

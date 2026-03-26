@@ -8,39 +8,34 @@ use Illuminate\Http\Request;
 use App\Models\User;
 use App\Models\Estabelecimento;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class FuncionarioController extends Controller
-
 {
-
-
-
     public function index(Request $request)
     {
-        $meusEstabelecimentos = $request->user()->estabelecimentos()->get();
+        $user = $request->user();
+        $meusEstabelecimentos = $user->estabelecimentos()->get();
+        $meusEstabelecimentosIds = $meusEstabelecimentos->pluck('id');
         
-        // Magia do Laravel: Contamos e somamos dados das tabelas relacionadas na mesma busca
+        // 1. MAGIA DO LARAVEL: Busca os funcionários, conta serviços e soma faturamento
         $funcionarios = Funcionario::with(['usuario', 'estabelecimento'])
-            ->whereIn('estabelecimento_id', $meusEstabelecimentos->pluck('id'))
-            
-            // 1. Conta quantos agendamentos finalizados esse funcionário tem
+            ->whereIn('estabelecimento_id', $meusEstabelecimentosIds)
             ->withCount(['agendamentos as total_atendimentos' => function ($query) {
-                $query->where('status', 'finalizado');
+                $query->whereIn('status', ['concluido', 'finalizado']);
             }])
-            
-           
             ->withSum(['agendamentos as faturamento_total' => function ($query) {
-                $query->where('status', 'finalizado');
+                $query->whereIn('status', ['concluido', 'finalizado']);
             }], 'valor_final')
-            
             ->get();
 
-        
+        // Calcula a média de avaliações manualmente para cada um
         foreach ($funcionarios as $func) {
             $func->faturamento_total = $func->faturamento_total ?? 0; 
             
-            $media = \DB::table('avaliacoes')
+            $media = DB::table('avaliacoes')
                 ->join('agendamentos', 'avaliacoes.agendamento_id', '=', 'agendamentos.id')
                 ->where('agendamentos.funcionario_id', $func->id)
                 ->avg('avaliacoes.nota');
@@ -48,11 +43,56 @@ class FuncionarioController extends Controller
             $func->avaliacao_media = $media;
         }
 
+        // 2. BUSCA PRODUÇÃO (FECHAMENTOS RECENTES) DOS FUNCIONÁRIOS DESSAS LOJAS
+        $fechamentosRecentes = DB::table('fechamentos_diarios')
+            ->join('funcionarios', 'fechamentos_diarios.funcionario_id', '=', 'funcionarios.id')
+            ->whereIn('funcionarios.estabelecimento_id', $meusEstabelecimentosIds)
+            ->select('fechamentos_diarios.*', 'funcionarios.nome as funcionario_nome')
+            ->orderBy('fechamentos_diarios.data_fechamento', 'desc')
+            ->limit(30)
+            ->get();
+
+        // 3. BUSCA AUSÊNCIAS (FOLGAS) PENDENTES PARA O GERENTE APROVAR
+        $ausenciasPendentes = DB::table('ausencias_funcionarios')
+            ->join('funcionarios', 'ausencias_funcionarios.funcionario_id', '=', 'funcionarios.id')
+            ->join('estabelecimentos', 'funcionarios.estabelecimento_id', '=', 'estabelecimentos.id')
+            ->whereIn('funcionarios.estabelecimento_id', $meusEstabelecimentosIds)
+            ->where('ausencias_funcionarios.status', 'pendente') // Filtra apenas as pendentes!
+            ->select('ausencias_funcionarios.*', 'funcionarios.nome as funcionario_nome', 'estabelecimentos.nome as loja_nome')
+            ->orderBy('ausencias_funcionarios.created_at', 'asc')
+            ->get();
+
         return Inertia::render('Estabelecimentos/Funcionarios', [
             'funcionarios' => $funcionarios,
-            'meusEstabelecimentos' => $meusEstabelecimentos
+            'meusEstabelecimentos' => $meusEstabelecimentos,
+            'fechamentosRecentes' => $fechamentosRecentes,
+            'ausenciasPendentes' => $ausenciasPendentes
         ]);
     }
+
+    // 👉 NOVA FUNÇÃO DE GESTÃO: Aprovar ou Recusar Folgas (Blindada)
+    public function decidirAusencia(Request $request, $id)
+    {
+        $papel = strtolower(trim(Auth::user()->papel));
+        
+        // Proteção Rigorosa: Só a chefia pode decidir
+        if (!in_array($papel, ['admin', 'proprietario', 'socio', 'gerente'])) {
+            abort(403, 'Acesso Negado: Apenas a gerência ou proprietários podem aprovar folgas.');
+        }
+
+        $request->validate([
+            'status' => 'required|in:aprovado,recusado'
+        ]);
+
+        DB::table('ausencias_funcionarios')->where('id', $id)->update([
+            'status' => $request->status,
+            'updated_at' => now()
+        ]);
+
+        $mensagem = $request->status === 'aprovado' ? 'Folga aprovada com sucesso!' : 'Solicitação de folga recusada.';
+        return back()->with('success', $mensagem);
+    }
+
     public function store(Request $request, Estabelecimento $estabelecimento)
     {
         $validated = $request->validate([
@@ -88,12 +128,14 @@ class FuncionarioController extends Controller
             'cargo'    => 'required|string|max:255',
             'email'    => 'nullable|email|unique:users,email,' . $funcionario->usuario_id,
             'password' => 'nullable|string|min:8',
+            'estabelecimento_id' => 'required|exists:estabelecimentos,id'
         ]);
 
         $funcionario->update([
             'nome'     => $validated['nome'],
             'telefone' => $validated['telefone'],
             'cargo'    => $validated['cargo'],
+            'estabelecimento_id' => $validated['estabelecimento_id'] // Permite transferir de loja
         ]);
 
         if ($funcionario->usuario_id) {
@@ -112,13 +154,12 @@ class FuncionarioController extends Controller
             }
         }
 
-        return redirect()->back()->with('success', 'Funcionário atualizado!');
+        return redirect()->back()->with('success', 'Funcionário atualizado com sucesso!');
     }
 
     public function destroy(Funcionario $funcionario)
     {
         $funcionario->update(['ativo' => false]);
-        
-        return redirect()->back()->with('success', 'Funcionário removido da equipe.');
+        return redirect()->back()->with('success', 'Funcionário inativado e removido da escala.');
     }
 }

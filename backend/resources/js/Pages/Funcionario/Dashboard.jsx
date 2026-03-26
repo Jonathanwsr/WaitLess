@@ -1,5 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { Head, router, usePage, Link } from '@inertiajs/react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
 import { useState, useEffect, useMemo } from 'react';
 import { 
     CurrencyDollarIcon, ClockIcon, CheckCircleIcon, 
@@ -8,14 +8,16 @@ import {
     BriefcaseIcon, BuildingStorefrontIcon, UserIcon,
     QueueListIcon, MagnifyingGlassIcon, XCircleIcon,
     DocumentArrowDownIcon, PencilSquareIcon, ArrowPathIcon,
-    PauseCircleIcon, PlayCircleIcon, SparklesIcon, CalendarDaysIcon
+    PauseCircleIcon, PlayCircleIcon, SparklesIcon, CalendarDaysIcon,
+    CalendarIcon, ExclamationCircleIcon, ArrowLeftIcon, UserGroupIcon,
+    ArrowDownTrayIcon, DocumentTextIcon, TableCellsIcon, ViewColumnsIcon
 } from '@heroicons/react/24/solid';
 
 export default function FuncionarioDashboard({ auth, funcionarios, emAtendimento, proximo, filaEspera, historico, ganhosHoje, filtros, now }) {
     const { flash = {}, errors = {} } = usePage().props;
 
     // ESTADOS DE NAVEGAÇÃO
-    const [abaAtiva, setAbaAtiva] = useState(funcionarios[0]?.id);
+    const [abaAtiva, setAbaAtiva] = useState(funcionarios && funcionarios.length > 0 ? funcionarios[0].id : null);
     const [subTela, setSubTela] = useState('operacao'); 
 
     const [pinDigitado, setPinDigitado] = useState('');
@@ -29,9 +31,19 @@ export default function FuncionarioDashboard({ auth, funcionarios, emAtendimento
         return () => clearInterval(timer);
     }, [horaAtual]);
 
+    // PROTEÇÃO DE DADOS 
+    if (!funcionarios || funcionarios.length === 0) {
+        return (
+            <AuthenticatedLayout user={auth.user} header={<h2 className="text-2xl font-black">Mesa de Operação</h2>}>
+                <div className="p-8 text-center text-gray-500 font-bold">Nenhum estabelecimento vinculado à sua conta.</div>
+            </AuthenticatedLayout>
+        );
+    }
+
     // LÓGICA DE DADOS (MEMÓRIA BLINDADA NO FRONTEND)
-    const funcionarioAtual = funcionarios.find(f => f.id === abaAtiva);
-    const filaLocal = useMemo(() => filaEspera.filter(ag => ag.funcionario_id === abaAtiva), [filaEspera, abaAtiva]);
+    const funcionarioAtual = funcionarios.find(f => f.id === abaAtiva) || funcionarios[0];
+    const safeFilaEspera = filaEspera || [];
+    const filaLocal = useMemo(() => safeFilaEspera.filter(ag => ag.funcionario_id === abaAtiva), [safeFilaEspera, abaAtiva]);
     const proximoLocal = filaLocal.length > 0 ? filaLocal[0] : null;
     const emAtendimentoLocal = emAtendimento?.funcionario_id === abaAtiva ? emAtendimento : null;
 
@@ -91,13 +103,20 @@ export default function FuncionarioDashboard({ auth, funcionarios, emAtendimento
         alert("Módulo de Edição: Aqui abrirá um modal para alterar o serviço, preço ou adicionar taxas extras antes de finalizar.");
     };
 
+    // 👉 Função de Confirmar PIN
     const confirmarComPin = (id) => {
         if (pinDigitado.length !== 4) return alert('O PIN requer 4 dígitos.');
+        
         setProcessandoPin(true);
-        router.post(route('lojista.agendamento.finalizarPin', id), { codigo_pin: pinDigitado }, {
+        
+        router.post(route('agendamentos.finalizar', id), { codigo_pin: pinDigitado }, {
             preserveScroll: true,
-            onSuccess: () => { setPinDigitado(''); setProcessandoPin(false); },
-            onError: () => setProcessandoPin(false)
+            onSuccess: () => { 
+                setPinDigitado(''); 
+            },
+            onFinish: () => {
+                setProcessandoPin(false);
+            }
         });
     };
 

@@ -1,8 +1,11 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { useState } from 'react';
-import TextInput from '@/Components/TextInput';
-import { TicketIcon, StarIcon, ExclamationTriangleIcon, CheckCircleIcon, XCircleIcon, ClockIcon, CalendarIcon, BellAlertIcon, ChatBubbleBottomCenterTextIcon } from '@heroicons/react/24/solid';
+import { 
+    TicketIcon, StarIcon, ExclamationTriangleIcon, CheckCircleIcon, 
+    XCircleIcon, ClockIcon, CalendarIcon, BellAlertIcon, 
+    ChatBubbleBottomCenterTextIcon, MagnifyingGlassIcon 
+} from '@heroicons/react/24/solid';
 import { StarIcon as StarOutlineIcon } from '@heroicons/react/24/outline'; 
 
 export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
@@ -96,12 +99,9 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
         e.preventDefault();
         setEnviandoAvaliacao(true);
         router.post(route('cliente.agendamento.avaliar', agendamentoParaAvaliar.id), {
-            nota: nota,
-            comentario: comentario
+            nota: nota, comentario: comentario
         }, {
-            preserveScroll: true,
-            onSuccess: () => fecharModalAvaliacao(),
-            onFinish: () => setEnviandoAvaliacao(false)
+            preserveScroll: true, onSuccess: () => fecharModalAvaliacao(), onFinish: () => setEnviandoAvaliacao(false)
         });
     };
 
@@ -113,6 +113,7 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
     const agsConcluidos = [];
     const agsCancelados = [];
 
+    // 👉 CORREÇÃO DO HISTÓRICO (AGORA FUNCIONA E MOSTRA OS CONCLUÍDOS!)
     agendamentos.forEach(ag => {
         const statusTempo = verificarExpiracao(ag);
         const isCancelado = statusTempo.cancelado || ag.status_pagamento === 'estornado' || (statusTempo.expirou && ag.status_pagamento !== 'pago_online' && ag.status_pagamento !== 'presencial');
@@ -120,7 +121,7 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
         if (isCancelado) {
             agsCancelados.push(ag);
         } else if (ag.status === 'concluido' || ag.status === 'finalizado') {
-            agsConcluidos.push(ag);
+            agsConcluidos.push(ag); // <-- Vai certinho para o Histórico
         } else if (ag.status === 'aguardando_pagamento' && ag.status_pagamento === 'pendente') {
             agsPendentes.push(ag);
         } else {
@@ -139,81 +140,84 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
 
             <div className="max-w-7xl mx-auto mt-6 px-4 sm:px-6 lg:px-8 pb-12 space-y-8">
                 
-                {flash?.success && <div className="p-4 text-green-800 bg-green-100 border border-green-200 rounded-xl shadow-sm animate-in fade-in flex items-center gap-2"><CheckCircleIcon className="w-6 h-6"/> {flash.success}</div>}
+                {flash?.success && <div className="p-4 text-emerald-800 bg-emerald-100 border border-emerald-200 rounded-xl shadow-sm animate-in fade-in flex items-center gap-2"><CheckCircleIcon className="w-6 h-6"/> {flash.success}</div>}
                 {flash?.warning && <div className="p-4 text-yellow-800 bg-yellow-100 border border-yellow-200 rounded-xl shadow-sm animate-in fade-in flex items-center gap-2"><ExclamationTriangleIcon className="w-6 h-6"/> {flash.warning}</div>}
                 {flash?.error && <div className="p-4 text-red-800 bg-red-100 border border-red-200 rounded-xl shadow-sm animate-in fade-in flex items-center gap-2"><XCircleIcon className="w-6 h-6"/> {flash.error}</div>}
 
+                {/* BOTÃO DE RECOMPENSAS MODERNIZADO */}
                 <div className="flex justify-end animate-in fade-in slide-in-from-top-4">
                     <Link 
                         href={route('cliente.mensagens')} 
-                        className="flex items-center gap-2 bg-gradient-to-r from-yellow-400 to-orange-500 hover:from-yellow-500 hover:to-orange-600 text-white font-bold py-3 px-6 rounded-full shadow-lg transition-transform hover:scale-105 group"
+                        className="flex items-center gap-3 bg-white border border-gray-200 hover:border-emerald-300 text-gray-800 font-black py-3 px-6 rounded-2xl shadow-sm transition-all hover:shadow-md group"
                     >
-                        <BellAlertIcon className="w-5 h-5 group-hover:animate-bounce" />
+                        <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                            <BellAlertIcon className="w-5 h-5 group-hover:animate-swing" />
+                        </div>
                         Mensagens & Recompensas
                     </Link>
                 </div>
 
-                <div className="bg-indigo-600 rounded-3xl p-8 shadow-lg relative overflow-hidden">
+                {/* PESQUISA MODERNIZADA (VERDE CLARO) */}
+                <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-[2rem] p-8 sm:p-12 shadow-xl relative overflow-hidden">
                     <div className="relative z-10">
-                        <h3 className="text-2xl font-extrabold text-white mb-2">Encontre e agende um serviço</h3>
-                        <form onSubmit={fazerBusca} className="mt-4 flex flex-col md:flex-row gap-3">
-                            <TextInput type="text" className="w-full py-3 px-6 rounded-xl border-0" placeholder="Ex: Barbearia do João..." value={busca} onChange={e => setBusca(e.target.value)} />
-                            <select className="w-full md:w-64 py-3 px-4 border-0 rounded-xl text-gray-700" value={categoria} onChange={e => setCategoria(e.target.value)}>
-                                <option value="">Todas as Categorias</option>
+                        <h3 className="text-3xl font-black text-white mb-3 tracking-tight">O que você precisa hoje?</h3>
+                        <p className="text-emerald-100 font-medium mb-6 max-w-md">Encontre os melhores profissionais e agende o seu horário sem filas.</p>
+                        
+                        <form onSubmit={fazerBusca} className="flex flex-col md:flex-row gap-3">
+                            <div className="relative flex-1">
+                                <MagnifyingGlassIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-6 h-6 text-gray-400" />
+                                <input 
+                                    type="text" 
+                                    className="w-full py-4 pl-12 pr-6 rounded-2xl border-0 shadow-sm focus:ring-4 focus:ring-emerald-300 transition-all font-medium text-gray-800" 
+                                    placeholder="Buscar por nome do salão, barbearia..." 
+                                    value={busca} onChange={e => setBusca(e.target.value)} 
+                                />
+                            </div>
+                            <select className="w-full md:w-64 py-4 px-6 border-0 rounded-2xl text-gray-700 shadow-sm focus:ring-4 focus:ring-emerald-300 transition-all font-medium font-sans" value={categoria} onChange={e => setCategoria(e.target.value)}>
+                                <option value="">Qualquer Categoria</option>
                                 <option value="Beleza e Estética">Beleza e Estética</option>
                             </select>
-                            <button type="submit" className="bg-gray-900 text-white px-8 py-3 font-bold rounded-xl shadow-md hover:bg-gray-800 transition">Procurar</button>
+                            <button type="submit" className="bg-gray-900 text-white px-8 py-4 font-black rounded-2xl shadow-md hover:bg-black hover:scale-105 transition-all">Buscar</button>
                         </form>
                     </div>
-                    <TicketIcon className="absolute -right-6 -top-6 w-48 h-48 text-indigo-500 opacity-50 transform rotate-12 pointer-events-none" />
+                    <TicketIcon className="absolute -right-10 -top-10 w-64 h-64 text-emerald-400 opacity-30 transform rotate-12 pointer-events-none" />
                 </div>
 
+                {/* ABAS MODERNIZADAS */}
                 <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-                    
                     <div className="p-6 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50">
-                        <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-6">📅 Meus Agendamentos</h3>
+                        <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
+                            <CalendarIcon className="w-6 h-6 text-emerald-500" /> Meus Agendamentos
+                        </h3>
                         
-                        <div className="flex overflow-x-auto gap-2 scrollbar-hide pb-2">
-                            <button 
-                                onClick={() => setAbaAtiva('proximos')} 
-                                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition whitespace-nowrap ${abaAtiva === 'proximos' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'}`}
-                            >
+                        <div className="flex overflow-x-auto gap-3 scrollbar-hide pb-2">
+                            <button onClick={() => setAbaAtiva('proximos')} className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${abaAtiva === 'proximos' ? 'bg-emerald-600 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'}`}>
                                 <ClockIcon className="w-5 h-5" /> Próximos 
-                                {agsProximos.length > 0 && <span className="bg-gray-100 text-gray-800 px-2 py-0.5 rounded-full text-xs ml-1">{agsProximos.length}</span>}
+                                {agsProximos.length > 0 && <span className="bg-white/20 text-white px-2 py-0.5 rounded-full text-xs ml-1 shadow-sm">{agsProximos.length}</span>}
                             </button>
                             
-                            <button 
-                                onClick={() => setAbaAtiva('pendentes')} 
-                                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition whitespace-nowrap ${abaAtiva === 'pendentes' ? 'bg-yellow-500 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'}`}
-                            >
+                            <button onClick={() => setAbaAtiva('pendentes')} className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${abaAtiva === 'pendentes' ? 'bg-yellow-500 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'}`}>
                                 <ExclamationTriangleIcon className="w-5 h-5" /> Faltam Pagar
-                                {agsPendentes.length > 0 && <span className="bg-red-500 text-white px-2 py-0.5 rounded-full text-xs animate-pulse ml-1">{agsPendentes.length}</span>}
+                                {agsPendentes.length > 0 && <span className="bg-white/20 text-white px-2 py-0.5 rounded-full text-xs animate-pulse ml-1 shadow-sm">{agsPendentes.length}</span>}
                             </button>
 
-                            {/* 👉 ABA HISTÓRICO COM O CONTADOR DOS AGENDAMENTOS TESTE */}
-                            <button 
-                                onClick={() => setAbaAtiva('concluidos')} 
-                                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition whitespace-nowrap ${abaAtiva === 'concluidos' ? 'bg-green-600 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'}`}
-                            >
+                            <button onClick={() => setAbaAtiva('concluidos')} className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${abaAtiva === 'concluidos' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'}`}>
                                 <CheckCircleIcon className="w-5 h-5" /> Histórico
-                                {agsConcluidos.length > 0 && <span className="bg-gray-100 text-gray-800 px-2 py-0.5 rounded-full text-xs ml-1">{agsConcluidos.length}</span>}
+                                {agsConcluidos.length > 0 && <span className="bg-white/20 text-white px-2 py-0.5 rounded-full text-xs ml-1 shadow-sm">{agsConcluidos.length}</span>}
                             </button>
 
-                            <button 
-                                onClick={() => setAbaAtiva('cancelados')} 
-                                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition whitespace-nowrap ${abaAtiva === 'cancelados' ? 'bg-red-600 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-100 border border-gray-200'}`}
-                            >
+                            <button onClick={() => setAbaAtiva('cancelados')} className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${abaAtiva === 'cancelados' ? 'bg-gray-900 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'}`}>
                                 <XCircleIcon className="w-5 h-5" /> Cancelados
                             </button>
                         </div>
                     </div>
 
-                    <div className="p-6 bg-gray-50 dark:bg-gray-900/20 min-h-[300px]">
+                    <div className="p-6 bg-gray-50/30 dark:bg-gray-900/20 min-h-[300px]">
                         {agendamentosExibidos.length === 0 ? (
                             <div className="text-center py-16">
-                                <span className="text-6xl mb-4 block opacity-30">👻</span>
+                                <span className="text-6xl mb-4 block opacity-30">✨</span>
                                 <h4 className="text-xl font-bold mb-2 text-gray-700 dark:text-gray-300">Nenhum agendamento nesta aba</h4>
-                                <p className="text-gray-500 text-sm">Clique nas abas acima para ver outros serviços.</p>
+                                <p className="text-gray-500 text-sm">Clique nas abas acima para ver o seu histórico.</p>
                             </div>
                         ) : (
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -236,15 +240,15 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
                                                 isCanceladoDefinitivo ? 'bg-gray-200 text-gray-600' : 
                                                 isConcluido ? 'bg-gray-900 text-white' :
                                                 isAguardandoPagamento ? 'bg-yellow-400 text-yellow-900' : 
-                                                'bg-indigo-600 text-white'
+                                                'bg-emerald-500 text-white'
                                             }`}>
                                                 <div>
                                                     <p className="text-sm font-bold opacity-80 uppercase tracking-wider mb-1">Status</p>
-                                                    <h4 className="text-xl font-black">
-                                                        {isCanceladoDefinitivo ? (isEstornado ? '❌ Reembolsado' : '❌ Cancelado') : 
-                                                         isConcluido ? '✅ Concluído' :
-                                                         isAguardandoPagamento ? '⚠️ Pagar no App' : 
-                                                         (isPresencial ? '✔️ Pagar no Local' : '🚀 Confirmado')}
+                                                    <h4 className="text-xl font-black flex items-center gap-2">
+                                                        {isCanceladoDefinitivo ? (isEstornado ? 'Reembolsado' : 'Cancelado') : 
+                                                         isConcluido ? <><CheckCircleIcon className="w-6 h-6"/> Concluído</> :
+                                                         isAguardandoPagamento ? <><ExclamationTriangleIcon className="w-6 h-6"/> Pagar no App</> : 
+                                                         <><ClockIcon className="w-6 h-6"/> Confirmado</>}
                                                     </h4>
                                                 </div>
                                                 <div className="text-right">
@@ -264,25 +268,33 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
                                                             <CalendarIcon className="w-3 h-3" /> {formatarData(agendamento?.data_agendamento)}
                                                         </p>
                                                     </div>
-                                                    <p className="text-lg font-black text-indigo-600">{formatarMoeda(agendamento?.valor_final)}</p>
+                                                    <p className="text-lg font-black text-emerald-600">{formatarMoeda(agendamento?.valor_final)}</p>
                                                 </div>
 
-                                                {/* GAMIFICAÇÃO: CÓDIGO PIN */}
-                                                {isConfirmado && agendamento?.codigo_confirmacao && !isConcluido && (
+                                                {/* 👉 GAMIFICAÇÃO: CÓDIGO PIN MÁGICO */}
+                                                {isConfirmado && agendamento?.codigo_verificacao && !isConcluido && (
                                                     <div className="mb-6 bg-gradient-to-r from-amber-100 to-yellow-100 rounded-xl p-5 border-2 border-yellow-400 border-dashed text-center relative overflow-hidden group">
                                                         <StarIcon className="absolute -left-4 -top-4 w-16 h-16 text-yellow-300/50 group-hover:rotate-12 transition-transform duration-500" />
                                                         <StarIcon className="absolute -right-4 -bottom-4 w-16 h-16 text-yellow-300/50 group-hover:-rotate-12 transition-transform duration-500" />
+                                                        
+                                                        {/* Se for pagamento local, avisa para pagar na loja */}
+                                                        {isPresencial && (
+                                                            <div className="bg-yellow-200 text-yellow-800 text-[10px] font-black uppercase tracking-widest px-3 py-1 w-max mx-auto rounded-lg mb-3">
+                                                                💰 Pagar no Local
+                                                            </div>
+                                                        )}
+
                                                         <p className="text-xs font-bold text-yellow-800 uppercase tracking-widest mb-2">Seu PIN de Atendimento</p>
-                                                        <div className="text-5xl font-black text-gray-900 tracking-[0.2em] font-mono">
-                                                            {agendamento.codigo_confirmacao}
+                                                        <div className="text-5xl font-black text-gray-900 tracking-[0.2em] font-mono drop-shadow-sm">
+                                                            {agendamento.codigo_verificacao} {/* <--- Corrigido para codigo_verificacao! */}
                                                         </div>
                                                         <p className="text-xs text-yellow-700 mt-3 font-medium flex items-center justify-center gap-1">
-                                                            <StarIcon className="w-4 h-4 text-yellow-500" /> Mostre ao profissional para ganhar pontos!
+                                                            <StarIcon className="w-4 h-4 text-yellow-500" /> Forneça este PIN ao funcionário na loja!
                                                         </p>
                                                     </div>
                                                 )}
 
-                                                {/* 👉 AVALIAÇÃO DE 5 ESTRELAS */}
+                                                {/* AVALIAÇÃO DE 5 ESTRELAS */}
                                                 {isConcluido && (
                                                     <div className="mt-2 mb-4">
                                                         {!agendamento.nota ? (
@@ -298,8 +310,8 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
                                                                 Avaliar e Ganhar 50 Pontos
                                                             </button>
                                                         ) : (
-                                                            <div className="bg-gradient-to-b from-gray-50 to-white border border-gray-200 rounded-2xl p-5 shadow-sm relative overflow-hidden">
-                                                                <div className="absolute top-0 right-0 bg-green-500 text-white text-[10px] font-black px-3 py-1 rounded-bl-lg">Avaliado</div>
+                                                            <div className="bg-gray-50 border border-gray-200 rounded-2xl p-5 shadow-sm relative overflow-hidden">
+                                                                <div className="absolute top-0 right-0 bg-emerald-500 text-white text-[10px] font-black px-3 py-1 rounded-bl-lg">Avaliado</div>
                                                                 <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-3">Sua Experiência</p>
                                                                 <div className="flex items-center gap-1 mb-3">
                                                                     {[1, 2, 3, 4, 5].map((estrela) => (
@@ -310,7 +322,7 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
                                                                     <span className="ml-2 font-black text-gray-900 text-lg">{agendamento.nota}.0</span>
                                                                 </div>
                                                                 {agendamento.comentario_avaliacao ? (
-                                                                    <div className="bg-gray-100/50 p-3 rounded-xl border border-gray-100">
+                                                                    <div className="bg-white p-3 rounded-xl border border-gray-100 shadow-sm">
                                                                         <p className="text-sm text-gray-600 italic">"{agendamento.comentario_avaliacao}"</p>
                                                                     </div>
                                                                 ) : (
@@ -323,24 +335,23 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
 
                                                 <div className="mt-auto space-y-3 pt-4 border-t border-gray-100">
                                                     {isAguardandoPagamento && (
-                                                        <button type="button" onClick={() => pagarNovamente(agendamento.id)} disabled={loadingPagar === agendamento.id || loadingCancelar === agendamento.id} className="w-full py-3 text-white font-bold rounded-xl shadow-md transition bg-gray-900 hover:bg-gray-800">
+                                                        <button type="button" onClick={() => pagarNovamente(agendamento.id)} disabled={loadingPagar === agendamento.id || loadingCancelar === agendamento.id} className="w-full py-3.5 text-white font-bold rounded-xl shadow-md transition bg-gray-900 hover:bg-black">
                                                             {loadingPagar === agendamento.id ? '⏳ A gerar link...' : '💳 Pagar Agora'}
                                                         </button>
                                                     )}
 
                                                     {!isCanceladoDefinitivo && !isConcluido && (
-                                                        <button type="button" onClick={() => cancelarVaga(agendamento.id, isPago)} disabled={loadingCancelar === agendamento.id || loadingPagar === agendamento.id} className="w-full py-3 text-red-500 bg-red-50 hover:bg-red-100 font-bold rounded-xl transition border border-red-100">
+                                                        <button type="button" onClick={() => cancelarVaga(agendamento.id, isPago)} disabled={loadingCancelar === agendamento.id || loadingPagar === agendamento.id} className="w-full py-3 text-red-500 bg-white hover:bg-red-50 font-bold rounded-xl transition border border-red-100">
                                                             {loadingCancelar === agendamento.id ? '⏳ A cancelar...' : 'Cancelar Agendamento'}
                                                         </button>
                                                     )}
 
                                                     {(isCanceladoDefinitivo || isConcluido) && route().has('cliente.agendar') && agendamento?.estabelecimento_id && (
-                                                        <Link href={route('cliente.agendar', agendamento.estabelecimento_id)} className="flex items-center justify-center gap-2 w-full py-3 bg-white border-2 border-indigo-100 hover:border-indigo-600 text-indigo-700 font-bold rounded-xl transition">
+                                                        <Link href={route('cliente.agendar', agendamento.estabelecimento_id)} className="flex items-center justify-center gap-2 w-full py-3.5 bg-white border-2 border-emerald-100 hover:border-emerald-500 text-emerald-600 font-black rounded-xl transition">
                                                             <ClockIcon className="w-5 h-5" /> Agendar Novamente
                                                         </Link>
                                                     )}
                                                 </div>
-
                                             </div>
                                         </div>
                                     );
@@ -351,14 +362,14 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
                 </div>
             </div>
 
-            {/* 👉 MODAL DE AVALIAÇÃO (O POP-UP DE 5 ESTRELAS) */}
+            {/* 👉 MODAL DE AVALIAÇÃO */}
             {modalAvaliacaoOpen && agendamentoParaAvaliar && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in">
                     <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all">
-                        <div className="bg-gradient-to-br from-indigo-600 to-purple-600 p-8 text-center relative overflow-hidden">
+                        <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-8 text-center relative overflow-hidden">
                             <StarIcon className="w-16 h-16 text-yellow-400 mx-auto mb-4 drop-shadow-md" />
                             <h3 className="text-2xl font-black text-white">Como foi o serviço?</h3>
-                            <p className="text-indigo-100 text-sm mt-2">Avalie o atendimento de <strong>{agendamentoParaAvaliar.estabelecimento?.nome}</strong> e ganhe 50 pontos na hora!</p>
+                            <p className="text-emerald-100 font-medium text-sm mt-2">Avalie o atendimento e ganhe <strong>50 pontos</strong> na hora!</p>
                         </div>
                         
                         <form onSubmit={submitAvaliacao} className="p-8">
@@ -387,7 +398,7 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
                                     Deixe um elogio (Opcional)
                                 </label>
                                 <textarea 
-                                    className="w-full rounded-xl border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 shadow-sm"
+                                    className="w-full rounded-2xl border-gray-200 focus:border-emerald-500 focus:ring-emerald-500 shadow-sm font-medium"
                                     rows="3"
                                     placeholder="O serviço foi incrível..."
                                     value={comentario}
@@ -397,10 +408,10 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
                             </div>
 
                             <div className="flex gap-3">
-                                <button type="button" onClick={fecharModalAvaliacao} className="px-5 py-3 font-bold text-gray-500 hover:bg-gray-100 rounded-xl transition w-1/3">
+                                <button type="button" onClick={fecharModalAvaliacao} className="px-5 py-3.5 font-bold text-gray-500 bg-gray-100 hover:bg-gray-200 rounded-xl transition w-1/3">
                                     Cancelar
                                 </button>
-                                <button type="submit" disabled={enviandoAvaliacao} className="px-5 py-3 font-bold text-white bg-gray-900 hover:bg-black rounded-xl shadow-md transition w-2/3 disabled:opacity-50 flex justify-center items-center gap-2">
+                                <button type="submit" disabled={enviandoAvaliacao} className="px-5 py-3.5 font-black text-white bg-emerald-500 hover:bg-emerald-600 rounded-xl shadow-md transition w-2/3 disabled:opacity-50 flex justify-center items-center gap-2">
                                     {enviandoAvaliacao ? 'A enviar...' : 'Enviar Avaliação'}
                                 </button>
                             </div>

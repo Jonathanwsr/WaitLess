@@ -55,6 +55,8 @@ Route::patch('/meu-painel/pular/{id}', [App\Http\Controllers\Api\FuncionarioArea
 Route::get('/meu-painel/ausencias', [App\Http\Controllers\Api\FuncionarioAusenciaController::class, 'index'])->name('funcionario.ausencias');
 Route::post('/meu-painel/ausencias', [App\Http\Controllers\Api\FuncionarioAusenciaController::class, 'store'])->name('funcionario.ausencias.store');
 Route::delete('/meu-painel/ausencias/{id}', [App\Http\Controllers\Api\FuncionarioAusenciaController::class, 'destroy'])->name('funcionario.ausencias.destroy');
+// Rota para o Gerente Aprovar ou Recusar folgas de funcionários
+Route::patch('/equipe/ausencias/{id}/decidir', [App\Http\Controllers\Api\FuncionarioController::class, 'decidirAusencia'])->name('admin.ausencias.decidir');
 
 Route::get('/meu-painel/catalogo', [App\Http\Controllers\Api\FuncionarioCatalogoController::class, 'index'])->name('funcionario.catalogo');
 
