@@ -141,8 +141,7 @@ class EstabelecimentoController extends Controller
         // Garante que o usuário tem acesso a este estabelecimento
         $user = \Illuminate\Support\Facades\Auth::user();
         
-        // Busca os serviços do estabelecimento com paginação (12 por página para ficar como o iFood)
-        // E já traz os agendamentos futuros atrelados a cada serviço para vermos a agenda
+        
         $servicos = $estabelecimento->servicos()
             ->with(['agendamentos' => function ($query) {
                 // Traz apenas agendamentos de hoje para frente
@@ -165,6 +164,85 @@ class EstabelecimentoController extends Controller
         return Inertia::render('Estabelecimentos/Cupons', [
             'estabelecimento' => $estabelecimento,
             'cupons' => $cupons
+        ]);
+    }
+
+
+    public function index(Request $request)
+    {
+        $user = Auth::user();
+
+        // Buscando os estabelecimentos gerenciados pelo usuário logado
+        // Trazendo as contagens de funcionários e agendamentos pendentes (aguardando) de hoje
+        $estabelecimentosQuery = $user->estabelecimentosGerenciados()
+            ->withCount(['funcionarios', 'agendamentos' => function ($query) {
+                // Filtra agendamentos de hoje que ainda estão na fila (ex: status pendente/aguardando)
+                $query->whereDate('data_agendamento', today())
+                      ->whereIn('status', ['pendente', 'aguardando', 'confirmado']); 
+            }]);
+
+        // Se quiser implementar a busca futuramente, o código seria assim:
+        if ($request->filled('busca')) {
+            $estabelecimentosQuery->where('nome', 'like', '%' . $request->busca . '%');
+        }
+
+        if ($request->filled('status') && $request->status !== 'Todos os status') {
+            $ativo = $request->status === 'Ativos' ? 1 : 0;
+            $estabelecimentosQuery->where('ativo', $ativo);
+        }
+
+        // Paginando e transformando os dados para encaixar perfeitamente no seu frontend
+        $estabelecimentos = $estabelecimentosQuery->paginate(10)->through(function ($loja) {
+            
+            // Lógica para faturamento de HOJE do estabelecimento
+            // Supondo que você tenha a relação e tabela pagamentos
+            $faturamentoHoje = \App\Models\Pagamento::whereHas('agendamento', function($q) use ($loja) {
+                $q->where('estabelecimento_id', $loja->id)
+                  ->whereDate('data_agendamento', today());
+            })->where('status', 'pago')->sum('valor');
+
+            // Formatação do endereço
+            $endereco = array_filter([$loja->rua, $loja->numero, $loja->cidade]);
+            
+            return [
+                'id'          => $loja->id,
+                'nome'        => $loja->nome,
+                // A foto_perfil já vem com a URL do ImageKit salva no método store/update
+                'foto_perfil' => $loja->foto_perfil, 
+                'endereco'    => !empty($endereco) ? implode(', ', $endereco) : 'Endereço não informado',
+                'status'      => $loja->ativo ? 'Ativo' : 'Inativo',
+                'horario'     => '08:00 - 18:00', // Ajuste caso tenha tabela de horários
+                'faturamento' => 'R$ ' . number_format($faturamentoHoje, 2, ',', '.'),
+                'faturamento_raw' => $faturamentoHoje, // Usado para somar o total depois
+                'aguardando'  => $loja->agendamentos_count ?? 0,
+                'funcionarios'=> $loja->funcionarios_count ?? 0,
+            ];
+        });
+
+        // --- CÁLCULO DAS MÉTRICAS GLOBAIS (Cards do topo) ---
+        
+        $todasLojas = $user->estabelecimentosGerenciados()->get();
+        $totalAtivos = $todasLojas->where('ativo', true)->count();
+        
+        // Somando os dados dos estabelecimentos listados para o faturamento total e aguardando
+        $faturamentoTotalHoje = $estabelecimentos->sum('faturamento_raw');
+        $totalAguardando = $estabelecimentos->sum('aguardando');
+        $totalFuncionarios = $estabelecimentos->sum('funcionarios');
+
+        // Estrutura exata que o seu React (stats) está esperando
+        $metricas = [
+            'ativos'                  => $totalAtivos,
+            'faturamento'             => 'R$ ' . number_format($faturamentoTotalHoje, 2, ',', '.'),
+            'crescimento_faturamento' => '+0%', // Requer lógica comparando com yesterday()
+            'aguardando'              => $totalAguardando,
+            'funcionarios_ativos'     => $totalFuncionarios
+        ];
+
+        // Retornando para a tela que criamos
+        return Inertia::render('Estabelecimentos/MeusEstabelecimentos', [
+            'estabelecimentos' => $estabelecimentos,
+            'metricas'         => $metricas,
+            'filtros'          => $request->only(['busca', 'status'])
         ]);
     }
 }

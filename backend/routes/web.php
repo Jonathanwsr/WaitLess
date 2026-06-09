@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\FuncionarioCatalogoController;
 use App\Http\Controllers\Api\FuncionarioCarteiraController;
 use App\Http\Controllers\Api\CarrinhoController;
 use App\Http\Controllers\Api\FuncionarioAusenciaController;
+use App\Http\Controllers\Api\ProviderController;
 use App\Http\Controllers\Api\CupomController;
 use App\Http\Controllers\Api\FilaController;
 use App\Http\Controllers\Api\FuncionarioAreaController;
@@ -66,6 +67,11 @@ Route::post('/meu-painel/producao/fechar-dia', [App\Http\Controllers\Api\Funcion
 
 Route::post('/assinaturas/nova', [App\Http\Controllers\Api\AssinaturaController::class, 'assinar'])->name('assinatura.nova');
     Route::post('/assinaturas/cancelar', [App\Http\Controllers\Api\AssinaturaController::class, 'cancelar'])->name('assinatura.cancelar'); 
+
+
+    Route::get('/financeiro/conta', function () {
+    return inertia('FinanceiroConta'); 
+})->name('financeiro.conta');
     
     // Dashboard
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
@@ -80,6 +86,8 @@ Route::post('/assinaturas/nova', [App\Http\Controllers\Api\AssinaturaController:
     Route::post('/estabelecimentos', [EstabelecimentoController::class, 'store'])->name('estabelecimentos.store');
     Route::put('/estabelecimentos/{estabelecimento}', [EstabelecimentoController::class, 'update'])->name('estabelecimentos.update');
     Route::patch('/estabelecimentos/{estabelecimento}/toggle-status', [EstabelecimentoController::class, 'toggleStatus'])->name('estabelecimentos.toggle-status');
+    Route::get('/meus-estabelecimentos', [EstabelecimentoController::class, 'index'])
+        ->name('estabelecimentos.index');
     
     // Fila e Configurações (Aninhadas em Estabelecimentos)
     Route::get('/estabelecimentos/{estabelecimento}/fila', [EstabelecimentoController::class, 'fila'])->name('estabelecimentos.fila');
