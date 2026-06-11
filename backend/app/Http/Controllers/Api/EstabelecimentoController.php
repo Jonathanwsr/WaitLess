@@ -94,32 +94,72 @@ class EstabelecimentoController extends Controller
         return redirect()->back()->with('success', $mensagem);
     }
 
-    public function fila(Request $request, Estabelecimento $estabelecimento)
-    {
-        $query = Agendamento::with(['usuario:id,name', 'servico:id,nome,valor', 'pagamento:id,agendamento_id,status'])
-            ->where('estabelecimento_id', $estabelecimento->id)
-            ->whereDate('data_agendamento', $request->input('data', now()->toDateString())); 
-
-        if ($request->filled('status') && $request->status !== 'todos') {
-            $query->where('status', $request->status);
-        }
-
-        if ($request->filled('status_pagamento') && $request->status_pagamento !== 'todos') {
-            $query->whereHas('pagamento', function ($q) use ($request) {
-                $q->where('status', $request->status_pagamento);
-            });
-        }
-
-        $query->orderBy('hora_agendamento', $request->input('ordem', 'asc'));
-
-        $agendamentos = $query->paginate($request->input('per_page', 10))->withQueryString();
-
-        return Inertia::render('Estabelecimentos/Fila', [
-            'estabelecimento' => $estabelecimento->only(['id', 'nome']),
-            'agendamentos'    => $agendamentos,
-            'filtros'         => $request->only(['ordem', 'status', 'status_pagamento', 'per_page', 'data'])
-        ]);
+     public function fila(Request $request, Estabelecimento $estabelecimento)
+{
+    // 1. Validação de segurança: Garante que o estabelecimento pertence ao usuário logado
+    if ($estabelecimento->user_id !== \Illuminate\Support\Facades\Auth::id()) {
+        abort(403, 'Acesso não autorizado.');
     }
+
+    // 2. Capturar as datas vinda do Front-end (React) ou usar o dia atual como padrão
+    $hoje = \Carbon\Carbon::today()->toDateString();
+    
+    $filtros = [
+        'data_inicio'      => $request->input('data_inicio', $hoje),
+        'data_fim'         => $request->input('data_fim', $hoje),
+        'ordem'            => $request->input('ordem', 'asc'),
+        'status'           => $request->input('status', 'todos'),
+        'status_pagamento' => $request->input('status_pagamento', 'todos'),
+        'per_page'         => $request->input('per_page', 10),
+    ];
+
+    // 3. Buscar TODOS os estabelecimentos do lojista para alimentar o seletor do topo
+    $estabelecimentos = \Illuminate\Support\Facades\Auth::user()->estabelecimentos()->get();
+
+    // 4. Buscar os profissionais cadastrados para ESTE estabelecimento atual
+    $funcionarios = \App\Models\Funcionario::select('id', 'nome', 'cargo')
+        ->where('estabelecimento_id', $estabelecimento->id)
+        ->get();
+
+    // 5. Construir a Query Principal filtrando pelo intervalo correto de datas (whereBetween)
+    $query = Agendamento::with(['usuario:id,name', 'servico:id,nome,valor', 'pagamento:id,agendamento_id,status'])
+        ->where('estabelecimento_id', $estabelecimento->id)
+        ->whereBetween('data_agendamento', [$filtros['data_inicio'], $filtros['data_fim']]);
+
+    // 6. Aplicar filtro por Status do Atendimento
+    if ($filtros['status'] !== 'todos') {
+        $query->where('status', $filtros['status']);
+    }
+
+    // 7. Aplicar filtro por Status do Pagamento 
+    // CORREÇÃO POSTGRESQL: Para contornar a incompatibilidade de tipos (VARCHAR vs BIGINT)
+    // na chave de relacionamento, usamos um whereExists com conversão explícita (::text)
+    if ($filtros['status_pagamento'] !== 'todos') {
+        $query->whereExists(function ($subQuery) use ($filtros) {
+            $subQuery->select(\Illuminate\Support\Facades\DB::raw(1))
+                ->from('pagamentos')
+                ->whereRaw('pagamentos.id::text = agendamentos.pagamento_id::text')
+                ->where('pagamentos.status', (string) $filtros['status_pagamento']);
+        });
+    }
+
+    // 8. Aplicar Ordenação da fila por Data e por Horário
+    $direcao = $filtros['ordem'] === 'desc' ? 'desc' : 'asc';
+    $query->orderBy('data_agendamento', $direcao)
+          ->orderBy('hora_agendamento', $direcao);
+
+    // 9. Paginar os resultados mantendo os parâmetros na URL
+    $agendamentos = $query->paginate($filtros['per_page'])->withQueryString();
+
+    // 10. Retornar os dados estruturados para a View do Inertia
+    return \Inertia\Inertia::render('Estabelecimentos/Fila', [
+        'estabelecimento'  => $estabelecimento->only(['id', 'nome']),
+        'estabelecimentos' => $estabelecimentos, // Lista completa resolvida
+        'agendamentos'     => $agendamentos,
+        'funcionarios'     => $funcionarios,     // Profissionais enviados para popular a listagem
+        'filtros'          => $filtros
+    ]);
+}
 
     public function configuracoes(Estabelecimento $estabelecimento)
     {
@@ -168,81 +208,99 @@ class EstabelecimentoController extends Controller
     }
 
 
-    public function index(Request $request)
+ public function index(Request $request)
     {
-        $user = Auth::user();
+        try {
+            $user = Auth::user();
 
-        // Buscando os estabelecimentos gerenciados pelo usuário logado
-        // Trazendo as contagens de funcionários e agendamentos pendentes (aguardando) de hoje
-        $estabelecimentosQuery = $user->estabelecimentosGerenciados()
-            ->withCount(['funcionarios', 'agendamentos' => function ($query) {
-                // Filtra agendamentos de hoje que ainda estão na fila (ex: status pendente/aguardando)
-                $query->whereDate('data_agendamento', today())
-                      ->whereIn('status', ['pendente', 'aguardando', 'confirmado']); 
-            }]);
+            // Inicia a query baseada na relação do usuário com os estabelecimentos
+            $query = $user->estabelecimentosGerenciados();
 
-        // Se quiser implementar a busca futuramente, o código seria assim:
-        if ($request->filled('busca')) {
-            $estabelecimentosQuery->where('nome', 'like', '%' . $request->busca . '%');
-        }
+            // --- FILTROS ---
+            if ($request->filled('busca')) {
+                $query->where('nome', 'like', '%' . $request->busca . '%')
+                      ->orWhere('cidade', 'like', '%' . $request->busca . '%');
+            }
 
-        if ($request->filled('status') && $request->status !== 'Todos os status') {
-            $ativo = $request->status === 'Ativos' ? 1 : 0;
-            $estabelecimentosQuery->where('ativo', $ativo);
-        }
+            if ($request->filled('status') && $request->status !== 'Todos os status') {
+                $ativo = $request->status === 'Ativos' ? 1 : 0;
+                $query->where('ativo', $ativo);
+            }
 
-        // Paginando e transformando os dados para encaixar perfeitamente no seu frontend
-        $estabelecimentos = $estabelecimentosQuery->paginate(10)->through(function ($loja) {
+            // Puxa todos os estabelecimentos do usuário para calcular as métricas GLOBAIS do topo da tela
+            $todasLojas = $query->get();
             
-            // Lógica para faturamento de HOJE do estabelecimento
-            // Supondo que você tenha a relação e tabela pagamentos
-            $faturamentoHoje = \App\Models\Pagamento::whereHas('agendamento', function($q) use ($loja) {
-                $q->where('estabelecimento_id', $loja->id)
-                  ->whereDate('data_agendamento', today());
-            })->where('status', 'pago')->sum('valor');
-
-            // Formatação do endereço
-            $endereco = array_filter([$loja->rua, $loja->numero, $loja->cidade]);
-            
-            return [
-                'id'          => $loja->id,
-                'nome'        => $loja->nome,
-                // A foto_perfil já vem com a URL do ImageKit salva no método store/update
-                'foto_perfil' => $loja->foto_perfil, 
-                'endereco'    => !empty($endereco) ? implode(', ', $endereco) : 'Endereço não informado',
-                'status'      => $loja->ativo ? 'Ativo' : 'Inativo',
-                'horario'     => '08:00 - 18:00', // Ajuste caso tenha tabela de horários
-                'faturamento' => 'R$ ' . number_format($faturamentoHoje, 2, ',', '.'),
-                'faturamento_raw' => $faturamentoHoje, // Usado para somar o total depois
-                'aguardando'  => $loja->agendamentos_count ?? 0,
-                'funcionarios'=> $loja->funcionarios_count ?? 0,
+            $metricas = [
+                'ativos'                  => $todasLojas->where('ativo', true)->count(),
+                // Puxa direto da coluna arrecadacao_total do banco
+                'faturamento'             => 'R$ ' . number_format((float) $todasLojas->sum('arrecadacao_total'), 2, ',', '.'),
+                'crescimento_faturamento' => '+0%', // Ajuste futuramente para comparar com o dia anterior
+                // Puxa direto da coluna clientes_aguardando do banco
+                'aguardando'              => $todasLojas->sum('clientes_aguardando'),
+                'funcionarios_ativos'     => 0 // Ajuste caso tenha a tabela/relação de funcionários depois
             ];
-        });
 
-        // --- CÁLCULO DAS MÉTRICAS GLOBAIS (Cards do topo) ---
-        
-        $todasLojas = $user->estabelecimentosGerenciados()->get();
-        $totalAtivos = $todasLojas->where('ativo', true)->count();
-        
-        // Somando os dados dos estabelecimentos listados para o faturamento total e aguardando
-        $faturamentoTotalHoje = $estabelecimentos->sum('faturamento_raw');
-        $totalAguardando = $estabelecimentos->sum('aguardando');
-        $totalFuncionarios = $estabelecimentos->sum('funcionarios');
+            // Faz a paginação e mapeia os dados EXATAMENTE com as colunas do seu banco
+            $estabelecimentos = $query->paginate(10)->through(function ($loja) {
+                
+                // Formatação limpa do endereço (junta as colunas caso existam)
+                $enderecoPartes = array_filter([$loja->rua, $loja->numero, $loja->bairro, $loja->cidade, $loja->estado]);
+                $enderecoFormatado = !empty($enderecoPartes) ? implode(', ', $enderecoPartes) : 'Endereço não informado';
 
-        // Estrutura exata que o seu React (stats) está esperando
-        $metricas = [
-            'ativos'                  => $totalAtivos,
-            'faturamento'             => 'R$ ' . number_format($faturamentoTotalHoje, 2, ',', '.'),
-            'crescimento_faturamento' => '+0%', // Requer lógica comparando com yesterday()
-            'aguardando'              => $totalAguardando,
-            'funcionarios_ativos'     => $totalFuncionarios
-        ];
+                // Tenta puxar a quantidade de funcionários. Se o relacionamento não existir ainda, ele retorna 0 sem quebrar a tela.
+                $totalFuncionarios = 0;
+                try {
+                    $totalFuncionarios = $loja->funcionarios()->count();
+                } catch (\Exception $e) {
+                    $totalFuncionarios = 0;
+                }
 
-        // Retornando para a tela que criamos
-        return Inertia::render('Estabelecimentos/MeusEstabelecimentos', [
-            'estabelecimentos' => $estabelecimentos,
-            'metricas'         => $metricas,
-            'filtros'          => $request->only(['busca', 'status'])
-        ]);
+                return [
+                    'id'          => $loja->id,
+                    'nome'        => $loja->nome,
+                    // A URL do ImageKit vem diretamente desta coluna do banco
+                    'foto_perfil' => $loja->foto_perfil, 
+                    'endereco'    => $enderecoFormatado,
+                    'status'      => $loja->ativo ? 'Ativo' : 'Inativo',
+                    'horario'     => '08:00 - 18:00', // Fixo provisoriamente
+                    
+                    // Lendo as colunas exatas que estão na sua tabela
+                    'faturamento' => 'R$ ' . number_format((float) ($loja->arrecadacao_total ?? 0), 2, ',', '.'),
+                    'aguardando'  => $loja->clientes_aguardando ?? 0,
+                    
+                    'funcionarios'=> $totalFuncionarios,
+                    // Dados para o Modal (Olho)
+                    'funcionarios_ativos'      => $totalFuncionarios,
+                    'funcionarios_trabalhando' => $totalFuncionarios,
+                ];
+            });
+
+            return Inertia::render('Estabelecimentos/MeusEstabelecimentos', [
+                'estabelecimentos' => $estabelecimentos,
+                'metricas'         => $metricas,
+                'filtros'          => $request->only(['busca', 'status'])
+            ]);
+
+        } catch (\Exception $e) {
+            // Em caso de falha (banco fora, erro de sintaxe, coluna faltando), 
+            // Registramos o erro no log para você (desenvolvedor) ver
+            \Log::error('Erro na tela Meus Estabelecimentos: ' . $e->getMessage());
+
+            // E retornamos a tela de forma HUMANIZADA, com tudo zerado para o usuário não tomar um susto (Error 500)
+            return Inertia::render('Estabelecimentos/MeusEstabelecimentos', [
+                'estabelecimentos' => ['data' => []],
+                'metricas' => [
+                    'ativos' => 0,
+                    'faturamento' => 'R$ 0,00',
+                    'crescimento_faturamento' => '0%',
+                    'aguardando' => 0,
+                    'funcionarios_ativos' => 0
+                ],
+                
+                'flash' => [
+                    'error' => 'Tivemos um problema técnico ao carregar os dados. Tente atualizar a página.'
+                ]
+            ]);
+        }
     }
 }

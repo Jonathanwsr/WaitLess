@@ -90,7 +90,9 @@ Route::post('/assinaturas/nova', [App\Http\Controllers\Api\AssinaturaController:
         ->name('estabelecimentos.index');
     
     // Fila e Configurações (Aninhadas em Estabelecimentos)
-    Route::get('/estabelecimentos/{estabelecimento}/fila', [EstabelecimentoController::class, 'fila'])->name('estabelecimentos.fila');
+   // Ambas as rotas agora chamam o método index do AgendamentoController
+Route::get('/fila', [AgendamentoController::class, 'index'])->name('fila.index');
+Route::get('/estabelecimentos/{estabelecimento}/fila', [AgendamentoController::class, 'index'])->name('estabelecimentos.fila');
     Route::get('/estabelecimentos/{estabelecimento}/configuracoes', [EstabelecimentoController::class, 'configuracoes'])->name('estabelecimentos.configuracoes');
 
     // Agendamentos
