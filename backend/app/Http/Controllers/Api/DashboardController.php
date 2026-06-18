@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Agendamento;
 use Illuminate\Http\Request;
+use App\Models\Estabelecimento;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
 
@@ -72,4 +73,36 @@ class DashboardController extends Controller
             'usuario' => $user
         ]);
     }
+
+
+
+      public function getNearby(Request $request)
+    {
+        // Validação dos dados de entrada
+        $request->validate([
+            'lat' => 'required|numeric', // Latitude do usuário
+            'lng' => 'required|numeric', // Longitude do usuário
+            'radius' => 'nullable|integer|min:1|max:50', // Raio de busca em km (padrão 10)
+        ]);
+
+        $userLat = $request->input('lat');
+        $userLng = $request->input('lng');
+        $radius = $request->input('radius', 10); // Valor padrão de 10km
+
+        // Executa a busca usando a scope definida no modelo Estabelecimento
+        $nearbyEstabelecimentos = Estabelecimento::withinDistance($userLat, $userLng, $radius)
+            ->with(['servicos:id,estabelecimento_id,nome,valor']) 
+            ->get();
+
+        // Retorna os dados em formato JSON para o cliente
+        return response()->json($nearbyEstabelecimentos);
+    }
+
+
+    public function showHome()
+{
+    
+    return Inertia::render('Cliente/Home');
+}
+
 }

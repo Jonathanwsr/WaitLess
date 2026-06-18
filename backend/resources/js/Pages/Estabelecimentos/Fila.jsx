@@ -26,7 +26,11 @@ import { CheckCircleIcon as CheckSolid } from '@heroicons/react/24/solid';
 // ==============================================================================
 const LinhaAgendamento = ({ item, index, currentPage, perPage, funcionarios, atribuirFuncionario, atualizarStatus, formatarMoeda, abrirModalFinalizar }) => {
     const [menuOpen, setMenuOpen] = useState(false);
-    const posicao = (currentPage - 1) * perPage + index + 1;
+    
+    // Cálculo seguro para a posição caso a paginação não envie esses dados
+    const page = currentPage || 1;
+    const itemsPerPage = perPage || 10;
+    const posicao = (page - 1) * itemsPerPage + index + 1;
 
     const isPago = item.status_pagamento === 'pago_online' || item.status_pagamento === 'pago_presencial';
     const isPresencial = item.status_pagamento === 'presencial';
@@ -59,27 +63,45 @@ const LinhaAgendamento = ({ item, index, currentPage, perPage, funcionarios, atr
                 </div>
             </td>
 
+            {/* CÉLULA DO PACIENTE: Transformada em Link para a tela DetalheCliente */}
             <td className="px-6 py-4 whitespace-nowrap align-middle">
-                <div className="flex items-center gap-3">
-                    {item.usuario?.foto_perfil ? (
-                        <img 
-                            src={`/storage/${item.usuario.foto_perfil}`} 
-                            alt={item.usuario.name} 
-                            className="w-9 h-9 rounded-full object-cover shadow-sm"
-                        />
-                    ) : (
+                {item.usuario?.id ? (
+                    <Link 
+                        href={route('clientes.detalhes', item.usuario.id)} 
+                        className="flex items-center gap-3 group/link hover:opacity-80 transition-opacity"
+                        title="Ver histórico e serviços do cliente"
+                    >
+                        {item.usuario?.foto_perfil ? (
+                            <img 
+                                src={`/storage/${item.usuario.foto_perfil}`} 
+                                alt={item.usuario.name} 
+                                className="w-9 h-9 rounded-full object-cover shadow-sm border border-gray-100 group-hover/link:border-emerald-300 transition-colors"
+                            />
+                        ) : (
+                            <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 shadow-sm group-hover/link:bg-emerald-50 group-hover/link:text-emerald-500 transition-colors">
+                                <UserIcon className="w-5 h-5" />
+                            </div>
+                        )}
+                        <div className="flex flex-col">
+                            <div className="font-bold text-gray-900 text-sm group-hover/link:text-emerald-700 transition-colors">
+                                {item.usuario?.name || 'Cliente'}
+                            </div>
+                            <span className="text-xs text-gray-500 mt-0.5">
+                                {item.usuario?.idade ? `${item.usuario.idade} anos • ` : ''} 
+                                {item.usuario?.cpf ? `CPF ${item.usuario.cpf}` : (item.usuario?.telefone || 'S/ Contato')}
+                            </span>
+                        </div>
+                    </Link>
+                ) : (
+                    <div className="flex items-center gap-3">
                         <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 shadow-sm">
                             <UserIcon className="w-5 h-5" />
                         </div>
-                    )}
-                    <div className="flex flex-col">
-                        <div className="font-bold text-gray-900 text-sm">{item.usuario?.name || 'Cliente'}</div>
-                        <span className="text-xs text-gray-500 mt-0.5">
-                            {item.usuario?.idade ? `${item.usuario.idade} anos • ` : ''} 
-                            {item.usuario?.cpf ? `CPF ${item.usuario.cpf}` : (item.usuario?.telefone || 'S/ Contato')}
-                        </span>
+                        <div className="flex flex-col">
+                            <div className="font-bold text-gray-900 text-sm">Cliente Excluído</div>
+                        </div>
                     </div>
-                </div>
+                )}
             </td>
 
             <td className="px-6 py-4 whitespace-nowrap align-middle">
@@ -128,6 +150,17 @@ const LinhaAgendamento = ({ item, index, currentPage, perPage, funcionarios, atr
                     <>
                         <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)}></div>
                         <div className="absolute right-12 top-1/2 -translate-y-1/2 w-48 bg-white border border-gray-100 rounded-xl shadow-xl py-2 z-50 overflow-hidden">
+                            
+                            {/* LINK NOVO: Ver Detalhes / Serviços */}
+                            {item.usuario?.id && (
+                                <Link 
+                                    href={route('clientes.detalhes', item.usuario.id)}
+                                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 font-medium border-b border-gray-50"
+                                >
+                                    Ver Histórico do Cliente
+                                </Link>
+                            )}
+
                             {item.status === 'pendente' && (
                                 <button onClick={() => { atualizarStatus(item.id, 'confirmado'); setMenuOpen(false); }} className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 font-medium">
                                     Chamar Cliente
@@ -212,11 +245,17 @@ export default function Fila({ auth, estabelecimento, estabelecimentos = [], age
 
     const abrirModalFinalizar = (item) => setModalFinalizar({ isOpen: true, agendamento: item, desconto: 0, formaPagamento: 'pix', processando: false });
     const fecharModalFinalizar = () => setModalFinalizar({ ...modalFinalizar, isOpen: false, agendamento: null });
+    
     const confirmarFinalizacao = () => {
         setModalFinalizar(prev => ({ ...prev, processando: true }));
         router.post(route('lojista.agendamento.finalizar', modalFinalizar.agendamento.id), {
-            desconto: modalFinalizar.desconto, forma_pagamento: modalFinalizar.formaPagamento
-        }, { preserveScroll: true, onSuccess: () => fecharModalFinalizar(), onError: () => setModalFinalizar(prev => ({ ...prev, processando: false })) });
+            desconto: modalFinalizar.desconto, 
+            forma_pagamento: modalFinalizar.formaPagamento
+        }, { 
+            preserveScroll: true, 
+            onSuccess: () => fecharModalFinalizar(), 
+            onError: () => setModalFinalizar(prev => ({ ...prev, processando: false })) 
+        });
     };
 
     const metricas = {
@@ -273,44 +312,67 @@ export default function Fila({ auth, estabelecimento, estabelecimentos = [], age
                         </div>
                     </div>
 
-                    {/* --- FILTROS ADICIONAIS (MODAL EXPANDIDO) --- */}
+                    {/* --- FILTROS ADICIONAIS (MODERNIZADOS) --- */}
                     {showFilters && (
-                        <div className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm flex flex-wrap gap-4 animate-fadeIn">
-                            <div className="flex flex-col">
-                                <label className="text-[10px] font-bold text-gray-400 uppercase mb-1">Status Atendimento</label>
-                                <select name="status" value={params.status} onChange={handleChange} className="border-gray-200 rounded-lg text-sm text-gray-700 shadow-sm focus:border-gray-900 focus:ring-0">
-                                    <option value="todos">Todos</option>
-                                    <option value="pendente">Aguardando</option>
-                                    <option value="confirmado">Em Atendimento</option>
-                                    <option value="concluido">Finalizados</option>
-                                </select>
+                        <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-[0_8px_30px_rgb(0,0,0,0.04)] animate-fadeIn relative mt-4">
+                            <div className="flex items-center mb-5">
+                                <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                                    <FunnelIcon className="w-4 h-4 text-indigo-500" />
+                                    Refinar Busca
+                                </h3>
                             </div>
-                            <div className="flex flex-col">
-                                <label className="text-[10px] font-bold text-gray-400 uppercase mb-1">Pagamento</label>
-                                <select name="status_pagamento" value={params.status_pagamento} onChange={handleChange} className="border-gray-200 rounded-lg text-sm text-gray-700 shadow-sm focus:border-gray-900 focus:ring-0">
-                                    <option value="todos">Todos</option>
-                                    <option value="pago_online">Online (App)</option>
-                                    <option value="presencial">No Local</option>
-                                </select>
-                            </div>
-                            <div className="flex flex-col">
-                                <label className="text-[10px] font-bold text-gray-400 uppercase mb-1">Ordenação</label>
-                                <select name="ordem" value={params.ordem} onChange={handleChange} className="border-gray-200 rounded-lg text-sm text-gray-700 shadow-sm focus:border-gray-900 focus:ring-0">
-                                    <option value="asc">Mais Antigos</option>
-                                    <option value="desc">Mais Recentes</option>
-                                </select>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                {/* Filtro: Status */}
+                                <div className="flex flex-col">
+                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Status Atendimento</label>
+                                    <div className="relative">
+                                        <select name="status" value={params.status} onChange={handleChange} className="w-full appearance-none bg-none bg-gray-50 border border-gray-200 text-gray-700 text-sm font-medium rounded-xl px-4 py-2.5 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none pr-10 cursor-pointer shadow-sm">
+                                            <option value="todos">Todos os status</option>
+                                            <option value="pendente">Aguardando</option>
+                                            <option value="confirmado">Em Atendimento</option>
+                                            <option value="concluido">Finalizados</option>
+                                        </select>
+                                        <ChevronDownIcon className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                    </div>
+                                </div>
+
+                                {/* Filtro: Pagamento */}
+                                <div className="flex flex-col">
+                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Pagamento</label>
+                                    <div className="relative">
+                                        <select name="status_pagamento" value={params.status_pagamento} onChange={handleChange} className="w-full appearance-none bg-none bg-gray-50 border border-gray-200 text-gray-700 text-sm font-medium rounded-xl px-4 py-2.5 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none pr-10 cursor-pointer shadow-sm">
+                                            <option value="todos">Todos os pagamentos</option>
+                                            <option value="pago_online">Online (App)</option>
+                                            <option value="presencial">No Local</option>
+                                        </select>
+                                        <ChevronDownIcon className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                    </div>
+                                </div>
+
+                                {/* Filtro: Ordenação */}
+                                <div className="flex flex-col">
+                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Ordenação</label>
+                                    <div className="relative">
+                                        <select name="ordem" value={params.ordem} onChange={handleChange} className="w-full appearance-none bg-none bg-gray-50 border border-gray-200 text-gray-700 text-sm font-medium rounded-xl px-4 py-2.5 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all outline-none pr-10 cursor-pointer shadow-sm">
+                                            <option value="asc">Mais Antigos primeiro</option>
+                                            <option value="desc">Mais Recentes primeiro</option>
+                                        </select>
+                                        <ChevronDownIcon className="w-4 h-4 text-gray-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     )}
 
-                    {/* --- CARDS METRICAS & SELETOR DE ESTABELECIMENTOS CORRIGIDO --- */}
+                    {/* --- CARDS METRICAS & SELETOR DE ESTABELECIMENTOS --- */}
                     <div className="flex flex-col lg:flex-row gap-4 items-stretch">
                         
-                        {/* Seletor Customizado sem Duplicação de Seta (appearance-none ativa) */}
+                        {/* Seletor Customizado sem Duplicação de Seta (bg-none resolve o problema) */}
                         <div className="relative bg-white border border-gray-200 rounded-2xl shadow-sm p-4 w-full lg:w-72 flex flex-col justify-center cursor-pointer hover:border-gray-300 transition">
                             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">Estabelecimento</label>
                             <select 
-                                className="w-full bg-transparent border-none p-0 text-base font-bold text-gray-900 focus:ring-0 outline-none cursor-pointer appearance-none pr-8"
+                                className="w-full bg-transparent border-none p-0 text-base font-bold text-gray-900 focus:ring-0 outline-none cursor-pointer appearance-none bg-none pr-8"
                                 value={selectValue}
                                 onChange={handleTrocaFila}
                             >
@@ -357,40 +419,28 @@ export default function Fila({ auth, estabelecimento, estabelecimentos = [], age
                                 </div>
                                 <div>
                                     <p className="text-xl font-black text-gray-900">{metricas.presencial}</p>
-                                    <p className="text-[11px] text-gray-400 font-semibold leading-tight">Pagamento<br/>presencial</p>
+                                    <p className="text-[11px] text-gray-400 font-semibold leading-tight">Pag. no Local</p>
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    {/* --- TABELA PRINCIPAL --- */}
-                    <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-                        <div className="overflow-x-auto min-h-[400px]">
-                            <table className="w-full text-left text-sm text-gray-600">
-                                <thead className="bg-[#f8f9fa] text-gray-500 text-[11px] uppercase tracking-wider font-bold border-b border-gray-100">
-                                    <tr>
-                                        <th className="px-6 py-4 text-center w-20">Posição</th>
-                                        <th className="px-6 py-4">Paciente</th>
+                    {/* --- TABELA DE AGENDAMENTOS --- */}
+                    <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden mt-6">
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse">
+                                <thead>
+                                    <tr className="bg-gray-50 border-b border-gray-200 text-xs uppercase tracking-wider text-gray-500 font-bold">
+                                        <th className="px-6 py-4 text-center w-16">Pos</th>
+                                        <th className="px-6 py-4">Cliente</th>
                                         <th className="px-6 py-4">Horário</th>
-                                        <th className="px-6 py-4">Serviço</th>
-                                        <th className="px-6 py-4 text-center">Status do pagamento</th>
-                                        <th className="px-6 py-4 text-center w-24">Ações</th>
+                                        <th className="px-6 py-4">Serviço / Profissional</th>
+                                        <th className="px-6 py-4 text-center">Pagamento</th>
+                                        <th className="px-6 py-4 text-center w-16">Ações</th>
                                     </tr>
                                 </thead>
-                                <tbody className="bg-white">
-                                    {!agendamentos || !agendamentos.data || agendamentos.data.length === 0 ? (
-                                        <tr>
-                                            <td colSpan="6" className="px-6 py-24 text-center">
-                                                <div className="flex flex-col items-center justify-center">
-                                                    <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-3">
-                                                        <FunnelIcon className="w-8 h-8 text-gray-300" />
-                                                    </div>
-                                                    <p className="font-bold text-lg text-gray-700 mb-1">Nenhum agendamento encontrado</p>
-                                                    <p className="text-sm text-gray-500">Altere a data ou limpe os filtros para listar dados.</p>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    ) : (
+                                <tbody className="divide-y divide-gray-100">
+                                    {agendamentos?.data?.length > 0 ? (
                                         agendamentos.data.map((item, index) => (
                                             <LinhaAgendamento 
                                                 key={item.id} 
@@ -405,96 +455,79 @@ export default function Fila({ auth, estabelecimento, estabelecimentos = [], age
                                                 abrirModalFinalizar={abrirModalFinalizar}
                                             />
                                         ))
+                                    ) : (
+                                        <tr>
+                                            <td colSpan="6" className="px-6 py-12 text-center text-gray-500 text-sm">
+                                                Nenhum agendamento encontrado para os filtros selecionados.
+                                            </td>
+                                        </tr>
                                     )}
                                 </tbody>
                             </table>
                         </div>
-                        
-                        {/* PAGINAÇÃO */}
-                        {agendamentos?.links && agendamentos.data.length > 0 && (
-                            <div className="bg-white px-6 py-4 border-t border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-4">
-                                <span className="text-xs font-semibold text-gray-500">
-                                    Mostrando {agendamentos.from || 0} a {agendamentos.to || 0} de {agendamentos.total} agendamentos
-                                </span>
-                                <div className="flex gap-1 bg-gray-50 p-1 rounded-xl border border-gray-100">
-                                    {agendamentos.links.map((link, key) => {
-                                        let label = link.label;
-                                        if (label.includes('Previous')) label = '‹';
-                                        if (label.includes('Next')) label = '›';
-
-                                        return (
-                                            <button
-                                                key={key}
-                                                onClick={() => { if (link.url) router.get(link.url, params, { preserveScroll: true, preserveState: true }); }}
-                                                disabled={!link.url}
-                                                className={`w-8 h-8 flex items-center justify-center text-xs font-bold rounded-lg transition-all ${
-                                                    link.active ? 'bg-orange-500 text-white shadow-sm' : 'text-gray-500 hover:bg-white'
-                                                } ${!link.url && 'opacity-30 cursor-not-allowed'}`}
-                                                dangerouslySetInnerHTML={{ __html: label }}
-                                            />
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        )}
                     </div>
-                </div>
 
-                {/* --- MODAL DE FINALIZAR ATENDIMENTO --- */}
-                {modalFinalizar.isOpen && (
-                    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-900/40 backdrop-blur-sm p-4">
-                        <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col">
-                            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
-                                <h2 className="text-lg font-bold text-gray-900">Finalizar Atendimento</h2>
-                                <button onClick={fecharModalFinalizar} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition">
-                                    <XMarkIcon className="w-5 h-5" />
-                                </button>
+                </div>
+            </div>
+
+            {/* --- MODAL FINALIZAR ATENDIMENTO --- */}
+            {modalFinalizar.isOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 backdrop-blur-sm px-4">
+                    <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-xl">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-lg font-bold text-gray-900">Finalizar Atendimento</h3>
+                            <button onClick={fecharModalFinalizar} className="text-gray-400 hover:text-gray-600 transition">
+                                <XMarkIcon className="w-6 h-6" />
+                            </button>
+                        </div>
+                        
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Desconto (R$)</label>
+                                <input 
+                                    type="number" 
+                                    min="0"
+                                    step="0.01"
+                                    className="w-full border border-gray-300 rounded-xl px-4 py-2 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition"
+                                    value={modalFinalizar.desconto}
+                                    onChange={(e) => setModalFinalizar({...modalFinalizar, desconto: e.target.value})}
+                                    placeholder="0.00"
+                                />
                             </div>
-                            <div className="p-6 space-y-6 flex-1 overflow-y-auto">
-                                <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100 flex justify-between items-center">
-                                    <div>
-                                        <p className="text-xs text-gray-500 font-medium">Cliente</p>
-                                        <p className="font-bold text-gray-900 text-sm mt-0.5">{modalFinalizar.agendamento?.usuario?.name || 'Cliente'}</p>
-                                    </div>
-                                    <div className="text-right">
-                                        <p className="text-xs text-gray-500 font-medium">Serviço</p>
-                                        <p className="font-bold text-gray-900 text-sm mt-0.5">{modalFinalizar.agendamento?.servico?.nome}</p>
-                                    </div>
-                                </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-xs font-bold text-gray-700 mb-1.5">Desconto (R$)</label>
-                                        <input type="number" className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-gray-900 font-semibold focus:ring-2 focus:ring-indigo-500/20 outline-none transition" placeholder="0,00" value={modalFinalizar.desconto} onChange={(e) => setModalFinalizar({...modalFinalizar, desconto: e.target.value})} />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-gray-700 mb-1.5">Total a Pagar</label>
-                                        <div className="w-full bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-2.5 text-emerald-700 font-black text-lg text-right">
-                                            {formatarMoeda((modalFinalizar.agendamento?.servico?.valor || 0) - (modalFinalizar.desconto || 0))}
-                                        </div>
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-gray-700 mb-2">Forma de Pagamento</label>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        {['pix', 'credito', 'debito', 'dinheiro'].map(tipo => (
-                                            <label key={tipo} className={`cursor-pointer border rounded-xl p-3 flex flex-col items-center justify-center gap-1 transition-all ${modalFinalizar.formaPagamento === tipo ? 'bg-indigo-50 border-indigo-500 text-indigo-700 shadow-sm' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'}`}>
-                                                <input type="radio" name="forma_pagamento" value={tipo} checked={modalFinalizar.formaPagamento === tipo} onChange={() => setModalFinalizar({...modalFinalizar, formaPagamento: tipo})} className="sr-only" />
-                                                <span className="capitalize font-bold text-sm">{tipo}</span>
-                                            </label>
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="px-6 py-4 bg-gray-50 border-t border-gray-100 flex items-center justify-end gap-3">
-                                <button onClick={fecharModalFinalizar} className="px-4 py-2 text-sm font-semibold text-gray-500 hover:text-gray-700 transition">Cancelar</button>
-                                <button onClick={confirmarFinalizacao} disabled={modalFinalizar.processando} className="px-5 py-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold rounded-xl shadow-sm transition disabled:opacity-50">
-                                    {modalFinalizar.processando ? 'Processando...' : 'Confirmar e Finalizar'}
-                                </button>
+
+                            <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Forma de Pagamento</label>
+                                <select 
+                                    className="w-full border border-gray-300 rounded-xl px-4 py-2 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition cursor-pointer"
+                                    value={modalFinalizar.formaPagamento}
+                                    onChange={(e) => setModalFinalizar({...modalFinalizar, formaPagamento: e.target.value})}
+                                >
+                                    <option value="pix">PIX</option>
+                                    <option value="dinheiro">Dinheiro</option>
+                                    <option value="cartao_credito">Cartão de Crédito</option>
+                                    <option value="cartao_debito">Cartão de Débito</option>
+                                </select>
                             </div>
                         </div>
+
+                        <div className="mt-8 flex justify-end gap-3">
+                            <button 
+                                onClick={fecharModalFinalizar} 
+                                className="px-5 py-2.5 text-sm font-semibold text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 transition"
+                            >
+                                Cancelar
+                            </button>
+                            <button 
+                                onClick={confirmarFinalizacao} 
+                                disabled={modalFinalizar.processando} 
+                                className="px-5 py-2.5 text-sm font-semibold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 disabled:opacity-50 transition"
+                            >
+                                {modalFinalizar.processando ? 'Processando...' : 'Confirmar e Finalizar'}
+                            </button>
+                        </div>
                     </div>
-                )}
-            </div>
+                </div>
+            )}
         </AuthenticatedLayout>
     );
 }

@@ -6,7 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\Agendamento;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-
+use App\Models\User;
+use App\Models\Servico;
+use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 use Inertia\Inertia;
 use App\Models\Funcionario;
@@ -225,4 +227,162 @@ class AgendamentoController extends Controller
         'funcionarios'     => $funcionarios,
     ]);
 }
+
+
+
+public function detalheCliente($id)
+    {
+        $userLogado = auth()->user();
+        $estabelecimento = $userLogado->estabelecimentos()->firstOrFail();
+        $cliente = User::findOrFail($id);
+
+        // Triagem (pode ser nula se for o primeiro atendimento do cliente)
+        $triagem = DB::table('triagens')
+            ->where('usuario_id', $cliente->id)
+            ->where('estabelecimento_id', $estabelecimento->id)
+            ->orderBy('created_at', 'desc')
+            ->first();
+
+        $proximoAgendamento = Agendamento::with(['servico', 'funcionario'])
+            ->where('usuario_id', $cliente->id)
+            ->where('estabelecimento_id', $estabelecimento->id)
+            ->where('data_agendamento', '>=', now()->toDateString())
+            ->where('status', 'pendente')
+            ->orderBy('data_agendamento', 'asc')
+            ->first();
+
+        $proximoServicoData = null;
+        if ($proximoAgendamento) {
+            $proximoServicoData = [
+                'id' => $proximoAgendamento->id,
+                'data_formatada' => Carbon::parse($proximoAgendamento->data_agendamento)->translatedFormat('d \d\e F'),
+                'hora' => Carbon::parse($proximoAgendamento->hora_agendamento)->format('H:i'),
+                'servico' => $proximoAgendamento->servico->nome ?? 'Serviço não informado',
+                'profissional' => $proximoAgendamento->funcionario->name ?? 'Qualquer Profissional',
+                'tipo' => 'Agendado'
+            ];
+        } elseif ($triagem && $triagem->status === 'aguardando') {
+            $proximoServicoData = [
+                'id' => $triagem->id,
+                'data_formatada' => 'Hoje',
+                'hora' => Carbon::parse($triagem->created_at)->format('H:i'),
+                'servico' => 'Aguardando na Fila',
+                'profissional' => 'Triagem',
+                'tipo' => 'Triagem'
+            ];
+        }
+
+        $servicosDisponiveis = DB::table('servicos')
+            ->where('estabelecimento_id', $estabelecimento->id)
+            ->get(['id', 'nome', 'valor']);
+
+        $historico = Agendamento::with(['servico', 'funcionario'])
+            ->where('usuario_id', $cliente->id)
+            ->where('estabelecimento_id', $estabelecimento->id)
+            ->orderBy('data_agendamento', 'desc')
+            ->get()
+            ->map(function ($agendamento) {
+                return [
+                    'id' => $agendamento->id,
+                    'servico' => $agendamento->servico->nome ?? 'Serviço',
+                    'profissional' => $agendamento->funcionario->name ?? 'Profissional',
+                    'data' => Carbon::parse($agendamento->data_agendamento)->format('d/m/Y'),
+                    'status' => $agendamento->status,
+                ];
+            });
+
+        $financeiroData = [
+    'total_gasto' => number_format(Agendamento::where('usuario_id', $cliente->id)->where('status', 'concluido')->sum('valor_final'), 2, ',', '.'),
+    
+    // Altere de 'status_payment' para 'status_pagamento' bem aqui:
+    'pendente' => number_format(Agendamento::where('usuario_id', $cliente->id)->where('status_pagamento', 'pendente')->sum('valor_final'), 2, ',', '.'),
+    
+    'referencia_pendente' => 'Procedimentos em aberto'
+];
+
+        return Inertia::render('Estabelecimentos/DetalheCliente', [
+            'estabelecimento' => $estabelecimento,
+            'paciente' => [
+                'id' => $cliente->id,
+                'nome' => $cliente->name,
+                'email' => $cliente->email,
+                'telefone' => $cliente->telefone ?? '(00) 00000-0000',
+                'foto' => $cliente->foto_url ?? 'https://ui-avatars.com/api/?name=' . urlencode($cliente->name),
+                'status' => 'Ativo',
+                'desde' => $cliente->created_at ? $cliente->created_at->translatedFormat('M, Y') : now()->translatedFormat('M, Y'),
+            ],
+            'triagem' => $triagem,
+            'proximoServico' => $proximoServicoData,
+            'servicos' => $servicosDisponiveis,
+            'financeiro' => $financeiroData,
+            'historicoServicos' => $historico
+        ]);
+    }
+
+    // NOVA FUNÇÃO: Retorna os horários livres com base no serviço e dia selecionados
+    public function obterHorariosDisponiveis(Request $request, $id)
+    {
+        $data = $request->query('data');
+        if (!$data) {
+            return response()->json([]);
+        }
+
+        // 1. Grade de horários padrão de funcionamento do seu estabelecimento
+        $horariosFuncionamento = ['08:00', '09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00', '17:00'];
+
+        // 2. Busca na tabela agendamentos os horários já preenchidos neste dia para o serviço
+        $horariosOcupados = DB::table('agendamentos')
+            ->where('data_agendamento', $data)
+            ->where('servico_id', $id)
+            ->where('status', '!=', 'cancelado')
+            ->pluck('hora_agendamento')
+            ->map(function($hora) {
+                return substr($hora, 0, 5); // Corta '08:00:00' para '08:00'
+            })
+            ->toArray();
+
+        // 3. Remove os ocupados e devolve apenas os livres
+        $horariosLivres = array_values(array_filter($horariosFuncionamento, function($hora) use ($horariosOcupados) {
+            return !in_array($hora, $horariosOcupados);
+        }));
+
+        return response()->json($horariosLivres);
+    }
+
+    public function salvarNotaTriagem(Request $request, $id)
+    {
+        $request->validate(['observacoes' => 'required|string']);
+
+        DB::table('triagens')->where('id', $id)->update([
+            'observacoes' => $request->observacoes,
+            'updated_at' => now()
+        ]);
+
+        return back()->with('success', 'Nota atualizada!');
+    }
+
+    public function remarcarServico(Request $request)
+    {
+        $request->validate([
+            'cliente_id' => 'required',
+            'estabelecimento_id' => 'required',
+            'servico_id' => 'required',
+            'data' => 'required|date',
+            'hora' => 'required'
+        ]);
+
+        DB::table('agendamentos')->insert([
+            'usuario_id' => $request->cliente_id,
+            'estabelecimento_id' => $request->estabelecimento_id,
+            'servico_id' => $request->servico_id,
+            'data_agendamento' => $request->data,
+            'hora_agendamento' => $request->hora,
+            'status' => 'pendente',
+            'created_at' => now(),
+            'updated_at' => now()
+        ]);
+
+        return back()->with('success', 'Reagendado com sucesso!');
+    }
 }
+

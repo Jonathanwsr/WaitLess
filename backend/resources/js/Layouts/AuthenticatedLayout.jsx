@@ -150,7 +150,7 @@ export default function AuthenticatedLayout({ header, children }) {
     </span>
 </Link>
 
-                            <Link href="#" title="Agendamentos" className={`${baseLinkClass} ${inactiveLinkClass}`}>
+                            <Link href={route('mensagens.index')}  title="Agendamentos" className={`${baseLinkClass} ${inactiveLinkClass}`}>
                                 <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Agendamentos</span>
                             </Link>
@@ -197,9 +197,9 @@ export default function AuthenticatedLayout({ header, children }) {
                         <>
                             <SectionTitle title="Área do Cliente" />
                             
-                            <Link href={route('dashboard')} title="Painel Geral" className={`${baseLinkClass} ${route().current('dashboard') ? activeLinkClass : inactiveLinkClass}`}>
+                            <Link href={route('home')} title="Home" className={`${baseLinkClass} ${route().current('home') ? activeLinkClass : inactiveLinkClass}`}>
                                 <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
-                                <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Painel Geral</span>
+                                <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Home</span>
                             </Link>
 
                             <Link href={route('cliente.explorar')} title="Explorar Lojas" className={`${baseLinkClass} ${route().current('cliente.explorar') ? activeLinkClass : inactiveLinkClass}`}>
@@ -211,6 +211,11 @@ export default function AuthenticatedLayout({ header, children }) {
                                 <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path></svg>
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Carrinho / Pendentes</span>
                             </Link>
+
+                          <Link href={route('dashboard')} title="Agendamentos" className={`${baseLinkClass} ${route().current('dashboard') ? activeLinkClass : inactiveLinkClass}`}>
+                          <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                            <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Agendamentos</span>
+                      </Link>
                             
                             <Link href={route('cliente.carteira')} title="Carteira" className={`${baseLinkClass} ${route().current('cliente.carteira') ? activeLinkClass : inactiveLinkClass}`}>
                                <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg>

@@ -154,9 +154,9 @@ class EstabelecimentoController extends Controller
     // 10. Retornar os dados estruturados para a View do Inertia
     return \Inertia\Inertia::render('Estabelecimentos/Fila', [
         'estabelecimento'  => $estabelecimento->only(['id', 'nome']),
-        'estabelecimentos' => $estabelecimentos, // Lista completa resolvida
+        'estabelecimentos' => $estabelecimentos, 
         'agendamentos'     => $agendamentos,
-        'funcionarios'     => $funcionarios,     // Profissionais enviados para popular a listagem
+        'funcionarios'     => $funcionarios,     
         'filtros'          => $filtros
     ]);
 }
@@ -178,7 +178,7 @@ class EstabelecimentoController extends Controller
 
      public function loja(Estabelecimento $estabelecimento)
     {
-        // Garante que o usuário tem acesso a este estabelecimento
+        
         $user = \Illuminate\Support\Facades\Auth::user();
         
         

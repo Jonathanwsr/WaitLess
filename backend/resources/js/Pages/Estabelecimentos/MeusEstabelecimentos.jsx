@@ -14,7 +14,7 @@ export default function MeusEstabelecimentos({ auth, estabelecimentos, metricas 
     // Estado para o Menu de Três Pontinhos (Dropdown)
     const [menuAbertoId, setMenuAbertoId] = useState(null);
 
-    // Proteção garantida para os dados (se vier nulo, vira array vazio)
+  
     const listaLojas = estabelecimentos?.data || (Array.isArray(estabelecimentos) ? estabelecimentos : []);
 
     const lojasFiltradas = listaLojas.filter((loja) => {

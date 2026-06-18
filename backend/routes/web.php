@@ -17,6 +17,7 @@ use App\Http\Controllers\Api\CupomController;
 use App\Http\Controllers\Api\FilaController;
 use App\Http\Controllers\Api\FuncionarioAreaController;
 use App\Services\MercadoPagoService; 
+use App\Http\Controllers\Api\MensagemController; 
 use App\Http\Controllers\Api\AssinaturaController;
 use App\Http\Middleware\CheckAdmin;
 use App\Http\Controllers\Api\ClienteCupomController;
@@ -88,6 +89,24 @@ Route::post('/assinaturas/nova', [App\Http\Controllers\Api\AssinaturaController:
     Route::patch('/estabelecimentos/{estabelecimento}/toggle-status', [EstabelecimentoController::class, 'toggleStatus'])->name('estabelecimentos.toggle-status');
     Route::get('/meus-estabelecimentos', [EstabelecimentoController::class, 'index'])
         ->name('estabelecimentos.index');
+
+        Route::middleware('auth:sanctum')->get('/estabelecimentos/proximos', [DashboardController::class, 'getNearby']);
+        // routes/web.php
+       Route::get('/home', [DashboardController::class, 'showHome'])->name('home'); // 👈 name('home') minúsculo
+
+    // Estabelecimentos Menssagens
+
+    Route::get('/mensagens', [MensagemController::class, 'index'])->name('mensagens.index');
+    
+    // 2. Inicia o chat vindo do perfil do cliente e redireciona de imediato
+    Route::post('/mensagens/iniciar', [MensagemController::class, 'iniciarConversa'])->name('mensagens.iniciar');
+    
+    // 3. Abre a tela focada em um ID específico (Alterado para {id} para evitar conflitos no Ziggy)
+    Route::get('/mensagens/{id}', [MensagemController::class, 'show'])->name('mensagens.show');
+    
+    // 4. Salva a mensagem enviada
+    Route::post('/mensagens/{id}/enviar', [MensagemController::class, 'enviarMensagem'])->name('mensagens.enviar');
+    
     
     // Fila e Configurações (Aninhadas em Estabelecimentos)
    // Ambas as rotas agora chamam o método index do AgendamentoController
@@ -97,6 +116,24 @@ Route::get('/estabelecimentos/{estabelecimento}/fila', [AgendamentoController::c
 
     // Agendamentos
     Route::put('/agendamentos/{agendamento}/status', [AgendamentoController::class, 'updateStatus'])->name('agendamentos.status.update');
+
+    //Detalhes cliente 
+    Route::middleware(['auth'])->group(function () {
+    // Rota para ver os detalhes do cliente
+    Route::get('/clientes/{id}/detalhes', [AgendamentoController::class, 'detalheCliente'])->name('clientes.detalhes');
+
+    Route::post('/triagens/{id}/salvar-nota', [AgendamentoController::class, 'salvarNotaTriagem'])->name('triagens.salvarNota');
+    
+    // Rota para criar/remarcar agendamento
+    Route::post('/agendamentos/remarcar', [AgendamentoController::class, 'remarcarServico'])->name('agendamentos.remarcar');
+
+    Route::get('/api/servicos/{id}/horarios-disponiveis', [AgendamentoController::class, 'obterHorariosDisponiveis'])->name('servicos.horarios');
+});
+});
+
+
+
+
 
     // --- Rotas da Visão do CLIENTE ---
     // Acessar a página da loja para agendar
@@ -202,6 +239,6 @@ Route::post('/cliente/cupons/{id}/resgatar', [ClienteCupomController::class, 're
         ->name('admin.assinaturas.cancelar');
     });
 
-    });
+  
 
 require __DIR__.'/auth.php';
