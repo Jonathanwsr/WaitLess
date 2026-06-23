@@ -2,9 +2,10 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 import { 
-    TicketIcon, StarIcon, ExclamationTriangleIcon, CheckCircleIcon, 
+    StarIcon, ExclamationTriangleIcon, CheckCircleIcon, 
     XCircleIcon, ClockIcon, CalendarIcon, BellAlertIcon, 
-    ChatBubbleBottomCenterTextIcon, MagnifyingGlassIcon 
+    ChatBubbleBottomCenterTextIcon, MagnifyingGlassIcon,
+    MapPinIcon
 } from '@heroicons/react/24/solid';
 import { StarIcon as StarOutlineIcon } from '@heroicons/react/24/outline'; 
 
@@ -15,7 +16,7 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
     // Controle das Abas de Agendamentos
     const [abaAtiva, setAbaAtiva] = useState('proximos'); 
 
-    // Estados de loading para os botões não travarem
+    // Estados de loading
     const [loadingPagar, setLoadingPagar] = useState(null); 
     const [loadingCancelar, setLoadingCancelar] = useState(null); 
 
@@ -38,10 +39,17 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
 
     const formatarMoeda = (valor) => valor ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor) : 'R$ 0,00';
 
-    const formatarData = (dataStr) => {
+    const formatarDataCompleta = (dataStr, horaStr) => {
         if (!dataStr) return '';
-        const partes = dataStr.split(' ')[0].split('-'); 
-        return partes.length === 3 ? `${partes[2]}/${partes[1]}/${partes[0]}` : dataStr;
+        try {
+            const [ano, mes, dia] = dataStr.split(' ')[0].split('-');
+            const meses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+            const nomeMes = meses[parseInt(mes, 10) - 1];
+            const hora = horaStr ? horaStr.substring(0, 5) : '';
+            return `${dia} de ${nomeMes}, ${ano} • ${hora}`;
+        } catch (e) {
+            return dataStr;
+        }
     };
 
     const verificarExpiracao = (agendamento) => {
@@ -82,7 +90,6 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
         }
     };
 
-    // Funções de Avaliação
     const abrirModalAvaliacao = (agendamento) => {
         setAgendamentoParaAvaliar(agendamento);
         setNota(5);
@@ -105,15 +112,11 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
         });
     };
 
-    const primeiroNome = (usuario?.name || auth?.user?.name || 'Cliente').split(' ')[0];
-
-    // Separa os agendamentos nas abas correspondentes
     const agsProximos = [];
     const agsPendentes = [];
     const agsConcluidos = [];
     const agsCancelados = [];
 
-    // 👉 CORREÇÃO DO HISTÓRICO (AGORA FUNCIONA E MOSTRA OS CONCLUÍDOS!)
     agendamentos.forEach(ag => {
         const statusTempo = verificarExpiracao(ag);
         const isCancelado = statusTempo.cancelado || ag.status_pagamento === 'estornado' || (statusTempo.expirou && ag.status_pagamento !== 'pago_online' && ag.status_pagamento !== 'presencial');
@@ -121,7 +124,7 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
         if (isCancelado) {
             agsCancelados.push(ag);
         } else if (ag.status === 'concluido' || ag.status === 'finalizado') {
-            agsConcluidos.push(ag); // <-- Vai certinho para o Histórico
+            agsConcluidos.push(ag);
         } else if (ag.status === 'aguardando_pagamento' && ag.status_pagamento === 'pendente') {
             agsPendentes.push(ag);
         } else {
@@ -135,245 +138,246 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
         abaAtiva === 'concluidos' ? agsConcluidos : agsCancelados;
 
     return (
-        <AuthenticatedLayout user={auth.user} header={<h2 className="text-xl font-bold leading-tight text-gray-800 dark:text-gray-200">Olá, {primeiroNome} 👋</h2>}>
-            <Head title="Meu Painel - WaitLess" />
+        <AuthenticatedLayout user={auth.user} header={<></>}>
+            <Head title="Painel do Usuário - WaitLess" />
 
-            <div className="max-w-7xl mx-auto mt-6 px-4 sm:px-6 lg:px-8 pb-12 space-y-8">
+            {/* Fundo mantido em tom suave/aquecido: #FCF9F6 */}
+            <div className="min-h-screen bg-[#FCF9F6] font-sans pb-24">
                 
-                {flash?.success && <div className="p-4 text-emerald-800 bg-emerald-100 border border-emerald-200 rounded-xl shadow-sm animate-in fade-in flex items-center gap-2"><CheckCircleIcon className="w-6 h-6"/> {flash.success}</div>}
-                {flash?.warning && <div className="p-4 text-yellow-800 bg-yellow-100 border border-yellow-200 rounded-xl shadow-sm animate-in fade-in flex items-center gap-2"><ExclamationTriangleIcon className="w-6 h-6"/> {flash.warning}</div>}
-                {flash?.error && <div className="p-4 text-red-800 bg-red-100 border border-red-200 rounded-xl shadow-sm animate-in fade-in flex items-center gap-2"><XCircleIcon className="w-6 h-6"/> {flash.error}</div>}
+                {/* CONTAINER AMPLIADO para preencher a tela toda lateralmente */}
+                <div className="max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-12 pt-12">
+                    
+                    {/* Alertas Modernos */}
+                    {flash?.success && <div className="mb-8 p-4 text-emerald-800 bg-emerald-50 border border-emerald-100 rounded-2xl flex items-center gap-3 text-sm font-medium w-max mx-auto"><CheckCircleIcon className="w-5 h-5"/> {flash.success}</div>}
+                    {flash?.warning && <div className="mb-8 p-4 text-[#E05D36] bg-[#FFF2EE] border border-[#FADCD2] rounded-2xl flex items-center gap-3 text-sm font-medium w-max mx-auto"><ExclamationTriangleIcon className="w-5 h-5"/> {flash.warning}</div>}
+                    {flash?.error && <div className="mb-8 p-4 text-red-800 bg-red-50 border border-red-100 rounded-2xl flex items-center gap-3 text-sm font-medium w-max mx-auto"><XCircleIcon className="w-5 h-5"/> {flash.error}</div>}
 
-                {/* BOTÃO DE RECOMPENSAS MODERNIZADO */}
-                <div className="flex justify-end animate-in fade-in slide-in-from-top-4">
-                    <Link 
-                        href={route('cliente.mensagens')} 
-                        className="flex items-center gap-3 bg-white border border-gray-200 hover:border-emerald-300 text-gray-800 font-black py-3 px-6 rounded-2xl shadow-sm transition-all hover:shadow-md group"
-                    >
-                        <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center group-hover:scale-110 transition-transform">
-                            <BellAlertIcon className="w-5 h-5 group-hover:animate-swing" />
+                    {/* CABEÇALHO */}
+                    <div className="flex flex-col md:flex-row md:items-center justify-between mb-12 gap-4">
+                        <div>
+                            <h2 className="text-4xl font-black text-gray-900 tracking-tight">Painel do Usuário</h2>
+                            <p className="text-gray-500 mt-2 text-sm font-medium">Gerencie seus agendamentos de forma inteligente e rápida.</p>
                         </div>
-                        Mensagens & Recompensas
-                    </Link>
-                </div>
+                        <Link 
+                            href={route('cliente.mensagens')} 
+                            className="inline-flex items-center gap-2 bg-white border border-gray-200 text-gray-800 font-bold py-3 px-6 rounded-full shadow-[0_2px_10px_rgba(0,0,0,0.03)] hover:shadow-md hover:border-gray-300 transition-all text-sm w-max"
+                        >
+                            <BellAlertIcon className="w-5 h-5 text-[#E05D36]" />
+                            <span>3 Recompensas</span>
+                        </Link>
+                    </div>
 
-                {/* PESQUISA MODERNIZADA (VERDE CLARO) */}
-                <div className="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-[2rem] p-8 sm:p-12 shadow-xl relative overflow-hidden">
-                    <div className="relative z-10">
-                        <h3 className="text-3xl font-black text-white mb-3 tracking-tight">O que você precisa hoje?</h3>
-                        <p className="text-emerald-100 font-medium mb-6 max-w-md">Encontre os melhores profissionais e agende o seu horário sem filas.</p>
+                    {/* BARRA DE PESQUISA LARGURA TOTAL (Preenche o espaço) */}
+                    <div className="bg-white rounded-full pl-8 pr-2 py-2 mb-12 shadow-[0_8px_30px_rgba(224,93,54,0.06)] border border-gray-100 flex flex-col md:flex-row items-center relative z-10 w-full transition-all focus-within:ring-2 focus-within:ring-[#E05D36]/30">
+                        <div className="flex-1 w-full py-2">
+                            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">O que você precisa?</label>
+                            <input 
+                                type="text" 
+                                className="w-full border-0 p-0 text-gray-900 focus:ring-0 text-base placeholder-gray-300 font-semibold bg-transparent" 
+                                placeholder="Nome, especialidade..." 
+                                value={busca} onChange={e => setBusca(e.target.value)} 
+                            />
+                        </div>
                         
-                        <form onSubmit={fazerBusca} className="flex flex-col md:flex-row gap-3">
-                            <div className="relative flex-1">
-                                <MagnifyingGlassIcon className="absolute left-4 top-1/2 -translate-y-1/2 w-6 h-6 text-gray-400" />
-                                <input 
-                                    type="text" 
-                                    className="w-full py-4 pl-12 pr-6 rounded-2xl border-0 shadow-sm focus:ring-4 focus:ring-emerald-300 transition-all font-medium text-gray-800" 
-                                    placeholder="Buscar por nome do salão, barbearia..." 
-                                    value={busca} onChange={e => setBusca(e.target.value)} 
-                                />
-                            </div>
-                            <select className="w-full md:w-64 py-4 px-6 border-0 rounded-2xl text-gray-700 shadow-sm focus:ring-4 focus:ring-emerald-300 transition-all font-medium font-sans" value={categoria} onChange={e => setCategoria(e.target.value)}>
-                                <option value="">Qualquer Categoria</option>
+                        <div className="hidden md:block w-px h-12 bg-gray-100 mx-8"></div>
+                        
+                        <div className="flex-1 w-full py-2 border-t md:border-t-0 border-gray-100 md:pl-2">
+                            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Categoria</label>
+                            <select 
+                                className="w-full border-0 p-0 text-gray-900 focus:ring-0 text-base font-semibold bg-transparent cursor-pointer" 
+                                value={categoria} onChange={e => setCategoria(e.target.value)}
+                            >
+                                <option value="">Explorar todas as categorias</option>
                                 <option value="Beleza e Estética">Beleza e Estética</option>
+                                <option value="Barbearia">Barbearia</option>
+                                <option value="Cabelo e Penteado">Cabelo e Penteado</option>
+                                <option value="Manicure e Pedicure">Manicure e Pedicure</option>
+                                <option value="Maquiagem e Sobrancelha">Maquiagem e Sobrancelha</option>
+                                <option value="Saúde e Bem-estar">Saúde e Bem-estar</option>
+                                <option value="Massagem e Relaxamento">Massagem e Relaxamento</option>
+                                <option value="Estética Avançada">Estética Avançada</option>
+                                <option value="Fisioterapia">Fisioterapia</option>
+                                <option value="Terapias Holísticas">Terapias Holísticas</option>
+                                <option value="Nutrição e Dieta">Nutrição e Dieta</option>
+                                <option value="Odontologia">Odontologia</option>
                             </select>
-                            <button type="submit" className="bg-gray-900 text-white px-8 py-4 font-black rounded-2xl shadow-md hover:bg-black hover:scale-105 transition-all">Buscar</button>
-                        </form>
+                        </div>
+
+                        <button 
+                            onClick={fazerBusca} 
+                            className="w-full md:w-auto bg-[#E05D36] text-white px-10 py-4 mt-3 md:mt-0 rounded-full text-sm font-bold hover:bg-[#C74B27] transition-colors flex items-center justify-center gap-2 shadow-sm"
+                        >
+                            <MagnifyingGlassIcon className="w-5 h-5 text-white" />
+                            <span className="md:hidden">Buscar</span>
+                        </button>
                     </div>
-                    <TicketIcon className="absolute -right-10 -top-10 w-64 h-64 text-emerald-400 opacity-30 transform rotate-12 pointer-events-none" />
-                </div>
 
-                {/* ABAS MODERNIZADAS */}
-                <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-                    <div className="p-6 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/50">
-                        <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
-                            <CalendarIcon className="w-6 h-6 text-emerald-500" /> Meus Agendamentos
-                        </h3>
-                        
-                        <div className="flex overflow-x-auto gap-3 scrollbar-hide pb-2">
-                            <button onClick={() => setAbaAtiva('proximos')} className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${abaAtiva === 'proximos' ? 'bg-emerald-600 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'}`}>
-                                <ClockIcon className="w-5 h-5" /> Próximos 
-                                {agsProximos.length > 0 && <span className="bg-white/20 text-white px-2 py-0.5 rounded-full text-xs ml-1 shadow-sm">{agsProximos.length}</span>}
+                    {/* ABAS SEGMENTADAS */}
+                    <div className="mb-10">
+                        <div className="flex overflow-x-auto gap-2 p-1.5 bg-gray-200/50 rounded-[1.25rem] w-max scrollbar-hide border border-gray-200/30">
+                            <button onClick={() => setAbaAtiva('proximos')} className={`px-6 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${abaAtiva === 'proximos' ? 'bg-white text-[#E05D36] shadow-[0_2px_8px_rgba(0,0,0,0.04)]' : 'text-gray-500 hover:text-gray-900'}`}>
+                                Próximos
                             </button>
-                            
-                            <button onClick={() => setAbaAtiva('pendentes')} className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${abaAtiva === 'pendentes' ? 'bg-yellow-500 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'}`}>
-                                <ExclamationTriangleIcon className="w-5 h-5" /> Faltam Pagar
-                                {agsPendentes.length > 0 && <span className="bg-white/20 text-white px-2 py-0.5 rounded-full text-xs animate-pulse ml-1 shadow-sm">{agsPendentes.length}</span>}
+                            <button onClick={() => setAbaAtiva('concluidos')} className={`px-6 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${abaAtiva === 'concluidos' ? 'bg-white text-[#E05D36] shadow-[0_2px_8px_rgba(0,0,0,0.04)]' : 'text-gray-500 hover:text-gray-900'}`}>
+                                Histórico
                             </button>
-
-                            <button onClick={() => setAbaAtiva('concluidos')} className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${abaAtiva === 'concluidos' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'}`}>
-                                <CheckCircleIcon className="w-5 h-5" /> Histórico
-                                {agsConcluidos.length > 0 && <span className="bg-white/20 text-white px-2 py-0.5 rounded-full text-xs ml-1 shadow-sm">{agsConcluidos.length}</span>}
+                            <button onClick={() => setAbaAtiva('cancelados')} className={`px-6 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${abaAtiva === 'cancelados' ? 'bg-white text-[#E05D36] shadow-[0_2px_8px_rgba(0,0,0,0.04)]' : 'text-gray-500 hover:text-gray-900'}`}>
+                                Cancelados
                             </button>
-
-                            <button onClick={() => setAbaAtiva('cancelados')} className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${abaAtiva === 'cancelados' ? 'bg-gray-900 text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'}`}>
-                                <XCircleIcon className="w-5 h-5" /> Cancelados
+                            <button onClick={() => setAbaAtiva('pendentes')} className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap border-2 border-transparent ${abaAtiva === 'pendentes' ? 'border-[#E05D36]/20 bg-white text-[#E05D36] shadow-[0_2px_8px_rgba(0,0,0,0.04)]' : 'text-gray-900 bg-white shadow-sm'}`}>
+                                Faltam Pagar
+                                <span className={`px-1.5 py-0.5 rounded text-[10px] uppercase font-black border ${abaAtiva === 'pendentes' ? 'bg-[#E05D36] text-white border-transparent' : 'bg-[#FFF2EE] text-[#E05D36] border-[#FADCD2]'}`}>{agsPendentes.length}</span>
                             </button>
                         </div>
                     </div>
 
-                    <div className="p-6 bg-gray-50/30 dark:bg-gray-900/20 min-h-[300px]">
-                        {agendamentosExibidos.length === 0 ? (
-                            <div className="text-center py-16">
-                                <span className="text-6xl mb-4 block opacity-30">✨</span>
-                                <h4 className="text-xl font-bold mb-2 text-gray-700 dark:text-gray-300">Nenhum agendamento nesta aba</h4>
-                                <p className="text-gray-500 text-sm">Clique nas abas acima para ver o seu histórico.</p>
-                            </div>
-                        ) : (
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                {agendamentosExibidos.map((agendamento) => {
-                                    const statusTempo = verificarExpiracao(agendamento);
-                                    const isPago = agendamento.status_pagamento === 'pago_online';
-                                    const isEstornado = agendamento.status_pagamento === 'estornado';
-                                    const isPresencial = agendamento.status_pagamento === 'presencial';
-                                    
-                                    const isConcluido = agendamento.status === 'concluido' || agendamento.status === 'finalizado';
-                                    
-                                    const isConfirmado = (isPago || isPresencial || agendamento.status === 'confirmado') && !statusTempo.cancelado && !isConcluido;
-                                    const isCanceladoDefinitivo = statusTempo.cancelado || isEstornado || (statusTempo.expirou && !isConfirmado);
-                                    const isAguardandoPagamento = agendamento.status === 'aguardando_pagamento' && !isCanceladoDefinitivo && !isConfirmado;
+                    {/* GRID DE CARDS - PREPARADO PARA 15+ CARDS (5 colunas em monitores grandes 2XL) */}
+                    {agendamentosExibidos.length === 0 ? (
+                        <div className="text-center py-20">
+                            <CalendarIcon className="w-16 h-16 text-gray-200 mx-auto mb-4" />
+                            <h4 className="text-xl font-bold text-gray-800">Nenhum agendamento</h4>
+                            <p className="text-gray-500 text-sm mt-1">Não encontramos registros nesta categoria no momento.</p>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
+                            {agendamentosExibidos.map((agendamento) => {
+                                const statusTempo = verificarExpiracao(agendamento);
+                                const isPago = agendamento.status_pagamento === 'pago_online';
+                                const isEstornado = agendamento.status_pagamento === 'estornado';
+                                const isConcluido = agendamento.status === 'concluido' || agendamento.status === 'finalizado';
+                                const isConfirmado = (isPago || agendamento.status_pagamento === 'presencial' || agendamento.status === 'confirmado') && !statusTempo.cancelado && !isConcluido;
+                                const isCanceladoDefinitivo = statusTempo.cancelado || isEstornado || (statusTempo.expirou && !isConfirmado);
+                                const isAguardandoPagamento = agendamento.status === 'aguardando_pagamento' && !isCanceladoDefinitivo && !isConfirmado;
+                                
+                                const isEmAndamento = agendamento.status === 'em_andamento' || agendamento.em_andamento;
 
-                                    return (
-                                        <div key={agendamento.id} className={`rounded-2xl overflow-hidden border shadow-sm flex flex-col transition-all ${isCanceladoDefinitivo ? 'bg-gray-100 border-gray-200 opacity-70 grayscale' : 'bg-white border-gray-200 hover:shadow-md'}`}>
-                                            
-                                            <div className={`p-5 border-b flex justify-between items-center ${
-                                                isCanceladoDefinitivo ? 'bg-gray-200 text-gray-600' : 
-                                                isConcluido ? 'bg-gray-900 text-white' :
-                                                isAguardandoPagamento ? 'bg-yellow-400 text-yellow-900' : 
-                                                'bg-emerald-500 text-white'
-                                            }`}>
+                                return (
+                                    <div key={agendamento.id} className={`rounded-[1.5rem] bg-white border p-6 flex flex-col justify-between hover:-translate-y-1 transition-all duration-300 ${isEmAndamento ? 'border-gray-900 shadow-lg ring-1 ring-gray-900' : 'border-gray-100 shadow-[0_4px_20px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_30px_rgba(0,0,0,0.06)]'}`}>
+                                        
+                                        <div className="flex-1">
+                                            {/* Cabeçalho do Card */}
+                                            <div className="flex justify-between items-center mb-6">
                                                 <div>
-                                                    <p className="text-sm font-bold opacity-80 uppercase tracking-wider mb-1">Status</p>
-                                                    <h4 className="text-xl font-black flex items-center gap-2">
-                                                        {isCanceladoDefinitivo ? (isEstornado ? 'Reembolsado' : 'Cancelado') : 
-                                                         isConcluido ? <><CheckCircleIcon className="w-6 h-6"/> Concluído</> :
-                                                         isAguardandoPagamento ? <><ExclamationTriangleIcon className="w-6 h-6"/> Pagar no App</> : 
-                                                         <><ClockIcon className="w-6 h-6"/> Confirmado</>}
-                                                    </h4>
+                                                    {isCanceladoDefinitivo ? (
+                                                        <span className="bg-red-50 text-red-600 text-[9px] uppercase tracking-wider font-black px-3 py-1.5 rounded-md border border-red-100/50">Cancelado</span>
+                                                    ) : isConcluido ? (
+                                                        <span className="bg-gray-100 text-gray-600 text-[9px] uppercase tracking-wider font-black px-3 py-1.5 rounded-md border border-gray-200/50">Concluído</span>
+                                                    ) : isEmAndamento ? (
+                                                        <span className="bg-gray-900 text-white text-[9px] uppercase tracking-wider font-black px-3 py-1.5 rounded-md">Em Atendimento</span>
+                                                    ) : isAguardandoPagamento ? (
+                                                        <span className="bg-[#FFF2EE] text-[#E05D36] text-[9px] uppercase tracking-widest font-black px-3 py-1.5 rounded-md border border-[#FADCD2]">Pendente</span>
+                                                    ) : (
+                                                        <span className="bg-gray-50 text-gray-800 text-[9px] uppercase tracking-wider font-black px-3 py-1.5 rounded-md border border-gray-200">Confirmado</span>
+                                                    )}
                                                 </div>
+
                                                 <div className="text-right">
-                                                    <span className={`text-xl font-bold py-1.5 px-4 rounded-xl shadow-inner ${isCanceladoDefinitivo ? 'bg-gray-300 text-gray-500' : 'bg-white/20 text-inherit backdrop-blur-sm'}`}>
-                                                        {agendamento?.hora_agendamento ? agendamento.hora_agendamento.substring(0, 5) : '--:--'}
+                                                    <span className="text-2xl font-black text-gray-900 tracking-tight">
+                                                        {formatarMoeda(agendamento?.valor_final)}
                                                     </span>
                                                 </div>
                                             </div>
 
-                                            <div className="p-6 flex-1 flex flex-col">
-                                                <h4 className="font-black text-gray-900 text-xl mb-1">{agendamento?.estabelecimento?.nome || 'Loja Indisponível'}</h4>
-                                                
-                                                <div className="bg-gray-50 rounded-xl p-4 my-4 flex justify-between items-center border border-gray-100">
-                                                    <div>
-                                                        <p className="text-sm font-bold text-gray-900">{agendamento?.servico?.nome || 'Serviço Indisponível'}</p>
-                                                        <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
-                                                            <CalendarIcon className="w-3 h-3" /> {formatarData(agendamento?.data_agendamento)}
-                                                        </p>
-                                                    </div>
-                                                    <p className="text-lg font-black text-emerald-600">{formatarMoeda(agendamento?.valor_final)}</p>
+                                            {/* Título e Local */}
+                                            <div className="mb-6">
+                                                <h4 className="text-lg font-bold text-gray-900 leading-tight mb-1">{agendamento?.servico?.nome || 'Serviço Agendado'}</h4>
+                                                <p className="text-xs font-semibold text-gray-500 flex items-center gap-1.5">
+                                                    <MapPinIcon className="w-4 h-4 text-gray-400" /> 
+                                                    <span className="truncate">{agendamento?.estabelecimento?.nome || 'Local'}</span>
+                                                </p>
+                                            </div>
+
+                                            {/* CAIXA DE DATA */}
+                                            <div className="mb-6 flex items-center gap-3 bg-gray-50/50 p-3.5 rounded-2xl border border-gray-100">
+                                                <div className="bg-white p-2.5 rounded-xl border border-gray-100 shadow-sm">
+                                                    <CalendarIcon className="w-5 h-5 text-[#E05D36]" />
                                                 </div>
-
-                                                {/* 👉 GAMIFICAÇÃO: CÓDIGO PIN MÁGICO */}
-                                                {isConfirmado && agendamento?.codigo_verificacao && !isConcluido && (
-                                                    <div className="mb-6 bg-gradient-to-r from-amber-100 to-yellow-100 rounded-xl p-5 border-2 border-yellow-400 border-dashed text-center relative overflow-hidden group">
-                                                        <StarIcon className="absolute -left-4 -top-4 w-16 h-16 text-yellow-300/50 group-hover:rotate-12 transition-transform duration-500" />
-                                                        <StarIcon className="absolute -right-4 -bottom-4 w-16 h-16 text-yellow-300/50 group-hover:-rotate-12 transition-transform duration-500" />
-                                                        
-                                                        {/* Se for pagamento local, avisa para pagar na loja */}
-                                                        {isPresencial && (
-                                                            <div className="bg-yellow-200 text-yellow-800 text-[10px] font-black uppercase tracking-widest px-3 py-1 w-max mx-auto rounded-lg mb-3">
-                                                                💰 Pagar no Local
-                                                            </div>
-                                                        )}
-
-                                                        <p className="text-xs font-bold text-yellow-800 uppercase tracking-widest mb-2">Seu PIN de Atendimento</p>
-                                                        <div className="text-5xl font-black text-gray-900 tracking-[0.2em] font-mono drop-shadow-sm">
-                                                            {agendamento.codigo_verificacao} {/* <--- Corrigido para codigo_verificacao! */}
-                                                        </div>
-                                                        <p className="text-xs text-yellow-700 mt-3 font-medium flex items-center justify-center gap-1">
-                                                            <StarIcon className="w-4 h-4 text-yellow-500" /> Forneça este PIN ao funcionário na loja!
-                                                        </p>
-                                                    </div>
-                                                )}
-
-                                                {/* AVALIAÇÃO DE 5 ESTRELAS */}
-                                                {isConcluido && (
-                                                    <div className="mt-2 mb-4">
-                                                        {!agendamento.nota ? (
-                                                            <button 
-                                                                onClick={() => abrirModalAvaliacao(agendamento)} 
-                                                                className="w-full py-4 px-4 bg-gradient-to-r from-orange-400 to-orange-500 hover:from-orange-500 hover:to-orange-600 text-white font-black rounded-xl shadow-md transition transform hover:-translate-y-0.5 flex flex-col sm:flex-row items-center justify-center gap-2 animate-bounce hover:animate-none"
-                                                            >
-                                                                <div className="flex gap-1">
-                                                                    <StarIcon className="w-5 h-5 text-yellow-200" />
-                                                                    <StarIcon className="w-5 h-5 text-yellow-200" />
-                                                                    <StarIcon className="w-5 h-5 text-yellow-200" />
-                                                                </div>
-                                                                Avaliar e Ganhar 50 Pontos
-                                                            </button>
-                                                        ) : (
-                                                            <div className="bg-gray-50 border border-gray-200 rounded-2xl p-5 shadow-sm relative overflow-hidden">
-                                                                <div className="absolute top-0 right-0 bg-emerald-500 text-white text-[10px] font-black px-3 py-1 rounded-bl-lg">Avaliado</div>
-                                                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-3">Sua Experiência</p>
-                                                                <div className="flex items-center gap-1 mb-3">
-                                                                    {[1, 2, 3, 4, 5].map((estrela) => (
-                                                                        agendamento.nota >= estrela 
-                                                                        ? <StarIcon key={estrela} className="w-6 h-6 text-yellow-400 drop-shadow-sm" /> 
-                                                                        : <StarOutlineIcon key={estrela} className="w-6 h-6 text-gray-300" />
-                                                                    ))}
-                                                                    <span className="ml-2 font-black text-gray-900 text-lg">{agendamento.nota}.0</span>
-                                                                </div>
-                                                                {agendamento.comentario_avaliacao ? (
-                                                                    <div className="bg-white p-3 rounded-xl border border-gray-100 shadow-sm">
-                                                                        <p className="text-sm text-gray-600 italic">"{agendamento.comentario_avaliacao}"</p>
-                                                                    </div>
-                                                                ) : (
-                                                                    <p className="text-xs text-gray-400 italic">Nenhum comentário deixado.</p>
-                                                                )}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                )}
-
-                                                <div className="mt-auto space-y-3 pt-4 border-t border-gray-100">
-                                                    {isAguardandoPagamento && (
-                                                        <button type="button" onClick={() => pagarNovamente(agendamento.id)} disabled={loadingPagar === agendamento.id || loadingCancelar === agendamento.id} className="w-full py-3.5 text-white font-bold rounded-xl shadow-md transition bg-gray-900 hover:bg-black">
-                                                            {loadingPagar === agendamento.id ? '⏳ A gerar link...' : '💳 Pagar Agora'}
-                                                        </button>
-                                                    )}
-
-                                                    {!isCanceladoDefinitivo && !isConcluido && (
-                                                        <button type="button" onClick={() => cancelarVaga(agendamento.id, isPago)} disabled={loadingCancelar === agendamento.id || loadingPagar === agendamento.id} className="w-full py-3 text-red-500 bg-white hover:bg-red-50 font-bold rounded-xl transition border border-red-100">
-                                                            {loadingCancelar === agendamento.id ? '⏳ A cancelar...' : 'Cancelar Agendamento'}
-                                                        </button>
-                                                    )}
-
-                                                    {(isCanceladoDefinitivo || isConcluido) && route().has('cliente.agendar') && agendamento?.estabelecimento_id && (
-                                                        <Link href={route('cliente.agendar', agendamento.estabelecimento_id)} className="flex items-center justify-center gap-2 w-full py-3.5 bg-white border-2 border-emerald-100 hover:border-emerald-500 text-emerald-600 font-black rounded-xl transition">
-                                                            <ClockIcon className="w-5 h-5" /> Agendar Novamente
-                                                        </Link>
-                                                    )}
+                                                <div>
+                                                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-0.5">Data do Agendamento</p>
+                                                    <p className={`text-xs font-bold ${isCanceladoDefinitivo ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
+                                                        {formatarDataCompleta(agendamento?.data_agendamento, agendamento?.hora_agendamento)}
+                                                    </p>
                                                 </div>
                                             </div>
+
+                                            {/* PIN */}
+                                            {isConfirmado && agendamento?.codigo_verificacao && !isConcluido && !isEmAndamento && (
+                                                <div className="mb-6 border-t border-dashed border-gray-200 pt-5">
+                                                    <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest mb-2 text-center">Código de Check-in</p>
+                                                    <div className="bg-gray-900 text-white rounded-xl p-3 text-center">
+                                                        <p className="text-xl font-mono font-bold tracking-[0.25em]">{agendamento.codigo_verificacao}</p>
+                                                    </div>
+                                                </div>
+                                            )}
+                                            
+                                            {/* Avaliação */}
+                                            {isConcluido && agendamento.nota && (
+                                                <div className="mb-6 flex items-center gap-2 bg-yellow-50/50 p-2 rounded-xl border border-yellow-100 w-max">
+                                                    <div className="flex items-center">
+                                                        {[1, 2, 3, 4, 5].map((estrela) => (
+                                                            agendamento.nota >= estrela 
+                                                            ? <StarIcon key={estrela} className="w-4 h-4 text-yellow-500" /> 
+                                                            : <StarOutlineIcon key={estrela} className="w-4 h-4 text-gray-300" />
+                                                        ))}
+                                                    </div>
+                                                    <span className="text-[10px] font-bold text-yellow-700 uppercase tracking-wider pr-1">Avaliado</span>
+                                                </div>
+                                            )}
                                         </div>
-                                    );
-                                })}
-                            </div>
-                        )}
-                    </div>
+
+                                        {/* BOTÕES DE AÇÃO: Botão Verde para Pagamento Pendente */}
+                                        <div className="mt-2 space-y-2">
+                                            {isEmAndamento ? (
+                                                <button className="w-full py-3.5 bg-gray-900 text-white rounded-2xl text-xs font-bold hover:bg-black transition-colors shadow-sm">
+                                                    Acessar Atendimento
+                                                </button>
+                                            ) : isAguardandoPagamento ? (
+                                                <>
+                                                    <button onClick={() => pagarNovamente(agendamento.id)} disabled={loadingPagar === agendamento.id} className="w-full py-3.5 bg-emerald-600 text-white rounded-2xl text-xs font-bold hover:bg-emerald-700 transition-colors shadow-[0_4px_14px_rgba(5,150,105,0.2)]">
+                                                        {loadingPagar === agendamento.id ? 'Processando...' : 'Finalizar Pagamento'}
+                                                    </button>
+                                                    <button onClick={() => cancelarVaga(agendamento.id, isPago)} disabled={loadingCancelar === agendamento.id} className="w-full text-[11px] font-bold text-gray-400 hover:text-red-500 py-2 transition-colors">
+                                                        Cancelar Agendamento
+                                                    </button>
+                                                </>
+                                            ) : isConcluido && !agendamento.nota ? (
+                                                <button onClick={() => abrirModalAvaliacao(agendamento)} className="w-full py-3.5 bg-white border-2 border-[#E05D36] text-[#E05D36] rounded-2xl text-xs font-bold hover:bg-[#FFF2EE] transition-colors">
+                                                    Avaliar Experiência
+                                                </button>
+                                            ) : isConfirmado ? (
+                                                <>
+                                                    <button className="w-full py-3.5 bg-white border border-gray-200 text-gray-900 rounded-2xl text-xs font-bold hover:border-gray-400 hover:bg-gray-50 transition-colors">
+                                                        Ver Detalhes
+                                                    </button>
+                                                    <button onClick={() => cancelarVaga(agendamento.id, isPago)} disabled={loadingCancelar === agendamento.id} className="w-full text-[11px] font-bold text-gray-400 hover:text-red-500 py-2.5 block text-center transition-colors">
+                                                        Cancelar Agendamento
+                                                    </button>
+                                                </>
+                                            ) : (
+                                                <button className="w-full py-3.5 bg-white border border-gray-200 text-gray-900 rounded-2xl text-xs font-bold hover:border-gray-400 hover:bg-gray-50 transition-colors">
+                                                        Ver Detalhes
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
                 </div>
             </div>
 
-            {/* 👉 MODAL DE AVALIAÇÃO */}
+            {/* MODAL DE AVALIAÇÃO */}
             {modalAvaliacaoOpen && agendamentoParaAvaliar && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in">
-                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all">
-                        <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-8 text-center relative overflow-hidden">
-                            <StarIcon className="w-16 h-16 text-yellow-400 mx-auto mb-4 drop-shadow-md" />
-                            <h3 className="text-2xl font-black text-white">Como foi o serviço?</h3>
-                            <p className="text-emerald-100 font-medium text-sm mt-2">Avalie o atendimento e ganhe <strong>50 pontos</strong> na hora!</p>
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm animate-in fade-in">
+                    <div className="bg-white rounded-[2rem] shadow-2xl w-full max-w-md overflow-hidden transform transition-all font-sans border border-gray-100">
+                        <div className="p-8 pb-0 text-center">
+                            <h3 className="text-2xl font-black text-gray-900 tracking-tight">Avaliar Serviço</h3>
+                            <p className="text-gray-500 font-medium text-sm mt-2">Sua opinião ajuda outros clientes e melhora a qualidade do serviço.</p>
                         </div>
                         
-                        <form onSubmit={submitAvaliacao} className="p-8">
-                            <div className="flex justify-center gap-2 mb-6">
+                        <form onSubmit={submitAvaliacao} className="p-8 space-y-6">
+                            <div className="flex justify-center gap-1.5 py-2">
                                 {[1, 2, 3, 4, 5].map((estrela) => (
                                     <button 
                                         type="button" 
@@ -384,35 +388,34 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
                                         className="transition-transform hover:scale-110 focus:outline-none"
                                     >
                                         {(hoverNota || nota) >= estrela ? (
-                                            <StarIcon className="w-12 h-12 text-yellow-400 drop-shadow" />
+                                            <StarIcon className="w-10 h-10 text-[#E05D36]" />
                                         ) : (
-                                            <StarOutlineIcon className="w-12 h-12 text-gray-300" />
+                                            <StarOutlineIcon className="w-10 h-10 text-gray-200" />
                                         )}
                                     </button>
                                 ))}
                             </div>
 
-                            <div className="mb-6">
-                                <label className="block text-sm font-bold text-gray-700 mb-2 flex items-center gap-2">
-                                    <ChatBubbleBottomCenterTextIcon className="w-4 h-4 text-gray-400" />
-                                    Deixe um elogio (Opcional)
+                            <div className="space-y-2">
+                                <label className="block text-[11px] font-black text-gray-400 uppercase tracking-widest">
+                                    Comentário (Opcional)
                                 </label>
                                 <textarea 
-                                    className="w-full rounded-2xl border-gray-200 focus:border-emerald-500 focus:ring-emerald-500 shadow-sm font-medium"
+                                    className="w-full rounded-2xl border-gray-200 focus:border-[#E05D36] focus:ring-[#E05D36] shadow-sm font-medium text-sm p-4 bg-gray-50/50 resize-none"
                                     rows="3"
-                                    placeholder="O serviço foi incrível..."
+                                    placeholder="Conte detalhes sobre o atendimento..."
                                     value={comentario}
                                     onChange={(e) => setComentario(e.target.value)}
                                     maxLength={500}
                                 ></textarea>
                             </div>
 
-                            <div className="flex gap-3">
-                                <button type="button" onClick={fecharModalAvaliacao} className="px-5 py-3.5 font-bold text-gray-500 bg-gray-100 hover:bg-gray-200 rounded-xl transition w-1/3">
-                                    Cancelar
+                            <div className="flex gap-3 pt-4">
+                                <button type="button" onClick={fecharModalAvaliacao} className="px-6 py-3.5 font-bold text-sm text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl transition w-1/3">
+                                    Fechar
                                 </button>
-                                <button type="submit" disabled={enviandoAvaliacao} className="px-5 py-3.5 font-black text-white bg-emerald-500 hover:bg-emerald-600 rounded-xl shadow-md transition w-2/3 disabled:opacity-50 flex justify-center items-center gap-2">
-                                    {enviandoAvaliacao ? 'A enviar...' : 'Enviar Avaliação'}
+                                <button type="submit" disabled={enviandoAvaliacao} className="px-6 py-3.5 font-bold text-sm text-white bg-[#E05D36] hover:bg-[#C74B27] rounded-xl shadow-[0_4px_14px_rgba(224,93,54,0.2)] transition w-2/3 disabled:opacity-50">
+                                    {enviandoAvaliacao ? 'Enviando...' : 'Confirmar'}
                                 </button>
                             </div>
                         </form>

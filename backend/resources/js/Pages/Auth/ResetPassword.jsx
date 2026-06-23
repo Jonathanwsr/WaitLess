@@ -1,7 +1,4 @@
 import InputError from '@/Components/InputError';
-import InputLabel from '@/Components/InputLabel';
-import PrimaryButton from '@/Components/PrimaryButton';
-import TextInput from '@/Components/TextInput';
 import { Head, useForm, Link } from '@inertiajs/react';
 
 export default function ResetPassword({ token, email }) {
@@ -14,103 +11,145 @@ export default function ResetPassword({ token, email }) {
 
     const submit = (e) => {
         e.preventDefault();
-
         post(route('password.store'), {
             onFinish: () => reset('password', 'password_confirmation'),
         });
     };
 
     return (
-        <div className="relative min-h-screen flex flex-col justify-center items-center bg-gray-50 selection:bg-indigo-500 selection:text-white overflow-hidden py-10">
-            <Head title="Redefinir Senha" />
+        // Fundo externo unificado cinza claro
+        <div className="min-h-screen bg-[#f3f4f6] flex items-center justify-center p-4 sm:p-6 lg:p-8 font-sans antialiased">
+            <Head title="Redefinir Senha - Waitless" />
 
-            {/* --- Elementos de Fundo (Blobs) --- */}
-            <div className="absolute top-0 -left-10 w-72 h-72 bg-purple-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob"></div>
-            <div className="absolute top-0 -right-10 w-72 h-72 bg-indigo-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-2000"></div>
-            <div className="absolute -bottom-32 left-20 w-72 h-72 bg-pink-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-4000"></div>
-
-            {/* --- Card Central --- */}
-            <div className="w-full sm:max-w-md px-8 py-10 bg-white/80 backdrop-blur-xl shadow-2xl rounded-2xl border border-white/50 relative z-10">
+            {/* CARD PRINCIPAL CENTRALIZADO */}
+            <div className="w-full max-w-6xl bg-white rounded-[24px] md:rounded-[32px] shadow-2xl flex flex-col lg:flex-row overflow-hidden min-h-[750px]">
                 
-                {/* Cabeçalho */}
-                <div className="mb-8 text-center">
-                    <Link href="/" className="inline-flex justify-center mb-4">
-                        <div className="w-12 h-12 bg-indigo-600 rounded-xl flex items-center justify-center text-white font-bold text-2xl shadow-lg shadow-indigo-600/20">
-                            W
-                        </div>
-                    </Link>
-                    <h2 className="text-2xl font-bold text-gray-900">Redefinir Senha</h2>
-                    <p className="text-sm text-gray-500 mt-2">
-                        Crie uma nova senha segura para sua conta.
-                    </p>
+                {/* --- PAINEL ESQUERDO: IMAGEM PREENCHENDO TUDO --- */}
+                <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-gray-100 border-r border-gray-100">
+                    <img 
+                        src="/images/cadastro.png" 
+                        alt="Fundo de Redefinição Waitless" 
+                        className="absolute inset-0 w-full h-full object-cover object-center"
+                    />
                 </div>
 
-                <form onSubmit={submit} className="space-y-5">
-                    {/* Email */}
-                    <div>
-                        <InputLabel htmlFor="email" value="E-mail" className="text-gray-700" />
-                        <TextInput
-                            id="email"
-                            type="email"
-                            name="email"
-                            value={data.email}
-                            className="mt-1 block w-full py-3 border-gray-200 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg bg-gray-50/50"
-                            autoComplete="username"
-                            onChange={(e) => setData('email', e.target.value)}
-                            readOnly={true} // Geralmente o email vem travado na redefinição, mas pode deixar editável se preferir
-                        />
-                        <InputError message={errors.email} className="mt-2" />
-                    </div>
+                {/* --- PAINEL DIREITO: FORMULÁRIO DE REDEFINIÇÃO --- */}
+                <div className="w-full lg:w-1/2 flex flex-col justify-center items-center px-6 py-10 sm:px-12 md:px-16 xl:px-20 bg-white overflow-y-auto">
+                    <div className="max-w-md w-full space-y-6">
+                        
+                        {/* Cabeçalho de Identidade (Logo Waitless) */}
+                        <div className="text-center space-y-2">
+                            <div className="inline-flex items-center justify-center w-12 h-12 bg-slate-900 rounded-xl shadow-sm text-white font-black text-xl">
+                                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M4 6h16M4 12h16M4 18h16" />
+                                </svg>
+                            </div>
+                            <div className="space-y-0.5">
+                                <h2 className="text-lg font-black tracking-tight text-slate-900">Waitless</h2>
+                                <p className="text-[10px] font-bold text-gray-400 tracking-wider uppercase">Simplifique. Agende. Conquiste.</p>
+                            </div>
+                        </div>
 
-                    {/* Nova Senha */}
-                    <div>
-                        <InputLabel htmlFor="password" value="Nova Senha" className="text-gray-700" />
-                        <TextInput
-                            id="password"
-                            type="password"
-                            name="password"
-                            value={data.password}
-                            className="mt-1 block w-full py-3 border-gray-200 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg bg-gray-50/50"
-                            autoComplete="new-password"
-                            isFocused={true}
-                            onChange={(e) => setData('password', e.target.value)}
-                            placeholder="••••••••"
-                        />
-                        <InputError message={errors.password} className="mt-2" />
-                    </div>
+                        {/* Título da Ação Atual */}
+                        <div className="text-center space-y-1">
+                            <h3 className="text-xl font-extrabold text-slate-900 tracking-tight">Redefinir sua senha</h3>
+                            <p className="text-xs text-gray-500 font-medium">Crie uma nova credencial segura para acessar sua conta.</p>
+                        </div>
 
-                    {/* Confirmar Senha */}
-                    <div>
-                        <InputLabel htmlFor="password_confirmation" value="Confirmar Nova Senha" className="text-gray-700" />
-                        <TextInput
-                            type="password"
-                            id="password_confirmation"
-                            name="password_confirmation"
-                            value={data.password_confirmation}
-                            className="mt-1 block w-full py-3 border-gray-200 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg bg-gray-50/50"
-                            autoComplete="new-password"
-                            onChange={(e) => setData('password_confirmation', e.target.value)}
-                            placeholder="Repita a senha"
-                        />
-                        <InputError message={errors.password_confirmation} className="mt-2" />
-                    </div>
+                        {/* Formulário */}
+                        <form onSubmit={submit} className="space-y-4">
+                            
+                            {/* Campo: E-mail (Apenas Leitura / Desabilitado visualmente para segurança) */}
+                            <div className="space-y-1">
+                                <label htmlFor="email" className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">E-mail de recuperação</label>
+                                <div className="relative">
+                                    <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-gray-400 pointer-events-none">
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+                                    </span>
+                                    <input
+                                        id="email"
+                                        type="email"
+                                        name="email"
+                                        value={data.email}
+                                        className="block w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm text-gray-400 cursor-not-allowed select-none focus:outline-none"
+                                        readOnly={true}
+                                        required
+                                    />
+                                </div>
+                                <InputError message={errors.email} className="text-xs mt-1" />
+                            </div>
 
-                    {/* Botão de Ação */}
-                    <div className="pt-2">
-                        <PrimaryButton 
-                             className="w-full justify-center py-3 text-base bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 shadow-lg shadow-indigo-600/20 transition-all rounded-xl" 
-                             disabled={processing}
-                        >
-                            {processing ? 'Redefinindo...' : 'Redefinir Senha'}
-                        </PrimaryButton>
+                            {/* Campo: Nova Senha */}
+                            <div className="space-y-1">
+                                <label htmlFor="password" className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Nova Senha</label>
+                                <div className="relative">
+                                    <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-gray-400 pointer-events-none">
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                                    </span>
+                                    <input
+                                        id="password"
+                                        type="password"
+                                        name="password"
+                                        value={data.password}
+                                        className="block w-full pl-10 pr-4 py-3 bg-white border border-gray-200 rounded-xl text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all shadow-sm"
+                                        placeholder="••••••••"
+                                        onChange={(e) => setData('password', e.target.value)}
+                                        required
+                                        autoFocus
+                                    />
+                                </div>
+                                <InputError message={errors.password} className="text-xs mt-1" />
+                            </div>
+
+                            {/* Campo: Confirmar Nova Senha */}
+                            <div className="space-y-1">
+                                <label htmlFor="password_confirmation" className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Confirmar Nova Senha</label>
+                                <div className="relative">
+                                    <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-gray-400 pointer-events-none">
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                                    </span>
+                                    <input
+                                        id="password_confirmation"
+                                        type="password"
+                                        name="password_confirmation"
+                                        value={data.password_confirmation}
+                                        className="block w-full pl-10 pr-4 py-3 bg-white border border-gray-200 rounded-xl text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all shadow-sm"
+                                        placeholder="••••••••"
+                                        onChange={(e) => setData('password_confirmation', e.target.value)}
+                                        required
+                                    />
+                                </div>
+                                <InputError message={errors.password_confirmation} className="text-xs mt-1" />
+                            </div>
+
+                            {/* Botão de Envio Sólido (Estilo Dark Minimalista) */}
+                            <div className="pt-2">
+                                <button
+                                    type="submit"
+                                    className="w-full py-3.5 px-4 bg-black hover:bg-slate-900 active:scale-[0.99] text-white font-bold text-sm rounded-xl shadow-md transition-all duration-150 disabled:opacity-50"
+                                    disabled={processing}
+                                >
+                                    {processing ? 'Atualizando senha...' : 'Redefinir Senha'}
+                                </button>
+                            </div>
+                        </form>
+
+                        {/* Link de retorno para o Login */}
+                        <div className="pt-2 text-center">
+                            <p className="text-xs font-medium text-gray-500">
+                                Lembrou seus dados?{' '}
+                                <Link
+                                    href={route('login')}
+                                    className="font-bold text-[#10B981] hover:text-emerald-600 transition inline-flex items-center gap-0.5"
+                                >
+                                    Voltar para o login <span className="text-sm font-normal">→</span>
+                                </Link>
+                            </p>
+                        </div>
                     </div>
-                </form>
+                </div>
+
             </div>
-
-          
-            <p className="mt-8 text-xs text-gray-400 z-10">
-                © {new Date().getFullYear()} WaitLess. Segurança garantida.
-            </p>
         </div>
     );
 }

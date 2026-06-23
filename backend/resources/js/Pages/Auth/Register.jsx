@@ -1,7 +1,4 @@
 import InputError from '@/Components/InputError';
-import InputLabel from '@/Components/InputLabel';
-import PrimaryButton from '@/Components/PrimaryButton';
-import TextInput from '@/Components/TextInput';
 import { Head, Link, useForm } from '@inertiajs/react';
 
 export default function Register() {
@@ -10,157 +7,201 @@ export default function Register() {
         email: '',
         password: '',
         password_confirmation: '',
-        papel: '', // Estado inicial para o papel
+        papel: '', // Mantido o estado original para o backend
     });
 
     const submit = (e) => {
         e.preventDefault();
-
         post(route('register'), {
             onFinish: () => reset('password', 'password_confirmation'),
         });
     };
 
     return (
-        <div className="relative min-h-screen flex flex-col justify-center items-center bg-gray-50 selection:bg-indigo-500 selection:text-white overflow-hidden py-10">
-            <Head title="Criar Conta - WaitLess" />
+        // Fundo externo cinza claro/azul suave para dar o efeito de destaque no card centralizado
+        <div className="min-h-screen bg-[#f3f4f6] flex items-center justify-center p-4 sm:p-6 lg:p-8 font-sans antialiased">
+            <Head title="Crie sua conta - Waitless" />
 
-           
-            <div className="absolute top-0 -left-10 w-72 h-72 bg-purple-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob"></div>
-            <div className="absolute top-0 -right-10 w-72 h-72 bg-indigo-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-2000"></div>
-            <div className="absolute -bottom-32 left-20 w-72 h-72 bg-pink-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-4000"></div>
-
-            <div className="w-full sm:max-w-md px-8 py-10 bg-white/80 backdrop-blur-xl shadow-2xl rounded-2xl border border-white/50 relative z-10">
+            {/* CARD PRINCIPAL (Não preenche a tela inteira em desktops e possui cantos super arredondados) */}
+            <div className="w-full max-w-6xl bg-white rounded-[24px] md:rounded-[32px] shadow-2xl flex flex-col lg:flex-row overflow-hidden min-h-[750px]">
                 
-                <div className="mb-8 text-center">
-                    <Link href="/" className="inline-flex justify-center mb-4">
-                        <div className="w-12 h-12 bg-indigo-600 rounded-xl flex items-center justify-center text-white font-bold text-2xl shadow-lg shadow-indigo-600/20">
-                            W
+                {/* --- PAINEL ESQUERDO: APENAS A IMAGEM PREENCHENDO TUDO (Exibido a partir de telas LG) --- */}
+                <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-gray-100 border-r border-gray-100">
+                    <img 
+                        src="/images/cadastro.png" 
+                        alt="Fundo de Cadastro Waitless" 
+                        className="absolute inset-0 w-full h-full object-cover object-center"
+                    />
+                    {/* Overlay suave opcional para garantir contraste se necessário, ou manter limpo conforme solicitado */}
+                    {/* <div className="absolute inset-0 bg-black/5"></div> */}
+                </div>
+
+                {/* --- PAINEL DIREITO: FORMULÁRIO DE CADASTRO --- */}
+                <div className="w-full lg:w-1/2 flex flex-col justify-center items-center px-6 py-10 sm:px-12 md:px-16 xl:px-20 bg-white overflow-y-auto">
+                    <div className="max-w-md w-full space-y-6">
+                        
+                        {/* Cabeçalho do Formulário (Logo e Slogan fiel ao App original) */}
+                        <div className="text-center space-y-2">
+                            <div className="inline-flex items-center justify-center w-12 h-12 bg-slate-900 rounded-xl shadow-sm text-white font-black text-xl">
+                                {/* Representação geométrica simplificada da logo Waitless */}
+                                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M4 6h16M4 12h16M4 18h16" />
+                                </svg>
+                            </div>
+                            <div className="space-y-0.5">
+                                <h2 className="text-lg font-black tracking-tight text-slate-900">Waitless</h2>
+                                <p className="text-[10px] font-bold text-gray-400 tracking-wider uppercase">Simplifique. Agende. Conquiste.</p>
+                            </div>
                         </div>
-                    </Link>
-                    <h2 className="text-2xl font-bold text-gray-900">Comece com o WaitLess</h2>
-                    <p className="text-sm text-gray-500 mt-2">
-                        Crie sua conta em segundos e organize suas filas.
-                    </p>
+
+                        {/* Chamada Principal do Formulário */}
+                        <div className="text-center space-y-1">
+                            <h3 className="text-xl font-extrabold text-slate-900 tracking-tight">Crie sua conta</h3>
+                            <p className="text-xs text-gray-500 font-medium">Junte-se a milhares de empresas que já otimizaram sua produtividade.</p>
+                        </div>
+
+                        {/* Campos de Entrada */}
+                        <form onSubmit={submit} className="space-y-4">
+                            
+                            {/* Campo: Nome Completo */}
+                            <div className="space-y-1">
+                                <label htmlFor="name" className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Nome completo</label>
+                                <div className="relative">
+                                    <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-gray-400 pointer-events-none">
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                                    </span>
+                                    <input
+                                        id="name"
+                                        type="text"
+                                        name="name"
+                                        value={data.name}
+                                        className="block w-full pl-10 pr-4 py-3 bg-white border border-gray-200 rounded-xl text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all shadow-sm"
+                                        placeholder="Seu nome completo"
+                                        onChange={(e) => setData('name', e.target.value)}
+                                        required
+                                    />
+                                </div>
+                                <InputError message={errors.name} className="text-xs mt-1" />
+                            </div>
+
+                            {/* Campo: E-mail */}
+                            <div className="space-y-1">
+                                <label htmlFor="email" className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">E-mail</label>
+                                <div className="relative">
+                                    <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-gray-400 pointer-events-none">
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+                                    </span>
+                                    <input
+                                        id="email"
+                                        type="email"
+                                        name="email"
+                                        value={data.email}
+                                        className="block w-full pl-10 pr-4 py-3 bg-white border border-gray-200 rounded-xl text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all shadow-sm"
+                                        placeholder="seu@email.com"
+                                        onChange={(e) => setData('email', e.target.value)}
+                                        required
+                                    />
+                                </div>
+                                <InputError message={errors.email} className="text-xs mt-1" />
+                            </div>
+
+                            {/* Campo: Tipo de Usuário (Dropdown Ajustado com Seta Customizada) */}
+                            <div className="space-y-1">
+                                <label htmlFor="papel" className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Tipo de Usuário</label>
+                                <div className="relative">
+                                    <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-gray-400 pointer-events-none">
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+                                    </span>
+                                    <select
+                                        id="papel"
+                                        name="papel"
+                                        value={data.papel}
+                                        className="block w-full pl-10 pr-10 py-3 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all shadow-sm appearance-none cursor-pointer"
+                                        onChange={(e) => setData('papel', e.target.value)}
+                                        required
+                                    >
+                                        <option value="" disabled hidden>Selecione</option>
+                                        <option value="user">Cliente</option>
+                                        <option value="socio">Proprietário</option>
+                                        <option value="atendente">Funcionário</option>
+                                    </select>
+                                    <span className="absolute inset-y-0 right-0 flex items-center pr-4 text-gray-400 pointer-events-none">
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+                                    </span>
+                                </div>
+                                <InputError message={errors.papel} className="text-xs mt-1" />
+                            </div>
+
+                            {/* Campo: Senha */}
+                            <div className="space-y-1">
+                                <label htmlFor="password" className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Senha</label>
+                                <div className="relative">
+                                    <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-gray-400 pointer-events-none">
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                                    </span>
+                                    <input
+                                        id="password"
+                                        type="password"
+                                        name="password"
+                                        value={data.password}
+                                        className="block w-full pl-10 pr-4 py-3 bg-white border border-gray-200 rounded-xl text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all shadow-sm"
+                                        placeholder="••••••••"
+                                        onChange={(e) => setData('password', e.target.value)}
+                                        required
+                                    />
+                                </div>
+                                <InputError message={errors.password} className="text-xs mt-1" />
+                            </div>
+
+                            {/* Campo: Confirmar Senha */}
+                            <div className="space-y-1">
+                                <label htmlFor="password_confirmation" className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Confirmar senha</label>
+                                <div className="relative">
+                                    <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-gray-400 pointer-events-none">
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                                    </span>
+                                    <input
+                                        id="password_confirmation"
+                                        type="password"
+                                        name="password_confirmation"
+                                        value={data.password_confirmation}
+                                        className="block w-full pl-10 pr-4 py-3 bg-white border border-gray-200 rounded-xl text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all shadow-sm"
+                                        placeholder="••••••••"
+                                        onChange={(e) => setData('password_confirmation', e.target.value)}
+                                        required
+                                    />
+                                </div>
+                                <InputError message={errors.password_confirmation} className="text-xs mt-1" />
+                            </div>
+
+                            {/* Botão de Envio Sólido */}
+                            <div className="pt-2">
+                                <button
+                                    type="submit"
+                                    className="w-full py-3.5 px-4 bg-black hover:bg-slate-900 active:scale-[0.99] text-white font-bold text-sm rounded-xl shadow-md transition-all duration-150 disabled:opacity-50"
+                                    disabled={processing}
+                                >
+                                    {processing ? 'Processando...' : 'Começar agora'}
+                                </button>
+                            </div>
+                        </form>
+
+                        {/* Link para Login */}
+                        <div className="pt-2 text-center">
+                            <p className="text-xs font-medium text-gray-500">
+                                Já tem uma conta?{' '}
+                                <Link
+                                    href={route('login')}
+                                    className="font-bold text-[#10B981] hover:text-emerald-600 transition inline-flex items-center gap-0.5"
+                                >
+                                    Faça login <span className="text-sm font-normal">→</span>
+                                </Link>
+                            </p>
+                        </div>
+                    </div>
                 </div>
 
-                <form onSubmit={submit} className="space-y-5">
-                    
-                 
-                    <div>
-                        <InputLabel htmlFor="name" value="Nome Completo" className="text-gray-700" />
-                        <TextInput
-                            id="name"
-                            name="name"
-                            value={data.name}
-                            className="mt-1 block w-full py-3 border-gray-200 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg bg-gray-50/50"
-                            autoComplete="name"
-                            isFocused={true}
-                            onChange={(e) => setData('name', e.target.value)}
-                            required
-                            placeholder="Ex: João Silva"
-                        />
-                        <InputError message={errors.name} className="mt-2" />
-                    </div>
-
-                   
-                    <div>
-                        <InputLabel htmlFor="email" value="E-mail" className="text-gray-700" />
-                        <TextInput
-                            id="email"
-                            type="email"
-                            name="email"
-                            value={data.email}
-                            className="mt-1 block w-full py-3 border-gray-200 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg bg-gray-50/50"
-                            autoComplete="username"
-                            onChange={(e) => setData('email', e.target.value)}
-                            required
-                            placeholder="seu@email.com"
-                        />
-                        <InputError message={errors.email} className="mt-2" />
-                    </div>
-
-                  
-                    <div>
-                        <InputLabel htmlFor="papel" value="Tipo de Usuário" className="text-gray-700" />
-                        <select
-                            id="papel"
-                            name="papel"
-                            value={data.papel}
-                            className="mt-1 block w-full py-3 border-gray-200 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg bg-gray-50/50 text-gray-600"
-                            onChange={(e) => setData('papel', e.target.value)}
-                            required
-                        >
-                            <option value="" disabled>Selecione seu cargo</option>
-                            <option value="admin">Administrador</option>
-                            <option value="socio">Sócio</option>
-                            <option value="gerente">Gerente</option>
-                            <option value="atendente">Atendente</option>
-                            <option value="user">Usuário Comum / Cliente</option>
-                        </select>
-                        <InputError message={errors.papel} className="mt-2" />
-                    </div>
-
-                   
-                    <div>
-                        <InputLabel htmlFor="password" value="Senha" className="text-gray-700" />
-                        <TextInput
-                            id="password"
-                            type="password"
-                            name="password"
-                            value={data.password}
-                            className="mt-1 block w-full py-3 border-gray-200 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg bg-gray-50/50"
-                            autoComplete="new-password"
-                            onChange={(e) => setData('password', e.target.value)}
-                            required
-                            placeholder="Mínimo de 8 caracteres"
-                        />
-                        <InputError message={errors.password} className="mt-2" />
-                    </div>
-
-                   
-                    <div>
-                        <InputLabel htmlFor="password_confirmation" value="Confirmar Senha" className="text-gray-700" />
-                        <TextInput
-                            id="password_confirmation"
-                            type="password"
-                            name="password_confirmation"
-                            value={data.password_confirmation}
-                            className="mt-1 block w-full py-3 border-gray-200 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg bg-gray-50/50"
-                            autoComplete="new-password"
-                            onChange={(e) => setData('password_confirmation', e.target.value)}
-                            required
-                            placeholder="Repita a senha"
-                        />
-                        <InputError message={errors.password_confirmation} className="mt-2" />
-                    </div>
-
-                    <div className="pt-2">
-                        <PrimaryButton 
-                             className="w-full justify-center py-3 text-base bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 shadow-lg shadow-indigo-600/20 transition-all rounded-xl" 
-                             disabled={processing}
-                        >
-                            {processing ? 'Criando conta...' : 'Criar Conta'}
-                        </PrimaryButton>
-                    </div>
-                </form>
-
-                <div className="mt-8 pt-6 border-t border-gray-100 text-center">
-                    <p className="text-sm text-gray-500">
-                        Já tem uma conta?{' '}
-                        <Link
-                            href={route('login')}
-                            className="font-bold text-indigo-600 hover:text-indigo-800 transition"
-                        >
-                            Fazer Login
-                        </Link>
-                    </p>
-                </div>
             </div>
-            
-             <p className="mt-8 text-xs text-gray-400">
-                © {new Date().getFullYear()} WaitLess. Todos os direitos reservados.
-            </p>
         </div>
     );
 }

@@ -23,6 +23,7 @@ use App\Http\Middleware\CheckAdmin;
 use App\Http\Controllers\Api\ClienteCupomController;
 use App\Http\Controllers\Api\CarteiraController;
 use App\Http\Controllers\Api\FuncionarioController;
+use App\Http\Controllers\Api\ItemAluguelController;
 use Illuminate\Foundation\Application; 
 use Illuminate\Support\Facades\Route;  
 use Inertia\Inertia;
@@ -116,6 +117,21 @@ Route::get('/estabelecimentos/{estabelecimento}/fila', [AgendamentoController::c
 
     // Agendamentos
     Route::put('/agendamentos/{agendamento}/status', [AgendamentoController::class, 'updateStatus'])->name('agendamentos.status.update');
+
+
+    //RESERVAS
+// Criar novo item de locação
+    Route::post('/catalogo/itens', [ItemAluguelController::class, 'store'])
+        ->name('catalogo.itens.store');
+
+    // Atualizar item existente (Usamos POST por causa do upload das imagens)
+    Route::post('/catalogo/itens/{id}', [ItemAluguelController::class, 'update'])
+        ->name('catalogo.itens.update');
+
+    // Deletar item
+    Route::delete('/catalogo/itens/{id}', [ItemAluguelController::class, 'destroy'])
+        ->name('catalogo.itens.destroy');
+
 
     //Detalhes cliente 
     Route::middleware(['auth'])->group(function () {

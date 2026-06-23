@@ -11,8 +11,10 @@ use Carbon\Carbon;
 use Exception;
 use App\Models\Servico;
 use App\Models\Funcionario;
+use App\Models\ItemAluguel;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class ServicoController extends Controller
 {
@@ -25,9 +27,13 @@ class ServicoController extends Controller
         
         // Bloqueia se o utilizador não tiver um destes papéis
         if (!in_array($user->papel, ['admin', 'socio', 'gerente', 'user'])) {
-            abort(403, 'Acesso Negado: Você não tem permissão para gerenciar serviços.');
+            abort(403, 'Acesso Negado: Você não tem permissão para gerenciar o catálogo.');
         }
     }
+
+    /* =========================================================================
+       👉 MÉTODOS ORIGINAIS - GESTÃO DE SERVIÇOS (MANTIDOS)
+       ========================================================================= */
 
     public function store(Request $request)
     {
@@ -46,7 +52,7 @@ class ServicoController extends Controller
             'dias_disponiveis'     => 'nullable|array',
             'horarios_disponiveis' => 'nullable|array',
             'tipo_pagamento'       => 'required|in:hibrido,online,presencial', 
-           
+            
             'fotos'                => 'nullable|array|max:5', 
             'fotos.*'              => 'image|mimes:jpeg,png,jpg,webp|max:2048', 
         ]);
@@ -54,11 +60,9 @@ class ServicoController extends Controller
         $horarios = $validated['horarios_disponiveis'] ?? [];
         $dias = $validated['dias_disponiveis'] ?? [];
 
-       
         $urlsFotos = [];
         if ($request->hasFile('fotos')) {
             foreach ($request->file('fotos') as $foto) {
-               
                 $urlsFotos[] = ImageKitService::upload($foto, '/waitless/servicos');
             }
         }
@@ -89,7 +93,6 @@ class ServicoController extends Controller
                     'tipo_pagamento'     => $validated['tipo_pagamento'],
                     'funcionario_padrao' => $funcionarioParaSalvar
                 ]),
-                // 👉 Salva a lista de URLs como formato JSON no banco
                 'fotos'                => json_encode($urlsFotos), 
             ]);
         }
@@ -99,7 +102,6 @@ class ServicoController extends Controller
 
     public function update(Request $request, Servico $servico)
     {
-        
         $this->verificarPermissao();
 
         $validated = $request->validate([
@@ -112,7 +114,7 @@ class ServicoController extends Controller
             'dias_disponiveis'     => 'nullable|array',
             'horarios_disponiveis' => 'nullable|array',
             'tipo_pagamento'       => 'required|in:hibrido,online,presencial', 
-           
+            
             'fotos'                => 'nullable|array|max:5',
             'fotos.*'              => 'image|mimes:jpeg,png,jpg,webp|max:2048',
         ]);
@@ -120,7 +122,6 @@ class ServicoController extends Controller
         $horarios = $validated['horarios_disponiveis'] ?? [];
         $dias = $validated['dias_disponiveis'] ?? [];
 
-       
         $dadosParaAtualizar = [
             'nome'                 => $validated['nome'],
             'tipo_servico'         => $validated['tipo_servico'],
@@ -135,7 +136,6 @@ class ServicoController extends Controller
             ])
         ];
 
-      
         if ($request->hasFile('fotos')) {
             $urlsFotos = [];
             foreach ($request->file('fotos') as $foto) {
@@ -146,13 +146,11 @@ class ServicoController extends Controller
 
         $servico->update($dadosParaAtualizar);
 
-        return redirect()->back()->with('success', 'Serviço atualizado com sucesso!');
+        return redirect()->back()->with('success', 'Serviço updated com sucesso!');
     }
 
-   
     public function destroy($id, MercadoPagoService $mpService)
     {
-        
         $this->verificarPermissao();
 
         try {
@@ -201,5 +199,259 @@ class ServicoController extends Controller
         } catch (Exception $e) {
             return back()->with('error', 'Ocorreu um erro ao tentar remover o serviço: ' . $e->getMessage());
         }
+    }
+
+    /* =========================================================================
+       👉 GESTÃO DO CATÁLOGO DE LOCAÇÕES (ItemAluguel) - COMPLETO COM ACESSÓRIOS
+       ========================================================================= */
+
+    /**
+     * Lista os itens de locação de um estabelecimento
+     */
+    public function indexItens(Request $request)
+    {
+        $estabelecimentosIds = Auth::user()->estabelecimentos()->pluck('id');
+
+        $itens = ItemAluguel::whereIn('estabelecimento_id', $estabelecimentosIds)
+            ->when($request->search, function ($query, $search) {
+                $query->where('nome', 'like', "%{$search}%")
+                      ->orWhere('modelo', 'like', "%{$search}%");
+            })
+            ->latest()
+            ->paginate(10);
+
+        return response()->json($itens);
+    }
+
+    /**
+     * Cria um novo item para locação com opcionais, equipe e acessórios
+     */
+    public function storeItem(Request $request)
+    {
+        $this->verificarPermissao();
+
+        $validated = $request->validate([
+            // Dados Gerais Base
+            'estabelecimento_id' => 'required|exists:estabelecimentos,id',
+            'servico_id'         => 'nullable|exists:servicos,id',
+            'nome'               => 'required|string|max:255',
+            'categoria'          => 'required|in:casa,apartamento,sala,quadra,chacara,sitio,galpao,carro,moto,bicicleta,patinete,van,caminhao,barco,equipamento,ferramenta,camera,drone,audio_video,outro,casa_praia,flat',
+            'modelo'             => 'nullable|string|max:255',
+            'marca'              => 'nullable|string|max:255',
+            'tipo'               => 'nullable|string|max:255',
+            'descricao'          => 'nullable|string',
+            'especificacoes'     => 'nullable|string',
+            'quantidade'         => 'required|integer|min:1',
+            'capacidade_pessoas' => 'nullable|integer|min:1',
+
+            // Matriz de Precificação
+            'valor_diaria'       => 'nullable|numeric|min:0',
+            'valor_semanal'      => 'nullable|numeric|min:0',
+            'valor_mensal'       => 'nullable|numeric|min:0',
+            'valor_caucao'       => 'nullable|numeric|min:0',
+
+            // Mídias Vitrine
+            'fotos'              => 'nullable|array|max:5',
+            'fotos.*'            => 'image|mimes:jpeg,png,jpg,webp|max:2048',
+
+            // Arrays Operacionais Estruturados JSON
+            'recursos_oferecidos'       => 'nullable|array',
+            'acessorios'                => 'nullable|array',
+            'acessorios.*.nome'         => 'required_with:acessorios|string|max:255',
+            'acessorios.*.valor'        => 'required_with:acessorios|numeric|min:0',
+            'funcionarios_responsaveis' => 'nullable|array',
+            'funcionarios_responsaveis.*' => 'exists:funcionarios,id',
+
+            // Estrutura Territorial / Imóvel
+            'endereco'           => 'nullable|string|max:255',
+            'numero'             => 'nullable|string|max:20',
+            'complemento'        => 'nullable|string|max:255',
+            'bairro'             => 'nullable|string|max:255',
+            'cidade'             => 'nullable|string|max:255',
+            'estado'             => 'nullable|string|size:2',
+            'cep'                => 'nullable|string|max:10',
+            'latitude'           => 'nullable|numeric',
+            'longitude'          => 'nullable|numeric',
+            'numero_quartos'     => 'nullable|integer|min:0',
+            'numero_banheiros'   => 'nullable|integer|min:0',
+            'numero_suites'      => 'nullable|integer|min:0',
+            'numero_comodos'     => 'nullable|integer|min:0',
+            'numero_vagas'       => 'nullable|integer|min:0',
+            'area_total'         => 'nullable|numeric|min:0',
+            'area_construida'    => 'nullable|numeric|min:0',
+            'mobiliado'          => 'nullable|boolean',
+            'aceita_pet'         => 'nullable|boolean',
+            'possui_wifi'        => 'nullable|boolean',
+            'possui_ar_condicionado' => 'nullable|boolean',
+            'piscina'            => 'nullable|boolean',
+            'churrasqueira'      => 'nullable|boolean',
+
+            // Estrutura Frota / Veículos
+            'placa'              => 'nullable|string|max:20',
+            'renavam'            => 'nullable|string|max:20',
+            'chassis'            => 'nullable|string|max:30',
+            'marca_veiculo'      => 'nullable|string|max:255',
+            'modelo_veiculo'     => 'nullable|string|max:255',
+            'ano'                => 'nullable|integer|min:1900|max:'.(date('Y')+1),
+            'cor'                => 'nullable|string|max:50',
+            'combustivel'        => 'nullable|string|max:50',
+            'cambio'             => 'nullable|string|max:50',
+            'quilometragem'      => 'nullable|integer|min:0',
+            'cilindrada'         => 'nullable|string|max:50',
+            'potencia'           => 'nullable|string|max:50',
+            'portas'             => 'nullable|integer|min:0',
+            'lugares'            => 'nullable|integer|min:0',
+            'possui_seguro'      => 'nullable|boolean',
+
+            // Estrutura Logística / Equipamentos
+            'fabricante'         => 'nullable|string|max:255',
+            'numero_serie'       => 'nullable|string|max:255',
+            'patrimonio'         => 'nullable|string|max:255',
+            'voltagem'           => 'nullable|string|max:50',
+            'potencia_equipamento' => 'nullable|string|max:50',
+            'peso'               => 'nullable|string|max:50',
+            'dimensoes'          => 'nullable|string|max:100',
+            'garantia'           => 'nullable|string|max:255',
+
+            'observacoes'        => 'nullable|string',
+        ]);
+
+        if (!Auth::user()->estabelecimentos->contains($validated['estabelecimento_id'])) {
+            abort(403, 'Acesso não autorizado para esta filial.');
+        }
+
+        $urlsFotos = [];
+        if ($request->hasFile('fotos')) {
+            foreach ($request->file('fotos') as $foto) {
+                $urlsFotos[] = ImageKitService::upload($foto, '/waitless/itens');
+            }
+        }
+
+        // Conversão dos arrays estruturados para armazenamento seguro como JSON string no banco
+        $item = ItemAluguel::create(array_merge($validated, [
+            'fotos'                     => json_encode($urlsFotos),
+            'recursos_oferecidos'       => json_encode($validated['recursos_oferecidos'] ?? []),
+            'acessorios'                => json_encode($validated['acessorios'] ?? []),
+            'funcionarios_responsaveis' => json_encode($validated['funcionarios_responsaveis'] ?? []),
+            'disponivel'                => true,
+            'ativo'                     => true,
+        ]));
+
+        return response()->json(['success' => 'Sua reserva foi salva com sucesso!', 'item' => $item], 201);
+    }
+
+    /**
+     * Mostra detalhes de um item do catálogo de locação
+     */
+    public function showItem($id)
+    {
+        $item = ItemAluguel::with('estabelecimento')->findOrFail($id);
+        
+        if (!Auth::user()->estabelecimentos->contains($item->estabelecimento_id)) {
+            abort(403, 'Acesso Restrito.');
+        }
+
+        return response()->json($item);
+    }
+
+    /**
+     * Atualiza um item de locação existente com auditoria de imagens
+     */
+    public function updateItem(Request $request, $id)
+    {
+        $this->verificarPermissao();
+        $item = ItemAluguel::findOrFail($id);
+
+        if (!Auth::user()->estabelecimentos->contains($item->estabelecimento_id)) {
+            abort(403, 'Acesso Restrito.');
+        }
+
+        $validated = $request->validate([
+            'servico_id'         => 'nullable|exists:servicos,id',
+            'nome'               => 'required|string|max:255',
+            'categoria'          => 'required|in:casa,apartamento,sala,quadra,chacara,sitio,galpao,carro,moto,bicicleta,patinete,van,caminhao,barco,equipamento,ferramenta,camera,drone,audio_video,outro,casa_praia,flat',
+            'modelo'             => 'nullable|string|max:255',
+            'marca'              => 'nullable|string|max:255',
+            'tipo'               => 'nullable|string|max:255',
+            'descricao'          => 'nullable|string',
+            'especificacoes'     => 'nullable|string',
+            'quantidade'         => 'required|integer|min:1',
+            'capacidade_pessoas' => 'nullable|integer|min:1',
+            'disponivel'         => 'required|boolean',
+            'ativo'              => 'required|boolean',
+            
+            'valor_diaria'       => 'nullable|numeric|min:0',
+            'valor_semanal'      => 'nullable|numeric|min:0',
+            'valor_mensal'       => 'nullable|numeric|min:0',
+            'valor_caucao'       => 'nullable|numeric|min:0',
+
+            'fotos'              => 'nullable|array|max:5',
+            'fotos.*'            => 'image|mimes:jpeg,png,jpg,webp|max:2048',
+
+            'recursos_oferecidos'       => 'nullable|array',
+            'acessorios'                => 'nullable|array',
+            'acessorios.*.nome'         => 'required_with:acessorios|string|max:255',
+            'acessorios.*.valor'        => 'required_with:acessorios|numeric|min:0',
+            'funcionarios_responsaveis' => 'nullable|array',
+            'funcionarios_responsaveis.*' => 'exists:funcionarios,id',
+
+            'endereco'           => 'nullable|string|max:255',
+            'numero'             => 'nullable|string|max:20',
+            'complemento'        => 'nullable|string|max:255',
+            'bairro'             => 'nullable|string|max:255',
+            'cidade'             => 'nullable|string|max:255',
+            'estado'             => 'nullable|string|size:2',
+            'cep'                => 'nullable|string|max:10',
+            'numero_quartos'     => 'nullable|integer|min:0',
+            'numero_banheiros'   => 'nullable|integer|min:0',
+            'numero_suites'      => 'nullable|integer|min:0',
+            'numero_vagas'       => 'nullable|integer|min:0',
+            'area_total'         => 'nullable|numeric|min:0',
+            
+            'placa'              => 'nullable|string|max:20',
+            'renavam'            => 'nullable|string|max:20',
+            'chassis'            => 'nullable|string|max:30',
+            'quilometragem'      => 'nullable|integer|min:0',
+            'possui_seguro'      => 'nullable|boolean',
+            
+            'fabricante'         => 'nullable|string|max:255',
+            'numero_serie'       => 'nullable|string|max:255',
+            'patrimonio'         => 'nullable|string|max:255',
+            'voltagem'           => 'nullable|string|max:50',
+        ]);
+
+        $dadosParaAtualizar = array_merge($validated, [
+            'recursos_oferecidos'       => json_encode($validated['recursos_oferecidos'] ?? []),
+            'acessorios'                => json_encode($validated['acessorios'] ?? []),
+            'funcionarios_responsaveis' => json_encode($validated['funcionarios_responsaveis'] ?? []),
+        ]);
+
+        if ($request->hasFile('fotos')) {
+            $urlsFotos = [];
+            foreach ($request->file('fotos') as $foto) {
+                $urlsFotos[] = ImageKitService::upload($foto, '/waitless/itens');
+            }
+            $dadosParaAtualizar['fotos'] = json_encode($urlsFotos);
+        }
+
+        $item->update($dadosParaAtualizar);
+
+        return response()->json(['success' => 'Sua reserva foi salva com sucesso!', 'item' => $item]);
+    }
+
+    /**
+     * Remove fisicamente/logicamente o item de locação
+     */
+    public function destroyItem($id)
+    {
+        $this->verificarPermissao();
+        $item = ItemAluguel::findOrFail($id);
+
+        if (!Auth::user()->estabelecimentos->contains($item->estabelecimento_id)) {
+            abort(403, 'Acesso Restrito.');
+        }
+
+        $item->delete(); 
+        return response()->json(['success' => 'Item removido do catálogo com sucesso!']);
     }
 }

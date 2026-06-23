@@ -42,6 +42,27 @@ Route::middleware('auth:sanctum')->group(function () {
     // Gera: GET /servicos, POST /servicos, GET /servicos/{id}, PUT/PATCH /servicos/{id}, DELETE /servicos/{id}
     Route::apiResource('servicos', ServicoController::class);
 
+    Route::prefix('catalogo/itens')->group(function () {
+    Route::get('/', [ServicoController::class, 'indexItens']);          // GET - Listar/Pesquisar
+    Route::post('/', [ServicoController::class, 'storeItem']);          // POST - Criar
+    Route::get('/{id}', [ServicoController::class, 'showItem']);       // GET - Detalhe
+    Route::post('/{id}/update', [ServicoController::class, 'updateItem']); // POST - Atualizar (Usamos POST por causa do suporte a envio de arquivos/fotos no form-data)
+    Route::delete('/{id}', [ServicoController::class, 'destroyItem']);   // DELETE - Apagar
+});
+
+// 👉 NOVAS ROTAS DO AGENDAMENTOCONTROLLER (MÓDULO DE LOCAÇÃO/RESERVA SAAS)
+// (Baseado nos métodos que forneci na resposta anterior para o AgendamentoController)
+Route::prefix('locacoes')->group(function () {
+    Route::get('/', [AgendamentoController::class, 'indexAlugueis']);           // GET - Listar reservas
+    Route::post('/', [AgendamentoController::class, 'storeAluguel']);           // POST - Criar reserva
+    Route::get('/{id}', [AgendamentoController::class, 'showAluguel']);        // GET - Detalhe reserva
+    Route::patch('/{id}', [AgendamentoController::class, 'updateAluguel']);     // PATCH - Atualizar reserva
+    Route::delete('/{id}', [AgendamentoController::class, 'destroyAluguel']);   // DELETE - Cancelar/Apagar reserva
+    
+    // Rotas de Contrato (D4Sign)
+    Route::post('/{id}/gerar-contrato', [AgendamentoController::class, 'gerarEEnviarContrato']); // POST - Gerar e enviar PDF
+});
+
 });
 
 Route::apiResource('funcionarios', FuncionarioController::class);

@@ -165,7 +165,7 @@ export default function Explorar({ auth, estabelecimentos, filtros = {} }) {
                                 onClick={handlePontosToggle}
                                 className={`flex items-center gap-2 px-4 py-2.5 rounded-full font-bold shadow-3xs transition-all ${
                                     filtroPontos 
-                                    ? 'bg-[#C8826B] text-white border border-[#C8826B]' 
+                                    ? 'bg-[#FF5A00] text-white border border-[#FF5A00]' 
                                     : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
                                 }`}
                             >
@@ -204,7 +204,7 @@ export default function Explorar({ auth, estabelecimentos, filtros = {} }) {
                                         onClick={() => handleCategoriaClick(cat.nome)}
                                         className={`flex items-center gap-2 whitespace-nowrap px-5 py-2.5 rounded-xl font-bold text-xs transition-all ${
                                             active
-                                            ? 'bg-[#C8826B] text-white shadow-xs scale-[1.01]'
+                                            ? 'bg-[#FF5A00] text-white shadow-xs scale-[1.01]'
                                             : 'bg-white text-gray-500 hover:text-gray-900 border border-gray-200/60 shadow-3xs'
                                         }`}
                                     >
@@ -275,7 +275,7 @@ export default function Explorar({ auth, estabelecimentos, filtros = {} }) {
                                                     {local.ramo_atuacao || 'Especialidades'}
                                                 </span>
 
-                                                <h4 className="font-bold text-base text-gray-900 leading-tight mb-1.5 group-hover:text-[#C8826B] transition-colors line-clamp-1">
+                                                <h4 className="font-bold text-base text-gray-900 leading-tight mb-1.5 group-hover:text-[#FF5A00] transition-colors line-clamp-1">
                                                     {local.nome}
                                                 </h4>
 
@@ -293,8 +293,8 @@ export default function Explorar({ auth, estabelecimentos, filtros = {} }) {
                                                     </span>
                                                 </div>
 
-                                                {/* Botão de seta redondo estilo image_1c7760.png */}
-                                                <div className="w-9 h-9 rounded-full bg-[#FFF3EE] flex items-center justify-center text-[#C8826B] group-hover:bg-[#C8826B] group-hover:text-white transition-all duration-300">
+                                                {/* Botão de seta redondo */}
+                                                <div className="w-9 h-9 rounded-full bg-[#FFF0E5] flex items-center justify-center text-[#FF5A00] group-hover:bg-[#FF5A00] group-hover:text-white transition-all duration-300">
                                                     <ArrowRight className="w-4 h-4 transform group-hover:translate-x-0.5 transition-transform" />
                                                 </div>
                                             </div>
