@@ -162,4 +162,32 @@ class FuncionarioController extends Controller
         $funcionario->update(['ativo' => false]);
         return redirect()->back()->with('success', 'Funcionário inativado e removido da escala.');
     }
+
+    public function edit(Funcionario $funcionario)
+{
+    // 1. Pega os IDs de todos os estabelecimentos que o usuário logado gerencia
+    $estabelecimentosIdsDoUsuario = auth()->user()->estabelecimentos()->pluck('estabelecimento_id')->toArray();
+
+    // 2. NOVA BARREIRA DE SEGURANÇA:
+    // Verifica se o estabelecimento do funcionário NÃO está na lista de estabelecimentos do usuário
+    if (!in_array($funcionario->estabelecimento_id, $estabelecimentosIdsDoUsuario)) {
+        // Bloqueia se ele tentar acessar um funcionário de um local que não é dele
+        abort(403, 'Você não tem permissão para editar funcionários de outro estabelecimento.');
+    }
+
+    // 3. Carrega o relacionamento do usuário vinculado ao funcionário (onde fica o e-mail)
+    $funcionario->load('usuario');
+
+    // 4. Busca APENAS os estabelecimentos que pertencem a esse usuário para listar no <select> do React
+    $estabelecimentosAlocados = auth()->user()->estabelecimentos;
+
+    return inertia('Estabelecimentos/EditarFuncionario', [
+        'funcionario' => $funcionario,
+        'estabelecimentos' => $estabelecimentosAlocados,
+    ]);
+
+
+
+        
+    }
 }

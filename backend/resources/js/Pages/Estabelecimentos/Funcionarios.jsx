@@ -20,7 +20,7 @@ export default function Funcionarios({ auth, funcionarios = [], meusEstabelecime
     const [funcionarioSelecionado, setFuncionarioSelecionado] = useState(null);
 
     // Formulário do Inertia
-    const { data, setData, post, put, delete: destroy, processing, errors, reset, clearErrors } = useForm({
+    const { data, setData, put, delete: destroy, processing, errors, reset, clearErrors } = useForm({
         id: '',
         nome: '',
         email: '',
@@ -76,6 +76,11 @@ export default function Funcionarios({ auth, funcionarios = [], meusEstabelecime
         setIsModalOpen(true);
     };
 
+    // Função que redireciona para a tela cheia de edição ao clicar na foto
+    const irParaTelaEditar = (id) => {
+        router.get(`/funcionarios/${id}/edit`);
+    };
+
     const abrirModalDetalhes = (func) => {
         setFuncionarioSelecionado(func);
         setIsModalDetalhesOpen(true);
@@ -92,7 +97,10 @@ export default function Funcionarios({ auth, funcionarios = [], meusEstabelecime
         if (modoEdicao) {
             put(route('funcionarios.update', data.id), { onSuccess: () => fecharModais() });
         } else {
-            post(route('funcionarios.store', data.estabelecimento_id), { onSuccess: () => fecharModais() });
+            // Adicionado o router.post customizado com a URL dinâmica conforme solicitado
+            router.post(`/estabelecimentos/${data.estabelecimento_id}/funcionarios`, data, { 
+                onSuccess: () => fecharModais() 
+            });
         }
     };
 
@@ -112,9 +120,10 @@ export default function Funcionarios({ auth, funcionarios = [], meusEstabelecime
                 
                 {/* --- TOOLBAR --- */}
                 <div className="p-4 md:p-6 border-b border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-4 bg-gray-50/50">
+                    
                     <button 
                         onClick={abrirModalNovo}
-                        className="w-full sm:w-auto flex items-center justify-center gap-2 bg-indigo-600 text-white px-5 py-2.5 rounded-lg font-bold hover:bg-indigo-700 transition shadow-sm"
+                        className="w-full sm:w-auto flex items-center justify-center gap-2 bg-green-600 text-white px-5 py-2.5 rounded-lg font-bold hover:bg-green-700 transition shadow-sm"
                     >
                         <PlusIcon className="w-5 h-5" />
                         Novo Funcionário
@@ -134,7 +143,7 @@ export default function Funcionarios({ auth, funcionarios = [], meusEstabelecime
                     </div>
                 </div>
 
-                {/* --- TABELA DE FUNCIONÁRIOS (COM NOVAS MÉTRICAS) --- */}
+                {/* --- TABELA DE FUNCIONÁRIOS --- */}
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                         <thead>
@@ -156,10 +165,16 @@ export default function Funcionarios({ auth, funcionarios = [], meusEstabelecime
                                 </tr>
                             ) : (
                                 funcionariosFiltrados.map((func) => (
-                                    <tr key={func.id} className="hover:bg-gray-50/50 transition-colors">
-                                        {/* Coluna 1: Foto e Nome/Contato */}
+                                    /* Adicionado efeito hover de sombreamento e realce visual na linha abaixo */
+                                    <tr key={func.id} className="hover:bg-slate-50/80 hover:scale-[1.002] transition-all duration-150 cursor-default">
+                                        
+                                        {/* Coluna 1: Foto (Clicável) e Nome/Contato */}
                                         <td className="p-4 flex items-center gap-3">
-                                            <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold uppercase shrink-0">
+                                            <div 
+                                                onClick={() => irParaTelaEditar(func.id)}
+                                                title="Clique para editar este funcionário"
+                                                className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold uppercase shrink-0 cursor-pointer hover:bg-indigo-200 hover:scale-105 transition-all shadow-sm"
+                                            >
                                                 {func.nome ? func.nome.charAt(0) : 'F'}
                                             </div>
                                             <div>
@@ -174,7 +189,7 @@ export default function Funcionarios({ auth, funcionarios = [], meusEstabelecime
                                             <div className="text-xs text-gray-500">{func.cargo || 'Atendente'}</div>
                                         </td>
 
-                                        {/* Coluna 3: Atendimentos (Nova) */}
+                                        {/* Coluna 3: Atendimentos */}
                                         <td className="p-4 text-center">
                                             <span className="inline-flex items-center justify-center bg-gray-100 text-gray-700 font-bold px-3 py-1 rounded-lg">
                                                 <BriefcaseIcon className="w-4 h-4 mr-1 text-gray-400" />
@@ -182,7 +197,7 @@ export default function Funcionarios({ auth, funcionarios = [], meusEstabelecime
                                             </span>
                                         </td>
 
-                                        {/* Coluna 4: Avaliação (Nova) */}
+                                        {/* Coluna 4: Avaliação */}
                                         <td className="p-4 text-center">
                                             <div className="flex items-center justify-center gap-1 font-bold">
                                                 <StarIcon className="w-4 h-4 text-yellow-400" />
@@ -205,7 +220,7 @@ export default function Funcionarios({ auth, funcionarios = [], meusEstabelecime
                                                 <button onClick={() => abrirModalDetalhes(func)} className="p-2 text-indigo-500 hover:bg-indigo-50 rounded-lg transition" title="Ver Desempenho">
                                                     <EyeIcon className="w-5 h-5" />
                                                 </button>
-                                                <button onClick={() => abrirModalEdicao(func)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition" title="Editar">
+                                                <button onClick={() => abrirModalEdicao(func)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition" title="Editar em Bloco">
                                                     <PencilSquareIcon className="w-5 h-5" />
                                                 </button>
                                                 {func.ativo && (
@@ -223,7 +238,7 @@ export default function Funcionarios({ auth, funcionarios = [], meusEstabelecime
                 </div>
             </div>
 
-            {/* --- MODAL 1: DETALHES E DESEMPENHO (NOVO) --- */}
+            {/* --- MODAL 1: DETALHES E DESEMPENHO --- */}
             {isModalDetalhesOpen && funcionarioSelecionado && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
                     <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
@@ -234,7 +249,7 @@ export default function Funcionarios({ auth, funcionarios = [], meusEstabelecime
                                 </div>
                                 <div>
                                     <h3 className="text-xl font-bold">{funcionarioSelecionado.nome}</h3>
-                                    <p className="text-indigo-100 text-sm opacity-90">{funcionarioSelecionado.cargo} • {funcionarioSelecionado.estabelecimento?.nome}</p>
+                                    <p className="text-indigo-100 text-sm opacity-90">{funcionarioSelecionado.cargo} | {funcionarioSelecionado.estabelecimento?.nome}</p>
                                 </div>
                             </div>
                             <button onClick={fecharModais} className="text-white/70 hover:text-white transition">
@@ -283,7 +298,7 @@ export default function Funcionarios({ auth, funcionarios = [], meusEstabelecime
                 </div>
             )}
 
-            {/* --- MODAL 2: CRIAÇÃO / EDIÇÃO (CÓDIGO MANTIDO) --- */}
+            {/* --- MODAL 2: CRIAÇÃO / EDIÇÃO --- */}
             {isModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
                     <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
@@ -372,7 +387,7 @@ export default function Funcionarios({ auth, funcionarios = [], meusEstabelecime
 
                             <div className="flex justify-end gap-3 pt-4 border-t border-gray-100 mt-6">
                                 <button type="button" onClick={fecharModais} className="px-4 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded-lg transition">Cancelar</button>
-                                <PrimaryButton className="bg-indigo-600 hover:bg-indigo-700 px-6 py-2 rounded-lg" disabled={processing}>
+                                <PrimaryButton className="bg-green-600 hover:bg-green-700 px-6 py-2 rounded-lg text-white" disabled={processing}>
                                     {processing ? 'Salvando...' : 'Salvar Funcionário'}
                                 </PrimaryButton>
                             </div>

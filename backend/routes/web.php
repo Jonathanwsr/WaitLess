@@ -204,9 +204,10 @@ Route::get('/pagamento/status', [ClienteAgendamentoController::class, 'callbackM
     // Funcionários
     Route::post('/estabelecimentos/{estabelecimento}/funcionarios', [FuncionarioController::class, 'store'])->name('funcionarios.store');
     Route::put('/funcionarios/{funcionario}', [FuncionarioController::class, 'update'])->name('funcionarios.update');
+    
     Route::delete('/funcionarios/{funcionario}', [FuncionarioController::class, 'destroy'])->name('funcionarios.destroy');
 
-   
+  Route::get('/funcionarios/{funcionario}/edit', [FuncionarioController::class, 'edit'])->name('funcionarios.edit');
    
    
     // Tela da Fila do Estabelecimento
