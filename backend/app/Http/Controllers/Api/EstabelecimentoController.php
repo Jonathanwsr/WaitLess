@@ -40,7 +40,6 @@ class EstabelecimentoController extends Controller
             'ativo'        => 'nullable|boolean',
         ]);
 
-       
         if ($request->hasFile('foto_perfil')) {
             $validated['foto_perfil'] = ImageKitService::upload($request->file('foto_perfil'), '/waitless/estabelecimentos');
         } else {
@@ -69,16 +68,25 @@ class EstabelecimentoController extends Controller
             'bairro'            => 'nullable|string|max:255',
             'cidade'            => 'nullable|string|max:255',
             'estado'            => 'nullable|string|size:2',
-            'foto_perfil'       => 'nullable|image|max:2048', // Validando a imagem
+            'foto_perfil'       => 'nullable|image|max:2048', // Validando a imagem de perfil
+            'foto_banner'       => 'nullable|image|max:4096', // Validando o banner novo (até 4MB)
             'token_mercadopago' => 'nullable|string', 
         ]);
 
-        // Se o dono enviou uma foto nova na edição, fazemos o upload
+        // Se o dono enviou uma foto de PERFIL nova na edição, fazemos o upload
         if ($request->hasFile('foto_perfil')) {
             $validated['foto_perfil'] = ImageKitService::upload($request->file('foto_perfil'), '/waitless/estabelecimentos');
         } else {
             // Se não enviou foto nova, removemos a chave do array para NÃO apagar a foto antiga do banco
             unset($validated['foto_perfil']); 
+        }
+
+        // Se o dono enviou um BANNER novo na edição, fazemos o upload
+        if ($request->hasFile('foto_banner')) {
+            $validated['foto_banner'] = ImageKitService::upload($request->file('foto_banner'), '/waitless/estabelecimentos/banners');
+        } else {
+            // Removemos a chave para NÃO apagar o banner antigo
+            unset($validated['foto_banner']); 
         }
 
         $estabelecimento->update($validated);
@@ -94,72 +102,72 @@ class EstabelecimentoController extends Controller
         return redirect()->back()->with('success', $mensagem);
     }
 
-     public function fila(Request $request, Estabelecimento $estabelecimento)
-{
-    // 1. Validação de segurança: Garante que o estabelecimento pertence ao usuário logado
-    if ($estabelecimento->user_id !== \Illuminate\Support\Facades\Auth::id()) {
-        abort(403, 'Acesso não autorizado.');
+    public function fila(Request $request, Estabelecimento $estabelecimento)
+    {
+        // 1. Validação de segurança: Garante que o estabelecimento pertence ao usuário logado
+        if ($estabelecimento->user_id !== \Illuminate\Support\Facades\Auth::id()) {
+            abort(403, 'Acesso não autorizado.');
+        }
+
+        // 2. Capturar as datas vinda do Front-end (React) ou usar o dia atual como padrão
+        $hoje = \Carbon\Carbon::today()->toDateString();
+        
+        $filtros = [
+            'data_inicio'      => $request->input('data_inicio', $hoje),
+            'data_fim'         => $request->input('data_fim', $hoje),
+            'ordem'            => $request->input('ordem', 'asc'),
+            'status'           => $request->input('status', 'todos'),
+            'status_pagamento' => $request->input('status_pagamento', 'todos'),
+            'per_page'         => $request->input('per_page', 10),
+        ];
+
+        // 3. Buscar TODOS os estabelecimentos do lojista para alimentar o seletor do topo
+        $estabelecimentos = \Illuminate\Support\Facades\Auth::user()->estabelecimentos()->get();
+
+        // 4. Buscar os profissionais cadastrados para ESTE estabelecimento atual
+        $funcionarios = \App\Models\Funcionario::select('id', 'nome', 'cargo')
+            ->where('estabelecimento_id', $estabelecimento->id)
+            ->get();
+
+        // 5. Construir a Query Principal filtrando pelo intervalo correto de datas (whereBetween)
+        $query = Agendamento::with(['usuario:id,name', 'servico:id,nome,valor', 'pagamento:id,agendamento_id,status'])
+            ->where('estabelecimento_id', $estabelecimento->id)
+            ->whereBetween('data_agendamento', [$filtros['data_inicio'], $filtros['data_fim']]);
+
+        // 6. Aplicar filtro por Status do Atendimento
+        if ($filtros['status'] !== 'todos') {
+            $query->where('status', $filtros['status']);
+        }
+
+        // 7. Aplicar filtro por Status do Pagamento 
+        // CORREÇÃO POSTGRESQL: Para contornar a incompatibilidade de tipos (VARCHAR vs BIGINT)
+        // na chave de relacionamento, usamos um whereExists com conversão explícita (::text)
+        if ($filtros['status_pagamento'] !== 'todos') {
+            $query->whereExists(function ($subQuery) use ($filtros) {
+                $subQuery->select(\Illuminate\Support\Facades\DB::raw(1))
+                    ->from('pagamentos')
+                    ->whereRaw('pagamentos.id::text = agendamentos.pagamento_id::text')
+                    ->where('pagamentos.status', (string) $filtros['status_pagamento']);
+            });
+        }
+
+        // 8. Aplicar Ordenação da fila por Data e por Horário
+        $direcao = $filtros['ordem'] === 'desc' ? 'desc' : 'asc';
+        $query->orderBy('data_agendamento', $direcao)
+              ->orderBy('hora_agendamento', $direcao);
+
+        // 9. Paginar os resultados mantendo os parâmetros na URL
+        $agendamentos = $query->paginate($filtros['per_page'])->withQueryString();
+
+        // 10. Retornar os dados estruturados para a View do Inertia
+        return \Inertia\Inertia::render('Estabelecimentos/Fila', [
+            'estabelecimento'  => $estabelecimento->only(['id', 'nome']),
+            'estabelecimentos' => $estabelecimentos, 
+            'agendamentos'     => $agendamentos,
+            'funcionarios'     => $funcionarios,     
+            'filtros'          => $filtros
+        ]);
     }
-
-    // 2. Capturar as datas vinda do Front-end (React) ou usar o dia atual como padrão
-    $hoje = \Carbon\Carbon::today()->toDateString();
-    
-    $filtros = [
-        'data_inicio'      => $request->input('data_inicio', $hoje),
-        'data_fim'         => $request->input('data_fim', $hoje),
-        'ordem'            => $request->input('ordem', 'asc'),
-        'status'           => $request->input('status', 'todos'),
-        'status_pagamento' => $request->input('status_pagamento', 'todos'),
-        'per_page'         => $request->input('per_page', 10),
-    ];
-
-    // 3. Buscar TODOS os estabelecimentos do lojista para alimentar o seletor do topo
-    $estabelecimentos = \Illuminate\Support\Facades\Auth::user()->estabelecimentos()->get();
-
-    // 4. Buscar os profissionais cadastrados para ESTE estabelecimento atual
-    $funcionarios = \App\Models\Funcionario::select('id', 'nome', 'cargo')
-        ->where('estabelecimento_id', $estabelecimento->id)
-        ->get();
-
-    // 5. Construir a Query Principal filtrando pelo intervalo correto de datas (whereBetween)
-    $query = Agendamento::with(['usuario:id,name', 'servico:id,nome,valor', 'pagamento:id,agendamento_id,status'])
-        ->where('estabelecimento_id', $estabelecimento->id)
-        ->whereBetween('data_agendamento', [$filtros['data_inicio'], $filtros['data_fim']]);
-
-    // 6. Aplicar filtro por Status do Atendimento
-    if ($filtros['status'] !== 'todos') {
-        $query->where('status', $filtros['status']);
-    }
-
-    // 7. Aplicar filtro por Status do Pagamento 
-    // CORREÇÃO POSTGRESQL: Para contornar a incompatibilidade de tipos (VARCHAR vs BIGINT)
-    // na chave de relacionamento, usamos um whereExists com conversão explícita (::text)
-    if ($filtros['status_pagamento'] !== 'todos') {
-        $query->whereExists(function ($subQuery) use ($filtros) {
-            $subQuery->select(\Illuminate\Support\Facades\DB::raw(1))
-                ->from('pagamentos')
-                ->whereRaw('pagamentos.id::text = agendamentos.pagamento_id::text')
-                ->where('pagamentos.status', (string) $filtros['status_pagamento']);
-        });
-    }
-
-    // 8. Aplicar Ordenação da fila por Data e por Horário
-    $direcao = $filtros['ordem'] === 'desc' ? 'desc' : 'asc';
-    $query->orderBy('data_agendamento', $direcao)
-          ->orderBy('hora_agendamento', $direcao);
-
-    // 9. Paginar os resultados mantendo os parâmetros na URL
-    $agendamentos = $query->paginate($filtros['per_page'])->withQueryString();
-
-    // 10. Retornar os dados estruturados para a View do Inertia
-    return \Inertia\Inertia::render('Estabelecimentos/Fila', [
-        'estabelecimento'  => $estabelecimento->only(['id', 'nome']),
-        'estabelecimentos' => $estabelecimentos, 
-        'agendamentos'     => $agendamentos,
-        'funcionarios'     => $funcionarios,     
-        'filtros'          => $filtros
-    ]);
-}
 
     public function configuracoes(Estabelecimento $estabelecimento)
     {
@@ -176,11 +184,9 @@ class EstabelecimentoController extends Controller
         ]);
     }
 
-     public function loja(Estabelecimento $estabelecimento)
+    public function loja(Estabelecimento $estabelecimento)
     {
-        
         $user = \Illuminate\Support\Facades\Auth::user();
-        
         
         $servicos = $estabelecimento->servicos()
             ->with(['agendamentos' => function ($query) {
@@ -196,7 +202,6 @@ class EstabelecimentoController extends Controller
         ]);
     }
 
-
     public function cupons(Estabelecimento $estabelecimento)
     {
         $cupons = $estabelecimento->cupons()->latest()->get();
@@ -207,8 +212,7 @@ class EstabelecimentoController extends Controller
         ]);
     }
 
-
- public function index(Request $request)
+    public function index(Request $request)
     {
         try {
             $user = Auth::user();

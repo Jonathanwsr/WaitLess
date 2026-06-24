@@ -133,6 +133,23 @@ Route::get('/estabelecimentos/{estabelecimento}/fila', [AgendamentoController::c
         ->name('catalogo.itens.destroy');
 
 
+        Route::get('/api/catalogo/itens', [ItemAluguelController::class, 'index'])
+        ->name('api.catalogo.itens');
+
+    // 2. Rota para salvar um novo item
+    Route::post('/catalogo/itens', [ItemAluguelController::class, 'store'])
+        ->name('catalogo.itens.store');
+
+    // 3. Rota para editar um item existente 
+    // (Atenção: Usamos POST em vez de PUT porque envios com ficheiros/imagens no Inertia/Laravel funcionam melhor via POST)
+    Route::post('/catalogo/itens/{id}', [ItemAluguelController::class, 'update'])
+        ->name('catalogo.itens.update');
+
+    // 4. Rota para apagar um item
+    Route::delete('/catalogo/itens/{id}', [ItemAluguelController::class, 'destroy'])
+        ->name('catalogo.itens.destroy');
+
+
     //Detalhes cliente 
     Route::middleware(['auth'])->group(function () {
     // Rota para ver os detalhes do cliente

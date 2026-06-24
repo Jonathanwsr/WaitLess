@@ -31,6 +31,12 @@ class ItemAluguel extends Model
         'possui_seguro' => 'boolean',
         'recursos_oferecidos' => 'array', 
         'acessorios' => 'array',
+        'dias_semana_disponiveis' => 'array',
+         'dias_mes_disponiveis' => 'array',
+         'datas_permitidas' => 'array',
+         'datas_bloqueadas' => 'array',
+         'horarios_bloqueados' => 'array',
+         'sempre_disponivel' => 'boolean',
     ];
 
     public function estabelecimento(): BelongsTo

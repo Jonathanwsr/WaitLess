@@ -32,7 +32,8 @@ import {
     TruckIcon,
     ArrowDownTrayIcon,
     ClipboardDocumentListIcon,
-    GiftIcon
+    GiftIcon,
+    ArrowTopRightOnSquareIcon
 } from '@heroicons/react/24/solid';
 
 export default function Configuracoes({ auth, estabelecimento, meusEstabelecimentos, funcionarios, servicos, itensAluguel = [], itens_aluguel = [] }) {
@@ -100,6 +101,22 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         }
         return listaAnos;
     })();
+
+    // Lista de UFs Brasileiras
+    const ufsBrasil = [
+        'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 
+        'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 
+        'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'
+    ];
+
+    // Ramos de Atuação Mais Completos
+    const ramosAtuacao = [
+        'Barbearia', 'Salão de Beleza', 'Clínica Médica', 'Clínica Odontológica',
+        'Estética e Spa', 'Oficina Mecânica', 'Estética Automotiva', 'Pet Shop e Veterinária',
+        'Locação de Imóveis', 'Locação de Veículos', 'Locação de Equipamentos', 'Locação de Roupas e Fantasias',
+        'Estúdio de Tatuagem', 'Estúdio de Fotografia', 'Academia e Crossfit', 'Educação e Cursos',
+        'Advocacia e Escritórios', 'Consultoria', 'Eventos e Festas', 'Serviços Gerais', 'Outro'
+    ];
 
     // ==========================================
     // 3. BUSCA DE ENDEREÇO E COORDENADAS
@@ -189,6 +206,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
     // FORM 1: DETALHES DA LOJA
     // ==========================================
     const [fotoPerfilPreview, setFotoPerfilPreview] = useState(estabelecimento?.foto_perfil || null);
+    const [fotoBannerPreview, setFotoBannerPreview] = useState(estabelecimento?.foto_banner || null);
 
     const formDetalhes = useForm({
         nome: estabelecimento?.nome || '',
@@ -203,6 +221,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         estado: estabelecimento?.estado || '',
         token_mercadopago: estabelecimento?.token_mercadopago || '', 
         foto_perfil: null, 
+        foto_banner: null,
     });
 
     const handleFotoEstabelecimento = (e) => {
@@ -210,6 +229,14 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         if (file) {
             formDetalhes.setData('foto_perfil', file);
             setFotoPerfilPreview(URL.createObjectURL(file)); 
+        }
+    };
+
+    const handleFotoBanner = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            formDetalhes.setData('foto_banner', file);
+            setFotoBannerPreview(URL.createObjectURL(file)); 
         }
     };
 
@@ -222,7 +249,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
             preserveScroll: true,
             onSuccess: () => {
                 mostrarMensagem('Configurações salvas com sucesso!');
-                formDetalhes.setData('foto_perfil', null);
+                formDetalhes.setData({ foto_perfil: null, foto_banner: null });
             },
             onError: (erros) => {
                 formDetalhes.setError(erros);
@@ -816,7 +843,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                         </div>
 
                         <div className="flex gap-2">
-                            <Link href={route('estabelecimentos.cupons', estabelecimento.id)} className="text-sm font-bold text-orange-600 hover:text-orange-800 bg-[#FFF0E5] border border-orange-100 px-4 py-2 rounded-lg transition flex items-center gap-2 shadow-sm">
+                            <Link href={route('estabelecimentos.cupons', estabelecimento.id)} className="text-sm font-bold text-[#FF5A00] hover:text-[#C74B27] bg-[#FFF0E5] border border-orange-100 px-4 py-2 rounded-lg transition flex items-center gap-2 shadow-sm">
                                 <TicketIcon className="w-5 h-5"/> Marketing & Cupons
                             </Link>
                             <Link href={route('estabelecimentos.fila', estabelecimento.id)} className="text-sm font-bold text-white bg-emerald-500 hover:bg-emerald-600 px-4 py-2 rounded-lg transition flex items-center gap-1 shadow-sm">
@@ -867,8 +894,13 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                 <CalendarIcon className="w-5 h-5"/> 4. Reservas / Locações
                             </button>
                             <button onClick={() => setActiveTab('financeiro')} className={`text-left px-4 py-3 rounded-xl text-sm font-bold transition whitespace-nowrap flex items-center gap-2 ${activeTab === 'financeiro' ? 'bg-[#FF5A00] text-white shadow-md' : 'text-gray-600 hover:bg-gray-100'}`}>
-                                <CurrencyDollarIcon className="w-5 h-5"/> 5. Financeiro / Integração
+                                <CurrencyDollarIcon className="w-5 h-5"/> 5. Financeiro / Recebimentos
                             </button>
+
+                            {/* 👉 NOVO: BOTÃO EXTERNO PARA VER A LOJA PÚBLICA */}
+                            <a href={`/estabelecimentos/${estabelecimento.id}/loja`} target="_blank" rel="noopener noreferrer" className="mt-4 text-left px-4 py-3 rounded-xl text-sm font-bold transition whitespace-nowrap flex items-center gap-2 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 shadow-sm">
+                                <ArrowTopRightOnSquareIcon className="w-5 h-5"/> 6. Ver a Loja
+                            </a>
                         </nav>
                     </aside>
 
@@ -882,6 +914,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                 <div className="bg-white p-6 sm:p-8 rounded-2xl shadow-sm border border-gray-100">
                                     <form onSubmit={submitDetalhes} className="space-y-6">
                                         
+                                        {/* LOGO DA LOJA */}
                                         <div className="flex flex-col sm:flex-row items-center gap-6 pb-6 border-b border-gray-100">
                                             <div className="relative group cursor-pointer w-24 h-24 sm:w-32 sm:h-32 shrink-0">
                                                 <label className="cursor-pointer w-full h-full block">
@@ -917,6 +950,43 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                             </div>
                                         </div>
 
+                                        {/* 👉 NOVO: BANNER DA LOJA */}
+                                        <div className="flex flex-col gap-4 pb-6 border-b border-gray-100">
+                                            <div className="w-full text-center sm:text-left">
+                                                <h3 className="text-lg font-bold text-gray-900">Banner da Loja</h3>
+                                                <p className="text-sm text-gray-400 mt-1">Este banner será exibido na parte superior da página pública do seu estabelecimento.</p>
+                                            </div>
+                                            
+                                            <div className="relative group cursor-pointer w-full h-40 sm:h-56 shrink-0">
+                                                <label className="cursor-pointer w-full h-full block">
+                                                    {fotoBannerPreview ? (
+                                                        <img 
+                                                            src={fotoBannerPreview} 
+                                                            alt="Banner da Loja" 
+                                                            className="w-full h-full object-cover rounded-2xl shadow-md border-2 border-white"
+                                                        />
+                                                    ) : (
+                                                        <div className="w-full h-full bg-gray-50 rounded-2xl flex flex-col items-center justify-center border-2 border-dashed border-gray-300 shadow-sm text-xl font-bold text-gray-400 uppercase tracking-widest transition group-hover:bg-gray-100">
+                                                            <PhotoIcon className="w-8 h-8 mb-2 text-gray-300"/>
+                                                            Inserir Banner
+                                                        </div>
+                                                    )}
+                                                    
+                                                    <div className="absolute inset-0 bg-black/50 rounded-2xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <span className="text-white text-sm font-bold uppercase tracking-wider flex items-center gap-2"><PhotoIcon className="w-5 h-5"/> Alterar Banner</span>
+                                                    </div>
+                                                    
+                                                    <input 
+                                                        type="file" 
+                                                        className="hidden" 
+                                                        accept="image/*"
+                                                        onChange={handleFotoBanner} 
+                                                    />
+                                                </label>
+                                            </div>
+                                            <InputError message={formDetalhes.errors.foto_banner} className="mt-2" />
+                                        </div>
+
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
                                             <div className="md:col-span-2">
                                                 <InputLabel value="Nome do Estabelecimento *" />
@@ -924,8 +994,16 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                 <InputError message={formDetalhes.errors.nome} />
                                             </div>
                                             <div>
+                                                {/* 👉 NOVO: SELECT COM CATEGORIAS AMPLIADAS */}
                                                 <InputLabel value="Ramo de Atuação" />
-                                                <TextInput className="mt-1 w-full focus:border-[#FF5A00]" value={formDetalhes.data.ramo_atuacao} onChange={e => formDetalhes.setData('ramo_atuacao', e.target.value)} placeholder="Ex: Barbearia" />
+                                                <select 
+                                                    className="mt-1 w-full border-gray-300 rounded-lg shadow-sm focus:border-[#FF5A00] focus:ring-[#FF5A00]" 
+                                                    value={formDetalhes.data.ramo_atuacao} 
+                                                    onChange={e => formDetalhes.setData('ramo_atuacao', e.target.value)}
+                                                >
+                                                    <option value="">Selecione a categoria...</option>
+                                                    {ramosAtuacao.map(ramo => <option key={ramo} value={ramo}>{ramo}</option>)}
+                                                </select>
                                                 <InputError message={formDetalhes.errors.ramo_atuacao} />
                                             </div>
                                             <div>
@@ -951,7 +1029,14 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                             <div className="md:col-span-4"><InputLabel value="Complemento" /><TextInput className="mt-1 w-full focus:border-[#FF5A00]" value={formDetalhes.data.complemento} onChange={e => formDetalhes.setData('complemento', e.target.value)} placeholder="Sala, Loja, etc." /></div>
                                             <div className="md:col-span-2"><InputLabel value="Bairro" /><TextInput className="mt-1 w-full focus:border-[#FF5A00]" value={formDetalhes.data.bairro} onChange={e => formDetalhes.setData('bairro', e.target.value)} /></div>
                                             <div className="md:col-span-3"> <InputLabel value="Cidade" /><TextInput className="mt-1 w-full focus:border-[#FF5A00]" value={formDetalhes.data.cidade} onChange={e => formDetalhes.setData('cidade', e.target.value)} /></div>
-                                            <div className="md:col-span-1"><InputLabel value="UF" /><TextInput className="mt-1 w-full uppercase focus:border-[#FF5A00]" maxLength="2" value={formDetalhes.data.estado} onChange={e => formDetalhes.setData('estado', e.target.value.toUpperCase())} /></div>
+                                            <div className="md:col-span-1">
+                                                {/* 👉 NOVO: DROPDOWN UF */}
+                                                <InputLabel value="UF" />
+                                                <select className="mt-1 w-full border-gray-300 rounded-lg shadow-sm focus:border-[#FF5A00] focus:ring-[#FF5A00]" value={formDetalhes.data.estado} onChange={e => formDetalhes.setData('estado', e.target.value)}>
+                                                    <option value="">UF</option>
+                                                    {ufsBrasil.map(uf => <option key={uf} value={uf}>{uf}</option>)}
+                                                </select>
+                                            </div>
                                         </div>
 
                                         <div className="flex justify-end pt-6"><PrimaryButton className="bg-[#FF5A00] px-8 py-3 rounded-xl shadow-lg">Salvar Alterações</PrimaryButton></div>
@@ -1590,73 +1675,34 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                             </div>
                                         </div>
 
-                                        {/* FICHA TÉCNICA E ENDEREÇOS LOGÍSTICOS ABAIXO DO PRODUTO */}
-                                        <div className="mt-16 pt-12 border-t border-gray-100">
-                                            <h3 className="text-2xl font-black text-gray-900 mb-8 text-center">Especificações Técnicas e Logística</h3>
-                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                                                
-                                                <div className="bg-gray-50 border border-gray-100 rounded-3xl p-6 hover:shadow-md transition">
-                                                    <ClipboardDocumentListIcon className="w-8 h-8 text-[#FF5A00] mb-4" />
-                                                    <h4 className="font-bold text-gray-900 mb-3">Detalhes do Bem</h4>
-                                                    <ul className="text-sm text-gray-600 font-medium space-y-1.5">
-                                                        {visualizandoItem.ano && <li><strong>Ano:</strong> {visualizandoItem.ano}</li>}
-                                                        {visualizandoItem.cor && <li><strong>Cor:</strong> {visualizandoItem.cor}</li>}
-                                                        {visualizandoItem.combustivel && <li><strong>Combustível:</strong> {visualizandoItem.combustivel}</li>}
-                                                        {visualizandoItem.cambio && <li><strong>Câmbio:</strong> {visualizandoItem.cambio}</li>}
-                                                        {visualizandoItem.capacidade_pessoas && <li><strong>Capacidade:</strong> {visualizandoItem.capacidade_pessoas} pessoas</li>}
-                                                        {visualizandoItem.numero_quartos && <li><strong>Quartos:</strong> {visualizandoItem.numero_quartos}</li>}
-                                                        {visualizandoItem.numero_banheiros && <li><strong>Banheiros:</strong> {visualizandoItem.numero_banheiros}</li>}
-                                                        {visualizandoItem.area_total && <li><strong>Área Total:</strong> {visualizandoItem.area_total}m²</li>}
-                                                        {visualizandoItem.voltagem && <li><strong>Voltagem:</strong> {visualizandoItem.voltagem}</li>}
-                                                        {visualizandoItem.garantia && <li><strong>Garantia:</strong> {visualizandoItem.garantia}</li>}
-                                                    </ul>
+                                        {/* Fichas de Exibição de Localizações Inferiores */}
+                                        <div className="mt-16 pt-12 border-t border-gray-100 grid grid-cols-1 md:grid-cols-3 gap-6">
+                                            {visualizandoItem.endereco && (
+                                                <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100">
+                                                    <MapPinIcon className="w-6 h-6 text-[#FF5A00] mb-3" />
+                                                    <h4 className="font-bold text-gray-900 mb-2">Localização Base</h4>
+                                                    <p className="text-sm text-gray-600 font-medium">{visualizandoItem.endereco}, nº {visualizandoItem.numero} - {visualizandoItem.cidade}/{visualizandoItem.estado}</p>
+                                                    {visualizandoItem.latitude && <p className="text-xs text-gray-400 font-mono mt-1">COORD: {visualizandoItem.latitude}, {visualizandoItem.longitude}</p>}
                                                 </div>
-
-                                                <div className="bg-gray-50 border border-gray-100 rounded-3xl p-6 hover:shadow-md transition">
-                                                    <CurrencyDollarIcon className="w-8 h-8 text-[#FF5A00] mb-4" />
-                                                    <h4 className="font-bold text-gray-900 mb-3">Tabela de Valores</h4>
-                                                    <ul className="text-sm text-gray-600 font-medium space-y-2">
-                                                        {visualizandoItem.valor_diaria && <li className="flex justify-between"><span>Diária:</span> <strong>R$ {visualizandoItem.valor_diaria}</strong></li>}
-                                                        {visualizandoItem.valor_semanal && <li className="flex justify-between"><span>Semanal:</span> <strong>R$ {visualizandoItem.valor_semanal}</strong></li>}
-                                                        {visualizandoItem.valor_mensal && <li className="flex justify-between"><span>Mensal:</span> <strong>R$ {visualizandoItem.valor_mensal}</strong></li>}
-                                                        {visualizandoItem.valor_caucao && <li className="flex justify-between text-[#FF5A00] pt-2 border-t border-gray-200"><span>Caução de Risco:</span> <strong>R$ {visualizandoItem.valor_caucao}</strong></li>}
-                                                    </ul>
+                                            )}
+                                            {!parseArraySeguro(visualizandoItem.categoria).includes('casa') && visualizandoItem.rua_retirada && (
+                                                <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100">
+                                                    <ArrowDownTrayIcon className="w-6 h-6 text-[#FF5A00] mb-3" />
+                                                    <h4 className="font-bold text-gray-900 mb-2">Ponto de Retirada</h4>
+                                                    <p className="text-sm text-gray-600 font-medium">{visualizandoItem.rua_retirada}, nº {visualizandoItem.numero_retirada} - {visualizandoItem.cidade_retirada}</p>
                                                 </div>
-
-                                                {(visualizandoItem.endereco || visualizandoItem.rua_retirada) && (
-                                                    <div className="bg-gray-50 border border-gray-100 rounded-3xl p-6 hover:shadow-md transition">
-                                                        <MapPinIcon className="w-8 h-8 text-[#FF5A00] mb-4" />
-                                                        <h4 className="font-bold text-gray-900 mb-3">Localização / Base</h4>
-                                                        <p className="text-sm text-gray-600 font-medium leading-relaxed mb-4">
-                                                            {visualizandoItem.endereco || visualizandoItem.rua_retirada}, {visualizandoItem.numero || visualizandoItem.numero_retirada}<br/>
-                                                            {visualizandoItem.bairro || visualizandoItem.bairro_retirada} - {visualizandoItem.cidade || visualizandoItem.cidade_retirada}/{visualizandoItem.estado || visualizandoItem.estado_retirada}
-                                                        </p>
-                                                        {(visualizandoItem.latitude || visualizandoItem.latitude_retirada) && (
-                                                            <div className="mt-auto text-xs bg-white border border-gray-200 px-3 py-2 rounded-lg font-mono text-gray-500">
-                                                                LAT: {visualizandoItem.latitude || visualizandoItem.latitude_retirada} <br/>
-                                                                LON: {visualizandoItem.longitude || visualizandoItem.longitude_retirada}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                )}
-
-                                                {visualizandoItem.rua_entrega && (
-                                                    <div className="bg-gray-50 border border-gray-100 rounded-3xl p-6 hover:shadow-md transition">
-                                                        <TruckIcon className="w-8 h-8 text-[#FF5A00] mb-4" />
-                                                        <h4 className="font-bold text-gray-900 mb-3">Ponto de Entrega Configurado</h4>
-                                                        <p className="text-sm text-gray-600 font-medium leading-relaxed">
-                                                            {visualizandoItem.rua_entrega}, {visualizandoItem.numero_entrega}<br/>
-                                                            {visualizandoItem.complemento_entrega && <>{visualizandoItem.complemento_entrega}<br/></>}
-                                                            {visualizandoItem.bairro_entrega} - {visualizandoItem.cidade_entrega}/{visualizandoItem.estado_entrega}
-                                                        </p>
-                                                        <p className="mt-3 text-xs text-gray-400">CEP: {visualizandoItem.cep_entrega}</p>
-                                                    </div>
-                                                )}
-
-                                            </div>
+                                            )}
+                                            {!parseArraySeguro(visualizandoItem.categoria).includes('casa') && visualizandoItem.rua_entrega && (
+                                                <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100">
+                                                    <TruckIcon className="w-6 h-6 text-[#FF5A00] mb-3" />
+                                                    <h4 className="font-bold text-gray-900 mb-2">Ponto de Entrega</h4>
+                                                    <p className="text-sm text-gray-600 font-medium">{visualizandoItem.rua_entrega}, nº {visualizandoItem.numero_entrega} - {visualizandoItem.cidade_entrega}</p>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 ) : (
+                                    /* INTERFACE DE FOMULÁRIO DO PAINEL */
                                     <>
                                         <div className="bg-white p-6 sm:p-8 rounded-3xl shadow-sm border border-gray-100">
                                             <h3 className="text-xl font-black text-gray-900 mb-2 flex items-center gap-2">
@@ -1824,19 +1870,26 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
 
                                                 {/* TABELA DE VALORES COM PARSER DECIMAL EM TEMPO REAL onBlur */}
                                                 <div className="p-6 bg-gray-50 rounded-2xl border border-gray-100 grid grid-cols-1 md:grid-cols-4 gap-4">
-                                                    <div><InputLabel value="Valor Diária (R$) *" /><TextInput type="number" step="0.01" onKeyDown={blockInvalidNumberChars} onBlur={(e) => formatarDecimaisItemOnBlur('valor_diaria', e.target.value)} className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.valor_diaria} onChange={e => formItem.setData('valor_diaria', e.target.value)} /></div>
-                                                    <div><InputLabel value="Valor Semanal (R$)" /><TextInput type="number" step="0.01" onKeyDown={blockInvalidNumberChars} onBlur={(e) => formatarDecimaisItemOnBlur('valor_semanal', e.target.value)} className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.valor_semanal} onChange={e => formItem.setData('valor_semanal', e.target.value)} /></div>
-                                                    <div><InputLabel value="Valor Mensal (R$)" /><TextInput type="number" step="0.01" onKeyDown={blockInvalidNumberChars} onBlur={(e) => formatarDecimaisItemOnBlur('valor_mensal', e.target.value)} className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.valor_mensal} onChange={e => formItem.setData('valor_mensal', e.target.value)} /></div>
-                                                    <div><InputLabel value="Valor Caução (R$)" /><TextInput type="number" step="0.01" onKeyDown={blockInvalidNumberChars} onBlur={(e) => formatarDecimaisItemOnBlur('valor_caucao', e.target.value)} className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.valor_caucao} onChange={e => formItem.setData('valor_caucao', e.target.value)} /></div>
+                                                    <div><InputLabel value="Valor Diária (R$) *" /><TextInput type="number" step="0.01" onKeyDown={blockInvalidNumberChars} onBlur={(e) => formatarDecimaisItemOnBlur('valor_diaria', e.target.value)} className="mt-1 w-full focus:border-[#FF5A00] focus:ring-[#FF5A00]" value={formItem.data.valor_diaria} onChange={e => formItem.setData('valor_diaria', e.target.value)} /></div>
+                                                    <div><InputLabel value="Valor Semanal (R$)" /><TextInput type="number" step="0.01" onKeyDown={blockInvalidNumberChars} onBlur={(e) => formatarDecimaisItemOnBlur('valor_semanal', e.target.value)} className="mt-1 w-full focus:border-[#FF5A00] focus:ring-[#FF5A00]" value={formItem.data.valor_semanal} onChange={e => formItem.setData('valor_semanal', e.target.value)} /></div>
+                                                    <div><InputLabel value="Valor Mensal (R$)" /><TextInput type="number" step="0.01" onKeyDown={blockInvalidNumberChars} onBlur={(e) => formatarDecimaisItemOnBlur('valor_mensal', e.target.value)} className="mt-1 w-full focus:border-[#FF5A00] focus:ring-[#FF5A00]" value={formItem.data.valor_mensal} onChange={e => formItem.setData('valor_mensal', e.target.value)} /></div>
+                                                    <div><InputLabel value="Valor Caução Garantia (R$)" /><TextInput type="number" step="0.01" onKeyDown={blockInvalidNumberChars} onBlur={(e) => formatarDecimaisItemOnBlur('valor_caucao', e.target.value)} className="mt-1 w-full focus:border-[#FF5A00] focus:ring-[#FF5A00]" value={formItem.data.valor_caucao} onChange={e => formItem.setData('valor_caucao', e.target.value)} /></div>
                                                 </div>
 
-                                                <div className="bg-gray-50 border border-gray-200 rounded-2xl p-6">
-                                                    <InputLabel value="Comodidades Oferecidas" />
-                                                    <div className="flex flex-wrap gap-2 mt-3">
-                                                        {comodidadesPreDefinidas.map(comodidade => {
+                                                {/* COMODIDADES CLICÁVEIS */}
+                                                <div className="bg-white border border-gray-200 rounded-3xl p-6">
+                                                    <InputLabel value="Selecione as Comodidades Oferecidas" />
+                                                    <p className="text-xs text-gray-500 mb-4 mt-1">Clique para selecionar as facilidades que seu produto/imóvel oferece.</p>
+                                                    <div className="flex flex-wrap gap-2">
+                                                         {comodidadesPreDefinidas.map(comodidade => {
                                                             const isSelected = parseArraySeguro(formItem.data.recursos_oferecidos).includes(comodidade);
                                                             return (
-                                                                <button type="button" key={comodidade} onClick={() => toggleComodidade(comodidade)} className={`px-4 py-2 rounded-xl text-xs font-bold border transition-all ${isSelected ? 'bg-[#FF5A00] text-white border-[#FF5A00]' : 'bg-white text-gray-600 border-gray-200'}`}>
+                                                                <button
+                                                                    type="button"
+                                                                    key={comodidade}
+                                                                    onClick={() => toggleComodidade(comodidade)}
+                                                                    className={`px-4 py-2 rounded-xl text-sm font-bold transition-all border ${isSelected ? 'bg-[#FF5A00] text-white border-[#FF5A00] shadow-md' : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'}`}
+                                                                >
                                                                     {comodidade}
                                                                 </button>
                                                             );
@@ -1844,7 +1897,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                     </div>
                                                 </div>
 
-                                                {/* ACESSÓRIOS COM VALORES E FORMATADOR DECIMAL */}
+                                                {/* ACESSÓRIOS COM VALORES */}
                                                 <div className="bg-gray-50 border border-gray-200 rounded-3xl p-6">
                                                     <div className="flex items-center justify-between mb-4">
                                                         <div>
@@ -1876,32 +1929,48 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                     </div>
                                                 </div>
 
-                                                {/* 👉 CONDICIONAL 1: EXIBE APENAS SE FOR IMÓVEL OU ESPAÇO */}
+                                                {/* ======================================================= */}
+                                                {/* 👉 CONDICIONAL 1: EXIBE APENAS SE FOR IMÓVEL OU ESPAÇO   */}
+                                                {/* ======================================================= */}
                                                 {esImovel && (
                                                     <div className="p-6 bg-orange-50/40 border border-orange-100 rounded-3xl space-y-4 animate-in fade-in duration-300">
                                                         <h4 className="text-sm font-black text-gray-800 uppercase tracking-wider flex items-center gap-2"><MapPinIcon className="w-4 h-4"/> Especificações do Imóvel</h4>
                                                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                                                            <div><InputLabel value="CEP" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.cep} onChange={e => formItem.setData('cep', e.target.value)} onBlur={(e) => buscarEnderecoAutomatizado(e.target.value, formItem.setData, '')} /></div>
-                                                            <div className="md:col-span-2"><InputLabel value="Rua" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.endereco} onChange={e => formItem.setData('endereco', e.target.value)} /></div>
+                                                            <div>
+                                                                <InputLabel value="CEP" />
+                                                                <TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.cep} onChange={e => formItem.setData('cep', e.target.value)} onBlur={(e) => buscarEnderecoAutomatizado(e.target.value, formItem.setData, '')} placeholder="Digite para auto-preencher" />
+                                                            </div>
+                                                            <div className="md:col-span-2"><InputLabel value="Endereço / Logradouro" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.endereco} onChange={e => formItem.setData('endereco', e.target.value)} /></div>
                                                             <div><InputLabel value="Número" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.numero} onChange={e => formItem.setData('numero', e.target.value)} /></div>
                                                         </div>
                                                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                                                             <div><InputLabel value="Bairro" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.bairro} onChange={e => formItem.setData('bairro', e.target.value)} /></div>
                                                             <div><InputLabel value="Cidade" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.cidade} onChange={e => formItem.setData('cidade', e.target.value)} /></div>
-                                                            <div><InputLabel value="UF" /><TextInput maxLength="2" className="w-full mt-1 uppercase focus:border-[#FF5A00]" value={formItem.data.estado} onChange={e => formItem.setData('estado', e.target.value)} /></div>
+                                                            <div>
+                                                                <InputLabel value="Estado (UF)" />
+                                                                <select className="mt-1 w-full border-gray-300 rounded-lg shadow-sm focus:border-[#FF5A00]" value={formItem.data.estado} onChange={e => formItem.setData('estado', e.target.value)}>
+                                                                    <option value="">UF</option>
+                                                                    {ufsBrasil.map(uf => <option key={uf} value={uf}>{uf}</option>)}
+                                                                </select>
+                                                            </div>
                                                             <div><InputLabel value="Complemento" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.complemento} onChange={e => formItem.setData('complemento', e.target.value)} /></div>
                                                         </div>
                                                         {/* Latitude e Longitude Bloqueadas em ReadOnly */}
                                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                            <div><InputLabel value="Latitude (Auto)" /><TextInput type="text" readOnly className="w-full mt-1 bg-gray-100 font-mono text-sm text-gray-500 cursor-not-allowed select-all" value={formItem.data.latitude} /></div>
-                                                            <div><InputLabel value="Longitude (Auto)" /><TextInput type="text" readOnly className="w-full mt-1 bg-gray-100 font-mono text-sm text-gray-500 cursor-not-allowed select-all" value={formItem.data.longitude} /></div>
+                                                            <div><InputLabel value="Latitude (Auto)" /><TextInput type="text" readOnly className="w-full mt-1 bg-gray-100 text-gray-500 cursor-not-allowed select-all" value={formItem.data.latitude} /></div>
+                                                            <div><InputLabel value="Longitude (Auto)" /><TextInput type="text" readOnly className="w-full mt-1 bg-gray-100 text-gray-500 cursor-not-allowed select-all" value={formItem.data.longitude} /></div>
                                                         </div>
                                                         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 pt-4 border-t border-orange-200">
-                                                            <div><InputLabel value="Quartos" /><TextInput type="number" className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.numero_quartos} onChange={e => formItem.setData('numero_quartos', e.target.value)} /></div>
-                                                            <div><InputLabel value="Banheiros" /><TextInput type="number" className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.numero_banheiros} onChange={e => formItem.setData('numero_banheiros', e.target.value)} /></div>
-                                                            <div><InputLabel value="Suítes" /><TextInput type="number" className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.numero_suites} onChange={e => formItem.setData('numero_suites', e.target.value)} /></div>
-                                                            <div><InputLabel value="Garagem" /><TextInput type="number" className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.numero_vagas} onChange={e => formItem.setData('numero_vagas', e.target.value)} /></div>
-                                                            <div><InputLabel value="Cômodos" /><TextInput type="number" className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.numero_comodos} onChange={e => formItem.setData('numero_comodos', e.target.value)} /></div>
+                                                            <div><InputLabel value="Quartos" /><TextInput type="number" min="0" onKeyDown={blockInvalidNumberChars} className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.numero_quartos} onChange={e => formItem.setData('numero_quartos', e.target.value)} /></div>
+                                                            <div><InputLabel value="Banheiros" /><TextInput type="number" min="0" onKeyDown={blockInvalidNumberChars} className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.numero_banheiros} onChange={e => formItem.setData('numero_banheiros', e.target.value)} /></div>
+                                                            <div><InputLabel value="Suítes" /><TextInput type="number" min="0" onKeyDown={blockInvalidNumberChars} className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.numero_suites} onChange={e => formItem.setData('numero_suites', e.target.value)} /></div>
+                                                            <div><InputLabel value="Vagas Garagem" /><TextInput type="number" min="0" onKeyDown={blockInvalidNumberChars} className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.numero_vagas} onChange={e => formItem.setData('numero_vagas', e.target.value)} /></div>
+                                                            <div><InputLabel value="Total Cômodos" /><TextInput type="number" min="0" onKeyDown={blockInvalidNumberChars} className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.numero_comodos} onChange={e => formItem.setData('numero_comodos', e.target.value)} /></div>
+                                                        </div>
+                                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                            <div><InputLabel value="Capacidade (Pessoas)" /><TextInput type="number" min="0" onKeyDown={blockInvalidNumberChars} className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.capacidade_pessoas} onChange={e => formItem.setData('capacidade_pessoas', e.target.value)} /></div>
+                                                            <div><InputLabel value="Área Total (m²)" /><TextInput type="number" min="0" onKeyDown={blockInvalidNumberChars} className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.area_total} onChange={e => formItem.setData('area_total', e.target.value)} /></div>
+                                                            <div><InputLabel value="Área Construída (m²)" /><TextInput type="number" min="0" onKeyDown={blockInvalidNumberChars} className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.area_construida} onChange={e => formItem.setData('area_construida', e.target.value)} /></div>
                                                         </div>
                                                     </div>
                                                 )}
@@ -1909,12 +1978,12 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                 {/* CONDICIONAL: VEÍCULOS COM VALIDAÇÕES APLICADAS */}
                                                 {esVeiculo && (
                                                     <div className="p-6 bg-blue-50/40 border border-blue-100 rounded-3xl space-y-4 animate-in fade-in duration-300">
-                                                        <h4 className="text-sm font-bold text-gray-800 uppercase tracking-wider">Especificações do Veículo</h4>
+                                                        <h4 className="text-sm font-bold text-gray-800 uppercase tracking-wider">Especificações de Frota</h4>
                                                         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                                                             <div><InputLabel value="Placa *" /><TextInput maxLength="7" className="w-full mt-1 uppercase focus:border-[#FF5A00]" value={formItem.data.placa} onChange={e => formItem.setData('placa', e.target.value.toUpperCase())} /></div>
                                                             <div><InputLabel value="Renavam" /><TextInput maxLength="11" className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.renavam} onChange={e => formItem.setData('renavam', e.target.value.replace(/\D/g, ''))} /></div>
                                                             <div><InputLabel value="Chassis" /><TextInput maxLength="17" className="w-full mt-1 uppercase focus:border-[#FF5A00]" value={formItem.data.chassis} onChange={e => formItem.setData('chassis', e.target.value.toUpperCase())} /></div>
-                                                            <div><InputLabel value="Quilometragem (KM)" /><TextInput type="number" className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.quilometragem} onChange={e => formItem.setData('quilometragem', e.target.value)} /></div>
+                                                            <div><InputLabel value="Quilometragem (KM)" /><TextInput type="number" min="0" onKeyDown={blockInvalidNumberChars} className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.quilometragem} onChange={e => formItem.setData('quilometragem', e.target.value)} /></div>
                                                         </div>
                                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                                             <div>
@@ -1943,16 +2012,40 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                                 </select>
                                                             </div>
                                                         </div>
+                                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                                            <div><InputLabel value="Cilindradas" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.cilindrada} onChange={e => formItem.setData('cilindrada', e.target.value)} /></div>
+                                                            <div><InputLabel value="Potência (CV)" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.potencia} onChange={e => formItem.setData('potencia', e.target.value)} /></div>
+                                                            <label className="flex items-center gap-2 font-bold text-xs text-gray-700 mt-6"><input type="checkbox" checked={formItem.data.possui_seguro} onChange={e => formItem.setData('possui_seguro', e.target.checked)} className="rounded border-gray-300 text-[#FF5A00] focus:ring-[#FF5A00]" /> Possui Seguro Ativo</label>
+                                                        </div>
                                                     </div>
                                                 )}
 
-                                                {/* 👉 ENDEREÇOS LOGÍSTICOS ADICIONAIS: SÓ APARECE SE NÃO FOR IMÓVEL */}
+                                                {/* CONDICIONAL: EQUIPAMENTO */}
+                                                {esEquipamento && (
+                                                    <div className="p-6 bg-purple-50/30 border border-purple-100 rounded-3xl space-y-5 animate-in fade-in duration-300">
+                                                        <h4 className="text-sm font-black text-gray-800 uppercase tracking-wider">Ficha Logística do Equipamento</h4>
+                                                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                                            <div><InputLabel value="Fabricante" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.fabricante} onChange={e => formItem.setData('fabricante', e.target.value)} /></div>
+                                                            <div><InputLabel value="Nº de Série" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.numero_serie} onChange={e => formItem.setData('numero_serie', e.target.value)} /></div>
+                                                            <div><InputLabel value="Patrimônio" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.patrimonio} onChange={e => formItem.setData('patrimonio', e.target.value)} /></div>
+                                                            <div><InputLabel value="Voltagem" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.voltagem} onChange={e => formItem.setData('voltagem', e.target.value)} placeholder="Ex: 110v, 220v, Bivolt" /></div>
+                                                        </div>
+                                                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                                            <div><InputLabel value="Potência Logística" /><TextInput className="w-full mt-1" value={formItem.data.potencia_equipamento} onChange={e => formItem.setData('potencia_equipamento', e.target.value)} /></div>
+                                                            <div><InputLabel value="Peso" /><TextInput className="w-full mt-1" value={formItem.data.peso} onChange={e => formItem.setData('peso', e.target.value)} /></div>
+                                                            <div><InputLabel value="Dimensões" /><TextInput className="w-full mt-1" value={formItem.data.dimensoes} onChange={e => formItem.setData('dimensoes', e.target.value)} /></div>
+                                                            <div><InputLabel value="Tempo de Garantia" /><TextInput className="w-full mt-1" value={formItem.data.garantia} onChange={e => formItem.setData('garantia', e.target.value)} /></div>
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {/* 👉 ENDEREÇOS LOGÍSTICOS ADICIONAIS: SÓ APARECE SE NÃO FOR IMÓVEL/LUGAR */}
                                                 {!esImovel && (
                                                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in fade-in">
                                                         {/* LOCAL DE RETIRADA */}
                                                         <div className="p-6 bg-gray-50 border border-gray-200 rounded-3xl space-y-4 shadow-sm">
                                                             <h4 className="text-sm font-black text-gray-800 uppercase tracking-wider flex items-center gap-2">
-                                                                <ArrowDownTrayIcon className="w-4 h-4 text-[#FF5A00]" /> Endereço de Retirada Opcional
+                                                                <ArrowDownTrayIcon className="w-4 h-4 text-gray-400" /> Endereço de Retirada Opcional
                                                             </h4>
                                                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                                                 <div className="sm:col-span-1"><InputLabel value="CEP" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.cep_retirada} onChange={e => formItem.setData('cep_retirada', e.target.value)} onBlur={(e) => buscarEnderecoAutomatizado(e.target.value, formItem.setData, '_retirada')} /></div>
@@ -1965,7 +2058,13 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                                                 <div><InputLabel value="Bairro" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.bairro_retirada} onChange={e => formItem.setData('bairro_retirada', e.target.value)} /></div>
                                                                 <div><InputLabel value="Cidade" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.cidade_retirada} onChange={e => formItem.setData('cidade_retirada', e.target.value)} /></div>
-                                                                <div><InputLabel value="UF" /><TextInput maxLength="2" className="w-full mt-1 uppercase focus:border-[#FF5A00]" value={formItem.data.estado_retirada} onChange={e => formItem.setData('estado_retirada', e.target.value.toUpperCase())} /></div>
+                                                                <div>
+                                                                    <InputLabel value="UF" />
+                                                                    <select className="mt-1 w-full border-gray-300 rounded-lg shadow-sm focus:border-[#FF5A00]" value={formItem.data.estado_retirada} onChange={e => formItem.setData('estado_retirada', e.target.value)}>
+                                                                        <option value="">UF</option>
+                                                                        {ufsBrasil.map(uf => <option key={uf} value={uf}>{uf}</option>)}
+                                                                    </select>
+                                                                </div>
                                                             </div>
                                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                                                 <div><InputLabel value="Latitude (Auto)" /><TextInput type="text" readOnly className="w-full mt-1 bg-gray-100 font-mono text-xs text-gray-500 cursor-not-allowed" value={formItem.data.latitude_retirada} /></div>
@@ -1976,7 +2075,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                         {/* LOCAL DE ENTREGA */}
                                                         <div className="p-6 bg-gray-50 border border-gray-200 rounded-3xl space-y-4 shadow-sm">
                                                             <h4 className="text-sm font-black text-gray-800 uppercase tracking-wider flex items-center gap-2">
-                                                                <TruckIcon className="w-4 h-4 text-[#FF5A00]" /> Endereço de Entrega Opcional
+                                                                <TruckIcon className="w-4 h-4 text-gray-400" /> Endereço de Entrega Opcional
                                                             </h4>
                                                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                                                 <div className="sm:col-span-1"><InputLabel value="CEP" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.cep_entrega} onChange={e => formItem.setData('cep_entrega', e.target.value)} onBlur={(e) => buscarEnderecoAutomatizado(e.target.value, formItem.setData, '_entrega')} /></div>
@@ -1989,7 +2088,13 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                                                 <div><InputLabel value="Bairro" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.bairro_entrega} onChange={e => formItem.setData('bairro_entrega', e.target.value)} /></div>
                                                                 <div><InputLabel value="Cidade" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.cidade_entrega} onChange={e => formItem.setData('cidade_entrega', e.target.value)} /></div>
-                                                                <div><InputLabel value="UF" /><TextInput maxLength="2" className="w-full mt-1 uppercase focus:border-[#FF5A00]" value={formItem.data.estado_entrega} onChange={e => formItem.setData('estado_entrega', e.target.value.toUpperCase())} /></div>
+                                                                <div>
+                                                                    <InputLabel value="UF" />
+                                                                    <select className="mt-1 w-full border-gray-300 rounded-lg shadow-sm focus:border-[#FF5A00]" value={formItem.data.estado_entrega} onChange={e => formItem.setData('estado_entrega', e.target.value)}>
+                                                                        <option value="">UF</option>
+                                                                        {ufsBrasil.map(uf => <option key={uf} value={uf}>{uf}</option>)}
+                                                                    </select>
+                                                                </div>
                                                             </div>
                                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                                                 <div><InputLabel value="Latitude (Auto)" /><TextInput type="text" readOnly className="w-full mt-1 bg-gray-100 font-mono text-xs text-gray-500 cursor-not-allowed" value={formItem.data.latitude_entrega} /></div>
@@ -2053,6 +2158,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                     </div>
                                                 </div>
 
+                                                {/* 👉 BOTÃO VERDE APRIMORADO E REATIVO */}
                                                 <div className="flex justify-end pt-4 gap-4 border-t border-gray-100">
                                                     {isEditingItem && <button type="button" onClick={cancelarEdicaoItem} className="text-sm font-bold text-gray-500 hover:text-gray-900 transition">Cancelar</button>}
                                                     <button type="submit" disabled={formItem.processing} className="px-8 py-3 bg-green-600 hover:bg-green-700 text-white font-bold rounded-xl shadow-md transition transform active:scale-95 disabled:opacity-50">

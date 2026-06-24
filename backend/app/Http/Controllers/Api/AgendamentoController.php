@@ -10,6 +10,7 @@ use App\Models\Contrato;
 use App\Models\User;
 use App\Models\Servico;
 use App\Models\Funcionario;
+use App\Models\Estabelecimento; // Adicionado para atualizar o Saldo Devedor
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -86,13 +87,29 @@ class AgendamentoController extends Controller
             return redirect()->back()->withErrors(['error' => 'PIN inválido! Peça ao cliente para verificar o código correto no aplicativo.']);
         }
 
+        // =====================================================================
+        // 👉 REGRA DE NEGÓCIO WAITLESS: COMISSÃO DE 12% NOS SERVIÇOS
+        // =====================================================================
+        $valorBase = $agendamento->valor_final ?? $agendamento->valor_original ?? 0;
+        $taxaMarketplace = $valorBase * 0.12; // 12% da Plataforma
+        $estabelecimento = Estabelecimento::find($agendamento->estabelecimento_id);
+
+        // Se o cliente pagou fisicamente no local, o logista fica devendo os 12% à WaitLess
+        if ($agendamento->status_pagamento === 'presencial' || $agendamento->status_pagamento === 'pago_presencial') {
+            if ($estabelecimento) {
+                // Acumula os 12% na dívida do estabelecimento para descontar no próximo repasse online
+                $estabelecimento->increment('saldo_devedor', $taxaMarketplace);
+            }
+        }
+
         $agendamento->update([
             'status' => 'finalizado',
             'foi_realizado' => true,
             'hora_finalizacao' => now()->format('H:i'),
             'finalizado_por' => Auth::id(),
             'status_pagamento' => $agendamento->status_pagamento === 'presencial' ? 'pago_presencial' : $agendamento->status_pagamento,
-            'adiado_ate' => null
+            'adiado_ate' => null,
+            'taxa_plataforma' => $taxaMarketplace // Fica o registro histórico de quanto foi a taxa
         ]);
 
         return redirect()->back()->with('success', 'Atendimento concluído com sucesso! O cliente foi para o histórico.');
@@ -384,17 +401,15 @@ class AgendamentoController extends Controller
 
     public function storeAluguel(Request $request)
     {
-        // 👉 Validação atualizada incluindo os novos mapeamentos logísticos e regras condicionais
+        // 👉 Validação atualizada
         $validated = $request->validate([
             'item_aluguel_id' => 'required|exists:itens_aluguel,id',
             'tipo_periodo' => 'required|in:diaria,semanal,mensal',
             'quantidade_periodos' => 'required|integer|min:1',
             'data_inicio' => 'required|date|after_or_equal:today',
             'quantidade' => 'required|integer|min:1',
-            'forma_pagamento' => 'required|string|max:50',
+            'forma_pagamento' => 'required|string|in:online,presencial', // Validando formato
 
-            // 👉 Mapeamento do tipo de serviço (essencial para logística)
-            // É obrigatório se *qualquer* endereço logístico for fornecido.
             'tipo_servico' => [
                 'string',
                 'in:retirada,entrega,ambos',
@@ -405,7 +420,7 @@ class AgendamentoController extends Controller
                 },
             ],
             
-            // Endereço de Retirada Completo (Validação condicional: se CEP informado, o resto é obrigatório)
+            // Endereço de Retirada Completo
             'cep_retirada' => 'nullable|string|max:10',
             'rua_retirada' => 'required_with:cep_retirada|string|max:255',
             'numero_retirada' => 'required_with:cep_retirada|string|max:20',
@@ -416,7 +431,7 @@ class AgendamentoController extends Controller
             'latitude_retirada' => 'nullable|numeric',
             'longitude_retirada' => 'nullable|numeric',
 
-            // Endereço de Entrega Completo (Validação condicional: se CEP informado, o resto é obrigatório)
+            // Endereço de Entrega Completo
             'cep_entrega' => 'nullable|string|max:10',
             'rua_entrega' => 'required_with:cep_entrega|string|max:255',
             'numero_entrega' => 'required_with:cep_entrega|string|max:20',
@@ -436,9 +451,25 @@ class AgendamentoController extends Controller
             'mensal' => $item->valor_mensal,
         };
 
-        $valorTotal = ($valorUnitario * $validated['quantidade_periodos']) * $validated['quantidade'];
+        $valorBruto = ($valorUnitario * $validated['quantidade_periodos']) * $validated['quantidade'];
+        $valorTotalComCaucao = $valorBruto + ($item->valor_caucao ?? 0);
 
-        // 👉 Salvando os dados no DB, incluindo as informações logísticas
+        // =====================================================================
+        // 👉 REGRA DE NEGÓCIO WAITLESS: COMISSÃO DE 12% NOS ALUGUÉIS/LOCAÇÕES
+        // =====================================================================
+        // A comissão recai sobre o valor faturado (ignorando caução, que é devolvido)
+        $taxaMarketplace = $valorBruto * 0.12; 
+        
+        if ($validated['forma_pagamento'] === 'presencial') {
+            $estabelecimento = Estabelecimento::find($item->estabelecimento_id);
+            if ($estabelecimento) {
+                // Como o cliente pagou na mão do logista, a loja fica devendo os 12% da plataforma
+                // O Saldo Devedor é acumulativo (+12% +12% ...) e será retido quando ele receber Online
+                $estabelecimento->increment('saldo_devedor', $taxaMarketplace);
+            }
+        }
+
+        // Criar Aluguel
         $aluguel = Aluguel::create([
             'codigo_reserva' => 'RES-' . strtoupper(Str::random(10)),
             'item_aluguel_id' => $item->id,
@@ -452,11 +483,11 @@ class AgendamentoController extends Controller
             'quantidade' => $validated['quantidade'],
             'valor_unitario' => $valorUnitario,
             'valor_caucao' => $item->valor_caucao ?? 0,
-            'valor_total' => $valorTotal + ($item->valor_caucao ?? 0),
+            'valor_total' => $valorTotalComCaucao,
+            'taxa_plataforma' => $taxaMarketplace, // Registro da Taxa WaitLess gerada pela reserva
             'forma_pagamento' => $validated['forma_pagamento'],
             'status' => 'pendente',
 
-            // 👉 Novos campos de logística
             'tipo_servico' => $validated['tipo_servico'] ?? null,
 
             // Salvando informações de Retirada
