@@ -2,18 +2,19 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import styled, { createGlobalStyle, css } from 'styled-components';
-import { useForm } from '@inertiajs/react'; // Importado para lidar com o formulário de pesquisa
+import { useForm } from '@inertiajs/react';
 
 import { IoCutOutline } from 'react-icons/io5';
 import { 
   FiSearch, FiShoppingCart, FiMapPin, FiClock, 
   FiStar, FiUsers, FiBell, FiThumbsUp, FiTool, FiLoader,
   FiChevronLeft, FiChevronRight, FiMap, FiCornerDownLeft,
-  FiTrash2 // Adicionado ícone de lixeira
+  FiTrash2 
 } from 'react-icons/fi';
 import { 
   FaSprayCan, FaTooth, FaBriefcaseMedical, 
-  FaBalanceScale, FaCalculator, FaDumbbell, FaPaw 
+  FaBalanceScale, FaCalculator, FaDumbbell, FaPaw,
+  FaCar, FaHome 
 } from 'react-icons/fa';
 import { MdBrush } from 'react-icons/md';
 
@@ -42,7 +43,7 @@ const colors = {
   lightGray: '#F3F4F6', 
   white: '#FFFFFF',
   border: '#E5E7EB',
-  error: '#DC2626', // Nova cor para erros
+  error: '#DC2626', 
 };
 
 const media = {
@@ -98,7 +99,48 @@ const HeroText = styled.div`
   }
 `;
 
-// Barra de pesquisa agora é um formulário para submissão
+const HeroBadge = styled.div`
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background-color: ${colors.primaryLight};
+  color: ${colors.primary};
+  padding: 0.4rem 1rem;
+  border-radius: 50px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  margin-bottom: 1.2rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+`;
+
+const HeroBenefits = styled.ul`
+  list-style: none;
+  padding: 0;
+  margin: 0 0 2rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+
+  li {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    font-size: 1rem;
+    color: ${colors.secondary};
+    font-weight: 500;
+    
+    ${media.tablet`
+      justify-content: center;
+    `}
+
+    svg {
+      color: #10B981;
+      font-size: 1.2rem;
+    }
+  }
+`;
+
 const SearchBarForm = styled.form`
   display: flex;
   background-color: ${colors.white};
@@ -297,6 +339,92 @@ const CategoryItem = styled.div`
   p { font-size: 0.85rem; font-weight: 600; margin: 0; color: ${colors.secondary}; text-align: center; }
 `;
 
+// --- SEÇÃO: CARROSEL DE SERVIÇOS COM FOTOS ---
+const ServicesSection = styled.section`
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+`;
+
+const ServicesCarousel = styled.div`
+  display: flex;
+  gap: 1.5rem;
+  overflow-x: auto;
+  padding-bottom: 1rem;
+  scroll-behavior: smooth; 
+  scrollbar-width: none; 
+  &::-webkit-scrollbar { display: none; }
+`;
+
+const ServiceCard = styled.div`
+  flex: 0 0 320px;
+  background-color: ${colors.white};
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid ${colors.border};
+  display: flex;
+  flex-direction: column;
+  cursor: pointer; 
+  transition: all 0.2s ease-in-out;
+
+  &:hover {
+    border-color: #2563EB;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    transform: translateY(-3px);
+  }
+
+  ${media.tablet`
+    flex: 0 0 280px;
+  `}
+`;
+
+const ServiceImage = styled.div`
+  height: 180px;
+  background-color: ${colors.lightGray};
+  position: relative;
+  
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+`;
+
+const ServiceIconBadge = styled.div`
+  position: absolute;
+  bottom: -16px;
+  left: 1.5rem;
+  width: 32px;
+  height: 32px;
+  background-color: #2563EB; 
+  color: ${colors.white};
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+`;
+
+const ServiceContent = styled.div`
+  padding: 2.5rem 1.5rem 1.5rem;
+  
+  h3 {
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin: 0 0 0.5rem 0;
+    color: ${colors.secondary};
+  }
+  
+  p {
+    font-size: 0.85rem;
+    color: ${colors.gray};
+    margin: 0;
+    line-height: 1.5;
+  }
+`;
+
 // ESTABELECIMENTOS SECTION
 const EstablishmentsSection = styled.section`
   display: flex;
@@ -307,7 +435,7 @@ const EstablishmentsSection = styled.section`
 const LocationSelector = styled.div`
   display: flex;
   align-items: center;
-  gap: 0.6rem; // Aumentado para acomodar o botão de lixeira
+  gap: 0.6rem; 
   font-size: 0.9rem;
   color: ${colors.gray};
   cursor: pointer;
@@ -339,7 +467,6 @@ const LocationSelector = styled.div`
   }
 `;
 
-// Container do novo bloco de endereço elaborado
 const LocationBlockContainer = styled.div`
   background-color: ${colors.white};
   border: 1px solid ${colors.border};
@@ -364,10 +491,10 @@ const LocationHeader = styled.div`
 
 const LocationFormFields = styled.form`
   display: grid;
-  grid-template-columns: 2fr 1fr; /* Rua maior, Número menor */
+  grid-template-columns: 2fr 1fr;
   gap: 1rem;
 
-  ${media.tablet`grid-template-columns: 1fr;`} /* Empilha em telas pequenas */
+  ${media.tablet`grid-template-columns: 1fr;`}
 
   .full-width { grid-column: span 2; ${media.tablet`grid-column: span 1;`} }
 
@@ -396,247 +523,6 @@ const LocationFormFields = styled.form`
   }
 `;
 
-const LocationActions = styled.div`
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.8rem;
-  margin-top: 0.5rem;
-
-  button {
-    padding: 0.6rem 1.5rem;
-    border-radius: 8px;
-    font-weight: 600;
-    font-size: 0.9rem;
-    cursor: pointer;
-    transition: background 0.2s;
-  }
-
-  .btn-save {
-    background-color: ${colors.primary};
-    color: ${colors.white};
-    border: none;
-    &:hover { opacity: 0.9; }
-    &:disabled { background-color: #D1D5DB; cursor: not-allowed; }
-  }
-
-  .btn-cancel {
-    background-color: transparent;
-    color: ${colors.gray};
-    border: 1px solid ${colors.border};
-    &:hover { background-color: ${colors.lightGray}; color: ${colors.secondary}; }
-  }
-`;
-
-const StoreList = styled.div`
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 1.5rem;
-`;
-
-const StoreCard = styled.div`
-  background-color: ${colors.white};
-  border-radius: 16px;
-  overflow: hidden;
-  border: 1px solid ${colors.border};
-  display: flex;
-  flex-direction: column;
-`;
-
-const StoreCardImage = styled.div`
-  position: relative;
-  height: 160px;
-  background-color: ${colors.lightGray};
-  img { width: 100%; height: 100%; object-fit: cover; }
-`;
-
-const CategoryBadge = styled.div`
-  position: absolute;
-  bottom: -15px;
-  left: 15px;
-  width: 32px;
-  height: 32px;
-  background-color: ${colors.secondary};
-  color: ${colors.white};
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1rem;
-  border: 2px solid ${colors.white};
-`;
-
-const CartButton = styled.button`
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background-color: rgba(0, 0, 0, 0.4);
-  color: ${colors.white};
-  border: none;
-  font-size: 1rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  backdrop-filter: blur(4px);
-  transition: all 0.2s;
-
-  &:hover { background-color: ${colors.primary}; }
-`;
-
-const StoreInfo = styled.div`
-  padding: 1.5rem 1.2rem 1.2rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.8rem;
-  flex: 1;
-
-  h3 { font-size: 1.1rem; font-weight: 700; margin: 0; color: ${colors.secondary}; }
-
-  .meta {
-    display: flex;
-    justify-content: space-between;
-    font-size: 0.85rem;
-    color: ${colors.gray};
-    
-    .rating {
-      display: flex;
-      align-items: center;
-      gap: 0.3rem;
-      color: ${colors.secondary};
-      font-weight: 600;
-      svg { color: ${colors.accent}; }
-      span { color: ${colors.gray}; font-weight: 400; }
-    }
-    .distance { display: flex; align-items: center; gap: 0.2rem; }
-  }
-`;
-
-const QueueBadge = styled.div`
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  background-color: ${colors.primaryLight};
-  color: ${colors.primary};
-  padding: 0.4rem 0.8rem;
-  border-radius: 8px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  width: fit-content;
-`;
-
-const FullButton = styled.button`
-  background-color: ${colors.primary};
-  color: ${colors.white};
-  border: none;
-  padding: 0.8rem;
-  border-radius: 10px;
-  font-weight: 600;
-  font-size: 0.95rem;
-  cursor: pointer;
-  width: 100%;
-  margin-top: auto;
-  transition: opacity 0.2s;
-
-  &:hover { opacity: 0.9; }
-`;
-
-const EmptyStateContainer = styled.div`
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 4rem 2rem;
-  background-color: ${colors.white};
-  border-radius: 16px;
-  border: 1px dashed ${colors.border};
-  text-align: center;
-  grid-column: 1 / -1;
-
-  .spinner {
-    animation: spin 1s linear infinite;
-    font-size: 2rem;
-    color: ${colors.primary};
-    margin-bottom: 1rem;
-  }
-  @keyframes spin { 100% { transform: rotate(360deg); } }
-
-  svg { font-size: 3rem; color: #D1D5DB; margin-bottom: 1rem; }
-  h3 { color: ${colors.secondary}; margin: 0 0 0.5rem 0; font-size: 1.2rem; }
-  p { color: ${colors.gray}; margin: 0; font-size: 0.95rem; }
-`;
-
-// BOTTOM FEATURES
-const FeaturesGrid = styled.section`
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 1.2rem;
-
-  ${media.desktop`grid-template-columns: repeat(3, 1fr);`}
-  ${media.tablet`grid-template-columns: 1fr;`}
-`;
-
-const FeatureCard = styled.div`
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.8rem;
-  padding: 1.5rem;
-  background-color: ${colors.white};
-  border-radius: 16px;
-  border: 1px solid ${colors.border};
-
-  .icon-holder {
-    color: ${colors.primary};
-    font-size: 1.5rem;
-    background-color: ${colors.primaryLight};
-    padding: 0.6rem;
-    border-radius: 10px;
-  }
-  h4 { font-size: 0.95rem; font-weight: 700; margin: 0; color: ${colors.secondary}; }
-  p { font-size: 0.85rem; color: ${colors.gray}; margin: 0; line-height: 1.4; }
-`;
-
-const PremiumCard = styled.div`
-  background: linear-gradient(135deg, #E04F36 0%, #B91C1C 100%);
-  color: ${colors.white};
-  padding: 1.5rem;
-  border-radius: 16px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  align-items: flex-start;
-  position: relative;
-  overflow: hidden;
-
-  h3 { font-size: 1.2rem; font-weight: 800; margin: 0 0 0.5rem 0; }
-  p { font-size: 0.85rem; margin: 0 0 1.5rem 0; opacity: 0.9; position: relative; z-index: 2; }
-  
-  button {
-    background-color: ${colors.white};
-    color: #B91C1C;
-    border: none;
-    padding: 0.6rem 1.2rem;
-    border-radius: 50px;
-    font-weight: 700;
-    font-size: 0.85rem;
-    cursor: pointer;
-    z-index: 2;
-  }
-
-  &::after {
-    content: '👑';
-    position: absolute;
-    bottom: -15px;
-    right: -10px;
-    font-size: 6rem;
-    opacity: 0.15;
-    z-index: 1;
-  }
-`;
-
 // --- DADOS ESTÁTICOS ---
 const staticCategories = [
   { icon: <IoCutOutline />, name: 'Barbeiro' },
@@ -651,11 +537,21 @@ const staticCategories = [
   { icon: <FaDumbbell />, name: 'Academia' },
 ];
 
-const staticFeatures = [
-  { icon: <FiUsers />, title: "Fila virtual", desc: "Entre na fila de onde estiver e evite filas físicas." },
-  { icon: <FiClock />, title: "Acompanhamento em tempo real", desc: "Veja sua posição e tempo estimado de espera." },
-  { icon: <FiBell />, title: "Notificações", desc: "Receba alertas quando estiver próximo do seu atendimento." },
-  { icon: <FiThumbsUp />, title: "Avaliações reais", desc: "Veja avaliações de outros clientes e faça a melhor escolha." },
+// --- DADOS: CARDS DE SERVIÇOS E ALUGUÉIS ---
+// Adicionando as imagens exatas que você passou
+const serviceCardsData = [
+  { id: 1, title: 'Saúde & Clínicas', desc: 'Agende consultas médicas, exames e procedimentos.', icon: <FaBriefcaseMedical />, category: 'saude', image: '/images/saude.png' },
+  { id: 2, title: 'Beleza & Estética', desc: 'Marque horários em salões de beleza, barbearias e clínicas.', icon: <IoCutOutline />, category: 'beleza', image: '/images/Beleza.png' },
+  { id: 3, title: 'Hospedagem', desc: 'Reserve quartos em hotéis, pousadas e acomodações.', icon: <FiMapPin />, category: 'hospedagem', image: '/images/Hospedagem.png' },
+  { id: 4, title: 'Turismo', desc: 'Planeje passeios, tours e experiências turísticas.', icon: <FiMap />, category: 'turismo', image: '/images/Turismo (2).png' },
+  { id: 5, title: 'Automotivo', desc: 'Agende manutenções, revisões e serviços automotivos.', icon: <FiTool />, category: 'automotivo', image: '/images/Automotivo (2).png' },
+  { id: 6, title: 'Montagem de Móveis', desc: 'Agende profissionais para montagem e instalação.', icon: <FiTool />, category: 'montagem', image: '/images/Montagem (2).png' },
+  { id: 7, title: 'Jardinagem & Paisagismo', desc: 'Reserve serviços de jardinagem, paisagismo e manutenção.', icon: <FiStar />, category: 'jardinagem', image: '/images/Jardinagem (2).png' },
+  { id: 8, title: 'Pedreiros & Construção', desc: 'Contrate pedreiros e profissionais de construção.', icon: <FiUsers />, category: 'construcao', image: '/images/Predeiro (2).png' },
+  { id: 9, title: 'Limpeza de piscinas', desc: 'Especialistas em limpeza de piscinas.', icon: <FiStar />, category: 'piscinas', image: '/images/Piscinas.png' },
+  { id: 10, title: 'Aluguel de Carros', desc: 'Encontre o veículo ideal para sua viagem ou dia a dia.', icon: <FaCar />, category: 'aluguel-carros', image: '/images/carro.jpg' },
+  { id: 11, title: 'Aluguel de Casas', desc: 'Descubra casas, apartamentos e chácaras para aluguel.', icon: <FaHome />, category: 'aluguel-casas', image: '/images/casas.jpg' },
+  { id: 12, title: 'Locação de Equipamentos', desc: 'Alugue ferramentas e equipamentos rapidamente.', icon: <FiTool />, category: 'aluguel-equipamentos', image: '/images/Montagem (2).png' },
 ];
 
 const getCategoryIcon = (tipo) => {
@@ -683,7 +579,6 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false); 
   const [statusMessage, setStatusMessage] = useState('Buscando localização...'); 
   
-  // 1. Estados para a Inserção Manual de Endereço (agora um objeto)
   const [isEditingLocation, setIsEditingLocation] = useState(false);
   const [addressData, setAddressData] = useState({
     logradouro: '',
@@ -692,17 +587,15 @@ export default function Home() {
     cidadeUf: ''
   });
   const [isSavingLocation, setIsSavingLocation] = useState(false);
-  const [validationErrors, setValidationErrors] = useState({}); // Novo estado para erros de validação
+  const [validationErrors, setValidationErrors] = useState({}); 
 
-  // 2. Referência para o Carrossel de Categorias
   const categoryCarouselRef = useRef(null);
+  const servicesCarouselRef = useRef(null);
 
-  // 3. Gerenciamento do formulário de pesquisa principal com useForm
   const searchForm = useForm({
     query: ''
   });
 
-  // Função genérica para buscar lojas próximas baseada em coordenadas ou endereço
   const fetchNearbyStores = async (params) => {
     setIsLoading(true);
     try {
@@ -710,14 +603,12 @@ export default function Home() {
       setStores(response.data);
     } catch (error) {
       console.error("Erro ao buscar estabelecimentos:", error);
-      // Aqui você poderia tratar o erro de forma mais granular
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    // 4. Carregamento da localização do Local Storage na montagem do componente
     const storedFormattedAddress = localStorage.getItem(LOCAL_STORAGE_KEYS.FORMATTED_ADDRESS);
     const storedAddressData = localStorage.getItem(LOCAL_STORAGE_KEYS.ADDRESS_DATA);
     const storedCoords = localStorage.getItem(LOCAL_STORAGE_KEYS.COORDS);
@@ -730,15 +621,43 @@ export default function Home() {
       const parsedAddressData = JSON.parse(storedAddressData);
       setStatusMessage(storedFormattedAddress);
       setAddressData(parsedAddressData);
-      fetchNearbyStores(parsedAddressData); // Assume que o backend consegue lidar com o objeto de endereço
+      fetchNearbyStores(parsedAddressData); 
     } else {
       obterLocalizacaoEBuscarDados();
     }
   }, []);
 
+  useEffect(() => {
+    const autoScrollCategories = setInterval(() => {
+      if (categoryCarouselRef.current) {
+        const { scrollLeft, scrollWidth, clientWidth } = categoryCarouselRef.current;
+        if (scrollLeft + clientWidth >= scrollWidth - 10) {
+          categoryCarouselRef.current.scrollTo({ left: 0, behavior: 'smooth' });
+        } else {
+          categoryCarouselRef.current.scrollBy({ left: 150, behavior: 'smooth' });
+        }
+      }
+    }, 3000);
+
+    const autoScrollServices = setInterval(() => {
+      if (servicesCarouselRef.current) {
+        const { scrollLeft, scrollWidth, clientWidth } = servicesCarouselRef.current;
+        if (scrollLeft + clientWidth >= scrollWidth - 10) {
+          servicesCarouselRef.current.scrollTo({ left: 0, behavior: 'smooth' });
+        } else {
+          servicesCarouselRef.current.scrollBy({ left: 340, behavior: 'smooth' });
+        }
+      }
+    }, 4000); 
+
+    return () => {
+      clearInterval(autoScrollCategories);
+      clearInterval(autoScrollServices);
+    };
+  }, []);
+
   const obterLocalizacaoEBuscarDados = () => {
     setIsLoading(true);
-    // Limpa mensagens de erro de validação e estado de edição se houver
     setValidationErrors({});
     setIsEditingLocation(false);
 
@@ -750,16 +669,14 @@ export default function Home() {
           
           await fetchNearbyStores({ lat: latitude, lng: longitude });
           
-          // Salva no Local Storage
           const displayAddress = "São Paulo, SP (Obtido via GPS)";
           setStatusMessage(displayAddress);
           localStorage.setItem(LOCAL_STORAGE_KEYS.FORMATTED_ADDRESS, displayAddress);
           localStorage.setItem(LOCAL_STORAGE_KEYS.COORDS, JSON.stringify({ lat: latitude, lng: longitude }));
-          localStorage.removeItem(LOCAL_STORAGE_KEYS.ADDRESS_DATA); // Remove dados de endereço manual se houver
+          localStorage.removeItem(LOCAL_STORAGE_KEYS.ADDRESS_DATA); 
         },
         (error) => {
           console.error("Geolocalização negada ou falhou:", error);
-          // Permissão negada ou erro -> Mostra texto sugestivo para digitar endereço
           setStatusMessage("Não foi possível obter sua localização. Clique para informar endereço.");
           setIsLoading(false);
         }
@@ -770,37 +687,28 @@ export default function Home() {
     }
   };
 
-  // 5. Função para limpar a localização salva e reiniciar busca via GPS
   const handleClearLocation = () => {
     localStorage.removeItem(LOCAL_STORAGE_KEYS.FORMATTED_ADDRESS);
     localStorage.removeItem(LOCAL_STORAGE_KEYS.ADDRESS_DATA);
     localStorage.removeItem(LOCAL_STORAGE_KEYS.COORDS);
-    setAddressData({ logradouro: '', numero: '', bairro: '', cidadeUf: '' }); // Limpa campos de endereço
-    setStores([]); // Limpa a lista de lojas
-    obterLocalizacaoEBuscarDados(); // Reinicia a busca
+    setAddressData({ logradouro: '', numero: '', bairro: '', cidadeUf: '' }); 
+    setStores([]); 
+    obterLocalizacaoEBuscarDados(); 
   };
 
-  // Função para lidar com a pesquisa principal e redirecionar
   const handleMainSearch = (e) => {
     e.preventDefault();
     if (!searchForm.data.query.trim()) return;
-
-    // Redireciona para a rota 'cliente.explorar' passando o termo pesquisado como query parameter
-    // URL final ficará algo como: /explorar?query=termo-pesquisado
     searchForm.get(route('cliente.explorar'));
   };
 
-  // Atualiza o estado do endereço ao digitar nos campos
   const handleAddressInputChange = (e) => {
     const { name, value } = e.target;
-    // Sanitização básica na entrada: remove caracteres especiais desnecessários de acordo com o campo
     let sanitizedValue = value;
     if (name === 'numero') {
-      // Para o número, permite apenas números, espaço, barra, e as letras "s", "n", "N", "º"
       sanitizedValue = value.replace(/[^0-9\s/s/nNºs/n]/g, '');
     }
     
-    // Limita o tamanho dos campos para segurança
     const maxLengths = { logradouro: 255, numero: 20, bairro: 100, cidadeUf: 100 };
     if (sanitizedValue.length > (maxLengths[name] || 255)) return;
 
@@ -809,13 +717,11 @@ export default function Home() {
       [name]: sanitizedValue
     }));
     
-    // Limpa erro de validação do campo ao digitar
     if (validationErrors[name]) {
       setValidationErrors(prev => ({ ...prev, [name]: null }));
     }
   };
 
-  // 6. Função para validar o endereço antes de salvar
   const validateAddress = () => {
     const errors = {};
     if (!addressData.logradouro.trim()) {
@@ -833,18 +739,13 @@ export default function Home() {
       }
     }
 
-    // Outras validações opcionais para bairro e cidadeUf
-    // Ex: cidadeUf deve conter a barra e ter um tamanho mínimo
-
     return errors;
   };
 
-  // Função disparada ao submeter o formulário de endereço manual (POST)
   const handleSaveLocation = async (e) => {
     e.preventDefault();
-    setValidationErrors({}); // Limpa erros anteriores
+    setValidationErrors({}); 
     
-    // Validação avançada antes de salvar
     const errors = validateAddress();
     if (Object.keys(errors).length > 0) {
       setValidationErrors(errors);
@@ -853,7 +754,6 @@ export default function Home() {
 
     setIsSavingLocation(true);
     
-    // Sanitização e formatação dos dados antes de enviar
     const sanitizedAddressData = {
       logradouro: addressData.logradouro.trim(),
       numero: addressData.numero.trim(),
@@ -862,29 +762,20 @@ export default function Home() {
     };
     
     try {
-      // 🚨 IMPORTANTE: Verifique se essa rota POST está criada no seu arquivo api.php 🚨
-      // Ela deve receber os dados do endereço e atualizar o usuário autenticado.
       await axios.post('/api/user/update-address', sanitizedAddressData);
-      
-      // Busca lojas próximas baseada no novo endereço
       await fetchNearbyStores(sanitizedAddressData);
       
-      // Monta uma string amigável para exibir na UI
       const displayAddress = `${sanitizedAddressData.logradouro}, ${sanitizedAddressData.numero}${sanitizedAddressData.bairro ? ` - ${sanitizedAddressData.bairro}` : ''}`;
       
-      // Sucesso! Atualiza a UI e fecha o formulário
       setStatusMessage(displayAddress);
       setIsEditingLocation(false);
-      // Limpa os campos após salvar
       setAddressData({ logradouro: '', numero: '', bairro: '', cidadeUf: '' });
       
-      // 7. Salva no Local Storage para lembrar o usuário
       localStorage.setItem(LOCAL_STORAGE_KEYS.FORMATTED_ADDRESS, displayAddress);
       localStorage.setItem(LOCAL_STORAGE_KEYS.ADDRESS_DATA, JSON.stringify(sanitizedAddressData));
-      localStorage.removeItem(LOCAL_STORAGE_KEYS.COORDS); // Remove coordenadas de GPS se houver
+      localStorage.removeItem(LOCAL_STORAGE_KEYS.COORDS); 
     } catch (error) {
       console.error("Erro ao salvar endereço:", error);
-      // Tratamento de erro granular
       if (error.response && error.response.status === 422) {
         setValidationErrors(error.response.data.errors);
       } else {
@@ -895,15 +786,29 @@ export default function Home() {
     }
   };
 
-  // Função para rolar o Carrossel
   const handleScrollCarousel = (direction) => {
     if (categoryCarouselRef.current) {
-      const scrollAmount = 300; // Quantidade de pixels a rolar
+      const scrollAmount = 300; 
       categoryCarouselRef.current.scrollBy({
         left: direction === 'left' ? -scrollAmount : scrollAmount,
         behavior: 'smooth' 
       });
     }
+  };
+
+  const handleScrollServices = (direction) => {
+    if (servicesCarouselRef.current) {
+      const scrollAmount = 340;
+      servicesCarouselRef.current.scrollBy({
+        left: direction === 'left' ? -scrollAmount : scrollAmount,
+        behavior: 'smooth'
+      });
+    }
+  };
+
+  const handleCardClick = (category) => {
+    searchForm.setData('query', category);
+    searchForm.get(route('cliente.explorar'));
   };
 
   return (
@@ -914,10 +819,20 @@ export default function Home() {
         {/* HERO SECTION */}
         <HeroSection>
           <HeroText>
+            <HeroBadge>✨ O seu tempo é precioso</HeroBadge>
             <h1>Encontre atendimento <br/><span>sem filas e sem complicação</span></h1>
-            <p>Entre na fila virtual ou agende seu horário com praticidade e acompanhe tudo em tempo real.</p>
+            <p>
+              Esqueça as horas perdidas em salas de espera. Entre na fila virtual ou agende 
+              seu horário com praticidade para diversos serviços, e acompanhe tudo em tempo 
+              real de onde estiver.
+            </p>
             
-            {/* Barra de pesquisa agora é um formulário Inertia para redirecionamento */}
+            <HeroBenefits>
+              <li><FiClock /> Otimize seu dia e evite aglomerações</li>
+              <li><FiBell /> Receba alertas quando chegar a sua vez</li>
+              <li><FiMapPin /> Descubra os melhores profissionais perto de você</li>
+            </HeroBenefits>
+            
             <SearchBarForm onSubmit={handleMainSearch}>
               <SearchInput>
                 <FiSearch />
@@ -936,10 +851,11 @@ export default function Home() {
             
             <SearchSuggestions>
               <span>Mais buscados:</span>
-              <a href="#">Barbeiro</a>
-              <a href="#">Dentista</a>
-              <a href="#">Salão de Beleza</a>
-              <a href="#">Mecânico</a>
+              <a href="#" onClick={(e) => { e.preventDefault(); handleCardClick('barbearia'); }}>Barbeiro</a>
+              <a href="#" onClick={(e) => { e.preventDefault(); handleCardClick('dentista'); }}>Dentista</a>
+              <a href="#" onClick={(e) => { e.preventDefault(); handleCardClick('salao'); }}>Salão de Beleza</a>
+              <a href="#" onClick={(e) => { e.preventDefault(); handleCardClick('mecanica'); }}>Mecânico</a>
+              <a href="#" onClick={(e) => { e.preventDefault(); handleCardClick('aluguel-carros'); }}>Aluguel de Carros</a>
             </SearchSuggestions>
           </HeroText>
 
@@ -963,13 +879,12 @@ export default function Home() {
           </HeroImageArea>
         </HeroSection>
 
-        {/* CATEGORIAS POPULARES (COM CARROSSEL) */}
+        {/* CATEGORIAS POPULARES */}
         <CategorySection>
           <SectionHeader>
             <h2>Categorias populares</h2>
             <div className="header-actions">
               <a href="#">Ver todas <FiChevronRight /></a>
-              {/* Botões do Carrossel */}
               <CarouselNav>
                 <button onClick={() => handleScrollCarousel('left')} title="Anterior">
                   <FiChevronLeft />
@@ -991,26 +906,58 @@ export default function Home() {
           </CategoryList>
         </CategorySection>
 
+        {/* --- SEÇÃO: CARROSSEL DE SERVIÇOS E LOCAÇÕES --- */}
+        <ServicesSection>
+          <SectionHeader>
+            <h2>Serviços e Locações</h2>
+            <div className="header-actions">
+              <a href="#">Ver tudo <FiChevronRight /></a>
+              <CarouselNav>
+                <button onClick={() => handleScrollServices('left')} title="Anterior">
+                  <FiChevronLeft />
+                </button>
+                <button onClick={() => handleScrollServices('right')} title="Próximo">
+                  <FiChevronRight />
+                </button>
+              </CarouselNav>
+            </div>
+          </SectionHeader>
+
+          <ServicesCarousel ref={servicesCarouselRef}>
+            {serviceCardsData.map((card) => (
+              <ServiceCard key={card.id} onClick={() => handleCardClick(card.category)}>
+                <ServiceImage>
+                  <img src={card.image} alt={card.title} />
+                  <ServiceIconBadge>
+                    {card.icon}
+                  </ServiceIconBadge>
+                </ServiceImage>
+                
+                <ServiceContent>
+                  <h3>{card.title}</h3>
+                  <p>{card.desc}</p>
+                </ServiceContent>
+              </ServiceCard>
+            ))}
+          </ServicesCarousel>
+        </ServicesSection>
+
         {/* ESTABELECIMENTOS PRÓXIMOS */}
         <EstablishmentsSection>
           <SectionHeader>
             <h2>Estabelecimentos próximos</h2>
             
-            {/* TEXTO CLICÁVEL OU NOVO BLOCO DE ENDEREÇO ELABORADO */}
             {!isEditingLocation && (
               <LocationSelector onClick={() => setIsEditingLocation(true)} title="Clique para alterar seu endereço">
                 <FiMapPin />
                 <span className="address-text">{statusMessage}</span>
-                {/* Botão para limpar localização salva e buscar via GPS */}
                 <button className="clear-location" onClick={(e) => { e.stopPropagation(); handleClearLocation(); }} title="Limpar localização salva e buscar via GPS">
                   <FiTrash2 />
                 </button>
               </LocationSelector>
             )}
-
           </SectionHeader>
 
-          {/* --- NOVO BLOCO DE ENDEREÇO ELABORADO --- */}
           {isEditingLocation && (
             <LocationBlockContainer>
               <LocationHeader>
@@ -1047,109 +994,10 @@ export default function Home() {
                   />
                   {validationErrors.numero && <div className="error-message">{validationErrors.numero}</div>}
                 </label>
-                
-                <label>
-                  Bairro
-                  <input 
-                    type="text" 
-                    name="bairro" 
-                    placeholder="Nome do bairro"
-                    value={addressData.bairro}
-                    onChange={handleAddressInputChange}
-                    className={validationErrors.bairro ? 'error' : ''}
-                  />
-                  {validationErrors.bairro && <div className="error-message">{validationErrors.bairro}</div>}
-                </label>
-                
-                <label className="full-width">
-                  Cidade/UF
-                  <input 
-                    type="text" 
-                    name="cidadeUf" 
-                    placeholder="Ex: São Paulo / SP"
-                    value={addressData.cidadeUf}
-                    onChange={handleAddressInputChange}
-                    className={validationErrors.cidadeUf ? 'error' : ''}
-                  />
-                  {validationErrors.cidadeUf && <div className="error-message">{validationErrors.cidadeUf}</div>}
-                </label>
-
-                <LocationActions className="full-width">
-                  <button type="button" className="btn-cancel" onClick={() => setIsEditingLocation(false)}>
-                    Cancelar
-                  </button>
-                  <button type="submit" className="btn-save" disabled={isSavingLocation}>
-                    {isSavingLocation ? (
-                      <><FiLoader className="spinner" style={{marginRight: '0.5rem'}} /> Salvando...</>
-                    ) : (
-                      <><FiCornerDownLeft style={{marginRight: '0.5rem'}} /> Salvar Endereço</>
-                    )}
-                  </button>
-                </LocationActions>
               </LocationFormFields>
             </LocationBlockContainer>
           )}
-          
-          <StoreList>
-            {isLoading ? (
-              <EmptyStateContainer>
-                <FiLoader className="spinner" />
-                <h3>Buscando estabelecimentos...</h3>
-                <p>Encontrando os melhores serviços perto de você.</p>
-              </EmptyStateContainer>
-            ) : stores.length > 0 ? (
-              stores.map(store => (
-                <StoreCard key={store.id}>
-                  <StoreCardImage>
-                    <img src={store.foto_perfil || 'https://via.placeholder.com/400x200?text=Sem+Imagem'} alt={store.nome} />
-                    <CategoryBadge>{getCategoryIcon(store.tipo)}</CategoryBadge>
-                    <CartButton><FiShoppingCart /></CartButton>
-                  </StoreCardImage>
-                  <StoreInfo>
-                    <h3>{store.nome}</h3>
-                    <div className="meta">
-                      <div className="rating">
-                        <FiStar style={{fill: colors.accent}} /> {parseFloat(store.avaliacao_media || 5.0).toFixed(1)}
-                      </div>
-                      <div className="distance">
-                        <FiMapPin /> {parseFloat(store.distance).toFixed(1)} km
-                      </div>
-                    </div>
-                    <QueueBadge>
-                      <FiUsers /> Fila: {store.fila_atual || 0} pessoas
-                    </QueueBadge>
-                    <FullButton>Entrar na fila</FullButton>
-                  </StoreInfo>
-                </StoreCard>
-              ))
-            ) : (
-              <EmptyStateContainer>
-                <FiSearch />
-                <h3>Nenhum dado encontrado</h3>
-                <p>Busque serviços ou altere seu endereço para buscar novamente.</p>
-              </EmptyStateContainer>
-            )}
-          </StoreList>
         </EstablishmentsSection>
-
-        {/* BOTTOM FEATURES & PREMIUM */}
-        <FeaturesGrid>
-          {staticFeatures.map((feat, index) => (
-            <FeatureCard key={index}>
-              <div className="icon-holder">{feat.icon}</div>
-              <h4>{feat.title}</h4>
-              <p>{feat.desc}</p>
-            </FeatureCard>
-          ))}
-          
-          <PremiumCard>
-            <div>
-              <h3>Waitless Premium</h3>
-              <p>Mais benefícios, prioridade na fila e muito mais!</p>
-            </div>
-            <button>Conhecer planos</button>
-          </PremiumCard>
-        </FeaturesGrid>
 
       </MainContainer>
     </AuthenticatedLayout>

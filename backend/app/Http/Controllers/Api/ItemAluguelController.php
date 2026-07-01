@@ -39,6 +39,53 @@ class ItemAluguelController extends Controller
         return response()->json($itens);
     }
 
+
+
+    public function buscarVitrineCliente(Request $request)
+    {
+        $query = ItemAluguel::query()
+            ->where('ativo', true) // Considerando que exista controle de status geral
+            ->with('estabelecimento:id,nome,foto_perfil,cidade,estado');
+
+        // Filtro por Categoria
+        if ($request->filled('categoria')) {
+            $query->where('categoria', $request->categoria);
+        }
+
+        // Filtro: Apenas Promoções
+        if ($request->boolean('apenas_promocoes')) {
+            $query->where('tem_promocao', true);
+        }
+
+        // Filtro: Aceita Pontos
+        if ($request->boolean('aceita_pontos')) {
+            $query->where('aceita_pontos', true);
+        }
+
+        // Busca por Nome, Marca ou Modelo
+        if ($request->filled('busca')) {
+            $termo = '%' . $request->busca . '%';
+            $query->where(function($q) use ($termo) {
+                $q->where('nome', 'like', $termo)
+                  ->orWhere('marca', 'like', $termo)
+                  ->orWhere('modelo', 'like', $termo);
+            });
+        }
+
+        // Ordenação
+        if ($request->ordem === 'menor_preco') {
+            $query->orderBy('valor_diaria', 'asc');
+        } elseif ($request->ordem === 'maior_desconto') {
+            $query->where('tem_promocao', true)->orderBy('valor_desconto', 'desc');
+        } else {
+            $query->latest(); 
+        }
+
+        $itens = $query->paginate(20);
+
+        return response()->json($itens);
+    }
+
     /**
      * Regras de Validação Centralizadas para reutilizar no Store e Update
      */
@@ -150,36 +197,49 @@ class ItemAluguelController extends Controller
             'estado_entrega' => 'nullable|string|max:2',
             'latitude_entrega' => 'nullable|numeric',
             'longitude_entrega' => 'nullable|numeric',
+
+            // Promoções, Fidelidade e Contrato
+            'tem_promocao'             => 'boolean',
+            'tipo_desconto'            => 'required_if:tem_promocao,true|in:percentual,fixo',
+            'valor_desconto'           => 'nullable|numeric|min:0',
+            'aceita_pontos'            => 'boolean',
+            'maximo_pontos_permitidos' => 'nullable|integer|min:0',
+            'exige_contrato'           => 'boolean',
         ];
     }
 
     /**
      * Cadastra um novo Item de Locação / Produto no catálogo
      */
-    public function store(Request $request)
+public function store(Request $request)
     {
         $dados = $request->validate($this->regrasValidacao());
 
-        // 1. Tratamento de Upload das Fotos
         $fotosCaminhos = [];
         if ($request->has('fotos') && is_array($request->fotos)) {
             foreach ($request->fotos as $foto) {
                 if (is_file($foto)) {
-                    $path = $foto->store('itens_aluguel', 'public');
-                    $fotosCaminhos[] = '/storage/' . $path;
+                    $fotosCaminhos[] = '/storage/' . $foto->store('itens_aluguel', 'public');
                 }
             }
         }
 
-        // 2. Converte Arrays em JSON para salvar no MySQL
         $dados['fotos'] = json_encode($fotosCaminhos);
         $dados['recursos_oferecidos'] = json_encode($dados['recursos_oferecidos'] ?? []);
         $dados['acessorios'] = json_encode($dados['acessorios'] ?? []);
         $dados['funcionarios_responsaveis'] = json_encode($dados['funcionarios_responsaveis'] ?? []);
+        $dados['datas_permitidas'] = json_encode($dados['datas_permitidas'] ?? []);
+        $dados['dias_semana_disponiveis'] = json_encode($dados['dias_semana_disponiveis'] ?? []);
+        $dados['dias_mes_disponiveis'] = json_encode($dados['dias_mes_disponiveis'] ?? []);
+        $dados['datas_bloqueadas'] = json_encode($dados['datas_bloqueadas'] ?? []);
+        $dados['horarios_bloqueados'] = json_encode($dados['horarios_bloqueados'] ?? []);
 
-        // 3. Força valores booleanos (checkboxes)
         $dados['mobiliado'] = $request->boolean('mobiliado', false);
         $dados['possui_seguro'] = $request->boolean('possui_seguro', false);
+        $dados['sempre_disponivel'] = $request->boolean('sempre_disponivel', true);
+        $dados['tem_promocao'] = $request->boolean('tem_promocao', false);
+        $dados['aceita_pontos'] = $request->boolean('aceita_pontos', false);
+        $dados['exige_contrato'] = $request->boolean('exige_contrato', false);
 
         ItemAluguel::create($dados);
 
@@ -193,51 +253,45 @@ class ItemAluguelController extends Controller
     {
         $item = ItemAluguel::findOrFail($id);
 
-        // Verifica permissão (opcional, dependendo de como você amarra o estabelecimento)
-        if ($item->estabelecimento_id != $request->estabelecimento_id) {
-            abort(403, 'Ação não autorizada.');
-        }
+        if ($item->estabelecimento_id != $request->estabelecimento_id) { abort(403, 'Ação não autorizada.'); }
 
         $dados = $request->validate($this->regrasValidacao());
 
-        // 1. Tratamento Misto de Upload de Fotos (Arquivos Novos vs URLs Antigas)
         $fotosCaminhos = [];
         if ($request->has('fotos') && is_array($request->fotos)) {
             foreach ($request->fotos as $foto) {
-                if (is_file($foto)) {
-                    // É um arquivo novo subido agora
-                    $path = $foto->store('itens_aluguel', 'public');
-                    $fotosCaminhos[] = '/storage/' . $path;
-                } elseif (is_string($foto)) {
-                    // É a URL de uma foto antiga que foi mantida
-                    $fotosCaminhos[] = $foto;
-                }
+                if (is_file($foto)) { $fotosCaminhos[] = '/storage/' . $foto->store('itens_aluguel', 'public'); } 
+                elseif (is_string($foto)) { $fotosCaminhos[] = $foto; }
             }
         }
 
-        // (Opcional) Lógica de limpar as imagens antigas do servidor que foram removidas pelo usuário
         $fotosAntigas = json_decode($item->fotos, true) ?? [];
         $fotosDeletadas = array_diff($fotosAntigas, $fotosCaminhos);
         foreach ($fotosDeletadas as $fotoDeletada) {
-            $pathLimpo = str_replace('/storage/', '', $fotoDeletada);
-            Storage::disk('public')->delete($pathLimpo);
+            Storage::disk('public')->delete(str_replace('/storage/', '', $fotoDeletada));
         }
 
-        // 2. Atualizando JSONs
         $dados['fotos'] = json_encode($fotosCaminhos);
         $dados['recursos_oferecidos'] = json_encode($dados['recursos_oferecidos'] ?? []);
         $dados['acessorios'] = json_encode($dados['acessorios'] ?? []);
         $dados['funcionarios_responsaveis'] = json_encode($dados['funcionarios_responsaveis'] ?? []);
+        $dados['datas_permitidas'] = json_encode($dados['datas_permitidas'] ?? []);
+        $dados['dias_semana_disponiveis'] = json_encode($dados['dias_semana_disponiveis'] ?? []);
+        $dados['dias_mes_disponiveis'] = json_encode($dados['dias_mes_disponiveis'] ?? []);
+        $dados['datas_bloqueadas'] = json_encode($dados['datas_bloqueadas'] ?? []);
+        $dados['horarios_bloqueados'] = json_encode($dados['horarios_bloqueados'] ?? []);
 
-        // 3. Força valores booleanos
         $dados['mobiliado'] = $request->boolean('mobiliado', false);
         $dados['possui_seguro'] = $request->boolean('possui_seguro', false);
+        $dados['sempre_disponivel'] = $request->boolean('sempre_disponivel', true);
+        $dados['tem_promocao'] = $request->boolean('tem_promocao', false);
+        $dados['aceita_pontos'] = $request->boolean('aceita_pontos', false);
+        $dados['exige_contrato'] = $request->boolean('exige_contrato', false);
 
         $item->update($dados);
 
-        return redirect()->back()->with('success', 'Produto / Locação atualizado com sucesso!');
+        return redirect()->back()->with('success', 'Produto atualizado com sucesso!');
     }
-
     /**
      * Remove um Item de Locação permanentemente
      */

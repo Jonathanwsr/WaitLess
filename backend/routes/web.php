@@ -24,6 +24,7 @@ use App\Http\Controllers\Api\ClienteCupomController;
 use App\Http\Controllers\Api\CarteiraController;
 use App\Http\Controllers\Api\FuncionarioController;
 use App\Http\Controllers\Api\ItemAluguelController;
+use App\Http\Controllers\Api\ContratoController;
 use Illuminate\Foundation\Application; 
 use Illuminate\Support\Facades\Route;  
 use Inertia\Inertia;
@@ -153,15 +154,69 @@ Route::get('/estabelecimentos/{estabelecimento}/fila', [AgendamentoController::c
     //Detalhes cliente 
     Route::middleware(['auth'])->group(function () {
     // Rota para ver os detalhes do cliente
-    Route::get('/clientes/{id}/detalhes', [AgendamentoController::class, 'detalheCliente'])->name('clientes.detalhes');
-
+    Route::get('/meus-pedidos/agendamento/{id}', [AgendamentoController::class, 'detalhesAgendamento'])
+    ->name('agendamentos.detalhes');
     Route::post('/triagens/{id}/salvar-nota', [AgendamentoController::class, 'salvarNotaTriagem'])->name('triagens.salvarNota');
     
     // Rota para criar/remarcar agendamento
     Route::post('/agendamentos/remarcar', [AgendamentoController::class, 'remarcarServico'])->name('agendamentos.remarcar');
 
     Route::get('/api/servicos/{id}/horarios-disponiveis', [AgendamentoController::class, 'obterHorariosDisponiveis'])->name('servicos.horarios');
+
+  // contratos
+
+  // Tela de Contratos do Lojista
+    Route::get('/estabelecimentos/{estabelecimento}/contratos', [ContratoController::class, 'index'])
+        ->name('estabelecimentos.contratos');
+
+    // Salvar e Editar os Textos dos Modelos
+    Route::post('/estabelecimentos/{estabelecimento}/contratos/template', [ContratoController::class, 'storeTemplate'])
+        ->name('contratos.templates.store');
+    Route::put('/contratos/template/{id}', [ContratoController::class, 'updateTemplate'])
+        ->name('contratos.templates.update');
+
+    // Rota para o cliente ou sistema gerar o contrato via Assinafy
+    Route::post('/reservas/{id}/gerar-assinafy', [ContratoController::class, 'gerarEEnviarAssinafy'])
+        ->name('reservas.gerar-assinafy');
+
+        Route::post('/webhooks/assinafy', [ContratoController::class, 'webhookAssinafy'])
+    ->name('webhooks.assinafy')->withoutMiddleware([\App\Http\Middleware\VerifyCsrfToken::class]);
+    
+
+    // Rota para buscar os detalhes de uma Reserva (Aluguel)
+    Route::get('/agendamentos/{id}/detalhes', [AgendamentoController::class, 'detalhesAgendamento']);
+    Route::get('/alugueis/{id}/detalhes', [AgendamentoController::class, 'detalhesReservaAluguel']);
+
+
+    Route::get('/minhas-reservas', [AgendamentoController::class, 'indexAlugueis'])
+        ->name('cliente.reservas.index');
+
+    // Criação de uma nova reserva/locação com cálculo dinâmico de taxas e pontos
+    Route::post('/minhas-reservas/contratar', [AgendamentoController::class, 'storeAluguel'])
+        ->name('cliente.reservas.store');
+
+    // Altera datas de uma reserva que ainda não foi paga
+    Route::put('/minhas-reservas/alterar/{id}', [AgendamentoController::class, 'updateAluguel'])
+        ->name('cliente.reservas.update');
+
+    // Cancela/Apaga uma reserva antes do uso
+    Route::delete('/minhas-reservas/cancelar/{id}', [AgendamentoController::class, 'destroyAluguel'])
+        ->name('cliente.reservas.destroy');
+
+    // Visualiza os detalhes completos e contratos de uma reserva específica
+    Route::get('/minhas-reservas/detalhes/{id}', [AgendamentoController::class, 'showAluguel'])
+        ->name('cliente.reservas.show');
+
+    // Dispara o fluxo de assinatura digital D4Sign
+    Route::post('/minhas-reservas/gerar-contrato/{id}', [AgendamentoController::class, 'generarEEnviarContrato'])
+        ->name('cliente.reservas.contrato');
+
 });
+
+// Rota de Webhook pública (Fora do Middleware Auth para receber respostas da D4Sign)
+Route::post('/webhooks/d4sign', [AgendamentoController::class, 'webhookD4Sign'])
+    ->name('webhooks.d4sign');
+
 });
 
 

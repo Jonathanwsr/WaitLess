@@ -10,7 +10,7 @@ use App\Models\Contrato;
 use App\Models\User;
 use App\Models\Servico;
 use App\Models\Funcionario;
-use App\Models\Estabelecimento; // Adicionado para atualizar o Saldo Devedor
+use App\Models\Estabelecimento; 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -384,33 +384,179 @@ class AgendamentoController extends Controller
         return back()->with('success', 'Reagendado com sucesso!');
     }
 
+    public function detalhesAgendamento(Request $request, $id)
+    {
+        // 1. Busca o agendamento
+        $agendamento = Agendamento::with(['servico', 'funcionario', 'estabelecimento'])->findOrFail($id);
+
+        // 2. TRAVA DE SEGURANÇA: Verifica se o agendamento é do usuário logado
+        if ($agendamento->usuario_id !== Auth::id() && $agendamento->user_id !== Auth::id()) {
+            abort(403, 'Acesso negado: Este agendamento pertence a outro usuário.');
+        }
+
+        // Formata as datas com Carbon
+        $dataCarbon = Carbon::parse($agendamento->data_agendamento);
+        $horaInicio = Carbon::parse($agendamento->hora_agendamento);
+        $duracao = $agendamento->servico->duracao_minutos ?? 60;
+        $horaFim = $horaInicio->copy()->addMinutes($duracao);
+
+        // Monta o endereço completo do Estabelecimento
+        $estabelecimento = $agendamento->estabelecimento;
+        $enderecoCompleto = "{$estabelecimento->endereco}, {$estabelecimento->numero} - {$estabelecimento->bairro}, {$estabelecimento->cidade} - {$estabelecimento->estado}";
+
+        // Estrutura pronta para a tela React
+        $dadosTela = [
+            'tipo' => 'agendamento',
+            'id' => $agendamento->id,
+            'titulo' => $agendamento->servico->nome ?? 'Serviço não especificado',
+            'subtitulo' => $agendamento->funcionario ? $agendamento->funcionario->name : 'Profissional não atribuído',
+            'status_geral' => strtoupper($agendamento->status),
+            'data_formatada' => $dataCarbon->translatedFormat('d \d\e F, Y'),
+            'horario' => $horaInicio->format('H:i') . ' - ' . $horaFim->format('H:i') . " ({$duracao} Minutos)",
+            'valor' => $agendamento->valor_final ?? $agendamento->valor_original ?? $agendamento->servico->valor,
+            
+            // Lógica de Pagamento
+            'status_pagamento' => $agendamento->status_pagamento,
+            'pagamento_confirmado' => in_array($agendamento->status_pagamento, ['pago', 'pago_presencial', 'concluido']),
+            
+            // Dados do Local
+            'estabelecimento' => [
+                'nome' => $estabelecimento->nome ?? $estabelecimento->nome_fantasia,
+                'endereco_completo' => $enderecoCompleto,
+                'latitude' => $estabelecimento->latitude,
+                'longitude' => $estabelecimento->longitude,
+            ],
+            
+            // Código PIN
+            'codigo_verificacao' => $agendamento->codigo_verificacao,
+        ];
+
+      
+return Inertia::render('Cliente/DetalheAgendamento', [
+    'dados' => $dadosTela
+]);
+    }
+
+    public function detalhesReservaAluguel(Request $request, $id)
+    {
+        // 1. Busca o aluguel
+        $aluguel = Aluguel::with(['item', 'proprietario', 'contratoDocumento'])->findOrFail($id);
+
+        // 2. TRAVA DE SEGURANÇA: Verifica se a reserva é do usuário logado
+        if ($aluguel->locatario_id !== Auth::id()) {
+            abort(403, 'Acesso negado: Esta reserva pertence a outro usuário.');
+        }
+
+        $item = $aluguel->item;
+
+        // Formata as datas
+        $dataInicio = Carbon::parse($aluguel->data_inicio);
+        $dataFim = Carbon::parse($aluguel->data_fim);
+
+        // Define qual endereço mostrar
+        if ($aluguel->cep_entrega) {
+            $enderecoLocal = "{$aluguel->rua_entrega}, {$aluguel->numero_entrega} - {$aluguel->bairro_entrega}, {$aluguel->cidade_entrega} - {$aluguel->estado_entrega}";
+            $tipoLocal = "ENDEREÇO DE ENTREGA";
+        } elseif ($aluguel->cep_retirada) {
+            $enderecoLocal = "{$aluguel->rua_retirada}, {$aluguel->numero_retirada} - {$aluguel->bairro_retirada}, {$aluguel->cidade_retirada} - {$aluguel->estado_retirada}";
+            $tipoLocal = "LOCAL DE RETIRADA";
+        } else {
+            $enderecoLocal = "{$item->endereco}, {$item->numero} - {$item->bairro}, {$item->cidade} - {$item->estado}";
+            $tipoLocal = "LOCAL DO BEM";
+        }
+
+        // Pega a primeira foto
+        $fotoPrincipal = (!empty($item->fotos) && is_array($item->fotos)) ? $item->fotos[0] : null;
+
+        // Estrutura pronta para a tela React
+        $dadosTela = [
+            'tipo' => 'aluguel',
+            'id' => $aluguel->id,
+            'titulo' => "Reserva: {$item->nome}",
+            'subtitulo' => $item->categoria . ($item->marca ? " • {$item->marca} {$item->modelo}" : ""),
+            'status_geral' => strtoupper($aluguel->status),
+            'codigo_reserva' => $aluguel->codigo_reserva,
+            
+            'data_formatada' => $dataInicio->translatedFormat('d \d\e M') . ' até ' . $dataFim->translatedFormat('d \d\e M, Y'),
+            'horario' => $aluguel->quantidade_periodos . ' ' . ucfirst($aluguel->tipo_periodo) . '(s)',
+            
+            'valor' => $aluguel->valor_total,
+            'valor_caucao' => $aluguel->valor_caucao,
+            'status_pagamento' => $aluguel->forma_pagamento === 'presencial' ? 'pagamento_na_retirada' : 'pago_online',
+            'pagamento_confirmado' => $aluguel->forma_pagamento !== 'presencial' && $aluguel->status !== 'pendente_pagamento',
+            
+            'estabelecimento' => [
+                'nome' => $aluguel->proprietario->name ?? 'Proprietário',
+                'tipo_local_label' => $tipoLocal,
+                'endereco_completo' => $enderecoLocal,
+                'latitude' => $aluguel->latitude_entrega ?? $aluguel->latitude_retirada ?? $item->latitude,
+                'longitude' => $aluguel->longitude_entrega ?? $aluguel->longitude_retirada ?? $item->longitude,
+            ],
+            
+            'foto_principal' => $fotoPrincipal,
+            'exige_contrato' => $item->exige_contrato,
+            'status_contrato' => $aluguel->contratoDocumento ? ($aluguel->contratoDocumento->assinado ? 'assinado' : 'pendente_assinatura') : 'nao_aplicavel',
+            
+            'codigo_verificacao' => substr($aluguel->codigo_reserva, -4),
+        ];
+
+        return response()->json($dadosTela);
+    }
+
+
     /* =========================================================================
        👉 MÉTODOS ADICIONAIS - MÓDULO DE LOCAÇÃO E ASSINATURA SAAS (D4SIGN)
+       (MÉTODOS UNIFICADOS E CORRIGIDOS PARA EVITAR REDECLARAÇÃO)
        ========================================================================= */
 
     public function indexAlugueis(Request $request)
     {
-        $alugueis = Aluguel::with(['item', 'locatario', 'contratoDocumento'])
-            ->where('estabelecimento_id', $request->user()->id)
-            ->orWhere('locatario_id', $request->user()->id)
-            ->latest()
-            ->paginate(15);
+        // 👉 CRITICAL ANTI-HACKER: Auto-cancelamento silencioso por tempo expirado (3 dias online sem pagar)
+        Aluguel::where('status', 'aguardando_pagamento')
+            ->where('forma_pagamento', 'online')
+            ->where('created_at', '<=', now()->subDays(3))
+            ->update(['status' => 'cancelado']);
 
-        return response()->json($alugueis);
+        // Filtros parametrizados seguros via Query string
+        $status = $request->query('status', 'todos');
+
+        // Permite ver tanto se o usuário for o locatário ou o dono do estabelecimento (juntando lógicas)
+        $query = Aluguel::with(['item', 'locatario', 'contratoDocumento'])
+            ->where(function($q) {
+                $q->where('locatario_id', Auth::id())
+                  ->orWhere('estabelecimento_id', Auth::id());
+            });
+
+        if ($status !== 'todos') {
+            if ($status === 'paga') {
+                $query->where('status', 'paga');
+            } elseif ($status === 'aguardando_pagamento') {
+                $query->where('status', 'aguardando_pagamento');
+            } elseif ($status === 'cancelado') {
+                $query->where('status', 'cancelado');
+            } elseif ($status === 'em_espera') {
+                $query->where('status', 'pendente');
+            }
+        }
+
+        return response()->json($query->latest()->paginate(15));
     }
 
     public function storeAluguel(Request $request)
     {
-        // 👉 Validação atualizada
+        // 👉 SEGURANÇA: Validação unificada (inclui lógicas de pontos, acessórios e os endereços de entrega/retirada)
         $validated = $request->validate([
-            'item_aluguel_id' => 'required|exists:itens_aluguel,id',
-            'tipo_periodo' => 'required|in:diaria,semanal,mensal',
-            'quantidade_periodos' => 'required|integer|min:1',
-            'data_inicio' => 'required|date|after_or_equal:today',
-            'quantidade' => 'required|integer|min:1',
-            'forma_pagamento' => 'required|string|in:online,presencial', // Validando formato
-
+            'item_aluguel_id'          => 'required|integer|exists:itens_aluguel,id',
+            'data_inicio'              => 'required|date|after_or_equal:today',
+            'data_fim'                 => 'required|date|after:data_inicio',
+            'quantidade'               => 'required|integer|min:1',
+            'forma_pagamento'          => 'required|string|in:online,presencial',
+            'acessorios_selecionados'  => 'nullable|array',
+            'comodidades_selecionadas' => 'nullable|array',
+            'pontos_utilizados'        => 'nullable|integer|min:0',
+            
             'tipo_servico' => [
+                'nullable',
                 'string',
                 'in:retirada,entrega,ambos',
                 function ($attribute, $value, $fail) use ($request) {
@@ -443,104 +589,224 @@ class AgendamentoController extends Controller
             'longitude_entrega' => 'nullable|numeric',
         ]);
 
+        // Sanitização de Strings contra injeção maliciosa de scripts
+        $validated = array_map(function($item) {
+            return is_string($item) ? strip_tags(trim($item)) : $item;
+        }, $validated);
+
         $item = ItemAluguel::findOrFail($validated['item_aluguel_id']);
-        
-        $valorUnitario = match($validated['tipo_periodo']) {
-            'diaria' => $item->valor_diaria,
-            'semanal' => $item->valor_semanal,
-            'mensal' => $item->valor_mensal,
-        };
+        $user = Auth::user();
 
-        $valorBruto = ($valorUnitario * $validated['quantidade_periodos']) * $validated['quantidade'];
-        $valorTotalComCaucao = $valorBruto + ($item->valor_caucao ?? 0);
+        // 1. Processamento e Verificação Logística de Datas de Disponibilidade
+        $dataInicio = Carbon::parse($validated['data_inicio']);
+        $dataFim = Carbon::parse($validated['data_fim']);
+        $totalDias = $dataInicio->diffInDays($dataFim);
+        if ($totalDias === 0) $totalDias = 1;
 
-        // =====================================================================
-        // 👉 REGRA DE NEGÓCIO WAITLESS: COMISSÃO DE 12% NOS ALUGUÉIS/LOCAÇÕES
-        // =====================================================================
-        // A comissão recai sobre o valor faturado (ignorando caução, que é devolvido)
-        $taxaMarketplace = $valorBruto * 0.12; 
-        
-        if ($validated['forma_pagamento'] === 'presencial') {
-            $estabelecimento = Estabelecimento::find($item->estabelecimento_id);
-            if ($estabelecimento) {
-                // Como o cliente pagou na mão do logista, a loja fica devendo os 12% da plataforma
-                // O Saldo Devedor é acumulativo (+12% +12% ...) e será retido quando ele receber Online
-                $estabelecimento->increment('saldo_devedor', $taxaMarketplace);
+        if (!$item->sempre_disponivel) {
+            if ($item->data_inicio_disponibilidade && $dataInicio->lt(Carbon::parse($item->data_inicio_disponibilidade))) {
+                abort(422, 'Item indisponível para a data selecionada.');
+            }
+            if ($item->data_fim_disponibilidade && $dataFim->gt(Carbon::parse($item->data_fim_disponibilidade))) {
+                abort(422, 'O período ultrapassa o limite de operação estipulado do bem.');
+            }
+
+            // Validação de bloqueio do calendário
+            $bloqueadas = json_decode($item->datas_bloqueadas, true) ?? [];
+            if (in_array($dataInicio->toDateString(), $bloqueadas) || in_array($dataFim->toDateString(), $bloqueadas)) {
+                abort(422, 'Este período já foi reservado ou está em manutenção.');
             }
         }
 
-        // Criar Aluguel
-        $aluguel = Aluguel::create([
-            'codigo_reserva' => 'RES-' . strtoupper(Str::random(10)),
-            'item_aluguel_id' => $item->id,
-            'estabelecimento_id' => $item->estabelecimento_id,
-            'proprietario_id' => $item->estabelecimento_id,
-            'locatario_id' => $request->user()->id,
-            'tipo_periodo' => $validated['tipo_periodo'],
-            'quantidade_periodos' => $validated['quantidade_periodos'],
-            'data_inicio' => $validated['data_inicio'],
-            'data_fim' => Carbon::parse($validated['data_inicio'])->addDays($validated['quantidade_periodos']), 
-            'quantidade' => $validated['quantidade'],
-            'valor_unitario' => $valorUnitario,
-            'valor_caucao' => $item->valor_caucao ?? 0,
-            'valor_total' => $valorTotalComCaucao,
-            'taxa_plataforma' => $taxaMarketplace, // Registro da Taxa WaitLess gerada pela reserva
-            'forma_pagamento' => $validated['forma_pagamento'],
-            'status' => 'pendente',
+        // 2. Cálculos Complexos de Preços com Base no Período do Item
+        $valorBasePorCiclo = match($item->periodo_faturamento_padrao) {
+            'diaria'  => $item->valor_diaria ?? 0,
+            'semanal' => $item->valor_semanal ?? 0,
+            'mensal'  => $item->valor_mensal ?? 0,
+            default   => $item->valor_diaria ?? 0
+        };
 
-            'tipo_servico' => $validated['tipo_servico'] ?? null,
+        $multiplicador = 1;
+        if ($item->periodo_faturamento_padrao === 'diaria') {
+            $multiplicador = $totalDias;
+        } elseif ($item->periodo_faturamento_padrao === 'semanal') {
+            $multiplicador = max(1, ceil($totalDias / 7));
+        } elseif ($item->periodo_faturamento_padrao === 'mensal') {
+            $multiplicador = max(1, ceil($totalDias / 30));
+        }
+
+        $valorBrutoItens = ($valorBasePorCiclo * $multiplicador) * $validated['quantidade'];
+
+        // 3. Adicionando Valores Dinâmicos de Acessórios Opcionais Escolhidos
+        $valorExtras = 0;
+        $acessoriosDisponiveis = json_decode($item->acessorios, true) ?? [];
+        $acessoriosFinaisParaSalvar = [];
+
+        if (!empty($validated['acessorios_selecionados'])) {
+            foreach ($validated['acessorios_selecionados'] as $nomeExtra) {
+                foreach ($acessoriosDisponiveis as $disponivel) {
+                    if ($disponivel['nome'] === $nomeExtra) {
+                        $precoExtra = floatval($disponivel['valor']);
+                        $valorExtras += ($precoExtra * $multiplicador) * $validated['quantidade'];
+                        $acessoriosFinaisParaSalvar[] = $disponivel;
+                    }
+                }
+            }
+        }
+
+        $precoSubtotal = $valorBrutoItens + $valorExtras;
+
+        // 4. Aplicação de Desconto Promocional do Dono
+        $descontoPromocao = 0;
+        if ($item->tem_promocao && $item->valor_desconto > 0) {
+            if ($item->tipo_desconto === 'percentual') {
+                $descontoPromocao = $precoSubtotal * ($item->valor_desconto / 100);
+            } else {
+                $descontoPromocao = $item->valor_desconto * $validated['quantidade'];
+            }
+        }
+
+        // 5. Aplicação do Sistema de Pontuação e Fidelidade (100 pontos = R$ 1,00)
+        $descontoPontos = 0;
+        $pontosParaAbater = 0;
+        if ($item->aceita_pontos && !empty($validated['pontos_utilizados'])) {
+            $maximoPermitidoItem = $item->maximo_pontos_permitidos ?? 0;
+            $pontosParaAbater = min(intval($validated['pontos_utilizados']), $maximoPermitidoItem);
+
+            if ($user->pontos_saldo < $pontosParaAbater) {
+                abort(422, 'Saldo de pontos insuficiente.');
+            }
+            $descontoPontos = $pontosParaAbater / 100;
+        }
+
+        $precoFinalCliente = max(0, $precoSubtotal - $descontoPromocao - $descontoPontos);
+        $totalComCaucao = $precoFinalCliente + ($item->valor_caucao ?? 0);
+
+        // 6. Split de Taxa WaitLess (12%)
+        $taxaMarketplace = $precoFinalCliente * 0.12;
+
+        if ($validated['forma_pagamento'] === 'presencial') {
+            $loja = Estabelecimento::find($item->estabelecimento_id);
+            if ($loja) {
+                $loja->increment('saldo_devedor', $taxaMarketplace);
+            }
+        }
+
+        if ($pontosParaAbater > 0) {
+            $user->decrement('pontos_saldo', $pontosParaAbater);
+        }
+
+        // Gravação unificada na base de dados (Lógica V2 + Endereços V1)
+        $aluguel = Aluguel::create([
+            'codigo_reserva'             => 'RES-' . strtoupper(Str::random(10)),
+            'item_aluguel_id'            => $item->id,
+            'estabelecimento_id'         => $item->estabelecimento_id,
+            'proprietario_id'            => $item->estabelecimento_id,
+            'locatario_id'               => $user->id,
+            'tipo_periodo'               => $item->periodo_faturamento_padrao,
+            'quantidade_periodos'        => $multiplicador,
+            'data_inicio'                => $validated['data_inicio'],
+            'data_fim'                   => $validated['data_fim'],
+            'quantidade'                 => $validated['quantidade'],
+            'valor_unitario'             => $valorBasePorCiclo,
+            'valor_caucao'               => $item->valor_caucao ?? 0,
+            'valor_bruto'                => $precoSubtotal,
+            'valor_desconto_promocional' => $descontoPromocao,
+            'valor_desconto_pontos'      => $descontoPontos,
+            'pontos_utilizados'          => $pontosParaAbater,
+            'valor_total'                => $totalComCaucao,
+            'taxa_plataforma'            => $taxaMarketplace,
+            'forma_pagamento'            => $validated['forma_pagamento'],
+            'status'                     => $validated['forma_pagamento'] === 'online' ? 'aguardando_pagamento' : 'paga',
+            'acessorios_selecionados'    => json_encode($acessoriosFinaisParaSalvar),
+            'comodidades_selecionadas'   => json_encode($validated['comodidades_selecionadas'] ?? []),
+            'exige_contrato'             => $item->exige_contrato,
+            'tipo_servico'               => $validated['tipo_servico'] ?? null,
 
             // Salvando informações de Retirada
-            'cep_retirada' => $validated['cep_retirada'] ?? null,
-            'rua_retirada' => $validated['rua_retirada'] ?? null,
-            'numero_retirada' => $validated['numero_retirada'] ?? null,
+            'cep_retirada'         => $validated['cep_retirada'] ?? null,
+            'rua_retirada'         => $validated['rua_retirada'] ?? null,
+            'numero_retirada'      => $validated['numero_retirada'] ?? null,
             'complemento_retirada' => $validated['complemento_retirada'] ?? null,
-            'bairro_retirada' => $validated['bairro_retirada'] ?? null,
-            'cidade_retirada' => $validated['cidade_retirada'] ?? null,
-            'estado_retirada' => $validated['estado_retirada'] ?? null,
-            'latitude_retirada' => $validated['latitude_retirada'] ?? null,
-            'longitude_retirada' => $validated['longitude_retirada'] ?? null,
+            'bairro_retirada'      => $validated['bairro_retirada'] ?? null,
+            'cidade_retirada'      => $validated['cidade_retirada'] ?? null,
+            'estado_retirada'      => $validated['estado_retirada'] ?? null,
+            'latitude_retirada'    => $validated['latitude_retirada'] ?? null,
+            'longitude_retirada'   => $validated['longitude_retirada'] ?? null,
 
             // Salvando informações de Entrega
-            'cep_entrega' => $validated['cep_entrega'] ?? null,
-            'rua_entrega' => $validated['rua_entrega'] ?? null,
-            'numero_entrega' => $validated['numero_entrega'] ?? null,
+            'cep_entrega'         => $validated['cep_entrega'] ?? null,
+            'rua_entrega'         => $validated['rua_entrega'] ?? null,
+            'numero_entrega'      => $validated['numero_entrega'] ?? null,
             'complemento_entrega' => $validated['complemento_entrega'] ?? null,
-            'bairro_entrega' => $validated['bairro_entrega'] ?? null,
-            'cidade_entrega' => $validated['cidade_entrega'] ?? null,
-            'estado_entrega' => $validated['estado_entrega'] ?? null,
-            'latitude_entrega' => $validated['latitude_entrega'] ?? null,
-            'longitude_entrega' => $validated['longitude_entrega'] ?? null,
+            'bairro_entrega'      => $validated['bairro_entrega'] ?? null,
+            'cidade_entrega'      => $validated['cidade_entrega'] ?? null,
+            'estado_entrega'      => $validated['estado_entrega'] ?? null,
+            'latitude_entrega'    => $validated['latitude_entrega'] ?? null,
+            'longitude_entrega'   => $validated['longitude_entrega'] ?? null,
         ]);
 
-        return response()->json(['message' => 'Reserva de aluguel criada!', 'aluguel' => $aluguel], 201);
+        return response()->json(['success' => true, 'aluguel' => $aluguel], 201);
     }
 
     public function showAluguel($id)
     {
         $aluguel = Aluguel::with(['item', 'locatario', 'proprietario', 'contratoDocumento'])->findOrFail($id);
+        
+        // 👉 SEGURANÇA: Bloqueia se o usuário não for nem o dono nem o locatário
+        if ($aluguel->locatario_id !== Auth::id() && $aluguel->proprietario_id !== Auth::id()) {
+            abort(403, 'Acesso negado.');
+        }
+
         return response()->json($aluguel);
     }
 
     public function updateAluguel(Request $request, $id)
     {
         $aluguel = Aluguel::findOrFail($id);
-        $aluguel->update($request->all());
-        return response()->json(['message' => 'Aluguel updated!', 'aluguel' => $aluguel]);
+
+        // 👉 SEGURANÇA: Bloqueia se o aluguel não pertencer ao usuário ativo
+        if ($aluguel->locatario_id !== Auth::id()) {
+            abort(403, 'Ação não autorizada.');
+        }
+
+        if (!in_array($aluguel->status, ['pendente', 'aguardando_pagamento'])) {
+            abort(422, 'Reservas confirmadas ou pagas não podem ser editadas.');
+        }
+
+        $validated = $request->validate([
+            'data_inicio' => 'required|date|after_or_equal:today',
+            'data_fim'    => 'required|date|after:data_inicio',
+            'quantidade'  => 'required|integer|min:1',
+        ]);
+
+        $aluguel->update($validated);
+        return response()->json(['success' => true, 'message' => 'Reserva reagendada com sucesso!']);
     }
 
     public function destroyAluguel($id)
     {
         $aluguel = Aluguel::findOrFail($id);
-        $aluguel->delete();
-        return response()->json(['message' => 'Aluguel deletado do sistema']);
+
+        // 👉 SEGURANÇA: Bloqueia se a reserva não pertencer ao usuário ativo
+        if ($aluguel->locatario_id !== Auth::id()) {
+            abort(403, 'Ação não autorizada.');
+        }
+
+        // Estorna pontos se a reserva for cancelada antes do pagamento
+        if ($aluguel->pontos_utilizados > 0 && $aluguel->status === 'aguardando_pagamento') {
+            User::find($aluguel->locatario_id)->increment('pontos_saldo', $aluguel->pontos_utilizados);
+        }
+
+        $aluguel->update(['status' => 'cancelado']);
+        return response()->json(['success' => true, 'message' => 'Reserva cancelada com sucesso!']);
     }
 
     public function generarEEnviarContrato($aluguelId)
     {
         $aluguel = Aluguel::with(['item', 'locatario', 'proprietario'])->findOrFail($aluguelId);
 
-        // Formatação estruturada dos novos campos de endereços logísticos completos
+        // Formatação estruturada dos campos de endereços logísticos completos
         $enderecoRetiradaFormatado = $aluguel->cep_retirada 
             ? "{$aluguel->rua_retirada}, nº {$aluguel->numero_retirada} - {$aluguel->bairro_retirada}, {$aluguel->cidade_retirada}/{$aluguel->estado_retirada} (CEP: {$aluguel->cep_retirada})"
             : "Diretamente na sede física do estabelecimento proprietário.";

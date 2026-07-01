@@ -19,14 +19,18 @@ use App\Http\Controllers\Api\RespostaTriagemController;
 use App\Http\Controllers\Api\ContaPagamentoEstabelecimentoController;
 use App\Http\Controllers\Api\GamificacaoController;
 use App\Http\Controllers\Api\WebhookController;
+use App\Http\Controllers\Api\ItemAluguelController;
 
 // Importações - Mobile
 use App\Http\Controllers\Api\Mobile\MobileAuthController;
 use App\Http\Controllers\Api\Mobile\MobileHomeController;
 use App\Http\Controllers\Api\Mobile\MobileAgendamentoController;
+<<<<<<< HEAD
 use App\Http\Controllers\Api\Mobile\ClienteExplorarMobileController;
 use App\Http\Controllers\Api\Mobile\ClienteAgendamentoMobileController; // Corrigido: Adicionado o ';' aqui
 
+=======
+>>>>>>> 2f29bd0 (ajuste tela de config de estabelecimento)
 
 /*
 |--------------------------------------------------------------------------
@@ -39,10 +43,16 @@ Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/webhook/mercadopago', [WebhookController::class, 'mercadopago']);
 
+<<<<<<< HEAD
 // Rotas públicas Mobile
 Route::post('/mobile/login', [App\Http\Controllers\Api\Mobile\MobileAuthController::class, 'login']);
 Route::post('/mobile/cadastro', [App\Http\Controllers\Api\Mobile\MobileAuthController::class, 'register']);
 
+=======
+// --- ROTAS PÚBLICAS MOBILE ---
+Route::post('/mobile/login', [MobileAuthController::class, 'login']);
+Route::post('/mobile/cadastro', [MobileAuthController::class, 'register']);
+>>>>>>> 2f29bd0 (ajuste tela de config de estabelecimento)
 
 /*
 |--------------------------------------------------------------------------
@@ -62,6 +72,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/estabelecimentos/proximos', [MobileHomeController::class, 'getEstabelecimentosProximos']);
     Route::post('/user/update-address', [MobileHomeController::class, 'updateAddress']);
 
+    // --- AGENDAMENTOS MOBILE ---
     Route::get('/agendamentos', [MobileAgendamentoController::class, 'index']);
     Route::put('/agendamentos/{agendamento}/status', [MobileAgendamentoController::class, 'updateStatus']);
     Route::put('/agendamentos/{agendamento}/chamar', [MobileAgendamentoController::class, 'chamar']);
@@ -116,9 +127,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/alugueis/{id}', [MobileAgendamentoController::class, 'updateAluguel']);
     Route::delete('/alugueis/{id}', [MobileAgendamentoController::class, 'destroyAluguel']);
     Route::post('/alugueis/{id}/contrato', [MobileAgendamentoController::class, 'generarEEnviarContrato']);
-
     Route::post('/mobile/d4sign/webhook', [MobileAgendamentoController::class, 'webhookD4Sign']);
-
 
     // --- RESOURCES PRINCIPAIS ---
     Route::apiResource('estabelecimentos', EstabelecimentoController::class);
@@ -136,13 +145,16 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/{id}', [ServicoController::class, 'destroyItem']);
     });
 
-    // --- MÓDULO DE LOCAÇÕES ---
+    // --- MÓDULO DE LOCAÇÕES / RESERVAS SAAS ---
     Route::prefix('locacoes')->group(function () {
-        Route::get('/', [AgendamentoController::class, 'indexAlugueis']);
-        Route::post('/', [AgendamentoController::class, 'storeAluguel']);
-        Route::get('/{id}', [AgendamentoController::class, 'showAluguel']);
-        Route::patch('/{id}', [AgendamentoController::class, 'updateAluguel']);
-        Route::delete('/{id}', [AgendamentoController::class, 'destroyAluguel']);
+        Route::get('/', [AgendamentoController::class, 'indexAlugueis']);          // GET - Listar reservas
+        Route::post('/', [AgendamentoController::class, 'storeAluguel']);          // POST - Criar reserva
+        Route::get('/{id}', [AgendamentoController::class, 'showAluguel']);        // GET - Detalhe reserva
+        Route::patch('/{id}', [AgendamentoController::class, 'updateAluguel']);    // PATCH - Atualizar reserva
+        Route::delete('/{id}', [AgendamentoController::class, 'destroyAluguel']);  // DELETE - Cancelar/Apagar reserva
+        
+        // Contrato e Vitrine
+        Route::get('/vitrine/locacoes', [ItemAluguelController::class, 'buscarVitrineCliente']);
         Route::post('/{id}/gerar-contrato', [AgendamentoController::class, 'gerarEEnviarContrato']);
     });
 

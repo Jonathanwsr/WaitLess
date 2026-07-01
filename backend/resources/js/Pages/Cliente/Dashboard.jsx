@@ -346,7 +346,7 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
                                                 </button>
                                             ) : isConfirmado ? (
                                                 <>
-                                                    <button className="w-full py-3.5 bg-white border border-gray-200 text-gray-900 rounded-2xl text-xs font-bold hover:border-gray-400 hover:bg-gray-50 transition-colors">
+                                                    <button onClick={() => router.get(`/meus-pedidos/agendamento/${agendamento.id}`)} className="w-full py-3.5 bg-white border border-gray-200 text-gray-900 rounded-2xl text-xs font-bold hover:border-gray-400 hover:bg-gray-50 transition-colors">
                                                         Ver Detalhes
                                                     </button>
                                                     <button onClick={() => cancelarVaga(agendamento.id, isPago)} disabled={loadingCancelar === agendamento.id} className="w-full text-[11px] font-bold text-gray-400 hover:text-red-500 py-2.5 block text-center transition-colors">
@@ -354,10 +354,12 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
                                                     </button>
                                                 </>
                                             ) : (
-                                                <button className="w-full py-3.5 bg-white border border-gray-200 text-gray-900 rounded-2xl text-xs font-bold hover:border-gray-400 hover:bg-gray-50 transition-colors">
-                                                        Ver Detalhes
-                                                </button>
-                                            )}
+<button 
+    onClick={() => router.get(`/meus-pedidos/agendamento/${agendamento.id}`)} 
+    className="..."
+>
+    Ver Detalhes
+</button>                              )}
                                         </div>
                                     </div>
                                 );
