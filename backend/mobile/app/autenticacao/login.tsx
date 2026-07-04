@@ -22,7 +22,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
 
   // MUDANÇA AQUI: IP da sua rede para o celular conseguir achar o Laravel
-  const API_URL = 'http://192.168.1.10:8000/api/mobile/login';
+  const API_URL = 'http://192.168.1.11:8000/api/mobile/login';
 
   const handleLogin = async () => {
     if (!email || !password) {

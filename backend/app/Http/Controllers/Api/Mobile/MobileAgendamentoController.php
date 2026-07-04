@@ -667,4 +667,125 @@ class MobileAgendamentoController extends Controller
 
         return response()->json(['message' => 'Evento ignorado ou documento não encontrado.'], 200);
     }
+
+
+
+
+    /* =========================================================================
+👉 MÉTODOS MOBILE - CLIENTE (APP)
+========================================================================= */
+
+// 🔎 Ver estabelecimento + serviços
+public function verEstabelecimento($id)
+{
+$estabelecimento = Estabelecimento::findOrFail($id);
+
+if (!$estabelecimento->ativo) {
+    return response()->json(['error' => 'Estabelecimento fechado'], 404);
+}
+
+return response()->json([
+    'estabelecimento' => $estabelecimento->only([
+        'id','nome','foto_perfil','bairro','cidade','estado','telefone'
+    ]),
+    'servicos' => $estabelecimento->servicos()->where('ativo', true)->get()
+]);
+
+}
+
+// 📅 Criar agendamento (cliente)
+public function agendarServico(Request $request, $id)
+{
+$estabelecimento = Estabelecimento::findOrFail($id);
+
+$validated = $request->validate([
+    'servico_id'       => 'required|exists:servicos,id',
+    'data_agendamento' => 'required|date|after_or_equal:today',
+    'hora_agendamento' => 'required|string',
+    'forma_pagamento'  => 'required|in:online_agora,online_depois,presencial',
+]);
+
+$dataHora = Carbon::parse($validated['data_agendamento'].' '.$validated['hora_agendamento']);
+
+if ($dataHora->isPast()) {
+    return response()->json(['error' => 'Data inválida'], 422);
+}
+
+$servico = $estabelecimento->servicos()->findOrFail($validated['servico_id']);
+
+try {
+    DB::beginTransaction();
+
+    $isPresencial = $validated['forma_pagamento'] === 'presencial';
+
+    $pin = $isPresencial ? (string) mt_rand(1000,9999) : null;
+
+    $valorTotal = $servico->valor;
+    $taxa = $isPresencial ? 0 : round($valorTotal * 0.10, 2);
+
+    $agendamento = Agendamento::create([
+        'estabelecimento_id' => $estabelecimento->id,
+        'usuario_id' => Auth::id(),
+        'servico_id' => $servico->id,
+        'data_agendamento' => $validated['data_agendamento'],
+        'hora_agendamento' => $validated['hora_agendamento'],
+        'status' => $isPresencial ? 'pendente' : 'aguardando_pagamento',
+        'status_pagamento' => $isPresencial ? 'presencial' : 'pendente',
+        'valor_final' => $valorTotal,
+        'codigo_verificacao' => $pin,
+    ]);
+
+    DB::commit();
+
+    return response()->json([
+        'message' => 'Agendamento criado com sucesso',
+        'agendamento' => $agendamento
+    ]);
+
+} catch (\Exception $e) {
+    DB::rollBack();
+
+    return response()->json([
+        'error' => 'Erro ao criar agendamento',
+        'details' => $e->getMessage()
+    ], 500);
+}
+
+}
+
+// ❌ Cancelar (cliente)
+public function cancelarCliente($id)
+{
+$agendamento = Agendamento::find($id);
+
+if (!$agendamento) {
+    return response()->json(['error'=>'Não encontrado'],404);
+}
+
+if ($agendamento->usuario_id !== Auth::id()) {
+    return response()->json(['error'=>'Sem permissão'],403);
+}
+
+$agendamento->update([
+    'status'=>'cancelado',
+    'status_pagamento'=>'cancelado'
+]);
+
+return response()->json([
+    'message'=>'Agendamento cancelado com sucesso'
+]);
+
+}
+
+// 📋 Meus agendamentos (cliente)
+public function meusAgendamentos()
+{
+$agendamentos = Agendamento::with(['servico','estabelecimento'])
+->where('usuario_id', Auth::id())
+->orderBy('data_agendamento','desc')
+->get();
+
+return response()->json($agendamentos);
+
+}
 }

@@ -1,106 +1,389 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity, SafeAreaView, Image } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TextInput,
+  TouchableOpacity,
+  Image,
+  ActivityIndicator,
+  FlatList,
+  Alert
+} from 'react-native';
+import { useRouter } from 'expo-router';
+import * as Location from 'expo-location';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Feather, MaterialIcons } from '@expo/vector-icons';
 
-export default function TelaExplorar() {
+// --- CONFIGURAÇÕES DE CORES ---
+const COLORS = {
+  primary: '#b24b2b',
+  primaryLight: '#fdeee9',
+  secondary: '#111827',
+  accent: '#FBBF24',
+  gray: '#6B7280',
+  lightGray: '#F9FAFB',
+  white: '#FFFFFF',
+  border: '#F3F4F6',
+  error: '#DC2626',
+};
+
+const STORAGE_KEYS = {
+  ADDRESS: '@waitless_address',
+  COORDS: '@waitless_coords',
+  FORMATTED: '@waitless_formatted'
+};
+
+// 11 CATEGORIAS COMPLETAS
+const SERVICE_CATEGORIES = [
+  { id: '1', name: 'Serviços', slug: 'servicos', image: 'https://images.unsplash.com/photo-1521791136064-7986c2920216?q=80&w=200' },
+  { id: '2', name: 'Reservas', slug: 'reservas', image: 'https://images.unsplash.com/photo-1517840901100-8179e982acb7?q=80&w=200' },
+  { id: '3', name: 'Beleza', slug: 'beleza', image: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?q=80&w=200' },
+  { id: '4', name: 'Barbeiro', slug: 'barbearia', image: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?q=80&w=200' },
+  { id: '5', name: 'Saúde', slug: 'saude', image: 'https://images.unsplash.com/photo-1505751172876-fa1923c5c528?q=80&w=200' },
+  { id: '6', name: 'Academia', slug: 'fitness', image: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=200' },
+  { id: '7', name: 'Veículos', slug: 'veiculos', image: 'https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?q=80&w=200' },
+  { id: '8', name: 'Mecânica', slug: 'mecanica', image: 'https://images.unsplash.com/photo-1486262715619-67b85e0b08d3?q=80&w=200' },
+  { id: '9', name: 'Pets', slug: 'pets', image: 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?q=80&w=200' },
+  { id: '10', name: 'Faxina', slug: 'limpeza', image: 'https://images.unsplash.com/photo-1581578731548-c64695ce6958?q=80&w=200' },
+  { id: '11', name: 'Eventos', slug: 'eventos', image: 'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?q=80&w=200' },
+];
+
+export default function Home() {
+  const router = useRouter();
+
+  const [stores, setStores] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [statusMessage, setStatusMessage] = useState('Buscando localização...');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const [isEditingLocation, setIsEditingLocation] = useState(false);
+  const [isSavingLocation, setIsSavingLocation] = useState(false);
+  const [addressData, setAddressData] = useState({
+    logradouro: '', numero: '', bairro: '', cidadeUf: ''
+  });
+
+  const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.10:8000/api';
+
+  useEffect(() => {
+    loadSavedLocationOrFetchGPS();
+  }, []);
+
+  // CLIQUE DA CATEGORIA - BUSCA DIRETO NA API
+  const handleCategorySearch = (categorySlug) => {
+    fetchNearbyStores({ categoria: categorySlug });
+  };
+
+  const loadSavedLocationOrFetchGPS = async () => {
+    try {
+      const storedCoords = await AsyncStorage.getItem(STORAGE_KEYS.COORDS);
+      const storedAddress = await AsyncStorage.getItem(STORAGE_KEYS.ADDRESS);
+      const storedFormatted = await AsyncStorage.getItem(STORAGE_KEYS.FORMATTED);
+
+      if (storedCoords) {
+        setStatusMessage(storedFormatted || 'Usando GPS salvo');
+        fetchNearbyStores(JSON.parse(storedCoords));
+      } else if (storedAddress) {
+        setStatusMessage(storedFormatted || 'Usando endereço salvo');
+        const parsed = JSON.parse(storedAddress);
+        setAddressData(parsed);
+        fetchNearbyStores(parsed);
+      } else {
+        getLocationViaGPS();
+      }
+    } catch (e) {
+      getLocationViaGPS();
+    }
+  };
+
+  const getLocationViaGPS = async () => {
+    setIsLoading(true);
+    setIsEditingLocation(false);
+    setStores([]);
+
+    let { status } = await Location.requestForegroundPermissionsAsync();
+
+    if (status !== 'granted') {
+      setStatusMessage('Permissão de GPS negada. Toque para digitar.');
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      setStatusMessage('Calculando sua localização exata...');
+      let location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const coords = { lat: location.coords.latitude, lng: location.coords.longitude };
+
+      setStatusMessage('Localização updated (GPS)');
+      await AsyncStorage.setItem(STORAGE_KEYS.COORDS, JSON.stringify(coords));
+      await AsyncStorage.setItem(STORAGE_KEYS.FORMATTED, 'Sua Localização Atual');
+      await AsyncStorage.removeItem(STORAGE_KEYS.ADDRESS);
+
+      fetchNearbyStores(coords);
+    } catch (error) {
+      setStatusMessage('Erro no GPS. Toque para digitar o endereço.');
+      setIsLoading(false);
+    }
+  };
+
+  const fetchNearbyStores = async (params) => {
+    setIsLoading(true);
+    try {
+      const queryParams = new URLSearchParams(params).toString();
+      const response = await fetch(`${API_BASE_URL}/estabelecimentos/proximos?${queryParams}&radius=15`, {
+        headers: { 'Accept': 'application/json' }
+      });
+
+      if (!response.ok) throw new Error('Erro na rede');
+
+      const data = await response.json();
+      setStores(data);
+    } catch (error) {
+      console.error(error);
+      setStores([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // FUNÇÃO DE PESQUISA: ENVIA O QUE FOI DIGITADO PARA A TELA DE EXPLORAR
+  const handleMainSearch = () => {
+    if (!searchQuery.trim()) return;
+    router.push({
+      pathname: '/explorar',
+      params: { query: searchQuery }
+    });
+  };
+
+  const handleSaveLocation = async () => {
+    if (!addressData.logradouro || !addressData.numero || !addressData.cidadeUf) {
+      Alert.alert('Ops', 'Por favor, preencha pelo menos a Rua, Número e Cidade.');
+      return;
+    }
+
+    setIsSavingLocation(true);
+    try {
+      const formatted = `${addressData.logradouro}, ${addressData.numero}`;
+      await AsyncStorage.setItem(STORAGE_KEYS.ADDRESS, JSON.stringify(addressData));
+      await AsyncStorage.setItem(STORAGE_KEYS.FORMATTED, formatted);
+      await AsyncStorage.removeItem(STORAGE_KEYS.COORDS);
+
+      setStatusMessage(formatted);
+      setIsEditingLocation(false);
+      fetchNearbyStores(addressData);
+    } catch (error) {
+      Alert.alert('Erro', 'Não foi possível salvar o endereço.');
+    } finally {
+      setIsSavingLocation(false);
+    }
+  };
+
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.headerContainer}>
-        {/* Barra de Pesquisa */}
-        <View style={styles.searchRow}>
-          <View style={styles.avatarMini}><Text>JR</Text></View>
+    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+
+      {/* --- HEADER SUPERIOR --- */}
+      <View style={styles.headerTop}>
+        <View style={styles.locationWrapper}>
+          {!isEditingLocation ? (
+            <View style={styles.locationDisplayRow}>
+
+              {/* BLOCO DA ESQUERDA: ENDEREÇO + BOTÕES AUXILIARES */}
+              <View style={styles.headerLeftGroup}>
+                <TouchableOpacity style={styles.locationTextContainer} onPress={() => setIsEditingLocation(true)}>
+                  <Text style={styles.locationLabel}>Entregar em / Atender em</Text>
+                  <View style={styles.locationInfoRow}>
+                    <Text style={styles.locationText} numberOfLines={1}>{statusMessage}</Text>
+                    <Feather name="chevron-down" size={16} color={COLORS.primary} style={{ marginLeft: 4 }} />
+                  </View>
+                </TouchableOpacity>
+
+                <View style={styles.headerActions}>
+                  <TouchableOpacity onPress={getLocationViaGPS} style={styles.iconButton}>
+                    <MaterialIcons name="my-location" size={18} color={COLORS.primary} />
+                  </TouchableOpacity>
+
+                  {/* CORREÇÃO: Aponta para a rota da aba de agendamentos */}
+                  <TouchableOpacity
+                    onPress={() => router.push('/agendamentos')}
+                    style={styles.iconButton}
+                  >
+                    <Feather name="calendar" size={18} color={COLORS.primary} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* EXTREMA DIREITA: BOTÃO DE PERFIL EXCLUSIVO (Aba Perfil) */}
+              <TouchableOpacity
+                onPress={() => router.push('/perfil')}
+                style={styles.profileCircle}
+              >
+                <View style={styles.profileBorder}>
+                  <Feather name="user" size={22} color={COLORS.white} />
+                </View>
+              </TouchableOpacity>
+
+            </View>
+          ) : (
+            <View style={styles.locationForm}>
+              <Text style={styles.locationFormTitle}>Onde você está?</Text>
+              <TextInput style={styles.input} placeholder="Rua / Avenida *" value={addressData.logradouro} onChangeText={t => setAddressData({...addressData, logradouro: t})} />
+              <TextInput style={styles.input} placeholder="Número *" value={addressData.numero} onChangeText={t => setAddressData({...addressData, numero: t})} />
+              <TextInput style={styles.input} placeholder="Bairro" value={addressData.bairro} onChangeText={t => setAddressData({...addressData, bairro: t})} />
+              <TextInput style={styles.input} placeholder="Cidade / UF *" value={addressData.cidadeUf} onChangeText={t => setAddressData({...addressData, cidadeUf: t})} />
+              <View style={styles.formActions}>
+                <TouchableOpacity style={styles.btnCancel} onPress={() => setIsEditingLocation(false)}>
+                  <Text style={styles.btnCancelText}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.btnSave} onPress={handleSaveLocation} disabled={isSavingLocation}>
+                  {isSavingLocation ? <ActivityIndicator color="#FFF" /> : <Text style={styles.btnSaveText}>Confirmar</Text>}
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </View>
+
+        {/* --- BARRA DE BUSCA ATUALIZADA --- */}
+        <View style={styles.searchForm}>
+          {/* Tornamos a lupa clicável para também pesquisar */}
+          <TouchableOpacity onPress={handleMainSearch}>
+            <Feather name="search" size={20} color={COLORS.primary} style={styles.searchIcon} />
+          </TouchableOpacity>
           <TextInput
             style={styles.searchInput}
-            placeholder="Buscar produtos..."
-            placeholderTextColor="#888"
+            placeholder="Serviços, reservas, locais..."
+            placeholderTextColor="#9CA3AF"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            onSubmitEditing={handleMainSearch} // Aciona ao apertar "Enter/Buscar" no teclado
+            returnKeyType="search" // Muda o botão do teclado para "Buscar"
           />
-          <Text style={styles.iconMock}>🔔</Text>
         </View>
-
-        {/* Endereço */}
-        <Text style={styles.addressText}>📍 Rua Professora Eunice de Vasconcelos Xavier 100 ❯</Text>
-
-        {/* Menu de Categorias */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoriesMenu}>
-          {['Tudo', 'Moda', 'Beleza', 'Celulares', 'Veículos', 'Lar'].map((cat, i) => (
-            <Text key={i} style={styles.categoryItem}>{cat}</Text>
-          ))}
-        </ScrollView>
       </View>
 
-      <ScrollView style={styles.bodyContainer}>
-        {/* Banner */}
-        <View style={styles.banner}>
-          <Text style={styles.bannerText}>COLECIONÁVEIS DA COPA</Text>
-          <TouchableOpacity style={styles.bannerBtn}><Text style={styles.bannerBtnText}>CONHEÇA</Text></TouchableOpacity>
-        </View>
+      {/* --- CARROSSEL DE CATEGORIAS COMPLETAS E CLICÁVEIS --- */}
+      <View style={styles.section}>
+        <FlatList
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          data={SERVICE_CATEGORIES}
+          keyExtractor={item => item.id}
+          contentContainerStyle={{ paddingHorizontal: 20, gap: 16 }}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={styles.categoryCard}
+              onPress={() => handleCategorySearch(item.slug)}
+            >
+              <Image source={{ uri: item.image }} style={styles.categoryImage} />
+              <Text style={styles.categoryName}>{item.name}</Text>
+            </TouchableOpacity>
+          )}
+        />
+      </View>
 
-        {/* Ícones de Atalho */}
-        <View style={styles.shortcutsGrid}>
-          {['Ofertaço', 'Cupons', 'Afiliados', 'Lojas oficiais'].map((item, i) => (
-            <View key={i} style={styles.shortcutItem}>
-              <View style={styles.shortcutIcon} />
-              <Text style={styles.shortcutText}>{item}</Text>
-            </View>
-          ))}
-        </View>
+      {/* --- LISTAGEM DE ESTABELECIMENTOS --- */}
+      <View style={[styles.section, { marginTop: 24 }]}>
+        <Text style={[styles.sectionTitle, { marginLeft: 20, marginBottom: 16 }]}>Destaques perto de você</Text>
 
-        {/* Seção de Ofertas Relâmpago */}
-        <View style={styles.offersSection}>
-          <View style={styles.flashHeader}>
-            <Text style={styles.flashTitle}>OFERTAS RELÂMPAGO</Text>
+        {isLoading ? (
+          <ActivityIndicator size="large" color={COLORS.primary} style={{ marginTop: 40 }} />
+        ) : stores.length > 0 ? (
+          stores.map((store) => (
+            <TouchableOpacity key={store.id} style={styles.storeCard} activeOpacity={0.9}>
+              <Image source={{ uri: store.foto_perfil }} style={styles.storeImage} />
+              <View style={styles.storeInfo}>
+                <Text style={styles.storeName}>{store.nome}</Text>
+
+                <View style={styles.storeMeta}>
+                  <Text style={styles.metaText}><Feather name="star" color={COLORS.accent} /> {store.avaliacao_media || 'Novo'}</Text>
+                  <Text style={styles.metaDot}>•</Text>
+                  <Text style={styles.metaText}>{store.categoria || 'Serviços'}</Text>
+                  <Text style={styles.metaDot}>•</Text>
+                  <Text style={styles.metaText}>{store.distance ? `${store.distance} km` : 'Perto'}</Text>
+                </View>
+
+                {store.fila_atual !== undefined && (
+                  <View style={styles.queueBadge}>
+                    <Text style={styles.queueText}>Fila atual: {store.fila_atual} pessoas</Text>
+                  </View>
+                )}
+              </View>
+            </TouchableOpacity>
+          ))
+        ) : (
+          <View style={styles.emptyState}>
+            <Image
+              source={{ uri: 'https://cdn-icons-png.flaticon.com/512/7486/7486747.png' }}
+              style={{ width: 80, height: 80, opacity: 0.5, marginBottom: 16 }}
+            />
+            <Text style={styles.emptyTitle}>Ops, parece que não há nada aqui...</Text>
+            <Text style={styles.emptyDesc}>
+              Não encontramos serviços próximos ou você pode estar sem internet no momento.
+            </Text>
+            <TouchableOpacity style={styles.retryButton} onPress={() => loadSavedLocationOrFetchGPS()}>
+              <Text style={styles.retryButtonText}>Tentar novamente</Text>
+            </TouchableOpacity>
           </View>
-
-          <View style={styles.productsGrid}>
-            {/* Produto 1 */}
-            <View style={styles.productCard}>
-              <View style={styles.productImagePlaceholder} />
-              <Text style={styles.productOldPrice}>R$ 4.499</Text>
-              <Text style={styles.productPrice}>R$ 2.826</Text>
-              <Text style={styles.productDiscount}>37% OFF</Text>
-            </View>
-
-            {/* Produto 2 */}
-            <View style={styles.productCard}>
-              <View style={styles.productImagePlaceholder} />
-              <Text style={styles.productName}>Panela De Pressão 3 Litros</Text>
-              <Text style={styles.productPrice}>R$ 64,90</Text>
-              <Text style={styles.productDiscount}>20% OFF</Text>
-            </View>
-          </View>
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+        )}
+      </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#C85A17' }, // Cor de telha no fundo da SafeArea
-  headerContainer: { backgroundColor: '#C85A17', padding: 15, paddingBottom: 0 },
-  searchRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 15 },
-  avatarMini: { width: 35, height: 35, borderRadius: 17.5, backgroundColor: '#FFF', justifyContent: 'center', alignItems: 'center', marginRight: 10 },
-  searchInput: { flex: 1, height: 40, backgroundColor: '#FFF', borderRadius: 20, paddingHorizontal: 15, marginRight: 10 },
-  iconMock: { fontSize: 20 },
-  addressText: { color: '#FFF', fontSize: 13, marginBottom: 15, fontWeight: '500' },
-  categoriesMenu: { flexDirection: 'row', marginBottom: 15 },
-  categoryItem: { color: '#FFF', fontSize: 16, fontWeight: 'bold', marginRight: 20 },
-  bodyContainer: { flex: 1, backgroundColor: '#F5F5F5' }, // Fundo cinza claro para o resto do app
-  banner: { backgroundColor: '#A00', margin: 15, height: 120, borderRadius: 10, padding: 15, justifyContent: 'center' },
-  bannerText: { color: '#FFF', fontSize: 20, fontWeight: 'bold', fontStyle: 'italic', marginBottom: 10 },
-  bannerBtn: { backgroundColor: '#FFF', alignSelf: 'flex-start', paddingHorizontal: 15, paddingVertical: 5, borderRadius: 20 },
-  bannerBtnText: { color: '#A00', fontWeight: 'bold', fontSize: 12 },
-  shortcutsGrid: { flexDirection: 'row', justifyContent: 'space-around', paddingVertical: 15, backgroundColor: '#FFF', marginBottom: 15 },
-  shortcutItem: { alignItems: 'center' },
-  shortcutIcon: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#E0E0E0', marginBottom: 5 },
-  shortcutText: { fontSize: 12, color: '#333' },
-  offersSection: { padding: 15 },
-  flashHeader: { backgroundColor: '#FFD700', padding: 10, borderTopLeftRadius: 10, borderTopRightRadius: 10 },
-  flashTitle: { fontWeight: 'bold', fontSize: 16, fontStyle: 'italic' },
-  productsGrid: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
-  productCard: { width: '48%', backgroundColor: '#FFF', borderRadius: 10, padding: 10, elevation: 2 },
-  productImagePlaceholder: { height: 100, backgroundColor: '#EEE', borderRadius: 5, marginBottom: 10 },
-  productOldPrice: { fontSize: 12, textDecorationLine: 'line-through', color: '#999' },
-  productPrice: { fontSize: 18, fontWeight: 'bold', color: '#333' },
-  productDiscount: { color: '#C85A17', fontWeight: 'bold', fontSize: 12, marginTop: 3 },
-  productName: { fontSize: 12, color: '#555', marginBottom: 5 }
+  container: { flex: 1, backgroundColor: COLORS.lightGray },
+  headerTop: { backgroundColor: COLORS.white, paddingBottom: 20, paddingTop: 60, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  locationWrapper: { paddingHorizontal: 20, marginBottom: 16 },
+  locationDisplayRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  headerLeftGroup: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  locationTextContainer: { flex: 1, marginRight: 10 },
+  locationLabel: { fontSize: 11, color: COLORS.gray, textTransform: 'uppercase', fontWeight: '700', marginBottom: 2 },
+  locationInfoRow: { flexDirection: 'row', alignItems: 'center' },
+  locationText: { fontSize: 14, fontWeight: 'bold', color: COLORS.secondary, maxWidth: '80%' },
+  headerActions: { flexDirection: 'row', gap: 6, alignItems: 'center', marginRight: 10 },
+  iconButton: { padding: 8, backgroundColor: COLORS.primaryLight, borderRadius: 50 },
+  profileCircle: { marginLeft: 5 },
+  profileBorder: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+    elevation: 4
+  },
+  locationForm: { backgroundColor: COLORS.white, padding: 16, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border, shadowColor: '#000', shadowOffset: {width:0, height:4}, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
+  locationFormTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 16, color: COLORS.secondary },
+  input: { backgroundColor: COLORS.lightGray, borderRadius: 8, padding: 12, marginBottom: 12, fontSize: 15, color: COLORS.secondary },
+  formActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 8 },
+  btnCancel: { padding: 12 },
+  btnCancelText: { color: COLORS.gray, fontWeight: '600' },
+  btnSave: { backgroundColor: COLORS.primary, padding: 12, borderRadius: 8, paddingHorizontal: 20 },
+  btnSaveText: { color: COLORS.white, fontWeight: 'bold' },
+  searchForm: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.lightGray, borderRadius: 12, marginHorizontal: 20, paddingHorizontal: 16, height: 50 },
+  searchIcon: { marginRight: 10 },
+  searchInput: { flex: 1, fontSize: 16, color: COLORS.secondary },
+  section: { marginTop: 24 },
+  sectionTitle: { fontSize: 18, fontWeight: 'bold', color: COLORS.secondary },
+  categoryCard: { alignItems: 'center', width: 95 },
+  categoryImage: { width: 85, height: 85, borderRadius: 42.5, marginBottom: 8, backgroundColor: '#E5E7EB', borderWidth: 1, borderColor: COLORS.border },
+  categoryName: { fontSize: 14, fontWeight: '600', color: COLORS.secondary, textAlign: 'center' },
+  storeCard: { backgroundColor: COLORS.white, marginHorizontal: 20, marginBottom: 20, borderRadius: 16, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3 },
+  storeImage: { width: '100%', height: 140, backgroundColor: '#E5E7EB' },
+  storeInfo: { padding: 16 },
+  storeName: { fontSize: 18, fontWeight: 'bold', color: COLORS.secondary, marginBottom: 6 },
+  storeMeta: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  metaText: { color: COLORS.gray, fontSize: 13, fontWeight: '500' },
+  metaDot: { color: COLORS.gray, marginHorizontal: 6, fontSize: 10 },
+  queueBadge: { backgroundColor: COLORS.primaryLight, paddingVertical: 4, paddingHorizontal: 10, borderRadius: 6, alignSelf: 'flex-start' },
+  queueText: { color: COLORS.primary, fontWeight: '700', fontSize: 12 },
+  emptyState: { alignItems: 'center', padding: 30, backgroundColor: COLORS.white, marginHorizontal: 20, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border, borderStyle: 'dashed' },
+  emptyTitle: { fontSize: 16, fontWeight: 'bold', color: COLORS.secondary, textAlign: 'center' },
+  emptyDesc: { color: COLORS.gray, textAlign: 'center', marginTop: 8, fontSize: 14, lineHeight: 20 },
+  retryButton: { marginTop: 20, backgroundColor: COLORS.primaryLight, paddingVertical: 10, paddingHorizontal: 20, borderRadius: 8 },
+  retryButtonText: { color: COLORS.primary, fontWeight: 'bold' },
 });
-

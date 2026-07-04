@@ -9,17 +9,19 @@ import {
   Image,
   ActivityIndicator,
   FlatList,
-  Alert
+  Alert,
+  SafeAreaView
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Feather, MaterialIcons } from '@expo/vector-icons';
+import { Feather, Ionicons, MaterialIcons } from '@expo/vector-icons';
 
 // --- CONFIGURAÇÕES DE CORES ---
+// Atualizado para o tom de laranja vibrante da imagem
 const COLORS = {
-  primary: '#b24b2b', // Cor do Waitless
-  primaryLight: '#fdeee9',
+  primary: '#FF5A00',
+  primaryLight: '#FFF4ED',
   secondary: '#111827',
   accent: '#FBBF24',
   gray: '#6B7280',
@@ -35,19 +37,15 @@ const STORAGE_KEYS = {
   FORMATTED: '@waitless_formatted'
 };
 
-// 11 CATEGORIAS COMPLETAS
 const SERVICE_CATEGORIES = [
-  { id: '1', name: 'Serviços', slug: 'servicos', image: 'https://images.unsplash.com/photo-1521791136064-7986c2920216?q=80&w=200' },
-  { id: '2', name: 'Reservas', slug: 'reservas', image: 'https://images.unsplash.com/photo-1517840901100-8179e982acb7?q=80&w=200' },
-  { id: '3', name: 'Beleza', slug: 'beleza', image: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?q=80&w=200' },
-  { id: '4', name: 'Barbeiro', slug: 'barbearia', image: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?q=80&w=200' },
-  { id: '5', name: 'Saúde', slug: 'saude', image: 'https://images.unsplash.com/photo-1505751172876-fa1923c5c528?q=80&w=200' },
-  { id: '6', name: 'Academia', slug: 'fitness', image: 'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=200' },
-  { id: '7', name: 'Veículos', slug: 'veiculos', image: 'https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?q=80&w=200' },
-  { id: '8', name: 'Mecânica', slug: 'mecanica', image: 'https://images.unsplash.com/photo-1486262715619-67b85e0b08d3?q=80&w=200' },
-  { id: '9', name: 'Pets', slug: 'pets', image: 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?q=80&w=200' },
-  { id: '10', name: 'Faxina', slug: 'limpeza', image: 'https://images.unsplash.com/photo-1581578731548-c64695ce6958?q=80&w=200' },
-  { id: '11', name: 'Eventos', slug: 'eventos', image: 'https://images.unsplash.com/photo-1511795409834-ef04bbd61622?q=80&w=200' },
+  { id: '1', name: 'Tudo', slug: 'tudo', icone: 'apps', image: null },
+  { id: '2', name: 'Beleza', slug: 'beleza', icone: 'content-cut', image: null },
+  { id: '3', name: 'Barbearia', slug: 'barbearia', icone: 'storefront', image: null },
+  { id: '4', name: 'Saúde', slug: 'saude', icone: 'favorite-border', image: null },
+  { id: '5', name: 'Estética', slug: 'face', icone: 'face', image: null },
+  { id: '6', name: 'Unhas', slug: 'unhas', icone: 'pan-tool', image: null },
+  { id: '7', name: 'Veículos', slug: 'veiculos', icone: 'directions-car', image: null },
+  { id: '8', name: 'Pets', slug: 'pets', icone: 'pets', image: null },
 ];
 
 export default function Home() {
@@ -57,6 +55,7 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState('Buscando localização...');
   const [searchQuery, setSearchQuery] = useState('');
+  const [categoriaAtiva, setCategoriaAtiva] = useState('tudo');
 
   const [isEditingLocation, setIsEditingLocation] = useState(false);
   const [isSavingLocation, setIsSavingLocation] = useState(false);
@@ -64,15 +63,19 @@ export default function Home() {
     logradouro: '', numero: '', bairro: '', cidadeUf: ''
   });
 
-  const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.10:8000/api';
+  const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.11:8000/api';
 
   useEffect(() => {
     loadSavedLocationOrFetchGPS();
   }, []);
 
-  // CLIQUE DA CATEGORIA - BUSCA DIRETO NA API
   const handleCategorySearch = (categorySlug) => {
-    fetchNearbyStores({ categoria: categorySlug });
+    setCategoriaAtiva(categorySlug);
+    if (categorySlug === 'tudo') {
+      loadSavedLocationOrFetchGPS();
+    } else {
+      fetchNearbyStores({ categoria: categorySlug });
+    }
   };
 
   const loadSavedLocationOrFetchGPS = async () => {
@@ -105,24 +108,24 @@ export default function Home() {
     let { status } = await Location.requestForegroundPermissionsAsync();
 
     if (status !== 'granted') {
-      setStatusMessage('Permissão de GPS negada. Toque para digitar.');
+      setStatusMessage('Permissão negada. Toque para digitar.');
       setIsLoading(false);
       return;
     }
 
     try {
-      setStatusMessage('Calculando sua localização exata...');
+      setStatusMessage('Calculando localização...');
       let location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       const coords = { lat: location.coords.latitude, lng: location.coords.longitude };
 
-      setStatusMessage('Localização atualizada (GPS)');
+      setStatusMessage('Sua Localização Atual');
       await AsyncStorage.setItem(STORAGE_KEYS.COORDS, JSON.stringify(coords));
       await AsyncStorage.setItem(STORAGE_KEYS.FORMATTED, 'Sua Localização Atual');
       await AsyncStorage.removeItem(STORAGE_KEYS.ADDRESS);
 
       fetchNearbyStores(coords);
     } catch (error) {
-      setStatusMessage('Erro no GPS. Toque para digitar o endereço.');
+      setStatusMessage('Erro no GPS. Toque para digitar.');
       setIsLoading(false);
     }
   };
@@ -132,7 +135,7 @@ export default function Home() {
     try {
       const queryParams = new URLSearchParams(params).toString();
       const response = await fetch(`${API_BASE_URL}/estabelecimentos/proximos?${queryParams}&radius=15`, {
-        headers: { 'Accept': 'application/json' } // Evita o redirecionamento HTML que quebra o app
+        headers: { 'Accept': 'application/json' }
       });
 
       if (!response.ok) throw new Error('Erro na rede');
@@ -141,6 +144,7 @@ export default function Home() {
       setStores(data);
     } catch (error) {
       console.error(error);
+      // Fallback/Mock para ver o layout funcionando caso a API falhe
       setStores([]);
     } finally {
       setIsLoading(false);
@@ -149,12 +153,15 @@ export default function Home() {
 
   const handleMainSearch = () => {
     if (!searchQuery.trim()) return;
-    router.push({ pathname: '/explorar', params: { query: searchQuery } });
+    router.push({
+      pathname: '/explorar',
+      params: { query: searchQuery }
+    });
   };
 
   const handleSaveLocation = async () => {
     if (!addressData.logradouro || !addressData.numero || !addressData.cidadeUf) {
-      Alert.alert('Ops', 'Por favor, preencha pelo menos a Rua, Número e Cidade.');
+      Alert.alert('Ops', 'Preencha Rua, Número e Cidade.');
       return;
     }
 
@@ -175,50 +182,49 @@ export default function Home() {
     }
   };
 
-  return (
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+  // Divide os dados da API para preencher os dois layouts da imagem
+  const destaques = stores.slice(0, 3);
+  const recomendados = stores.slice(3);
 
-      {/* --- HEADER SUPERIOR --- */}
-      <View style={styles.headerTop}>
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <ScrollView style={styles.container} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+
+        {/* HEADER: Busca na Esquerda, Notificação e Perfil na Direita */}
+        <View style={styles.header}>
+          <View style={styles.searchContainer}>
+            <TouchableOpacity onPress={handleMainSearch}>
+              <Ionicons name="search" size={20} color="#777" />
+            </TouchableOpacity>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Buscar serviços..."
+              placeholderTextColor="#9CA3AF"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              onSubmitEditing={handleMainSearch}
+              returnKeyType="search"
+            />
+          </View>
+
+          <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/agendamentos')}>
+            <Ionicons name="notifications-outline" size={24} color="#333" />
+            <View style={styles.badge} />
+          </TouchableOpacity>
+
+          <TouchableOpacity onPress={() => router.push('/perfil')} style={styles.profileButton}>
+            <Text style={styles.profileText}>JR</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* LOCALIZAÇÃO */}
         <View style={styles.locationWrapper}>
           {!isEditingLocation ? (
-            <View style={styles.locationDisplayRow}>
-
-              {/* BLOCO DA ESQUERDA: ENDEREÇO + BOTÕES AUXILIARES */}
-              <View style={styles.headerLeftGroup}>
-                <TouchableOpacity style={styles.locationTextContainer} onPress={() => setIsEditingLocation(true)}>
-                  <Text style={styles.locationLabel}>Entregar em / Atender em</Text>
-                  <View style={styles.locationInfoRow}>
-                    <Text style={styles.locationText} numberOfLines={1}>{statusMessage}</Text>
-                    <Feather name="chevron-down" size={16} color={COLORS.primary} style={{ marginLeft: 4 }} />
-                  </View>
-                </TouchableOpacity>
-
-                <View style={styles.headerActions}>
-                  <TouchableOpacity onPress={getLocationViaGPS} style={styles.iconButton}>
-                    <MaterialIcons name="my-location" size={18} color={COLORS.primary} />
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    onPress={() => router.push('/src/screens/MeusAgendamentos')}
-                    style={styles.iconButton}
-                  >
-                    <Feather name="calendar" size={18} color={COLORS.primary} />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* EXTREMA DIREITA: BOTÃO DE PERFIL EXCLUSIVO E DESTACADO */}
-              <TouchableOpacity
-                onPress={() => router.push('/src/screens/TelaPerfil')}
-                style={styles.profileCircle}
-              >
-                <View style={styles.profileBorder}>
-                  <Feather name="user" size={22} color={COLORS.white} />
-                </View>
-              </TouchableOpacity>
-
-            </View>
+            <TouchableOpacity style={styles.locationContainer} onPress={() => setIsEditingLocation(true)}>
+              <Ionicons name="location-outline" size={18} color={COLORS.primary} />
+              <Text style={styles.locationText} numberOfLines={1}>{statusMessage}</Text>
+              <Ionicons name="chevron-down" size={16} color="#777" />
+            </TouchableOpacity>
           ) : (
             <View style={styles.locationForm}>
               <Text style={styles.locationFormTitle}>Onde você está?</Text>
@@ -238,152 +244,240 @@ export default function Home() {
           )}
         </View>
 
-        {/* --- BARRA DE BUSCA --- */}
-        <View style={styles.searchForm}>
-          <Feather name="search" size={20} color={COLORS.primary} style={styles.searchIcon} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Serviços, reservas, locais..."
-            placeholderTextColor="#9CA3AF"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            onSubmitEditing={handleMainSearch}
-          />
-        </View>
-      </View>
-
-      {/* --- CARROSSEL DE CATEGORIAS COMPLETAS E CLICÁVEIS --- */}
-      <View style={styles.section}>
-        <FlatList
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          data={SERVICE_CATEGORIES}
-          keyExtractor={item => item.id}
-          contentContainerStyle={{ paddingHorizontal: 20, gap: 16 }}
-          renderItem={({ item }) => (
+        {/* CATEGORIAS (Estilo Aplicativo) */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoriesScroll}>
+          {SERVICE_CATEGORIES.map((cat) => (
             <TouchableOpacity
-              style={styles.categoryCard}
-              onPress={() => handleCategorySearch(item.slug)}
+              key={cat.id}
+              style={[styles.categoriaCard, categoriaAtiva === cat.slug && styles.categoriaAtiva]}
+              onPress={() => handleCategorySearch(cat.slug)}
             >
-              <Image source={{ uri: item.image }} style={styles.categoryImage} />
-              <Text style={styles.categoryName}>{item.name}</Text>
-            </TouchableOpacity>
-          )}
-        />
-      </View>
+              <View style={[styles.iconContainer, categoriaAtiva === cat.slug && styles.iconContainerAtivo]}>
+                <MaterialIcons
 
-      {/* --- LISTAGEM DE ESTABELECIMENTOS --- */}
-      <View style={[styles.section, { marginTop: 24 }]}>
-        <Text style={[styles.sectionTitle, { marginLeft: 20, marginBottom: 16 }]}>Destaques perto de você</Text>
+                  size={26}
+                  color={categoriaAtiva === cat.slug ? COLORS.primary : '#555'}
+                />
+              </View>
+              <Text style={[styles.categoriaTexto, categoriaAtiva === cat.slug && styles.categoriaTextoAtivo]}>
+                {cat.name}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
+        {/* BANNER PROMOCIONAL */}
+        <View style={styles.bannerContainer}>
+          <Image
+            source={{ uri: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&q=80&w=800' }}
+            style={styles.bannerImage}
+          />
+          <View style={styles.bannerOverlay}>
+            <Text style={styles.bannerTitle}>Cuide de você{'\n'}com os melhores{'\n'}profissionais.</Text>
+            <Text style={styles.bannerSub}>Agende online de forma{'\n'}rápida e prática.</Text>
+            <TouchableOpacity style={styles.bannerButton}>
+              <Text style={styles.bannerButtonText}>Explorar agora  →</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
 
         {isLoading ? (
           <ActivityIndicator size="large" color={COLORS.primary} style={{ marginTop: 40 }} />
         ) : stores.length > 0 ? (
-          stores.map((store) => (
-            <TouchableOpacity key={store.id} style={styles.storeCard} activeOpacity={0.9}>
-              <Image source={{ uri: store.foto_perfil }} style={styles.storeImage} />
-              <View style={styles.storeInfo}>
-                <Text style={styles.storeName}>{store.nome}</Text>
+          <>
+            {/* DESTAQUES PARA VOCÊ (Rolagem Horizontal) */}
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Destaques para você</Text>
+              <TouchableOpacity><Text style={styles.verTodos}>Ver todos</Text></TouchableOpacity>
+            </View>
 
-                <View style={styles.storeMeta}>
-                  <Text style={styles.metaText}><Feather name="star" color={COLORS.accent} /> {store.avaliacao_media || 'Novo'}</Text>
-                  <Text style={styles.metaDot}>•</Text>
-                  <Text style={styles.metaText}>{store.categoria || 'Serviços'}</Text>
-                  <Text style={styles.metaDot}>•</Text>
-                  <Text style={styles.metaText}>{store.distance ? `${store.distance} km` : 'Perto'}</Text>
-                </View>
-
-                {store.fila_atual !== undefined && (
-                  <View style={styles.queueBadge}>
-                    <Text style={styles.queueText}>Fila atual: {store.fila_atual} pessoas</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
+              {destaques.map((store, index) => (
+                <TouchableOpacity key={store.id} style={styles.cardDestaque} activeOpacity={0.9}>
+                  <View>
+                    <Image source={{ uri: store.foto_perfil || 'https://via.placeholder.com/300' }} style={styles.imageDestaque} />
+                    {index === 0 && (
+                      <View style={styles.badgeAlta}>
+                        <Text style={styles.badgeTextAlta}>Em alta 🔥</Text>
+                      </View>
+                    )}
                   </View>
-                )}
-              </View>
-            </TouchableOpacity>
-          ))
+                  <View style={styles.cardDestaqueInfo}>
+                    <Text style={styles.cardDestaqueTitle} numberOfLines={1}>{store.nome}</Text>
+                    <View style={styles.ratingContainer}>
+                      <Ionicons name="star" size={12} color="#FFB800" />
+                      <Text style={styles.ratingText}> {store.avaliacao_media || 'Novo'} </Text>
+                    </View>
+                    <Text style={styles.priceLabel}>A partir de</Text>
+                    <Text style={styles.priceValue}>R$ {store.preco_minimo || '25,00'}</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+
+            {/* RECOMENDADOS (Lista Vertical) */}
+            {recomendados.length > 0 && (
+              <>
+                <Text style={[styles.sectionTitle, { marginBottom: 15 }]}>Recomendados</Text>
+                {recomendados.map((store) => (
+                  <TouchableOpacity key={store.id} style={styles.cardRecomendado} activeOpacity={0.9}>
+                    <Image source={{ uri: store.foto_perfil || 'https://via.placeholder.com/150' }} style={styles.imageRecomendado} />
+
+                    <View style={styles.infoRecomendado}>
+                      <View style={styles.headerRecomendado}>
+                        <Text style={styles.cardTitle}>{store.nome}</Text>
+                        <Ionicons name="heart-outline" size={20} color="#999" />
+                      </View>
+
+                      <View style={styles.ratingContainer}>
+                        <Ionicons name="star" size={12} color="#FFB800" />
+                        <Text style={styles.ratingText}> {store.avaliacao_media || 'Novo'} </Text>
+                      </View>
+
+                      <View style={styles.tagsContainer}>
+                        <View style={styles.tag}><Text style={styles.tagText}>{store.categoria || 'Serviço'}</Text></View>
+                        {store.fila_atual !== undefined && (
+                          <View style={styles.tagQueue}><Text style={styles.tagQueueText}>Fila: {store.fila_atual}</Text></View>
+                        )}
+                      </View>
+
+                      <View style={styles.footerRecomendado}>
+                        <Text style={styles.priceLabel}>A partir de <Text style={styles.priceValueRec}>R$ {store.preco_minimo || '45,00'}</Text></Text>
+                        <View style={styles.timeContainer}>
+                          <Ionicons name="time-outline" size={12} color="#999" />
+                          <Text style={styles.timeText}> {store.distance ? `${store.distance} km` : 'Perto'}</Text>
+                        </View>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </>
+            )}
+          </>
         ) : (
+          /* EMPTY STATE */
           <View style={styles.emptyState}>
             <Image
               source={{ uri: 'https://cdn-icons-png.flaticon.com/512/7486/7486747.png' }}
               style={{ width: 80, height: 80, opacity: 0.5, marginBottom: 16 }}
             />
-            <Text style={styles.emptyTitle}>Ops, parece que não há nada aqui...</Text>
+            <Text style={styles.emptyTitle}>Nenhum serviço encontrado aqui.</Text>
             <Text style={styles.emptyDesc}>
-              Não encontramos serviços próximos ou você pode estar sem internet no momento.
+              Não encontramos resultados para esta localização ou categoria.
             </Text>
             <TouchableOpacity style={styles.retryButton} onPress={() => loadSavedLocationOrFetchGPS()}>
               <Text style={styles.retryButtonText}>Tentar novamente</Text>
             </TouchableOpacity>
           </View>
         )}
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.lightGray },
-  headerTop: { backgroundColor: COLORS.white, paddingBottom: 20, paddingTop: 60, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  locationWrapper: { paddingHorizontal: 20, marginBottom: 16 },
+  safeArea: { flex: 1, backgroundColor: COLORS.white },
+  container: { flex: 1, paddingHorizontal: 16 },
 
-  // ESTRUTURAÇÃO DO TOPO EM GRID EM LINHA
-  locationDisplayRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  headerLeftGroup: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  locationTextContainer: { flex: 1, marginRight: 10 },
-  locationLabel: { fontSize: 11, color: COLORS.gray, textTransform: 'uppercase', fontWeight: '700', marginBottom: 2 },
-  locationInfoRow: { flexDirection: 'row', alignItems: 'center' },
-  locationText: { fontSize: 14, fontWeight: 'bold', color: COLORS.secondary, maxWidth: '80%' },
 
-  // BOTÕES AUXILIARES ESQUERDOS
-  headerActions: { flexDirection: 'row', gap: 6, alignItems: 'center', marginRight: 10 },
-  iconButton: { padding: 8, backgroundColor: COLORS.primaryLight, borderRadius: 50 },
+  // --- HEADER ---
+  header: { flexDirection: 'row', alignItems: 'center', marginTop: 50, marginBottom: 15 },
+  searchContainer: {
 
-  // DESIGN EXCLUSIVO DO BOTÃO DE PERFIL (DIREITA EXTREMA)
-  profileCircle: { marginLeft: 5 },
-  profileBorder: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
-    backgroundColor: COLORS.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 5,
-    elevation: 4
+    flex: 1, flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#F5F5F5', borderRadius: 25,
+    paddingHorizontal: 15, height: 45, marginRight: 10,
   },
+  searchInput: { flex: 1, marginLeft: 8, fontSize: 14, color: '#333' },
+  iconButton: { padding: 8, position: 'relative', marginRight: 5 },
+  badge: { position: 'absolute', top: 8, right: 10, width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.primary },
+  profileButton: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center',
+  },
+  profileText: { color: COLORS.white, fontWeight: 'bold', fontSize: 14 },
 
-  locationForm: { backgroundColor: COLORS.white, padding: 16, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border, shadowColor: '#000', shadowOffset: {width:0, height:4}, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
+  // --- LOCALIZAÇÃO ---
+  locationWrapper: { marginBottom: 20 },
+  locationContainer: { flexDirection: 'row', alignItems: 'center' },
+  locationText: { fontSize: 13, color: '#555', marginLeft: 5, marginRight: 5, maxWidth: '85%' },
+
+  // FORMULÁRIO DE LOCALIZAÇÃO (Mantido do seu original)
+  locationForm: { backgroundColor: COLORS.white, padding: 16, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border, shadowColor: '#000', shadowOpacity: 0.05, elevation: 2 },
   locationFormTitle: { fontSize: 16, fontWeight: 'bold', marginBottom: 16, color: COLORS.secondary },
-  input: { backgroundColor: COLORS.lightGray, borderRadius: 8, padding: 12, marginBottom: 12, fontSize: 15, color: COLORS.secondary },
+  input: { backgroundColor: COLORS.lightGray, borderRadius: 8, padding: 12, marginBottom: 12, fontSize: 15 },
   formActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 8 },
   btnCancel: { padding: 12 },
   btnCancelText: { color: COLORS.gray, fontWeight: '600' },
   btnSave: { backgroundColor: COLORS.primary, padding: 12, borderRadius: 8, paddingHorizontal: 20 },
   btnSaveText: { color: COLORS.white, fontWeight: 'bold' },
 
-  searchForm: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.lightGray, borderRadius: 12, marginHorizontal: 20, paddingHorizontal: 16, height: 50 },
-  searchIcon: { marginRight: 10 },
-  searchInput: { flex: 1, fontSize: 16, color: COLORS.secondary },
-  section: { marginTop: 24 },
+  // --- CATEGORIAS ---
+  categoriesScroll: { marginBottom: 20 },
+  categoriaCard: { alignItems: 'center', marginRight: 15 },
+  iconContainer: {
+    width: 65, height: 65, borderRadius: 18,
+    backgroundColor: '#F5F5F5', alignItems: 'center', justifyContent: 'center',
+    marginBottom: 8, borderWidth: 1, borderColor: 'transparent',
+  },
+  iconContainerAtivo: { borderColor: COLORS.primary, backgroundColor: COLORS.primaryLight },
+  categoriaTexto: { fontSize: 12, color: '#555', fontWeight: '500' },
+  categoriaTextoAtivo: { color: COLORS.primary, fontWeight: 'bold' },
+
+  // --- BANNER ---
+  bannerContainer: { width: '100%', height: 180, borderRadius: 16, overflow: 'hidden', marginBottom: 25, position: 'relative' },
+  bannerImage: { width: '100%', height: '100%' },
+  bannerOverlay: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    padding: 20, justifyContent: 'center', backgroundColor: 'rgba(255, 255, 255, 0.45)',
+  },
+  bannerTitle: { fontSize: 20, fontWeight: '900', color: '#000', marginBottom: 5 },
+  bannerSub: { fontSize: 13, color: '#222', marginBottom: 15, fontWeight: '500' },
+  bannerButton: { backgroundColor: COLORS.primary, paddingVertical: 8, paddingHorizontal: 15, borderRadius: 20, alignSelf: 'flex-start' },
+  bannerButtonText: { color: COLORS.white, fontWeight: 'bold', fontSize: 12 },
+
+  // --- SEÇÕES ---
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
   sectionTitle: { fontSize: 18, fontWeight: 'bold', color: COLORS.secondary },
+  verTodos: { fontSize: 13, color: COLORS.primary, fontWeight: '600' },
 
-  // CATEGORIAS GRANDES E ESTILIZADAS
-  categoryCard: { alignItems: 'center', width: 95 },
-  categoryImage: { width: 85, height: 85, borderRadius: 42.5, marginBottom: 8, backgroundColor: '#E5E7EB', borderWidth: 1, borderColor: COLORS.border },
-  categoryName: { fontSize: 14, fontWeight: '600', color: COLORS.secondary, textAlign: 'center' },
+  // --- DESTAQUES (HORIZONTAL) ---
+  horizontalScroll: { marginBottom: 25 },
+  cardDestaque: {
+    width: 140, marginRight: 15, backgroundColor: COLORS.white,
+    borderRadius: 12, borderWidth: 1, borderColor: COLORS.border, overflow: 'hidden',
+  },
+  imageDestaque: { width: '100%', height: 120 },
+  badgeAlta: { position: 'absolute', top: 8, left: 8, backgroundColor: 'rgba(0,0,0,0.7)', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6 },
+  badgeTextAlta: { color: COLORS.white, fontSize: 10, fontWeight: 'bold' },
+  cardDestaqueInfo: { padding: 10 },
+  cardDestaqueTitle: { fontWeight: 'bold', fontSize: 14, marginBottom: 2, color: COLORS.secondary },
+  ratingContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
+  ratingText: { fontSize: 12, fontWeight: 'bold', color: '#555' },
+  priceLabel: { fontSize: 11, color: '#777' },
+  priceValue: { fontSize: 14, color: COLORS.primary, fontWeight: 'bold', marginTop: 2 },
 
-  storeCard: { backgroundColor: COLORS.white, marginHorizontal: 20, marginBottom: 20, borderRadius: 16, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3 },
-  storeImage: { width: '100%', height: 140, backgroundColor: '#E5E7EB' },
-  storeInfo: { padding: 16 },
-  storeName: { fontSize: 18, fontWeight: 'bold', color: COLORS.secondary, marginBottom: 6 },
-  storeMeta: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  metaText: { color: COLORS.gray, fontSize: 13, fontWeight: '500' },
-  metaDot: { color: COLORS.gray, marginHorizontal: 6, fontSize: 10 },
-  queueBadge: { backgroundColor: COLORS.primaryLight, paddingVertical: 4, paddingHorizontal: 10, borderRadius: 6, alignSelf: 'flex-start' },
-  queueText: { color: COLORS.primary, fontWeight: '700', fontSize: 12 },
-  emptyState: { alignItems: 'center', padding: 30, backgroundColor: COLORS.white, marginHorizontal: 20, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border, borderStyle: 'dashed' },
+  // --- RECOMENDADOS (VERTICAL) ---
+  cardRecomendado: {
+    flexDirection: 'row', backgroundColor: COLORS.white, marginBottom: 15,
+    borderRadius: 12, borderWidth: 1, borderColor: COLORS.border, padding: 8,
+  },
+  imageRecomendado: { width: 90, height: 90, borderRadius: 10 },
+  infoRecomendado: { flex: 1, marginLeft: 12, justifyContent: 'space-between' },
+  headerRecomendado: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  cardTitle: { fontWeight: 'bold', fontSize: 15, color: COLORS.secondary, flex: 1 },
+  tagsContainer: { flexDirection: 'row', marginTop: 4, marginBottom: 4 },
+  tag: { backgroundColor: '#F5F5F5', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, marginRight: 6 },
+  tagText: { fontSize: 10, color: '#555' },
+  tagQueue: { backgroundColor: COLORS.primaryLight, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  tagQueueText: { fontSize: 10, color: COLORS.primary, fontWeight: 'bold' },
+  footerRecomendado: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  priceValueRec: { fontSize: 14, color: COLORS.primary, fontWeight: 'bold' },
+  timeContainer: { flexDirection: 'row', alignItems: 'center' },
+  timeText: { fontSize: 11, color: '#999' },
+
+  // --- EMPTY STATE ---
+  emptyState: { alignItems: 'center', padding: 30, backgroundColor: COLORS.white, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border, borderStyle: 'dashed', marginTop: 20 },
   emptyTitle: { fontSize: 16, fontWeight: 'bold', color: COLORS.secondary, textAlign: 'center' },
   emptyDesc: { color: COLORS.gray, textAlign: 'center', marginTop: 8, fontSize: 14, lineHeight: 20 },
   retryButton: { marginTop: 20, backgroundColor: COLORS.primaryLight, paddingVertical: 10, paddingHorizontal: 20, borderRadius: 8 },
