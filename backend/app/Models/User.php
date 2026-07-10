@@ -19,6 +19,12 @@ class User extends Authenticatable
         'plano_assinatura',
         'plano_expira_em',
         'pontos_saldo',
+        'telefone',
+        'numero_servicos',
+        'numero_reservas',
+        'asaas_customer_id',
+        'asaas_subscription_id',
+        'asaas_subscription_status',
     ];
 
     protected $hidden = [

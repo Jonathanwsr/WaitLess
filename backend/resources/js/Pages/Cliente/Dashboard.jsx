@@ -4,15 +4,11 @@ import { useState } from 'react';
 import { 
     StarIcon, ExclamationTriangleIcon, CheckCircleIcon, 
     XCircleIcon, ClockIcon, CalendarIcon, BellAlertIcon, 
-    ChatBubbleBottomCenterTextIcon, MagnifyingGlassIcon,
-    MapPinIcon
+    ChatBubbleBottomCenterTextIcon, MapPinIcon
 } from '@heroicons/react/24/solid';
 import { StarIcon as StarOutlineIcon } from '@heroicons/react/24/outline'; 
 
 export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
-    const [busca, setBusca] = useState('');
-    const [categoria, setCategoria] = useState('');
-    
     // Controle das Abas de Agendamentos
     const [abaAtiva, setAbaAtiva] = useState('proximos'); 
 
@@ -29,13 +25,6 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
     const [enviandoAvaliacao, setEnviandoAvaliacao] = useState(false);
     
     const { flash = {} } = usePage().props;
-
-    const fazerBusca = (e) => {
-        e.preventDefault();
-        if (route().has('cliente.explorar')) {
-            router.get(route('cliente.explorar'), { busca, categoria });
-        }
-    };
 
     const formatarMoeda = (valor) => valor ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor) : 'R$ 0,00';
 
@@ -139,7 +128,7 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
 
     return (
         <AuthenticatedLayout user={auth.user} header={<></>}>
-            <Head title="Painel do Usuário - WaitLess" />
+            <Head title="Minhas Reservas - WaitLess" />
 
             {/* Fundo mantido em tom suave/aquecido: #FCF9F6 */}
             <div className="min-h-screen bg-[#FCF9F6] font-sans pb-24">
@@ -155,7 +144,7 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
                     {/* CABEÇALHO */}
                     <div className="flex flex-col md:flex-row md:items-center justify-between mb-12 gap-4">
                         <div>
-                            <h2 className="text-4xl font-black text-gray-900 tracking-tight">Painel do Usuário</h2>
+                            <h2 className="text-4xl font-black text-gray-900 tracking-tight">Minhas Reservas</h2>
                             <p className="text-gray-500 mt-2 text-sm font-medium">Gerencie seus agendamentos de forma inteligente e rápida.</p>
                         </div>
                         <Link 
@@ -165,51 +154,6 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
                             <BellAlertIcon className="w-5 h-5 text-[#E05D36]" />
                             <span>3 Recompensas</span>
                         </Link>
-                    </div>
-
-                    {/* BARRA DE PESQUISA LARGURA TOTAL (Preenche o espaço) */}
-                    <div className="bg-white rounded-full pl-8 pr-2 py-2 mb-12 shadow-[0_8px_30px_rgba(224,93,54,0.06)] border border-gray-100 flex flex-col md:flex-row items-center relative z-10 w-full transition-all focus-within:ring-2 focus-within:ring-[#E05D36]/30">
-                        <div className="flex-1 w-full py-2">
-                            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">O que você precisa?</label>
-                            <input 
-                                type="text" 
-                                className="w-full border-0 p-0 text-gray-900 focus:ring-0 text-base placeholder-gray-300 font-semibold bg-transparent" 
-                                placeholder="Nome, especialidade..." 
-                                value={busca} onChange={e => setBusca(e.target.value)} 
-                            />
-                        </div>
-                        
-                        <div className="hidden md:block w-px h-12 bg-gray-100 mx-8"></div>
-                        
-                        <div className="flex-1 w-full py-2 border-t md:border-t-0 border-gray-100 md:pl-2">
-                            <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Categoria</label>
-                            <select 
-                                className="w-full border-0 p-0 text-gray-900 focus:ring-0 text-base font-semibold bg-transparent cursor-pointer" 
-                                value={categoria} onChange={e => setCategoria(e.target.value)}
-                            >
-                                <option value="">Explorar todas as categorias</option>
-                                <option value="Beleza e Estética">Beleza e Estética</option>
-                                <option value="Barbearia">Barbearia</option>
-                                <option value="Cabelo e Penteado">Cabelo e Penteado</option>
-                                <option value="Manicure e Pedicure">Manicure e Pedicure</option>
-                                <option value="Maquiagem e Sobrancelha">Maquiagem e Sobrancelha</option>
-                                <option value="Saúde e Bem-estar">Saúde e Bem-estar</option>
-                                <option value="Massagem e Relaxamento">Massagem e Relaxamento</option>
-                                <option value="Estética Avançada">Estética Avançada</option>
-                                <option value="Fisioterapia">Fisioterapia</option>
-                                <option value="Terapias Holísticas">Terapias Holísticas</option>
-                                <option value="Nutrição e Dieta">Nutrição e Dieta</option>
-                                <option value="Odontologia">Odontologia</option>
-                            </select>
-                        </div>
-
-                        <button 
-                            onClick={fazerBusca} 
-                            className="w-full md:w-auto bg-[#E05D36] text-white px-10 py-4 mt-3 md:mt-0 rounded-full text-sm font-bold hover:bg-[#C74B27] transition-colors flex items-center justify-center gap-2 shadow-sm"
-                        >
-                            <MagnifyingGlassIcon className="w-5 h-5 text-white" />
-                            <span className="md:hidden">Buscar</span>
-                        </button>
                     </div>
 
                     {/* ABAS SEGMENTADAS */}
@@ -325,7 +269,7 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
                                             )}
                                         </div>
 
-                                        {/* BOTÕES DE AÇÃO: Botão Verde para Pagamento Pendente */}
+                                        {/* BOTÕES DE AÇÃO */}
                                         <div className="mt-2 space-y-2">
                                             {isEmAndamento ? (
                                                 <button className="w-full py-3.5 bg-gray-900 text-white rounded-2xl text-xs font-bold hover:bg-black transition-colors shadow-sm">
@@ -354,12 +298,13 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
                                                     </button>
                                                 </>
                                             ) : (
-<button 
-    onClick={() => router.get(`/meus-pedidos/agendamento/${agendamento.id}`)} 
-    className="..."
->
-    Ver Detalhes
-</button>                              )}
+                                                <button 
+                                                    onClick={() => router.get(`/meus-pedidos/agendamento/${agendamento.id}`)} 
+                                                    className="w-full py-3.5 bg-white border border-gray-200 text-gray-900 rounded-2xl text-xs font-bold hover:border-gray-400 hover:bg-gray-50 transition-colors"
+                                                >
+                                                    Ver Detalhes
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                 );

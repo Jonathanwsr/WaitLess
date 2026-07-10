@@ -58,7 +58,7 @@ class ContaPagamentoEstabelecimentoController extends Controller
     public function destroy(string $id)
     {
         $conta = ContaPagamentoEstabelecimento::findOrFail($id);
-        $conta->update(['ativo' => false]); // Desativa em vez de deletar por segurança financeira
+        $conta->update(['ativo' => false]); 
 
         return response()->json(['message' => 'Conta bancária desativada.']);
     }

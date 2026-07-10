@@ -224,4 +224,6 @@ class ContratoController extends Controller
 
         return response()->json(['status' => 'received']);
     }
+
+    
 }

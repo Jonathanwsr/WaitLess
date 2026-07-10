@@ -10,7 +10,7 @@ import {
     PencilSquareIcon, EyeIcon, ArrowDownTrayIcon, 
     XMarkIcon, CheckBadgeIcon, ShieldCheckIcon,
     BuildingOfficeIcon, ChevronRightIcon,
-    PrinterIcon, ArrowLeftIcon,
+    TagIcon, PrinterIcon, ArrowLeftIcon,
     ArchiveBoxIcon, ClockIcon, CheckCircleIcon, 
     ArrowTopRightOnSquareIcon, TrashIcon, UserGroupIcon
 } from '@heroicons/react/24/solid';
@@ -249,14 +249,14 @@ Regido pela Lei nº 8.245/1991 (Lei do Inquilinato) e pelo Código Civil Brasile
         }
 
         if (formTemplate.data.aplicabilidade === 'especifica' && formTemplate.data.aluguel_id) {
-            router.post(route('reservas.gerar-assinafy-custom', formTemplate.data.aluguel_id), {
+            router.post(route('reservas.gerar-assinafy', formTemplate.data.aluguel_id), {
                 conteudo_customizado: formTemplate.data.conteudo,
                 titulo: formTemplate.data.titulo
             }, {
                 preserveScroll: true,
                 onSuccess: () => {
                     cancelarEdicao();
-                    mostrarMensagem('Contrato gerado e enviado para o cliente selecionado!');
+                    mostrarMensagem('Contrato gerado e enviado com sucesso por E-mail e liberado para WhatsApp!');
                     setActiveTab('assinados');
                 }
             });
@@ -517,12 +517,12 @@ Regido pela Lei nº 8.245/1991 (Lei do Inquilinato) e pelo Código Civil Brasile
                                         )}
                                     </div>
 
-                                    {/* 👉 UI MÁGICA REFORMULADA COMO PEDIDO (Título em cima, código em baixo) */}
+                                    {/* 👉 UI MÁGICA REFORMULADA */}
                                     <div>
                                         <div className="border border-blue-200 bg-blue-50/50 p-6 rounded-t-2xl border-b-0">
                                             <div className="flex justify-between items-center mb-4">
                                                 <InputLabel value="Variáveis de Auto-Preenchimento" className="text-blue-900 font-black text-base" />
-                                                <span className="text-[10px] uppercase font-bold text-blue-500 tracking-widest">Clique no card para inserir no texto</span>
+                                                <span className="text-[10px] uppercase font-bold text-blue-500 tracking-widest">Clique no card para inserir</span>
                                             </div>
                                             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                                                 {variaveisMagicas.map(v => (
@@ -558,7 +558,7 @@ Regido pela Lei nº 8.245/1991 (Lei do Inquilinato) e pelo Código Civil Brasile
                                         </div>
                                     </div>
 
-                                    {/* 👉 BOTÃO VERDE COMO SOLICITADO */}
+                                    {/* 👉 BOTÃO VERDE */}
                                     <div className="flex justify-end gap-3 pt-6 border-t border-gray-100">
                                         {isEditing && <button type="button" onClick={cancelarEdicao} className="px-6 py-3 font-bold text-gray-500 hover:text-gray-800 transition">Cancelar Edição</button>}
                                         
@@ -665,18 +665,37 @@ Regido pela Lei nº 8.245/1991 (Lei do Inquilinato) e pelo Código Civil Brasile
                                                             </span>
                                                         )}
                                                     </td>
-                                                    <td className="p-5 text-right space-x-2">
+                                                    <td className="p-5 text-right space-x-2 flex items-center justify-end">
+                                                        {/* Botão Baixar PDF */}
                                                         {contrato.arquivo_pdf && (
-                                                            <a href={'/' + contrato.arquivo_pdf} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-bold text-blue-700 bg-blue-50 px-3 py-2 rounded-xl border border-blue-200 hover:bg-blue-100 transition shadow-sm">
-                                                                <ArrowDownTrayIcon className="w-4 h-4"/> Obter PDF
+                                                            <a href={'/storage/' + contrato.arquivo_pdf} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-bold text-blue-700 bg-blue-50 px-3 py-2 rounded-xl border border-blue-200 hover:bg-blue-100 transition shadow-sm">
+                                                                <ArrowDownTrayIcon className="w-4 h-4"/> PDF
                                                             </a>
                                                         )}
+                                                        
+                                                        {/* Botões se ainda NÃO estiver assinado */}
                                                         {!contrato.assinado && contrato.url_assinatura && (
-                                                            <a href={contrato.url_assinatura} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-bold text-orange-700 bg-orange-50 px-3 py-2 rounded-xl border border-orange-200 hover:bg-orange-100 transition shadow-sm">
-                                                                <ArrowTopRightOnSquareIcon className="w-4 h-4"/> Ver Link
-                                                            </a>
+                                                            <>
+                                                                <a href={contrato.url_assinatura} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-bold text-gray-700 bg-gray-50 px-3 py-2 rounded-xl border border-gray-200 hover:bg-gray-100 transition shadow-sm">
+                                                                    <ArrowTopRightOnSquareIcon className="w-4 h-4"/> Copiar Link
+                                                                </a>
+
+                                                                {/* 👉 Novo Botão Integrado com WhatsApp */}
+                                                                {contrato.aluguel?.locatario?.telefone && (
+                                                                    <a 
+                                                                        href={`https://api.whatsapp.com/send?phone=55${contrato.aluguel.locatario.telefone.replace(/\D/g, '')}&text=${encodeURIComponent(`Olá, ${contrato.aluguel.locatario.name}! Segue o seu contrato referente à locação na WaitLess para assinatura digital. É rápido e seguro: ${contrato.url_assinatura}`)}`}
+                                                                        target="_blank" 
+                                                                        rel="noopener noreferrer" 
+                                                                        className="inline-flex items-center gap-1 text-xs font-bold text-white bg-green-500 px-3 py-2 rounded-xl border border-green-600 hover:bg-green-600 transition shadow-sm"
+                                                                    >
+                                                                        WhatsApp
+                                                                    </a>
+                                                                )}
+                                                            </>
                                                         )}
-                                                        <button onClick={() => deletarContratoGerado(contrato.id)} className="inline-flex items-center gap-1 text-xs font-bold text-red-500 bg-white border border-red-100 px-3 py-2 rounded-xl hover:bg-red-50 hover:text-red-700 transition opacity-0 group-hover:opacity-100">
+
+                                                        {/* Botão Apagar */}
+                                                        <button onClick={() => deletarContratoGerado(contrato.id)} className="inline-flex items-center gap-1 text-xs font-bold text-red-500 bg-white border border-red-100 px-3 py-2 rounded-xl hover:bg-red-50 hover:text-red-700 transition opacity-0 group-hover:opacity-100 ml-2">
                                                             <TrashIcon className="w-4 h-4"/>
                                                         </button>
                                                     </td>

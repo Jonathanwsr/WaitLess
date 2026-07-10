@@ -7,6 +7,7 @@ use App\Models\ItemAluguel;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
+use Inertia\Inertia;
 
 class ItemAluguelController extends Controller
 {
@@ -309,5 +310,19 @@ public function store(Request $request)
         $item->delete();
 
         return redirect()->back()->with('success', 'Item removido do catálogo com sucesso.');
+    }
+
+public function show($id)
+    {
+        $item = ItemAluguel::with('estabelecimento:id,name,foto_perfil,cidade,estado')->findOrFail($id);
+
+        // Garante que os campos JSON sejam tratados como array, verificando se já não foram convertidos pelo Laravel
+        $item->fotos = is_string($item->fotos) ? json_decode($item->fotos, true) : ($item->fotos ?? []);
+        $item->recursos_oferecidos = is_string($item->recursos_oferecidos) ? json_decode($item->recursos_oferecidos, true) : ($item->recursos_oferecidos ?? []);
+        $item->acessorios = is_string($item->acessorios) ? json_decode($item->acessorios, true) : ($item->acessorios ?? []);
+
+        return Inertia::render('Cliente/DetalhesItem', [
+            'item' => $item
+        ]);
     }
 }

@@ -12,9 +12,9 @@ import {
     ChevronLeftIcon,
     ChevronRightIcon,
     ChartBarIcon,
-    CreditCardIcon
+    CreditCardIcon,
+    WalletIcon // <-- Ícone adicionado para a Carteira
 } from '@heroicons/react/24/outline'; 
-// Alterado para 'outline' para dar o visual moderno e leve idêntico ao da imagem
 
 export default function Dashboard({ auth, estabelecimentos = [], metricas = {} }) {
     return (
@@ -106,10 +106,22 @@ export default function Dashboard({ auth, estabelecimentos = [], metricas = {} }
                             Equipe
                         </button>
 
-                        <button className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-700 dark:text-gray-200 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition shadow-sm">
+                        <Link 
+                            href="/financeiro/conta" 
+                            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-700 dark:text-gray-200 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition shadow-sm"
+                        >
                             <CreditCardIcon className="w-4 h-4 text-gray-500" />
                             Financeiro
-                        </button>
+                        </Link>
+
+                        {/* --- NOVO BOTÃO DE CARTEIRA ADICIONADO AQUI --- */}
+                        <Link 
+                            href="/carteira" 
+                            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-700 dark:text-gray-200 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition shadow-sm"
+                        >
+                            <WalletIcon className="w-4 h-4 text-gray-500" />
+                            Carteira
+                        </Link>
 
                         <Link 
                             href={route('estabelecimentos.create')}

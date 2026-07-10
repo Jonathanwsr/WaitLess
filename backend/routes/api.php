@@ -25,12 +25,11 @@ use App\Http\Controllers\Api\ItemAluguelController;
 use App\Http\Controllers\Api\Mobile\MobileAuthController;
 use App\Http\Controllers\Api\Mobile\MobileHomeController;
 use App\Http\Controllers\Api\Mobile\MobileAgendamentoController;
-<<<<<<< HEAD
+
 use App\Http\Controllers\Api\Mobile\ClienteExplorarMobileController;
 use App\Http\Controllers\Api\Mobile\ClienteAgendamentoMobileController; // Corrigido: Adicionado o ';' aqui
 
-=======
->>>>>>> 2f29bd0 (ajuste tela de config de estabelecimento)
+
 
 /*
 |--------------------------------------------------------------------------
@@ -43,16 +42,15 @@ Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/webhook/mercadopago', [WebhookController::class, 'mercadopago']);
 
-<<<<<<< HEAD
 // Rotas públicas Mobile
 Route::post('/mobile/login', [App\Http\Controllers\Api\Mobile\MobileAuthController::class, 'login']);
 Route::post('/mobile/cadastro', [App\Http\Controllers\Api\Mobile\MobileAuthController::class, 'register']);
 
-=======
+
 // --- ROTAS PÚBLICAS MOBILE ---
 Route::post('/mobile/login', [MobileAuthController::class, 'login']);
 Route::post('/mobile/cadastro', [MobileAuthController::class, 'register']);
->>>>>>> 2f29bd0 (ajuste tela de config de estabelecimento)
+
 
 /*
 |--------------------------------------------------------------------------

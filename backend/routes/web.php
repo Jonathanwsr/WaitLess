@@ -24,6 +24,7 @@ use App\Http\Controllers\Api\ClienteCupomController;
 use App\Http\Controllers\Api\CarteiraController;
 use App\Http\Controllers\Api\FuncionarioController;
 use App\Http\Controllers\Api\ItemAluguelController;
+use App\Http\Controllers\Api\AvaliacaoController;
 use App\Http\Controllers\Api\ContratoController;
 use Illuminate\Foundation\Application; 
 use Illuminate\Support\Facades\Route;  
@@ -73,8 +74,12 @@ Route::post('/assinaturas/nova', [App\Http\Controllers\Api\AssinaturaController:
 
 
     Route::get('/financeiro/conta', function () {
-    return inertia('FinanceiroConta'); 
+    return Inertia::render('Estabelecimentos/FinanceiroConta'); 
 })->name('financeiro.conta');
+
+
+
+Route::post('/api/providers', [ProviderController::class, 'store'])->name('provider.store');
     
     // Dashboard
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
@@ -211,6 +216,17 @@ Route::get('/estabelecimentos/{estabelecimento}/fila', [AgendamentoController::c
     Route::post('/minhas-reservas/gerar-contrato/{id}', [AgendamentoController::class, 'generarEEnviarContrato'])
         ->name('cliente.reservas.contrato');
 
+        // Adicione isto perto das rotas de itens (catalogo.itens...)
+Route::get('/itens/{id}/detalhes', [App\Http\Controllers\Api\ItemAluguelController::class, 'show'])
+    ->name('itens.detalhes');
+
+    
+
+    Route::get('/itens/{id}/avaliacoes', [App\Http\Controllers\Api\AvaliacaoController::class, 'indexReact'])
+    ->name('avaliacoes.pagina');
+
+        
+
 });
 
 // Rota de Webhook pública (Fora do Middleware Auth para receber respostas da D4Sign)
@@ -312,6 +328,14 @@ Route::get('/estabelecimentos/{estabelecimento}/agenda-equipe', [App\Http\Contro
     Route::get('/minha-carteira', [CarteiraController::class, 'index'])->name('cliente.carteira');
     Route::post('/minha-carteira/assinar-plus', [CarteiraController::class, 'assinarPlus'])->name('cliente.assinatura.plus');
      Route::post('/minha-carteira/resgatar/{cupom}', [App\Http\Controllers\Api\CarteiraController::class, 'resgatarCupom'])->name('cliente.resgatar.cupom');
+
+   Route::get('/carteira', [CarteiraController::class, 'index'])->name('carteira.index'); 
+     Route::post('/financeiro/funcionario/fechar-dia', [CarteiraController::class, 'fecharDia'])->name('funcionario.fechar_dia');
+    Route::post('/financeiro/proprietario/sacar', [CarteiraController::class, 'solicitarSaque'])->name('proprietario.sacar');
+    Route::post('/financeiro/cliente/resgatar/{cupom}', [CarteiraController::class, 'resgatarCupom'])->name('cliente.resgatar');
+
+    
+    
 
      // Rota para abrir a tela de Mensagens/Sugestões
 Route::get('/cliente/mensagens', [ClienteCupomController::class, 'mensagens'])->name('cliente.mensagens');

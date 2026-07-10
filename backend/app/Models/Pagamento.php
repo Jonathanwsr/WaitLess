@@ -11,6 +11,11 @@ class Pagamento extends Model
    
     protected $casts = [
         'data_pagamento' => 'datetime',
+        'valor_total',
+    'taxa_plataforma',
+    'valor_prestador',
+    'status_repasse',
+    'data_liberacao_repasse',
     ];
 
     public function usuario()
