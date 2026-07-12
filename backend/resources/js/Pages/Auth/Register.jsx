@@ -7,7 +7,19 @@ export default function Register() {
         email: '',
         password: '',
         password_confirmation: '',
-        papel: '', // Mantido o estado original para o backend
+        papel: '',
+        // Novos campos
+        person_type: 'FISICA',
+        cpf_cnpj: '',
+        mobile_phone: '',
+        phone: '',
+        postal_code: '',
+        address: '',
+        address_number: '',
+        complement: '',
+        province: '',
+        city: '',
+        state: '',
     });
 
     const submit = (e) => {
@@ -17,34 +29,61 @@ export default function Register() {
         });
     };
 
+    // Preenchimento automático de Endereço via CEP
+    const handleCepChange = async (e) => {
+        let cep = e.target.value.replace(/\D/g, ''); // Remove tudo que não for número
+        setData('postal_code', cep);
+
+        if (cep.length === 8) {
+            try {
+                const response = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
+                const result = await response.json();
+
+                if (!result.erro) {
+                    setData((prevData) => ({
+                        ...prevData,
+                        address: result.logradouro || '',
+                        province: result.bairro || '',
+                        city: result.localidade || '',
+                        state: result.uf || '',
+                    }));
+                }
+            } catch (error) {
+                console.error("Erro ao buscar CEP:", error);
+            }
+        }
+    };
+
+    // Estados Brasileiros (26 + DF)
+    const ufs = [
+        "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", 
+        "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", 
+        "SP", "SE", "TO"
+    ];
+
     return (
-        // Fundo externo cinza claro/azul suave para dar o efeito de destaque no card centralizado
         <div className="min-h-screen bg-[#f3f4f6] flex items-center justify-center p-4 sm:p-6 lg:p-8 font-sans antialiased">
             <Head title="Crie sua conta - Waitless" />
 
-            {/* CARD PRINCIPAL (Não preenche a tela inteira em desktops e possui cantos super arredondados) */}
-            <div className="w-full max-w-6xl bg-white rounded-[24px] md:rounded-[32px] shadow-2xl flex flex-col lg:flex-row overflow-hidden min-h-[750px]">
+            <div className="w-full max-w-6xl bg-white rounded-[24px] md:rounded-[32px] shadow-2xl flex flex-col lg:flex-row overflow-hidden min-h-[750px] max-h-[95vh]">
                 
-                {/* --- PAINEL ESQUERDO: APENAS A IMAGEM PREENCHENDO TUDO (Exibido a partir de telas LG) --- */}
-                <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-gray-100 border-r border-gray-100">
+                {/* --- PAINEL ESQUERDO: IMAGEM --- */}
+                <div className="hidden lg:flex lg:w-5/12 relative overflow-hidden bg-gray-100 border-r border-gray-100">
                     <img 
                         src="/images/cadastro.png" 
                         alt="Fundo de Cadastro Waitless" 
                         className="absolute inset-0 w-full h-full object-cover object-center"
                     />
-                    {/* Overlay suave opcional para garantir contraste se necessário, ou manter limpo conforme solicitado */}
-                    {/* <div className="absolute inset-0 bg-black/5"></div> */}
                 </div>
 
-                {/* --- PAINEL DIREITO: FORMULÁRIO DE CADASTRO --- */}
-                <div className="w-full lg:w-1/2 flex flex-col justify-center items-center px-6 py-10 sm:px-12 md:px-16 xl:px-20 bg-white overflow-y-auto">
-                    <div className="max-w-md w-full space-y-6">
+                {/* --- PAINEL DIREITO: FORMULÁRIO --- */}
+                <div className="w-full lg:w-7/12 flex flex-col px-6 py-8 sm:px-10 md:px-12 bg-white overflow-y-auto">
+                    <div className="max-w-2xl w-full mx-auto space-y-6">
                         
-                        {/* Cabeçalho do Formulário (Logo e Slogan fiel ao App original) */}
+                        {/* Cabeçalho */}
                         <div className="text-center space-y-2">
                             <div className="inline-flex items-center justify-center w-12 h-12 bg-slate-900 rounded-xl shadow-sm text-white font-black text-xl">
-                                {/* Representação geométrica simplificada da logo Waitless */}
-                                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M4 6h16M4 12h16M4 18h16" />
                                 </svg>
                             </div>
@@ -52,142 +91,251 @@ export default function Register() {
                                 <h2 className="text-lg font-black tracking-tight text-slate-900">Waitless</h2>
                                 <p className="text-[10px] font-bold text-gray-400 tracking-wider uppercase">Simplifique. Agende. Conquiste.</p>
                             </div>
+                            <h3 className="text-xl font-extrabold text-slate-900 tracking-tight mt-4">Crie sua conta</h3>
                         </div>
 
-                        {/* Chamada Principal do Formulário */}
-                        <div className="text-center space-y-1">
-                            <h3 className="text-xl font-extrabold text-slate-900 tracking-tight">Crie sua conta</h3>
-                            <p className="text-xs text-gray-500 font-medium">Junte-se a milhares de empresas que já otimizaram sua produtividade.</p>
-                        </div>
-
-                        {/* Campos de Entrada */}
-                        <form onSubmit={submit} className="space-y-4">
+                        <form onSubmit={submit} className="space-y-6">
                             
-                            {/* Campo: Nome Completo */}
-                            <div className="space-y-1">
-                                <label htmlFor="name" className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Nome completo</label>
-                                <div className="relative">
-                                    <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-gray-400 pointer-events-none">
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
-                                    </span>
-                                    <input
-                                        id="name"
-                                        type="text"
-                                        name="name"
-                                        value={data.name}
-                                        className="block w-full pl-10 pr-4 py-3 bg-white border border-gray-200 rounded-xl text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all shadow-sm"
-                                        placeholder="Seu nome completo"
-                                        onChange={(e) => setData('name', e.target.value)}
-                                        required
-                                    />
+                            {/* SEÇÃO 1: ACESSO */}
+                            <div>
+                                <h4 className="text-sm font-bold text-slate-900 border-b pb-2 mb-4">Dados de Acesso</h4>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-bold text-gray-500 uppercase">E-mail</label>
+                                        <input
+                                            type="email"
+                                            value={data.email}
+                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all"
+                                            placeholder="seu@email.com"
+                                            onChange={(e) => setData('email', e.target.value)}
+                                            required
+                                        />
+                                        <InputError message={errors.email} className="text-xs" />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-bold text-gray-500 uppercase">Tipo de Usuário</label>
+                                        <select
+                                            value={data.papel}
+                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all"
+                                            onChange={(e) => setData('papel', e.target.value)}
+                                            required
+                                        >
+                                            <option value="" disabled hidden>Selecione</option>
+                                            <option value="user">Cliente</option>
+                                            <option value="socio">Proprietário</option>
+                                            <option value="atendente">Funcionário</option>
+                                        </select>
+                                        <InputError message={errors.papel} className="text-xs" />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-bold text-gray-500 uppercase">Senha</label>
+                                        <input
+                                            type="password"
+                                            value={data.password}
+                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all"
+                                            placeholder="••••••••"
+                                            minLength={8}
+                                            onChange={(e) => setData('password', e.target.value)}
+                                            required
+                                        />
+                                        <InputError message={errors.password} className="text-xs" />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-bold text-gray-500 uppercase">Confirmar Senha</label>
+                                        <input
+                                            type="password"
+                                            value={data.password_confirmation}
+                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all"
+                                            placeholder="••••••••"
+                                            onChange={(e) => setData('password_confirmation', e.target.value)}
+                                            required
+                                        />
+                                        <InputError message={errors.password_confirmation} className="text-xs" />
+                                    </div>
                                 </div>
-                                <InputError message={errors.name} className="text-xs mt-1" />
                             </div>
 
-                            {/* Campo: E-mail */}
-                            <div className="space-y-1">
-                                <label htmlFor="email" className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">E-mail</label>
-                                <div className="relative">
-                                    <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-gray-400 pointer-events-none">
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
-                                    </span>
-                                    <input
-                                        id="email"
-                                        type="email"
-                                        name="email"
-                                        value={data.email}
-                                        className="block w-full pl-10 pr-4 py-3 bg-white border border-gray-200 rounded-xl text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all shadow-sm"
-                                        placeholder="seu@email.com"
-                                        onChange={(e) => setData('email', e.target.value)}
-                                        required
-                                    />
+                            {/* SEÇÃO 2: DADOS PESSOAIS/EMPRESA */}
+                            <div>
+                                <h4 className="text-sm font-bold text-slate-900 border-b pb-2 mb-4">Dados Cadastrais</h4>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div className="space-y-1 sm:col-span-2">
+                                        <label className="text-[10px] font-bold text-gray-500 uppercase">Nome Completo / Razão Social</label>
+                                        <input
+                                            type="text"
+                                            value={data.name}
+                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all"
+                                            placeholder="Seu nome"
+                                            onChange={(e) => setData('name', e.target.value)}
+                                            required
+                                        />
+                                        <InputError message={errors.name} className="text-xs" />
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-bold text-gray-500 uppercase">Tipo de Pessoa</label>
+                                        <select
+                                            value={data.person_type}
+                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all"
+                                            onChange={(e) => setData('person_type', e.target.value)}
+                                        >
+                                            <option value="FISICA">Pessoa Física</option>
+                                            <option value="JURIDICA">Pessoa Jurídica</option>
+                                        </select>
+                                        <InputError message={errors.person_type} className="text-xs" />
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-bold text-gray-500 uppercase">CPF ou CNPJ</label>
+                                        <input
+                                            type="text"
+                                            value={data.cpf_cnpj}
+                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all"
+                                            placeholder="Apenas números"
+                                            maxLength={18}
+                                            onChange={(e) => setData('cpf_cnpj', e.target.value.replace(/\D/g, ''))}
+                                            required
+                                        />
+                                        <InputError message={errors.cpf_cnpj} className="text-xs" />
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-bold text-gray-500 uppercase">Celular (com DDD)</label>
+                                        <input
+                                            type="text"
+                                            value={data.mobile_phone}
+                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all"
+                                            placeholder="Ex: 81999999999"
+                                            maxLength={11}
+                                            onChange={(e) => setData('mobile_phone', e.target.value.replace(/\D/g, ''))}
+                                            required
+                                        />
+                                        <InputError message={errors.mobile_phone} className="text-xs" />
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-bold text-gray-500 uppercase">Telefone Fixo (Opcional)</label>
+                                        <input
+                                            type="text"
+                                            value={data.phone}
+                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all"
+                                            placeholder="Ex: 8133333333"
+                                            maxLength={11}
+                                            onChange={(e) => setData('phone', e.target.value.replace(/\D/g, ''))}
+                                        />
+                                        <InputError message={errors.phone} className="text-xs" />
+                                    </div>
                                 </div>
-                                <InputError message={errors.email} className="text-xs mt-1" />
                             </div>
 
-                            {/* Campo: Tipo de Usuário (Dropdown Ajustado com Seta Customizada) */}
-                            <div className="space-y-1">
-                                <label htmlFor="papel" className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Tipo de Usuário</label>
-                                <div className="relative">
-                                    <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-gray-400 pointer-events-none">
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
-                                    </span>
-                                    <select
-                                        id="papel"
-                                        name="papel"
-                                        value={data.papel}
-                                        className="block w-full pl-10 pr-10 py-3 bg-white border border-gray-200 rounded-xl text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all shadow-sm appearance-none cursor-pointer"
-                                        onChange={(e) => setData('papel', e.target.value)}
-                                        required
-                                    >
-                                        <option value="" disabled hidden>Selecione</option>
-                                        <option value="user">Cliente</option>
-                                        <option value="socio">Proprietário</option>
-                                        <option value="atendente">Funcionário</option>
-                                    </select>
-                                    <span className="absolute inset-y-0 right-0 flex items-center pr-4 text-gray-400 pointer-events-none">
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
-                                    </span>
+                            {/* SEÇÃO 3: ENDEREÇO */}
+                            <div>
+                                <h4 className="text-sm font-bold text-slate-900 border-b pb-2 mb-4">Endereço</h4>
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                    <div className="space-y-1 sm:col-span-1">
+                                        <label className="text-[10px] font-bold text-gray-500 uppercase">CEP</label>
+                                        <input
+                                            type="text"
+                                            value={data.postal_code}
+                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all"
+                                            placeholder="Apenas números"
+                                            maxLength={8}
+                                            onChange={handleCepChange}
+                                            required
+                                        />
+                                        <InputError message={errors.postal_code} className="text-xs" />
+                                    </div>
+
+                                    <div className="space-y-1 sm:col-span-2">
+                                        <label className="text-[10px] font-bold text-gray-500 uppercase">Rua / Logradouro</label>
+                                        <input
+                                            type="text"
+                                            value={data.address}
+                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all"
+                                            onChange={(e) => setData('address', e.target.value)}
+                                            required
+                                        />
+                                        <InputError message={errors.address} className="text-xs" />
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-bold text-gray-500 uppercase">Número</label>
+                                        <input
+                                            type="text"
+                                            value={data.address_number}
+                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all"
+                                            onChange={(e) => setData('address_number', e.target.value)}
+                                            required
+                                        />
+                                        <InputError message={errors.address_number} className="text-xs" />
+                                    </div>
+
+                                    <div className="space-y-1 sm:col-span-2">
+                                        <label className="text-[10px] font-bold text-gray-500 uppercase">Complemento (Opcional)</label>
+                                        <input
+                                            type="text"
+                                            value={data.complement}
+                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all"
+                                            onChange={(e) => setData('complement', e.target.value)}
+                                        />
+                                        <InputError message={errors.complement} className="text-xs" />
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-bold text-gray-500 uppercase">Bairro</label>
+                                        <input
+                                            type="text"
+                                            value={data.province}
+                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all"
+                                            onChange={(e) => setData('province', e.target.value)}
+                                            required
+                                        />
+                                        <InputError message={errors.province} className="text-xs" />
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-bold text-gray-500 uppercase">Cidade</label>
+                                        <input
+                                            type="text"
+                                            value={data.city}
+                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all"
+                                            onChange={(e) => setData('city', e.target.value)}
+                                            required
+                                        />
+                                        <InputError message={errors.city} className="text-xs" />
+                                    </div>
+
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-bold text-gray-500 uppercase">UF</label>
+                                        <select
+                                            value={data.state}
+                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all"
+                                            onChange={(e) => setData('state', e.target.value)}
+                                            required
+                                        >
+                                            <option value="" disabled hidden>UF</option>
+                                            {ufs.map((uf) => (
+                                                <option key={uf} value={uf}>{uf}</option>
+                                            ))}
+                                        </select>
+                                        <InputError message={errors.state} className="text-xs" />
+                                    </div>
                                 </div>
-                                <InputError message={errors.papel} className="text-xs mt-1" />
                             </div>
 
-                            {/* Campo: Senha */}
-                            <div className="space-y-1">
-                                <label htmlFor="password" className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Senha</label>
-                                <div className="relative">
-                                    <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-gray-400 pointer-events-none">
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-                                    </span>
-                                    <input
-                                        id="password"
-                                        type="password"
-                                        name="password"
-                                        value={data.password}
-                                        className="block w-full pl-10 pr-4 py-3 bg-white border border-gray-200 rounded-xl text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all shadow-sm"
-                                        placeholder="••••••••"
-                                        onChange={(e) => setData('password', e.target.value)}
-                                        required
-                                    />
-                                </div>
-                                <InputError message={errors.password} className="text-xs mt-1" />
-                            </div>
-
-                            {/* Campo: Confirmar Senha */}
-                            <div className="space-y-1">
-                                <label htmlFor="password_confirmation" className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Confirmar senha</label>
-                                <div className="relative">
-                                    <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-gray-400 pointer-events-none">
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-                                    </span>
-                                    <input
-                                        id="password_confirmation"
-                                        type="password"
-                                        name="password_confirmation"
-                                        value={data.password_confirmation}
-                                        className="block w-full pl-10 pr-4 py-3 bg-white border border-gray-200 rounded-xl text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all shadow-sm"
-                                        placeholder="••••••••"
-                                        onChange={(e) => setData('password_confirmation', e.target.value)}
-                                        required
-                                    />
-                                </div>
-                                <InputError message={errors.password_confirmation} className="text-xs mt-1" />
-                            </div>
-
-                            {/* Botão de Envio Sólido */}
-                            <div className="pt-2">
+                            {/* Botão de Envio */}
+                            <div className="pt-4">
                                 <button
                                     type="submit"
                                     className="w-full py-3.5 px-4 bg-black hover:bg-slate-900 active:scale-[0.99] text-white font-bold text-sm rounded-xl shadow-md transition-all duration-150 disabled:opacity-50"
                                     disabled={processing}
                                 >
-                                    {processing ? 'Processando...' : 'Começar agora'}
+                                    {processing ? 'Processando cadastro...' : 'Criar minha conta agora'}
                                 </button>
                             </div>
                         </form>
 
-                        {/* Link para Login */}
-                        <div className="pt-2 text-center">
+                        <div className="pt-4 pb-8 text-center">
                             <p className="text-xs font-medium text-gray-500">
                                 Já tem uma conta?{' '}
                                 <Link

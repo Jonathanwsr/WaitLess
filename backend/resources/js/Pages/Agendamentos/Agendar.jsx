@@ -3,7 +3,20 @@ import InputError from '@/Components/InputError';
 import PrimaryButton from '@/Components/PrimaryButton'; 
 import { Head, useForm, usePage, Link, router } from '@inertiajs/react'; 
 import { useState, useEffect } from 'react';
-import { CheckCircleIcon, ClockIcon, CreditCardIcon, CalendarIcon, ArrowLeftIcon, PencilSquareIcon, TagIcon, InformationCircleIcon, StarIcon } from '@heroicons/react/24/solid';
+import { 
+    CheckCircleIcon, 
+    ClockIcon, 
+    CreditCardIcon, 
+    CalendarIcon, 
+    ArrowLeftIcon, 
+    PencilSquareIcon, 
+    TagIcon, 
+    InformationCircleIcon, 
+    StarIcon,
+    QrCodeIcon,
+    DocumentTextIcon,
+    UserGroupIcon
+} from '@heroicons/react/24/solid';
 
 export default function Agendar({ auth, estabelecimento, servicos = [] }) {
     const [servicoSelecionado, setServicoSelecionado] = useState(null);
@@ -21,10 +34,12 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
         servico_id: '',
         data_agendamento: new Date().toISOString().split('T')[0],
         hora_agendamento: '',
-        forma_pagamento: '', 
+        forma_pagamento: '', // online_agora, online_depois, presencial
+        metodo_pagamento: '', // pix, cartao, boleto
+        parcelas: 1,
         valor_final: 0, 
         quantidade: 1, 
-        cupom_codigo: '', // Envia o código para o backend
+        cupom_codigo: '', 
     });
 
     const diasSemanaMap = { 0: 'domingo', 1: 'segunda', 2: 'terca', 3: 'quarta', 4: 'quinta', 5: 'sexta', 6: 'sabado' };
@@ -163,14 +178,15 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
 
     const handleSelectServico = (servico) => {
         setServicoSelecionado(servico);
-        setData('servico_id', servico.id);
-        setData('hora_agendamento', ''); 
+        setData(prev => ({
+            ...prev,
+            servico_id: servico.id,
+            hora_agendamento: '',
+            forma_pagamento: extrairConfiguracoes(servico.configuracoes).tipoPagamentoRaw === 'presencial' ? 'presencial' : 'online_agora',
+            metodo_pagamento: ''
+        }));
         setQtdLocal(1); 
         setEditandoDataHora(true); 
-        
-        const tipo = extrairConfiguracoes(servico.configuracoes).tipoPagamentoRaw;
-        if (tipo === 'presencial') setData('forma_pagamento', 'presencial');
-        else setData('forma_pagamento', 'online_agora');
     };
 
     const alterarQuantidade = (valor) => {
@@ -213,9 +229,6 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
         if (typeof horas === 'string') { try { horas = JSON.parse(horas); } catch (e) {} }
         horariosDoServico = horas;
     }
-
-    const textoBotao = data.forma_pagamento === 'online_agora' ? 'Ir para Pagamento Seguro' : 
-        (data.forma_pagamento === 'online_depois' ? 'Reservar e Pagar Depois' : 'Confirmar Reserva no Local');
 
     const servicosOutros = servicoSelecionado 
         ? servicos.filter(s => s.id !== servicoSelecionado.id).slice(0, 4) 
@@ -265,7 +278,7 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
                         <ArrowLeftIcon className="w-5 h-5" />
                     </Link>
                     <div>
-                        <h2 className="text-xl font-bold leading-tight text-gray-900 dark:text-gray-100">Agendar Atendimento</h2>
+                        <h2 className="text-xl font-bold leading-tight text-gray-900">Agendar Atendimento</h2>
                         <p className="text-sm text-gray-500">{estabelecimento?.nome}</p>
                     </div>
                 </div>
@@ -308,7 +321,9 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
                                     <h4 className="text-2xl font-black text-gray-900 mb-4">{servicoSelecionado.nome}</h4>
                                     
                                     <div className="flex items-center gap-4">
-                                        <span className="text-sm text-gray-500 font-bold uppercase tracking-wider">Quantidade:</span>
+                                        <span className="text-sm text-gray-500 font-bold uppercase tracking-wider flex items-center gap-1.5">
+                                            <UserGroupIcon className="w-4 h-4 text-gray-400" /> Vagas:
+                                        </span>
                                         <div className="flex items-center bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                                             <button type="button" onClick={() => alterarQuantidade(-1)} disabled={qtdLocal <= 1 || processing} className="w-10 h-10 flex items-center justify-center font-bold text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 disabled:opacity-30 disabled:hover:bg-transparent transition">-</button>
                                             <span className="w-10 text-center text-sm font-bold text-gray-900 bg-gray-50 h-10 flex items-center justify-center border-x border-gray-100">{qtdLocal}</span>
@@ -334,7 +349,7 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
                         <div className="space-y-8">
                             <div className="bg-white p-6 md:p-8 rounded-3xl border border-gray-100 shadow-sm">
                                 <h3 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-3">
-                                    <span className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm">1</span> 
+                                    <span className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm font-black">1</span> 
                                     Escolha o Serviço
                                 </h3>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -349,7 +364,6 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
                                         }
 
                                         const isSelected = data.servico_id === s.id;
-                                        // 👉 ADICIONADO AQUI O CÁLCULO DA MÉDIA
                                         const mediaServico = Number(s.avaliacao_media) || 0;
 
                                         return (
@@ -357,7 +371,6 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
                                                 <div>
                                                     <h4 className={`font-bold ${isSelected ? 'text-indigo-900' : 'text-gray-900'}`}>{s.nome}</h4>
                                                     
-                                                    {/* 👉 AVALIAÇÃO EM ESTRELAS APARECE AQUI! */}
                                                     <div className="flex items-center gap-3 text-xs text-gray-500 mt-1.5">
                                                         <span className="flex items-center gap-1"><ClockIcon className="w-3.5 h-3.5"/> {s.duracao_minutos} min</span>
                                                         
@@ -390,11 +403,11 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
                                 <div className="bg-white p-6 md:p-8 rounded-3xl border border-gray-100 shadow-sm animate-in fade-in slide-in-from-bottom-4">
                                     <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-8 border-b border-gray-100 pb-6 gap-4">
                                         <h3 className="text-xl font-bold text-gray-900 flex items-center gap-3">
-                                            <span className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm">2</span> 
+                                            <span className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm font-black">2</span> 
                                             Defina Data e Hora
                                         </h3>
                                         <div className="flex items-center gap-3 bg-gray-50 px-4 py-2 rounded-2xl border border-gray-100">
-                                            <span className="text-xs text-gray-500 font-bold uppercase tracking-widest">Pessoas:</span>
+                                            <span className="text-xs text-gray-500 font-bold uppercase tracking-widest">Vagas:</span>
                                             <div className="flex items-center bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                                                 <button type="button" onClick={() => alterarQuantidade(-1)} disabled={qtdLocal <= 1 || processing} className="w-8 h-8 flex items-center justify-center font-bold text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 disabled:opacity-30 transition">-</button>
                                                 <span className="w-8 text-center text-sm font-bold text-gray-900 bg-gray-50 h-8 flex items-center justify-center border-x border-gray-100">{qtdLocal}</span>
@@ -467,77 +480,148 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
 
                     {servicoSelecionado && data.hora_agendamento && !editandoDataHora && (
                         <div className="bg-white p-6 md:p-10 rounded-3xl border border-gray-100 shadow-xl animate-in fade-in slide-in-from-bottom-8">
-                            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end mb-8 border-b border-gray-100 pb-8 gap-4">
-                                <div>
+                            <div className="flex flex-col sm:flex-row sm:with-between sm:items-end mb-8 border-b border-gray-100 pb-8 gap-4">
+                                <div className="flex-1">
                                     <h3 className="text-xl font-bold text-gray-900 flex items-center gap-3 mb-2">
-                                        <span className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm">3</span> 
+                                        <span className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm font-black">3</span> 
                                         Finalização
                                     </h3>
-                                    <p className="text-sm text-gray-500">Escolha como prefere pagar sua reserva.</p>
+                                    <p className="text-sm text-gray-500">Escolha a melhor modalidade e método de pagamento.</p>
                                 </div>
                                 <div className="text-right">
-                                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-1">Total a pagar</p>
+                                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mb-1">Total da Reserva</p>
                                     <div className="flex items-center justify-end gap-3">
                                         {temDescontoVisivel && (
                                             <span className="text-xl text-gray-400 line-through font-medium">
-                                                R$ {(Number(valorOriginalBruto) || 0).toFixed(2).replace('.', ',')}
+                                                {formatarMoeda(valorOriginalBruto)}
                                             </span>
                                         )}
                                         <div className={`text-5xl font-black tracking-tight ${temDescontoVisivel ? 'text-emerald-600' : 'text-gray-900'}`}>
-                                            <span className="text-2xl font-normal mr-1 opacity-50">R$</span>
-                                            {(Number(data.valor_final) || 0).toFixed(2).replace('.', ',')}
+                                            {formatarMoeda(data.valor_final)}
                                         </div>
                                     </div>
                                 </div>
                             </div>
 
                             <InputError message={errors.forma_pagamento} className="mb-4" />
+                            <InputError message={errors.metodo_pagamento} className="mb-4" />
                             
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+                            {/* LINHA 1: MODALIDADE GERAL (ONLINE, RESERVAR, PRESENCIAL) */}
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
                                 {(tipoPagamentoAtual === 'hibrido' || tipoPagamentoAtual === 'online') && (
                                     <>
-                                        <label className={`cursor-pointer border-2 rounded-2xl p-6 flex flex-col items-center justify-center text-center transition-all relative overflow-hidden ${data.forma_pagamento === 'online_agora' ? 'border-indigo-600 bg-indigo-50/50 text-indigo-700 ring-4 ring-indigo-50' : 'border-gray-100 text-gray-600 hover:border-indigo-200 hover:bg-gray-50'}`}>
-                                            {data.forma_pagamento === 'online_agora' && <div className="absolute top-0 right-0 w-8 h-8 bg-indigo-600 rounded-bl-2xl flex items-center justify-center text-white text-xs font-bold">✓</div>}
-                                            <input type="radio" className="hidden" name="forma_pagamento" value="online_agora" checked={data.forma_pagamento === 'online_agora'} onChange={e => setData('forma_pagamento', e.target.value)} disabled={processing} />
-                                            <CreditCardIcon className={`w-10 h-10 mb-3 ${data.forma_pagamento === 'online_agora' ? 'text-indigo-600' : 'text-gray-400'}`} />
-                                            <span className="font-bold text-lg">Cartão / Pix</span>
-                                            <span className="text-xs mt-1 text-gray-500 font-medium">Pagar online pelo App</span>
+                                        <label className={`cursor-pointer border-2 rounded-2xl p-5 flex flex-col items-center justify-center text-center transition-all relative ${data.forma_pagamento === 'online_agora' ? 'border-indigo-600 bg-indigo-50/40 text-indigo-900 ring-2 ring-indigo-100' : 'border-gray-100 text-gray-600 hover:border-indigo-200 bg-white'}`}>
+                                            <input type="radio" className="hidden" name="forma_pagamento" value="online_agora" checked={data.forma_pagamento === 'online_agora'} onChange={e => { setData(prev => ({ ...prev, forma_pagamento: e.target.value, metodo_pagamento: 'pix' })); }} disabled={processing} />
+                                            <CreditCardIcon className={`w-8 h-8 mb-2 ${data.forma_pagamento === 'online_agora' ? 'text-indigo-600' : 'text-gray-400'}`} />
+                                            <span className="font-bold text-base">Pagar Online</span>
+                                            <span className="text-xs text-gray-400 mt-0.5">Asaas Gateway</span>
                                         </label>
 
-                                        <label className={`cursor-pointer border-2 rounded-2xl p-6 flex flex-col items-center justify-center text-center transition-all relative overflow-hidden ${data.forma_pagamento === 'online_depois' ? 'border-indigo-600 bg-indigo-50/50 text-indigo-700 ring-4 ring-indigo-50' : 'border-gray-100 text-gray-600 hover:border-indigo-200 hover:bg-gray-50'}`}>
-                                            {data.forma_pagamento === 'online_depois' && <div className="absolute top-0 right-0 w-8 h-8 bg-indigo-600 rounded-bl-2xl flex items-center justify-center text-white text-xs font-bold">✓</div>}
-                                            <input type="radio" className="hidden" name="forma_pagamento" value="online_depois" checked={data.forma_pagamento === 'online_depois'} onChange={e => setData('forma_pagamento', e.target.value)} disabled={processing} />
-                                            <ClockIcon className={`w-10 h-10 mb-3 ${data.forma_pagamento === 'online_depois' ? 'text-indigo-600' : 'text-gray-400'}`} />
-                                            <span className="font-bold text-lg">Pagar Depois</span>
-                                            <span className="text-xs mt-1 text-gray-500 font-medium">Reserva de 2h</span>
+                                        <label className={`cursor-pointer border-2 rounded-2xl p-5 flex flex-col items-center justify-center text-center transition-all relative ${data.forma_pagamento === 'online_depois' ? 'border-indigo-600 bg-indigo-50/40 text-indigo-900 ring-2 ring-indigo-100' : 'border-gray-100 text-gray-600 hover:border-indigo-200 bg-white'}`}>
+                                            <input type="radio" className="hidden" name="forma_pagamento" value="online_depois" checked={data.forma_pagamento === 'online_depois'} onChange={e => { setData(prev => ({ ...prev, forma_pagamento: e.target.value, metodo_pagamento: '' })); }} disabled={processing} />
+                                            <ClockIcon className={`w-8 h-8 mb-2 ${data.forma_pagamento === 'online_depois' ? 'text-indigo-600' : 'text-gray-400'}`} />
+                                            <span className="font-bold text-base">Pagar Depois</span>
+                                            <span className="text-xs text-gray-400 mt-0.5">Reserva por até 2 horas</span>
                                         </label>
                                     </>
                                 )}
 
                                 {(tipoPagamentoAtual === 'hibrido' || tipoPagamentoAtual === 'presencial') && (
-                                    <label className={`cursor-pointer border-2 rounded-2xl p-6 flex flex-col items-center justify-center text-center transition-all relative overflow-hidden ${data.forma_pagamento === 'presencial' ? 'border-emerald-500 bg-emerald-50 text-emerald-800 ring-4 ring-emerald-50' : 'border-gray-100 text-gray-600 hover:border-emerald-200 hover:bg-gray-50'}`}>
-                                        {data.forma_pagamento === 'presencial' && <div className="absolute top-0 right-0 w-8 h-8 bg-emerald-500 rounded-bl-2xl flex items-center justify-center text-white text-xs font-bold">✓</div>}
-                                        <input type="radio" className="hidden" name="forma_pagamento" value="presencial" checked={data.forma_pagamento === 'presencial'} onChange={e => setData('forma_pagamento', e.target.value)} disabled={processing} />
-                                        <span className={`text-4xl mb-3 opacity-80 ${data.forma_pagamento === 'presencial' ? '' : 'grayscale'}`}>🤝</span>
-                                        <span className="font-bold text-lg">No Local</span>
-                                        <span className="text-xs mt-1 text-gray-500 font-medium">Direto no Salão</span>
+                                    <label className={`cursor-pointer border-2 rounded-2xl p-5 flex flex-col items-center justify-center text-center transition-all relative ${data.forma_pagamento === 'presencial' ? 'border-emerald-500 bg-emerald-50/40 text-emerald-900 ring-2 ring-emerald-100' : 'border-gray-100 text-gray-600 hover:border-emerald-200 bg-white'}`}>
+                                        <input type="radio" className="hidden" name="forma_pagamento" value="presencial" checked={data.forma_pagamento === 'presencial'} onChange={e => { setData(prev => ({ ...prev, forma_pagamento: e.target.value, metodo_pagamento: '' })); }} disabled={processing} />
+                                        <span className="text-3xl mb-1.5">🤝</span>
+                                        <span className="font-bold text-base">No Local</span>
+                                        <span className="text-xs text-gray-400 mt-0.5">Direto no balcão</span>
                                     </label>
                                 )}
                             </div>
 
+                            {/* LINHA 2: ABRE OS MÉTODOS DO ASAAS SE FOR ONLINE_AGORA */}
+                            {data.forma_pagamento === 'online_agora' && (
+                                <div className="p-6 bg-gray-50 rounded-2xl border border-gray-100 mb-8 animate-in slide-in-from-top-2 duration-300">
+                                    <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">Selecione o meio de pagamento online:</p>
+                                    
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                        {/* OPÇÃO PIX */}
+                                        <div 
+                                            onClick={() => setData('metodo_pagamento', 'pix')}
+                                            className={`cursor-pointer border-2 p-4 rounded-xl flex items-center gap-3 transition-all ${data.metodo_pagamento === 'pix' ? 'border-indigo-600 bg-white text-indigo-900 font-bold shadow-sm' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'}`}
+                                        >
+                                            <div className={`p-2 rounded-lg ${data.metodo_pagamento === 'pix' ? 'bg-indigo-50 text-indigo-600' : 'bg-gray-50 text-gray-400'}`}>
+                                                <QrCodeIcon className="w-6 h-6" />
+                                            </div>
+                                            <div className="flex flex-col">
+                                                <span className="text-sm font-black">Pix Instantâneo</span>
+                                                <span className="text-[11px] text-gray-400 font-normal">Aprovação imediata</span>
+                                            </div>
+                                        </div>
+
+                                        {/* OPÇÃO CARTÃO (PARCELAR) */}
+                                        <div 
+                                            onClick={() => setData('metodo_pagamento', 'cartao')}
+                                            className={`cursor-pointer border-2 p-4 rounded-xl flex items-center gap-3 transition-all ${data.metodo_pagamento === 'cartao' ? 'border-indigo-600 bg-white text-indigo-900 font-bold shadow-sm' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'}`}
+                                        >
+                                            <div className={`p-2 rounded-lg ${data.metodo_pagamento === 'cartao' ? 'bg-indigo-50 text-indigo-600' : 'bg-gray-50 text-gray-400'}`}>
+                                                <CreditCardIcon className="w-6 h-6" />
+                                            </div>
+                                            <div className="flex flex-col">
+                                                <span className="text-sm font-black">Cartão de Crédito</span>
+                                                <span className="text-[11px] text-gray-400 font-normal">Parcelar em até 12x</span>
+                                            </div>
+                                        </div>
+
+                                        {/* OPÇÃO BOLETO */}
+                                        <div 
+                                            onClick={() => setData('metodo_pagamento', 'boleto')}
+                                            className={`cursor-pointer border-2 p-4 rounded-xl flex items-center gap-3 transition-all ${data.metodo_pagamento === 'boleto' ? 'border-indigo-600 bg-white text-indigo-900 font-bold shadow-sm' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'}`}
+                                        >
+                                            <div className={`p-2 rounded-lg ${data.metodo_pagamento === 'boleto' ? 'bg-indigo-50 text-indigo-600' : 'bg-gray-50 text-gray-400'}`}>
+                                                <DocumentTextIcon className="w-6 h-6" />
+                                            </div>
+                                            <div className="flex flex-col">
+                                                <span className="text-sm font-black">Boleto Bancário</span>
+                                                <span className="text-[11px] text-gray-400 font-normal">Compensação em 1 dia</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* SE ESTIVER EM CARTÃO, MOSTRA O SELETOR DE PARCELAS */}
+                                    {data.metodo_pagamento === 'cartao' && (
+                                        <div className="mt-5 pt-4 border-t border-gray-200/60 animate-in fade-in duration-300">
+                                            <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Opções de Parcelamento:</label>
+                                            <select 
+                                                value={data.parcelas}
+                                                onChange={e => setData('parcelas', Number(e.target.value))}
+                                                className="w-full sm:w-72 rounded-xl border-gray-300 text-sm font-bold text-gray-800 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+                                            >
+                                                {[...Array(12)].map((_, i) => {
+                                                    const numParcela = i + 1;
+                                                    const valorParcela = data.valor_final / numParcela;
+                                                    return (
+                                                        <option key={numParcela} value={numParcela}>
+                                                            {numParcela}x de {formatarMoeda(valorParcela)} sem juros
+                                                        </option>
+                                                    );
+                                                })}
+                                            </select>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
                             {cupomAtivo && (
                                 <div className="mb-6 flex items-start gap-3 bg-blue-50 text-blue-800 p-4 rounded-xl border border-blue-100 text-sm">
                                     <InformationCircleIcon className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
-                                    <p><strong>Atenção:</strong> Ao confirmar, o cupom <strong>{cupomAtivo.codigo}</strong> será consumido.</p>
+                                    <p><strong>Atenção:</strong> Ao confirmar, o cupom de desconto <strong>{cupomAtivo.codigo}</strong> será validado e consumido.</p>
                                 </div>
                             )}
 
                             <div className="pt-6 border-t border-gray-100 flex flex-col items-end">
                                 <PrimaryButton 
-                                    className={`w-full sm:w-auto px-12 py-5 text-xl font-bold rounded-2xl shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:-translate-y-1 ${temDescontoVisivel && !processing ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200' : 'bg-gray-900 hover:bg-black text-white'}`} 
-                                    disabled={!data.forma_pagamento || processing}
+                                    className={`w-full sm:w-auto px-12 py-4 text-lg font-black rounded-xl shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:-translate-y-0.5 ${temDescontoVisivel && !processing ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : 'bg-gray-950 hover:bg-black text-white'}`} 
+                                    disabled={!data.forma_pagamento || (data.forma_pagamento === 'online_agora' && !data.metodo_pagamento) || processing}
                                 >
-                                    {temDescontoVisivel ? 'Confirmar c/ Desconto!' : 'Confirmar Reserva'}
+                                    {data.forma_pagamento === 'online_agora' ? `Pagar via ${data.metodo_pagamento.toUpperCase()} Agora` : 'Finalizar Minha Reserva'}
                                 </PrimaryButton>
                             </div>
                         </div>
@@ -546,7 +630,7 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
 
                 {servicosOutros.length > 0 && (
                     <div className="mt-20 pt-16 border-t border-gray-200 animate-in fade-in">
-                        <h2 className="text-3xl font-normal text-center text-gray-900 mb-10 font-serif">Aproveite e adicione...</h2>
+                        <h2 className="text-2xl font-bold text-center text-gray-900 mb-10">Aproveite e adicione mais serviços...</h2>
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                             {servicosOutros.map((outroServico) => {
                                 const fotosO = parseJSONSeguro(outroServico.fotos);
@@ -556,16 +640,16 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
                                     <div 
                                         key={outroServico.id} 
                                         onClick={() => explorarOutroServico(outroServico)}
-                                        className="cursor-pointer group flex flex-col items-center bg-white p-5 rounded-3xl shadow-sm hover:shadow-xl transition-all duration-300 border border-gray-100 hover:border-indigo-100 hover:-translate-y-1"
+                                        className="cursor-pointer group flex flex-col bg-white p-4 rounded-2xl shadow-sm hover:shadow-xl transition-all duration-300 border border-gray-100 hover:-translate-y-1"
                                     >
-                                        <div className="w-full aspect-square bg-gray-100 rounded-2xl overflow-hidden mb-5">
-                                            <img src={fotoCapaO} alt={outroServico.nome} className="w-full h-full object-cover group-hover:scale-110 transition duration-700 ease-out"/>
+                                        <div className="w-full aspect-square bg-gray-100 rounded-xl overflow-hidden mb-4">
+                                            <img src={fotoCapaO} alt={outroServico.nome} className="w-full h-full object-cover group-hover:scale-105 transition duration-500 ease-out"/>
                                         </div>
-                                        <div className="bg-gray-100 text-gray-800 text-xs font-bold px-3 py-1.5 rounded-lg mb-3 tracking-wider">
-                                            R$ {(Number(outroServico.valor) || 0).toFixed(2).replace('.', ',')}
+                                        <div className="inline-block text-gray-900 text-sm font-black mb-1">
+                                            {formatarMoeda(outroServico.valor)}
                                         </div>
-                                        <h4 className="font-bold text-gray-900 text-center text-lg">{outroServico.nome}</h4>
-                                        <p className="text-xs text-gray-500 mt-1 font-medium">{outroServico.duracao_minutos} minutos</p>
+                                        <h4 className="font-bold text-gray-800 text-sm line-clamp-1">{outroServico.nome}</h4>
+                                        <p className="text-xs text-gray-400 mt-0.5">{outroServico.duracao_minutos} minutos</p>
                                     </div>
                                 );
                             })}

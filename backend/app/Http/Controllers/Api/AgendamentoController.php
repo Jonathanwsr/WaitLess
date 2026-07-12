@@ -112,8 +112,9 @@ class AgendamentoController extends Controller
             'taxa_plataforma' => $taxaMarketplace // Fica o registro histórico de quanto foi a taxa
         ]);
 
-        // 👉 Incrementa o contador de serviços realizados para o Cliente e Estabelecimento
-        $cliente = User::find($agendamento->usuario_id ?? $agendamento->user_id);
+        // 👉 MANTIDO: Incrementa o contador de serviços realizados para o Cliente e Estabelecimento (Histórico)
+        $clienteId = $agendamento->usuario_id ?? $agendamento->user_id;
+        $cliente = User::find($clienteId);
         if ($cliente) {
             $cliente->increment('numero_servicos');
         }
@@ -121,7 +122,28 @@ class AgendamentoController extends Controller
             $estabelecimento->increment('numero_servicos');
         }
 
-        return redirect()->back()->with('success', 'Atendimento concluído com sucesso! O cliente foi para o histórico.');
+        // =====================================================================
+        // 👉 REGRA DE PONTUAÇÃO: A cada R$ 100 gastos se ganha 100 pontos (1 para 1)
+        // =====================================================================
+        $pontosGanhos = floor($valorBase); 
+
+        if ($pontosGanhos > 0 && $cliente) {
+            // Salva na tabela historico_pontos
+            DB::table('historico_pontos')->insert([
+                'usuario_id'         => $clienteId,
+                'estabelecimento_id' => $agendamento->estabelecimento_id,
+                'agendamento_id'     => $agendamento->id,
+                'tipo'               => 'ganho',
+                'descricao'          => 'Pontos recebidos por serviço finalizado',
+                'quantidade'         => $pontosGanhos,
+                'created_at'         => now()
+            ]);
+
+            // Incrementa o saldo atual de pontos na carteira do usuário
+            $cliente->increment('pontos_saldo', $pontosGanhos);
+        }
+
+        return redirect()->back()->with('success', 'Atendimento concluído com sucesso! O cliente foi para o histórico e ganhou ' . $pontosGanhos . ' pontos.');
     }
 
     public function updateFuncionario(Request $request, Agendamento $agendamento)
@@ -273,7 +295,7 @@ class AgendamentoController extends Controller
                 'data_formatada' => Carbon::parse($proximoAgendamento->data_agendamento)->translatedFormat('d \d\e F'),
                 'hora' => Carbon::parse($proximoAgendamento->hora_agendamento)->format('H:i'),
                 'servico' => $proximoAgendamento->servico->nome ?? 'Serviço não informado',
-                'profissional' => $proximoAgendamento->funcionario->name ?? 'Qualquer Profissional',
+                'professional' => $proximoAgendamento->funcionario->name ?? 'Qualquer Profissional',
                 'tipo' => 'Agendado'
             ];
         } elseif ($triagem && $triagem->status === 'aguardando') {
@@ -282,7 +304,7 @@ class AgendamentoController extends Controller
                 'data_formatada' => 'Hoje',
                 'hora' => Carbon::parse($triagem->created_at)->format('H:i'),
                 'servico' => 'Aguardando na Fila',
-                'profissional' => 'Triagem',
+                'professional' => 'Triagem',
                 'tipo' => 'Triagem'
             ];
         }
@@ -300,7 +322,7 @@ class AgendamentoController extends Controller
                 return [
                     'id' => $agendamento->id,
                     'servico' => $agendamento->servico->nome ?? 'Serviço',
-                    'profissional' => $agendamento->funcionario->name ?? 'Profissional',
+                    'professional' => $agendamento->funcionario->name ?? 'Profissional',
                     'data' => Carbon::parse($agendamento->data_agendamento)->format('d/m/Y'),
                     'status' => $agendamento->status,
                 ];
@@ -338,7 +360,7 @@ class AgendamentoController extends Controller
             return response()->json([]);
         }
 
-        $horariosFuncionamento = ['08:00', '09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00', '17:00'];
+        $textHorarios = ['08:00', '09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00', '17:00'];
 
         $horariosOcupados = DB::table('agendamentos')
             ->where('data_agendamento', $data)
@@ -350,7 +372,7 @@ class AgendamentoController extends Controller
             })
             ->toArray();
 
-        $horariosLivres = array_values(array_filter($horariosFuncionamento, function($hora) use ($horariosOcupados) {
+        $horariosLivres = array_values(array_filter($textHorarios, function($hora) use ($horariosOcupados) {
             return !in_array($hora, $horariosOcupados);
         }));
 
@@ -487,7 +509,6 @@ class AgendamentoController extends Controller
 
         return response()->json($dadosTela);
     }
-
 
     /* =========================================================================
        👉 MÉTODOS ADICIONAIS - MÓDULO DE LOCAÇÃO E ASSINATURA SAAS (D4SIGN)
@@ -672,7 +693,7 @@ class AgendamentoController extends Controller
             'estabelecimento_id'         => $item->estabelecimento_id,
             'proprietario_id'            => $item->estabelecimento_id,
             'locatario_id'               => $user->id,
-            'tipo_periodo'               => $item->periodo_faturamento_padrao,
+            'text_periodo'               => $item->periodo_faturamento_padrao,
             'quantidade_periodos'        => $multiplicador,
             'data_inicio'                => $validated['data_inicio'],
             'data_fim'                   => $validated['data_fim'],
@@ -713,7 +734,6 @@ class AgendamentoController extends Controller
             'longitude_entrega'   => $validated['longitude_entrega'] ?? null,
         ]);
 
-        // 👉 Incrementa o número de reservas para o Locatário (Cliente) e Proprietário (Dono)
         $user->increment('numero_reservas');
         $proprietario = User::find($item->estabelecimento_id);
         if ($proprietario) {
@@ -835,7 +855,7 @@ class AgendamentoController extends Controller
             <h2>5. Valores, Prazos e Vigência</h2>
             <div class='dados'>
                 <strong>Período de Locação:</strong> " . \Carbon\Carbon::parse($aluguel->data_inicio)->format('d/m/Y') . " até " . \Carbon\Carbon::parse($aluguel->data_fim)->format('d/m/Y') . "<br>
-                <strong>Modalidade de Cobrança:</strong> Recorrência por {$aluguel->tipo_periodo}<br>
+                <strong>Modalidade de Cobrança:</strong> Recorrência por {$aluguel->text_periodo}<br>
                 <strong>Valor de Tabela:</strong> R$ " . number_format($aluguel->valor_unitario, 2, ',', '.') . "<br>
                 <strong>Fundo de Reserva (Caução):</strong> R$ " . number_format($aluguel->valor_caucao, 2, ',', '.') . "<br>
                 <strong>VALOR INTEGRAL CONSOLIDADO:</strong> R$ " . number_format($aluguel->valor_total, 2, ',', '.') . "
@@ -956,7 +976,6 @@ class AgendamentoController extends Controller
         $item = ItemAluguel::findOrFail($id);
         $user = Auth::user();
 
-        // 1. Validação de Disponibilidade Básica
         $dataInicio = Carbon::parse($validated['data_inicio']);
         $dataFim = Carbon::parse($validated['data_fim']);
         $totalDias = max(1, $dataInicio->diffInDays($dataFim));
@@ -968,11 +987,9 @@ class AgendamentoController extends Controller
             }
         }
 
-        // 2. Cálculo do Valor Base
         $valorDiaria = floatval($item->valor_diaria ?? 0);
         $precoSubtotal = $valorDiaria * $totalDias;
 
-        // 3. Aplicação de Promoção
         $descontoPromocao = 0;
         if ($item->tem_promocao && $item->valor_desconto > 0) {
             if ($item->tipo_desconto === 'percentual') {
@@ -982,7 +999,6 @@ class AgendamentoController extends Controller
             }
         }
 
-        // 4. Aplicação de Pontos
         $descontoPontos = 0;
         $pontosParaAbater = 0;
         if ($item->aceita_pontos && !empty($validated['pontos_utilizados'])) {
@@ -996,23 +1012,21 @@ class AgendamentoController extends Controller
 
         $precoFinal = max(0, $precoSubtotal - $descontoPromocao - $descontoPontos);
 
-        // 5. Deduz os Pontos do Usuário (se aplicável)
         if ($pontosParaAbater > 0) {
             $user->decrement('pontos_saldo', $pontosParaAbater);
         }
 
-        // 6. Registra o Aluguel
         $aluguel = Aluguel::create([
             'codigo_reserva'             => 'RES-' . strtoupper(Str::random(10)),
             'item_aluguel_id'            => $item->id,
             'estabelecimento_id'         => $item->estabelecimento_id,
             'proprietario_id'            => $item->estabelecimento_id,
             'locatario_id'               => $user->id,
-            'tipo_periodo'               => 'diaria',
+            'text_periodo'               => 'diaria',
             'quantidade_periodos'        => $totalDias,
             'data_inicio'                => $validated['data_inicio'],
             'data_fim'                   => $validated['data_fim'],
-            'quantidade'                 => 1, // Considerando a locação do item inteiro
+            'quantidade'                 => 1, 
             'valor_unitario'             => $valorDiaria,
             'valor_bruto'                => $precoSubtotal,
             'valor_desconto_promocional' => $descontoPromocao,
@@ -1023,9 +1037,6 @@ class AgendamentoController extends Controller
             'status'                     => $validated['forma_pagamento'] === 'online' ? 'aguardando_pagamento' : 'paga',
         ]);
 
-        // =====================================================================
-        // 👉 ATUALIZAÇÃO DOS CONTADORES (CLIENTE E PROPRIETÁRIO)
-        // =====================================================================
         $user->increment('numero_reservas');
         
         $proprietario = User::find($item->estabelecimento_id);

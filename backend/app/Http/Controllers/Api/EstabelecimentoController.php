@@ -18,15 +18,19 @@ class EstabelecimentoController extends Controller
     }
 
     public function store(Request $request)
-    {
+    { 
+        dd($request->all());
         $user = Auth::user();
 
-        if (!in_array($user->papel, ['admin', 'socio', 'gerente'])) {
+        if (!in_array($user->papel, ['admin', 'socio', 'gerente','proprietario'])) {
             abort(403, 'Acesso negado. Apenas administradores, sócios ou gerentes podem criar um estabelecimento.');
         }
 
         $validated = $request->validate([
             'nome'         => 'required|string|max:255',
+            'cnpj'         => 'nullable|string|max:18',        // Novo campo
+            'razao_social' => 'nullable|string|max:255',       // Novo campo
+            'site'         => 'nullable|url|max:255',          // Novo campo (valida formato de link/URL)
             'ramo_atuacao' => 'nullable|string|max:255',
             'telefone'     => 'nullable|string|max:20',
             'cep'          => 'nullable|string|max:10',  
@@ -59,6 +63,9 @@ class EstabelecimentoController extends Controller
     {
         $validated = $request->validate([
             'nome'              => 'required|string|max:255',
+            'cnpj'              => 'nullable|string|max:18',        // Novo campo
+            'razao_social'      => 'nullable|string|max:255',       // Novo campo
+            'site'              => 'nullable|url|max:255',          // Novo campo
             'ramo_atuacao'      => 'nullable|string|max:255',
             'telefone'          => 'nullable|string|max:20',
             'cep'               => 'nullable|string|max:10',  
@@ -68,8 +75,8 @@ class EstabelecimentoController extends Controller
             'bairro'            => 'nullable|string|max:255',
             'cidade'            => 'nullable|string|max:255',
             'estado'            => 'nullable|string|size:2',
-            'foto_perfil'       => 'nullable|image|max:2048', // Validando a imagem de perfil
-            'foto_banner'       => 'nullable|image|max:4096', // Validando o banner novo (até 4MB)
+            'foto_perfil'       => 'nullable|image|max:2048', 
+            'foto_banner'       => 'nullable|image|max:4096', 
             'token_mercadopago' => 'nullable|string', 
         ]);
 
@@ -140,8 +147,6 @@ class EstabelecimentoController extends Controller
         }
 
         // 7. Aplicar filtro por Status do Pagamento 
-        // CORREÇÃO POSTGRESQL: Para contornar a incompatibilidade de tipos (VARCHAR vs BIGINT)
-        // na chave de relacionamento, usamos um whereExists com conversão explícita (::text)
         if ($filtros['status_pagamento'] !== 'todos') {
             $query->whereExists(function ($subQuery) use ($filtros) {
                 $subQuery->select(\Illuminate\Support\Facades\DB::raw(1))
@@ -190,9 +195,8 @@ class EstabelecimentoController extends Controller
         
         $servicos = $estabelecimento->servicos()
             ->with(['agendamentos' => function ($query) {
-                // Traz apenas agendamentos de hoje para frente
                 $query->whereDate('data_agendamento', '>=', now()->toDateString())
-                      ->with(['usuario:id,name', 'funcionario:id,nome']); // Traz o nome do cliente e do funcionário
+                      ->with(['usuario:id,name', 'funcionario:id,nome']); 
             }])
             ->paginate(12);
 
@@ -217,7 +221,6 @@ class EstabelecimentoController extends Controller
         try {
             $user = Auth::user();
 
-            // Inicia a query baseada na relação do usuário com os estabelecimentos
             $query = $user->estabelecimentosGerenciados();
 
             // --- FILTROS ---
@@ -231,27 +234,21 @@ class EstabelecimentoController extends Controller
                 $query->where('ativo', $ativo);
             }
 
-            // Puxa todos os estabelecimentos do usuário para calcular as métricas GLOBAIS do topo da tela
             $todasLojas = $query->get();
             
             $metricas = [
                 'ativos'                  => $todasLojas->where('ativo', true)->count(),
-                // Puxa direto da coluna arrecadacao_total do banco
                 'faturamento'             => 'R$ ' . number_format((float) $todasLojas->sum('arrecadacao_total'), 2, ',', '.'),
-                'crescimento_faturamento' => '+0%', // Ajuste futuramente para comparar com o dia anterior
-                // Puxa direto da coluna clientes_aguardando do banco
+                'crescimento_faturamento' => '+0%', 
                 'aguardando'              => $todasLojas->sum('clientes_aguardando'),
-                'funcionarios_ativos'     => 0 // Ajuste caso tenha a tabela/relação de funcionários depois
+                'funcionarios_ativos'     => 0 
             ];
 
-            // Faz a paginação e mapeia os dados EXATAMENTE com as colunas do seu banco
             $estabelecimentos = $query->paginate(10)->through(function ($loja) {
                 
-                // Formatação limpa do endereço (junta as colunas caso existam)
                 $enderecoPartes = array_filter([$loja->rua, $loja->numero, $loja->bairro, $loja->cidade, $loja->estado]);
                 $enderecoFormatado = !empty($enderecoPartes) ? implode(', ', $enderecoPartes) : 'Endereço não informado';
 
-                // Tenta puxar a quantidade de funcionários. Se o relacionamento não existir ainda, ele retorna 0 sem quebrar a tela.
                 $totalFuncionarios = 0;
                 try {
                     $totalFuncionarios = $loja->funcionarios()->count();
@@ -262,18 +259,15 @@ class EstabelecimentoController extends Controller
                 return [
                     'id'          => $loja->id,
                     'nome'        => $loja->nome,
-                    // A URL do ImageKit vem diretamente desta coluna do banco
                     'foto_perfil' => $loja->foto_perfil, 
                     'endereco'    => $enderecoFormatado,
                     'status'      => $loja->ativo ? 'Ativo' : 'Inativo',
-                    'horario'     => '08:00 - 18:00', // Fixo provisoriamente
+                    'horario'     => '08:00 - 18:00', 
                     
-                    // Lendo as colunas exatas que estão na sua tabela
                     'faturamento' => 'R$ ' . number_format((float) ($loja->arrecadacao_total ?? 0), 2, ',', '.'),
                     'aguardando'  => $loja->clientes_aguardando ?? 0,
                     
                     'funcionarios'=> $totalFuncionarios,
-                    // Dados para o Modal (Olho)
                     'funcionarios_ativos'      => $totalFuncionarios,
                     'funcionarios_trabalhando' => $totalFuncionarios,
                 ];
@@ -286,11 +280,8 @@ class EstabelecimentoController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            // Em caso de falha (banco fora, erro de sintaxe, coluna faltando), 
-            // Registramos o erro no log para você (desenvolvedor) ver
             \Log::error('Erro na tela Meus Estabelecimentos: ' . $e->getMessage());
 
-            // E retornamos a tela de forma HUMANIZADA, com tudo zerado para o usuário não tomar um susto (Error 500)
             return Inertia::render('Estabelecimentos/MeusEstabelecimentos', [
                 'estabelecimentos' => ['data' => []],
                 'metricas' => [

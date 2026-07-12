@@ -38,6 +38,7 @@ return [
 'asaas' => [
         'url' => env('ASAAS_URL', 'https://sandbox.asaas.com/api/v3'),
         'key' => env('ASAAS_KEY'),
+        'webhook_token' => env('ASAAS_WEBHOOK_TOKEN'),
     ],
 
     'imagekit' => [

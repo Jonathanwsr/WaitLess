@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Agendamento;
 use App\Models\Pagamento;
-use App\Services\MercadoPagoService;
+use App\Services\PagamentoService;
 use App\Services\ImageKitService; 
 use Carbon\Carbon;
 use Exception;

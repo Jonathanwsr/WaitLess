@@ -109,8 +109,8 @@ class PagamentoController extends Controller
         }
     }
 
-    /**
-     * 2. WEBHOOK DO ASAAS (Captura a confirmação do pagamento e alimenta o SALDO LOCAL)
+   /**
+     * WEBHOOK DO ASAAS
      */
     public function webhookAsaas(Request $request)
     {
@@ -122,23 +122,17 @@ class PagamentoController extends Controller
         $event = $request->input('event');
         $paymentData = $request->input('payment');
 
-        Log::info("Webhook Asaas recebido", ['evento' => $event, 'payment_id' => $paymentData['id'] ?? null]);
-
-        // Verifica se o pagamento foi recebido ou confirmado pelo banco do cliente
         if ($event === 'PAYMENT_RECEIVED' || $event === 'PAYMENT_CONFIRMED') {
             
-            // Busca o pagamento usando a coluna correta: id_transacao_gateway
             $pagamento = Pagamento::where('id_transacao_gateway', $paymentData['id'])->first();
 
             if ($pagamento && $pagamento->status !== 'pago') {
                 
-                // 1. Atualiza a tabela de pagamentos local para 'pago'
                 $pagamento->update([
                     'status' => 'pago',
                     'data_pagamento' => now()
                 ]);
 
-                // 2. Busca e atualiza o agendamento vinculado
                 $agendamento = Agendamento::find($pagamento->agendamento_id);
                 if ($agendamento) {
                     $agendamento->update([
@@ -147,26 +141,21 @@ class PagamentoController extends Controller
                     ]);
                 }
 
-                // 3. ENTRADA DO DINHEIRO NO BANCO LOCAL (Atualiza a nova coluna 'saldo')
-                // Faz a busca do Provedor (Sócio) dono do estabelecimento através da tabela pivô
+                // SOMA NO SALDO DO PROVEDOR PARA O REPASSE DO 7º DIA
                 $provider = DB::table('providers')
                     ->join('users', 'providers.user_id', '=', 'users.id')
                     ->join('estabelecimento_usuario', 'users.id', '=', 'estabelecimento_usuario.usuario_id')
                     ->where('estabelecimento_usuario.estabelecimento_id', $pagamento->estabelecimento_id)
-                    ->where('users.papel', 'socio')
                     ->select('providers.id')
                     ->first();
 
                 if ($provider) {
-                    // Soma o valor líquido (já descontando os 12% da plataforma) direto no saldo do prestador
                     DB::table('providers')
                         ->where('id', $provider->id)
-                        ->increment('saldo', $pagamento->valor_liquido);
-                    
-                    Log::info("Saldo local incrementado para o provider ID: {$provider->id}. Valor adicionado: R$ {$pagamento->valor_liquido}");
+                        ->increment('saldo', $pagamento->valor_liquido); // Soma os 88% limpos
                 }
 
-                return response()->json(['status' => 'success', 'message' => 'Pagamento e saldo local processados.'], 200);
+                return response()->json(['status' => 'success'], 200);
             }
         }
 

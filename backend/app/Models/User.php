@@ -25,6 +25,22 @@ class User extends Authenticatable
         'asaas_customer_id',
         'asaas_subscription_id',
         'asaas_subscription_status',
+
+
+       
+    'cpf_cnpj',
+    'mobile_phone',
+    'phone',
+    'postal_code',
+    'address',
+    'address_number',
+    'complement',
+    'province',
+    'city',
+    'state',
+    'person_type',
+    'birth_date',
+    'notification_disabled',
     ];
 
     protected $hidden = [
