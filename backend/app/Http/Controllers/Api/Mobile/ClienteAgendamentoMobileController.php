@@ -2,13 +2,12 @@
 
 namespace App\Http\Controllers\Api\Mobile;
 
-
 use App\Http\Controllers\Controller;
-use App\Models\Estabelecimento; // Certifique-se de vincular ao Model correto do Usuário/Estabelecimento
+use App\Models\Estabelecimento;
 use App\Models\Agendamento;
 use App\Models\Pagamento;
 use App\Models\User;
-use App\Services\MercadoPagoService;
+use App\Services\AsaasService; // 👈 Alterado para o Serviço do Asaas
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -18,21 +17,18 @@ use Exception;
 
 class ClienteAgendamentoMobileController extends Controller
 {
-    protected $mpService;
+    protected $asaasService; // 👈 Atualizado
     protected $taxaApp = 0.10; // Taxa de 10% do aplicativo para intermediações online
 
-    public function __construct(MercadoPagoService $mpService)
+    public function __construct(AsaasService $asaasService) // 👈 Atualizado
     {
-        $this->mpService = $mpService;
+        $this->asaasService = $asaasService;
     }
 
     // ==========================================
     // 🔍 PARTE 1: BUSCAS E LISTAGENS (GET)
     // ==========================================
 
-    /**
-     * Exibe os dados do estabelecimento e seus serviços disponíveis para agendamento convencional.
-     */
     public function obterDadosAgendamento($estabelecimentoId)
     {
         $estabelecimento = User::where('id', $estabelecimentoId)->first();
@@ -61,9 +57,6 @@ class ClienteAgendamentoMobileController extends Controller
         ]);
     }
 
-    /**
-     * Exibe os detalhes de um item específico de aluguel e as regras calculadas para a reserva.
-     */
     public function obterDadosReserva($itemId)
     {
         $item = DB::table('itens_aluguel')
@@ -143,7 +136,7 @@ class ClienteAgendamentoMobileController extends Controller
                 'usuario_id'         => Auth::id(),
                 'estabelecimento_id' => $estabelecimento->id,
                 'agendamento_id'     => $agendamento->id,
-                'gateway_pagamento'  => $isPresencial ? null : 'mercadopago',
+                'gateway_pagamento'  => $isPresencial ? null : 'asaas', // 👈 Ajustado para o Asaas
                 'valor'              => $valorTotal,
                 'taxa'               => $valorTaxaApp,
                 'valor_liquido'      => $valorLiquidoSalao,
@@ -151,15 +144,20 @@ class ClienteAgendamentoMobileController extends Controller
                 'metodo_pagamento'   => $isPresencial ? 'presencial' : 'online',
             ]);
 
-            $preference = null;
+            $linkPagamento = null;
             if ($formaEscolhida === 'online_agora') {
-                $tokenSalao = $estabelecimento->token_mercadopago ?? null;
-                $preference = $this->mpService->criarCheckout($agendamento, $servico, $valorTaxaApp, $tokenSalao);
+                $tokenSalao = $estabelecimento->token_asaas ?? null; // 👈 Certifique-se de usar a coluna correta do BD
+                
+                // 👈 Chamada atualizada para o AsaasService
+                $checkoutAsaas = $this->asaasService->criarCheckout($agendamento, $servico, $valorTaxaApp, $tokenSalao);
 
-                if (!isset($preference['init_point'])) {
-                    throw new Exception('A API de pagamento falhou em gerar o link.');
+                // O Asaas geralmente retorna a URL no campo 'invoiceUrl' ou 'bankSlipUrl'
+                if (!isset($checkoutAsaas['invoiceUrl'])) {
+                    throw new Exception('A API de pagamento do Asaas falhou em gerar o link.');
                 }
-                $pagamento->update(['id_transacao_gateway' => $preference['id']]);
+                
+                $pagamento->update(['id_transacao_gateway' => $checkoutAsaas['id']]);
+                $linkPagamento = $checkoutAsaas['invoiceUrl']; // 👈 Pega a URL correta do Asaas
             }
 
             DB::commit();
@@ -170,7 +168,7 @@ class ClienteAgendamentoMobileController extends Controller
                 'forma_pagamento' => $formaEscolhida,
                 'agendamento_id' => $agendamento->id,
                 'codigo_verificacao' => $codigoPin,
-                'payment_url' => $preference ? $preference['init_point'] : null
+                'payment_url' => $linkPagamento // 👈 Retorna o link para o front-end
             ], 201);
 
         } catch (Exception $e) {
@@ -191,7 +189,6 @@ class ClienteAgendamentoMobileController extends Controller
             'data_inicio'         => 'required|date|after_or_equal:today',
             'forma_pagamento'     => 'required|string',
 
-            // Endereços opcionais coletados dinamicamente com base nas tabelas enviadas
             'cep_retirada'         => 'nullable|string|max:10',
             'rua_retirada'         => 'nullable|string|max:255',
             'numero_retirada'      => 'nullable|string|max:20',
@@ -214,7 +211,6 @@ class ClienteAgendamentoMobileController extends Controller
             return response()->json(['error' => 'Este item não está disponível para locação.'], 422);
         }
 
-        // Calcula dinamicamente as datas finais da locação
         $dataInicio = Carbon::parse($validated['data_inicio']);
         $dataFim = $dataInicio->copy();
 
@@ -241,15 +237,14 @@ class ClienteAgendamentoMobileController extends Controller
             $taxaServico = round($valorBruto * $this->taxaApp, 2);
             $valorTotalFinal = $valorBruto + $valorCaucao + $taxaServico;
 
-            // Insere diretamente na tabela estruturada de alugueis fornecida
             $aluguelId = DB::table('alugueis')->insertGetId([
                 'codigo_reserva'      => 'RES-' . strtoupper(Str::random(8)),
                 'numero_contracto'    => null,
                 'estabelecimento_id'  => $item->estabelecimento_id,
                 'item_aluguel_id'     => $item->id,
                 'servico_id'          => $item->servico_id,
-                'proprietario_id'     => $item->estabelecimento_id, // Vincula o dono do item
-                'locatario_id'        => Auth::id(), // Cliente logado
+                'proprietario_id'     => $item->estabelecimento_id, 
+                'locatario_id'        => Auth::id(),
                 'tipo_periodo'        => $validated['tipo_periodo'],
                 'quantidade_periodos' => $validated['quantidade_periodos'],
                 'data_inicio'         => $dataInicio,
@@ -264,7 +259,6 @@ class ClienteAgendamentoMobileController extends Controller
                 'created_at'          => now(),
                 'updated_at'          => now(),
 
-                // Endereço de Retirada Expandido
                 'cep_retirada'         => $validated['cep_retirada'] ?? null,
                 'rua_retirada'         => $validated['rua_retirada'] ?? null,
                 'numero_retirada'      => $validated['numero_retirada'] ?? null,
@@ -273,7 +267,6 @@ class ClienteAgendamentoMobileController extends Controller
                 'cidade_retirada'      => $validated['cidade_retirada'] ?? null,
                 'estado_retirada'      => $validated['estado_retirada'] ?? null,
 
-                // Endereço de Entrega/Devolução Expandido
                 'cep_entrega'          => $validated['cep_entrega'] ?? null,
                 'rua_entrega'          => $validated['rua_entrega'] ?? null,
                 'numero_entrega'       => $validated['numero_entrega'] ?? null,
@@ -301,41 +294,51 @@ class ClienteAgendamentoMobileController extends Controller
     }
 
     // ==========================================
-    // 💳 PARTE 4: RETORNOS EXTERNOS DO GATEWAY
+    // 💳 PARTE 4: RETORNOS EXTERNOS DO ASAAS (WEBHOOK/CALLBACK)
     // ==========================================
 
-    public function callbackMercadoPago(Request $request)
+    public function callbackAsaas(Request $request)
     {
-        $statusMP = $request->query('status');
-        $agendamento = Agendamento::find($request->query('external_reference'));
+        // 👈 O Asaas envia os dados principais através do campo 'payment' e do 'event'
+        $evento = $request->input('event');
+        $pagamentoData = $request->input('payment');
+        
+        // Normalmente mandamos o ID do agendamento no externalReference do Asaas na hora de criar
+        $agendamentoId = $pagamentoData['externalReference'] ?? $request->query('external_reference');
+
+        $agendamento = Agendamento::find($agendamentoId);
 
         if (!$agendamento) {
             return response()->json(['error' => 'Agendamento externo não localizado.'], 404);
         }
 
-        if ($statusMP === 'approved') {
+        // 👈 O Asaas usa PAYMENT_RECEIVED (Cartão/Pix) ou PAYMENT_CONFIRMED (Boleto)
+        if ($evento === 'PAYMENT_RECEIVED' || $evento === 'PAYMENT_CONFIRMED' || $request->query('status') === 'approved') {
+            
             if ($agendamento->status_pagamento !== 'pago_online') {
-                DB::transaction(function () use ($agendamento, $request) {
+                DB::transaction(function () use ($agendamento, $pagamentoData, $request) {
                     $pagamento = Pagamento::where('agendamento_id', $agendamento->id)->first();
+                    
                     $agendamento->update([
                         'status' => 'pendente',
                         'status_pagamento' => 'pago_online',
                         'pagamento_id' => $pagamento ? $pagamento->id : null,
                         'codigo_verificacao' => (string) mt_rand(1000, 9999),
                     ]);
+
                     if ($pagamento) {
                         $pagamento->update([
                             'status' => 'pago',
-                            'id_transacao_gateway' => $request->payment_id,
-                            'metodo_pagamento' => $request->payment_type ?? 'online',
+                            'id_transacao_gateway' => $pagamentoData['id'] ?? $request->payment_id,
+                            'metodo_pagamento' => $pagamentoData['billingType'] ?? 'online', // Asaas envia como 'CREDIT_CARD', 'PIX', etc.
                             'data_pagamento' => now(),
                         ]);
                     }
-                ]);
+                });
             }
             return response()->json(['success' => 'Pagamento capturado e aprovado!', 'pin_liberado' => true]);
         }
 
-        return response()->json(['status' => $statusMP, 'message' => 'O status do pagamento mudou ou falhou.']);
+        return response()->json(['status' => $evento ?? 'PENDING', 'message' => 'O status do pagamento mudou, falhou ou está aguardando.']);
     }
 }

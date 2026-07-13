@@ -15,6 +15,7 @@ class PagamentoService
      */
     public function criarCobrancaAsaas($agendamento, string $metodo, ?string $asaasCustomerId, int $parcelas = 1)
     {
+        // Aceita tanto Agendamento (serviços) quanto Aluguel (reservas)
         $valorTotal = $agendamento->valor_total ?? $agendamento->valor_final;
 
         // Calcula a retenção da plataforma WaitLess (12%) e o valor do prestador (88%)
@@ -26,7 +27,7 @@ class PagamentoService
             ->join('users', 'providers.user_id', '=', 'users.id')
             ->join('estabelecimento_usuario', 'users.id', '=', 'estabelecimento_usuario.usuario_id')
             ->where('estabelecimento_usuario.estabelecimento_id', $agendamento->estabelecimento_id)
-            ->select('providers.id', 'providers.asaas_wallet_id') // Supondo que você salvou a wallet aqui
+            ->select('providers.id', 'providers.asaas_wallet_id')
             ->first();
 
         if (!$provider || !$provider->asaas_wallet_id) {
@@ -36,29 +37,34 @@ class PagamentoService
         $billingTypeMap = ['pix' => 'PIX', 'boleto' => 'BOLETO', 'cartao' => 'CREDIT_CARD'];
         $billingTypeAsaas = $billingTypeMap[$metodo];
 
+        // Identifica se é Agendamento ou Aluguel para a descrição
+        $tipoReserva = isset($agendamento->servico_id) ? 'Serviço' : 'Locação';
+
         $payloadAsaas = [
             'customer'    => $asaasCustomerId,
             'billingType' => $billingTypeAsaas,
             'dueDate'     => date('Y-m-d'),
-            'description' => 'Serviço/Reserva WaitLess #' . $agendamento->id,
+            'description' => "{$tipoReserva} WaitLess #" . $agendamento->id,
             'value'       => $valorTotal,
-            // A mágica do Split acontece aqui
+            // Split de Pagamento
             'split' => [
                 [
                     'walletId' => $provider->asaas_wallet_id,
                     'percentualValue' => 88.00 // 88% vai para o proprietário
                 ]
-                // Os 12% restantes ficam automaticamente na sua conta principal Asaas
             ]
         ];
 
-        if ($metodo === 'cartao' && $parcelas > 1) {
+        // 👉 CORREÇÃO CRÍTICA PARA CARTÃO DE CRÉDITO NO ASAAS
+        if ($metodo === 'cartao') {
             $payloadAsaas['installmentCount'] = $parcelas;
+            $payloadAsaas['installmentValue'] = round($valorTotal / $parcelas, 2); 
         }
 
         $response = Http::withHeaders([
-            'access_token' => env('ASAAS_KEY'), // Alterado conforme solicitado
-        ])->post(env('ASAAS_URL') . '/payments', $payloadAsaas);
+            // Lê do arquivo config para evitar problemas com cache de .env
+            'access_token' => config('services.asaas.key'), 
+        ])->post(config('services.asaas.url') . '/payments', $payloadAsaas);
 
         if ($response->failed()) {
             Log::error("Erro Asaas Service", ['resposta' => $response->json()]);
@@ -67,11 +73,15 @@ class PagamentoService
 
         $asaasPayment = $response->json();
 
+        // Determina se a transação veio da tabela agendamentos ou alugueis
+        $isAgendamento = isset($agendamento->servico_id);
+
         // Salva na sua tabela de pagamentos
-        Pagamento::create([
-            'usuario_id'           => $agendamento->usuario_id,
+        $novoPagamento = Pagamento::create([
+            'usuario_id'           => $isAgendamento ? $agendamento->usuario_id : $agendamento->locatario_id,
             'estabelecimento_id'   => $agendamento->estabelecimento_id,
-            'agendamento_id'       => $agendamento->id,
+            'agendamento_id'       => $isAgendamento ? $agendamento->id : null,
+            'aluguel_id'           => $isAgendamento ? null : $agendamento->id, // Usa coluna nova se for aluguel
             'gateway_pagamento'    => 'Asaas',
             'id_transacao_gateway' => $asaasPayment['id'],
             'valor'                => $valorTotal,
@@ -81,10 +91,19 @@ class PagamentoService
             'metodo_pagamento'     => $metodo,
         ]);
 
-        $agendamento->update([
-            'status_pagamento'   => 'aguardando_pagamento',
-            'codigo_verificacao' => str_pad(mt_rand(0, 9999), 4, '0', STR_PAD_LEFT)
-        ]);
+        if ($isAgendamento) {
+            $agendamento->update([
+                'status_pagamento'   => 'aguardando_pagamento',
+                'codigo_verificacao' => str_pad(mt_rand(0, 9999), 4, '0', STR_PAD_LEFT),
+                'pagamento_id'       => $novoPagamento->id // Adiciona o ID do pagamento gerado
+            ]);
+        } else {
+            // Atualiza os dados de locação (Aluguel)
+            $agendamento->update([
+                'status'       => 'aguardando_pagamento',
+                'pagamento_id' => $novoPagamento->id
+            ]);
+        }
 
         return [
             'status'      => 'success',
@@ -92,6 +111,23 @@ class PagamentoService
             'pix_qr_code' => $asaasPayment['pixQrCode'] ?? null,
             'invoice_url' => $asaasPayment['invoiceUrl']
         ];
+    }
+
+    /**
+     * Estorna (cancela/devolve) um pagamento diretamente no Asaas
+     */
+    public function estornarPagamento($idTransacaoGateway)
+    {
+        $response = Http::withHeaders([
+            'access_token' => config('services.asaas.key'),
+        ])->post(config('services.asaas.url') . "/payments/{$idTransacaoGateway}/refund");
+
+        if ($response->failed()) {
+            Log::error("Erro ao estornar pagamento no Asaas", ['resposta' => $response->json()]);
+            throw new \Exception('Falha ao tentar estornar o pagamento no gateway Asaas.');
+        }
+
+        return true;
     }
 
     /**
@@ -116,8 +152,8 @@ class PagamentoService
 
         // É necessário usar a API Key da Subconta (Wallet) do provider para fazer o saque do lado dele
         $response = Http::withHeaders([
-            'access_token' => $provider->asaas_api_key, // Salvo quando você criou a subconta
-        ])->post(env('ASAAS_URL') . '/transfers', $payloadTransfer);
+            'access_token' => $provider->asaas_api_key, 
+        ])->post(config('services.asaas.url') . '/transfers', $payloadTransfer);
 
         if ($response->successful()) {
             // Zera o saldo do provedor após solicitar o repasse

@@ -14,51 +14,83 @@ class EstabelecimentoController extends Controller
 {
     public function create()
     {
+        // Certifique-se de que o caminho da string bate com a estrutura de pastas do seu React.
+        // Ex: resources/js/Pages/Estabelecimentos/Create.jsx
         return Inertia::render('Estabelecimentos/Create');
     }
 
-    public function store(Request $request)
-    { 
-        dd($request->all());
-        $user = Auth::user();
-
-        if (!in_array($user->papel, ['admin', 'socio', 'gerente','proprietario'])) {
-            abort(403, 'Acesso negado. Apenas administradores, sócios ou gerentes podem criar um estabelecimento.');
+    /**
+     * Salva o novo estabelecimento no banco de dados.
+     */
+   public function store(Request $request)
+    {
+        // 1. Limpando as máscaras (deixando apenas números para o banco de dados)
+        if ($request->filled('cnpj')) {
+            $request->merge(['cnpj' => preg_replace('/[^0-9]/', '', $request->cnpj)]);
+        }
+        if ($request->filled('cep')) {
+            $request->merge(['cep' => preg_replace('/[^0-9]/', '', $request->cep)]);
+        }
+        if ($request->filled('telefone')) {
+            $request->merge(['telefone' => preg_replace('/[^0-9]/', '', $request->telefone)]);
         }
 
+        // 2. Validação dos dados (agora com as fotos e tamanhos limpos)
         $validated = $request->validate([
             'nome'         => 'required|string|max:255',
-            'cnpj'         => 'nullable|string|max:18',        // Novo campo
-            'razao_social' => 'nullable|string|max:255',       // Novo campo
-            'site'         => 'nullable|url|max:255',          // Novo campo (valida formato de link/URL)
+            'razao_social' => 'nullable|string|max:255',
+            'cnpj'         => 'nullable|string|max:14', // Sem máscara, tem 14 dígitos
+            'site'         => 'nullable|url|max:255',
             'ramo_atuacao' => 'nullable|string|max:255',
-            'telefone'     => 'nullable|string|max:20',
-            'cep'          => 'nullable|string|max:10',  
+            'telefone'     => 'nullable|string|max:15', // Sem máscara
+            'cep'          => 'nullable|string|max:8',  // Sem máscara, tem 8 dígitos
             'rua'          => 'nullable|string|max:255',
-            'numero'       => 'nullable|string|max:20',
+            'numero'       => 'nullable|string|max:50',
             'complemento'  => 'nullable|string|max:255',
             'bairro'       => 'nullable|string|max:255',
             'cidade'       => 'nullable|string|max:255',
-            'estado'       => 'nullable|string|size:2',  
-            'foto_perfil'  => 'nullable|image|max:2048', 
-            'ativo'        => 'nullable|boolean',
+            'estado'       => 'nullable|string|size:2',
+            'latitude'     => 'nullable|numeric',
+            'longitude'    => 'nullable|numeric',
+            'foto_perfil'  => 'nullable|image|max:2048', // Validação da foto de perfil
+            'foto_banner'  => 'nullable|image|max:4096', // Validação da foto de banner
+        ], [
+            'nome.required' => 'O nome do estabelecimento é obrigatório.',
+            'site.url'      => 'O site deve ser um link válido (ex: https://site.com).',
+            'estado.size'   => 'A UF do estado deve conter exatamente 2 letras.',
         ]);
 
-        if ($request->hasFile('foto_perfil')) {
-            $validated['foto_perfil'] = ImageKitService::upload($request->file('foto_perfil'), '/waitless/estabelecimentos');
-        } else {
-            $validated['foto_perfil'] = null; 
+        try {
+            // 3. Upload das Fotos (se o usuário enviou na criação)
+            if ($request->hasFile('foto_perfil')) {
+                $validated['foto_perfil'] = ImageKitService::upload($request->file('foto_perfil'), '/waitless/estabelecimentos');
+            }
+
+            if ($request->hasFile('foto_banner')) {
+                $validated['foto_banner'] = ImageKitService::upload($request->file('foto_banner'), '/waitless/estabelecimentos/banners');
+            }
+
+            // 4. Cria o registro no banco de dados
+            $estabelecimento = Estabelecimento::create($validated);
+
+            // 5. Vincula o estabelecimento ao usuário logado na tabela pivot (estabelecimento_usuario)
+            // Passamos o tipo 'proprietario' para a coluna pivot 'tipo', baseando na sua model
+            $estabelecimento->proprietarios()->attach(Auth::id(), ['tipo' => 'proprietario']);
+
+            // 6. Redireciona para o dashboard com mensagem de sucesso
+            return redirect()->route('dashboard')
+                ->with('success', 'Estabelecimento cadastrado com sucesso!');
+
+        } catch (\Exception $e) {
+            // Loga o erro interno para você debugar depois
+            \Log::error('Erro ao salvar estabelecimento: ' . $e->getMessage());
+
+            return back()->with('error', 'Não foi possível cadastrar o estabelecimento devido a um erro no servidor. Verifique os dados e tente novamente.');
         }
-
-        $estabelecimento = Estabelecimento::create($validated);
-
-        $estabelecimento->proprietarios()->attach($user->id, [
-            'tipo' => $user->papel 
-        ]);
-        
-        return redirect()->route('dashboard')->with('success', 'Estabelecimento criado com sucesso!');
     }
-    
+
+
+
     public function update(Request $request, Estabelecimento $estabelecimento)
     {
         $validated = $request->validate([

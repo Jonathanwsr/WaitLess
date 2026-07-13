@@ -36,18 +36,14 @@ export default function Create() {
         }
     }, [flash]);
 
-    // Função que busca o CEP e as Coordenadas diretamente no Front-end
+    // Máscara e Busca de CEP
     const handleCepChange = async (e) => {
         const rawValue = e.target.value;
-        // Aplica máscara visual automática (00000-000)
         const maskedValue = rawValue.replace(/\D/g, '').replace(/^(\d{5})(\d)/, '$1-$2').substring(0, 9);
         
-        // Atualiza o campo de CEP primeiro
         setData((prev) => ({ ...prev, cep: maskedValue }));
-
         const cleanCep = rawValue.replace(/\D/g, '');
 
-        // Quando o CEP atingir os 8 dígitos, faz a busca na API
         if (cleanCep.length === 8) {
             setLoadingCep(true);
             setFriendlyError(null);
@@ -58,7 +54,6 @@ export default function Create() {
                 if (response.ok) {
                     const resData = await response.json();
                     
-                    // Preenche todos os campos de endereço e as coordenadas ocultas de uma vez
                     setData((prev) => ({
                         ...prev,
                         rua: resData.street || '',
@@ -77,6 +72,26 @@ export default function Create() {
                 setLoadingCep(false);
             }
         }
+    };
+
+    // Máscara para CNPJ (00.000.000/0000-00)
+    const handleCnpjChange = (e) => {
+        let value = e.target.value.replace(/\D/g, '');
+        value = value.replace(/^(\d{2})(\d)/, '$1.$2');
+        value = value.replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3');
+        value = value.replace(/\.(\d{3})(\d)/, '.$1/$2');
+        value = value.replace(/(\d{4})(\d)/, '$1-$2');
+        
+        setData('cnpj', value.substring(0, 18));
+    };
+
+    // Máscara para Telefone (Fixo ou Celular)
+    const handleTelefoneChange = (e) => {
+        let value = e.target.value.replace(/\D/g, '');
+        value = value.replace(/^(\d{2})(\d)/g, '($1) $2');
+        value = value.replace(/(\d)(\d{4})$/, '$1-$2');
+        
+        setData('telefone', value.substring(0, 15));
     };
 
     const submit = (e) => {
@@ -177,7 +192,7 @@ export default function Create() {
                                         type="text"
                                         value={data.cnpj}
                                         className="mt-1 block w-full py-2.5 sm:py-3"
-                                        onChange={(e) => setData('cnpj', e.target.value)}
+                                        onChange={handleCnpjChange}
                                         placeholder="00.000.000/0001-00"
                                     />
                                     <InputError message={errors.cnpj} className="mt-2" />
@@ -203,7 +218,7 @@ export default function Create() {
                                         type="text"
                                         value={data.telefone}
                                         className="mt-1 block w-full py-2.5 sm:py-3"
-                                        onChange={(e) => setData('telefone', e.target.value)}
+                                        onChange={handleTelefoneChange}
                                         placeholder="(00) 00000-0000"
                                     />
                                     <InputError message={errors.telefone} className="mt-2" />

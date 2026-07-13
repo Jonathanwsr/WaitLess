@@ -128,11 +128,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/mobile/d4sign/webhook', [MobileAgendamentoController::class, 'webhookD4Sign']);
 
     // --- RESOURCES PRINCIPAIS ---
-    Route::apiResource('estabelecimentos', EstabelecimentoController::class);
-    Route::apiResource('servicos', ServicoController::class);
-    Route::apiResource('funcionarios', FuncionarioController::class);
-    Route::apiResource('agendamentos', AgendamentoController::class);
-    Route::apiResource('avaliacoes', AvaliacaoController::class);
+   Route::apiResource('estabelecimentos', EstabelecimentoController::class)->names('api.estabelecimentos');
+   // Route::apiResource('servicos', ServicoController::class);
+   // Route::apiResource('funcionarios', FuncionarioController::class);
+    //Route::apiResource('agendamentos', AgendamentoController::class);
+    //Route::apiResource('avaliacoes', AvaliacaoController::class);
 
     // --- CATÁLOGO DE ITENS ---
     Route::prefix('catalogo/itens')->group(function () {
