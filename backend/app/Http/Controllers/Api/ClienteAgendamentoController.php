@@ -44,7 +44,8 @@ class ClienteAgendamentoController extends Controller
             'hora_agendamento' => 'required|string',
             'forma_pagamento'  => 'required|string|in:online_agora,online_depois,presencial',
             'metodo_pagamento' => 'nullable|required_if:forma_pagamento,online_agora|string|in:pix,cartao,boleto',
-            'parcelas'         => 'nullable|integer|min:1|max:12'
+            'parcelas'         => 'nullable|integer|min:1|max:12',
+            'desconto_id'      => 'nullable|exists:descontos,id' // Filtro opcional para o uso de pontos
         ]);
 
         $dataHoraAgendada = Carbon::parse($validated['data_agendamento'] . ' ' . $validated['hora_agendamento']);
@@ -66,10 +67,46 @@ class ClienteAgendamentoController extends Controller
             $formaEscolhida = $validated['forma_pagamento'];
             $isPresencial = ($formaEscolhida === 'presencial');
             
+            // Valor original do serviço do catálogo
+            $valorTotal = $servico->valor;
+            $pontosNecessarios = 0;
+
+            // =========================================================================
+            // 👉 APLICAÇÃO DO DESCONTO POR RESGATE DE PONTOS DE FIDELIDADE
+            // =========================================================================
+            if ($request->filled('desconto_id')) {
+                $desconto = DB::table('descontos')
+                    ->where('id', $request->desconto_id)
+                    ->where('estabelecimento_id', $estabelecimento->id)
+                    ->where('ativo', true)
+                    ->first();
+
+                if ($desconto && $desconto->tipo === 'pontos') {
+                    $pontosNecessarios = $desconto->pontos_necessarios ?? 1000;
+
+                    // Busca o saldo de pontos atual que o cliente possui específico neste local
+                    $saldoPontosLocal = DB::table('pontos_usuario_estabelecimento')
+                        ->where('usuario_id', Auth::id())
+                        ->where('estabelecimento_id', $estabelecimento->id)
+                        ->value('total_pontos') ?? 0;
+
+                    if ($saldoPontosLocal < $pontosNecessarios) {
+                        return back()->withErrors(['error' => 'Saldo de pontos insuficiente neste estabelecimento para obter este desconto.']);
+                    }
+
+                    // Deduz os pontos do saldo acumulado local do cliente
+                    DB::table('pontos_usuario_estabelecimento')
+                        ->where('usuario_id', Auth::id())
+                        ->where('estabelecimento_id', $estabelecimento->id)
+                        ->decrement('total_pontos', $pontosNecessarios);
+
+                    // Deduz o valor financeiro do cupom do total da cobrança
+                    $valorTotal = max(0, $valorTotal - $desconto->valor);
+                }
+            }
+
             // Gera o PIN automaticamente se for pagamento presencial no local
             $codigoPin = $isPresencial ? (string) mt_rand(1000, 9999) : null;
-
-            $valorTotal = $servico->valor;
 
             $agendamento = Agendamento::create([
                 'estabelecimento_id' => $estabelecimento->id,
@@ -83,6 +120,19 @@ class ClienteAgendamentoController extends Controller
                 'valor_final'        => $valorTotal,
                 'codigo_verificacao' => $codigoPin,
             ]);
+
+            // Se houve resgate de pontos, cria o registro histórico vinculado ao agendamento criado
+            if ($pontosNecessarios > 0) {
+                DB::table('historico_pontos')->insert([
+                    'usuario_id'         => Auth::id(),
+                    'estabelecimento_id' => $estabelecimento->id,
+                    'agendamento_id'     => $agendamento->id,
+                    'tipo'               => 'uso',
+                    'descricao'          => "Desconto de R$ " . number_format($desconto->valor, 2, ',', '.') . " aplicado via resgate de pontos",
+                    'quantidade'         => $pontosNecessarios,
+                    'created_at'         => now()
+                ]);
+            }
 
             // Se for pagamento presencial, criamos o registro local de pagamento
             if ($isPresencial) {
@@ -103,7 +153,7 @@ class ClienteAgendamentoController extends Controller
             if ($formaEscolhida === 'online_agora') {
                 $user = Auth::user();
                 
-                // Dispara a chamada para o gateway de pagamento do Asaas utilizando o service centralizado
+                // Dispara a chamada para o gateway utilizando o service centralizado (os relacionamentos tratam a descrição limpa)
                 $cobrancaAsaas = $this->pagamentoService->criarCobrancaAsaas(
                     $agendamento,
                     $validated['metodo_pagamento'],
@@ -115,7 +165,6 @@ class ClienteAgendamentoController extends Controller
             DB::commit();
 
             if ($formaEscolhida === 'online_agora' && !empty($cobrancaAsaas['invoice_url'])) {
-                // Redireciona o usuário externamente para a página de faturamento seguro do Asaas (PIX, Cartão ou Boleto)
                 return Inertia::location($cobrancaAsaas['invoice_url']);
             }
             
@@ -158,7 +207,6 @@ class ClienteAgendamentoController extends Controller
 
             $user = Auth::user();
             
-            // Removemos duplicados antigos se existirem na tabela local antes de disparar uma nova tentativa
             Pagamento::where('agendamento_id', $agendamento->id)->where('status', 'pendente')->delete();
 
             $cobrancaAsaas = $this->pagamentoService->criarCobrancaAsaas(
@@ -195,7 +243,7 @@ class ClienteAgendamentoController extends Controller
             if (($agendamento->status_pagamento === 'pago' || $agendamento->status_pagamento === 'pago_online') && $pagamento && $pagamento->id_transacao_gateway) {
                 
                 try {
-                    // Executa a devolução financeira direto na API do Asaas
+                    // Executa a devolução financeira direto na API do Asaas (retém automaticamente as fatias do split da subconta e principal)
                     $this->pagamentoService->estornarPagamento($pagamento->id_transacao_gateway);
                 } catch (Exception $e) {
                     return back()->with('error', 'Falha ao processar o estorno no Asaas. O cancelamento foi abortado por segurança.');

@@ -4,133 +4,141 @@ namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
 use App\Models\Aluguel;
-use App\Models\Agendamento; // Model de serviços
-use App\Models\Pagamento; // Tabela financeira central
-use Illuminate\Support\Facades\Http;
+use App\Models\Agendamento;
+use App\Models\Pagamento;
+use App\Services\PagamentoService;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class VerificarReservas extends Command
 {
-    protected $signature = 'financeiro:processar-diario'; // Mudei o nome para abranger tudo
-    protected $description = 'Verifica estornos, auto-conclusões e faz os repasses financeiros (Split) de 88% via Asaas.';
+    protected $signature = 'financeiro:processar-diario';
+    protected $description = 'Verifica serviços não concluídos após 3 dias e processa os estornos automáticos da Custódia (Escrow) do Asaas.';
 
-    public function handle()
+    public function handle(PagamentoService $pagamentoService)
     {
         $hoje = Carbon::today()->toDateString();
+        // A regra é clara: 3 dias após a data agendada sem conclusão = Estorno
+        $limiteDias = Carbon::today()->subDays(3)->toDateString(); 
+
         $this->info("Iniciando rotina financeira para o dia: {$hoje}");
+        $this->info("Buscando serviços não concluídos desde: {$limiteDias}");
 
         // ========================================================================
-        // 1. AUTO-CONCLUSÃO (Aluguéis e Serviços que passaram da data e não foram confirmados)
+        // 1. ESTORNO AUTOMÁTICO DE SERVIÇOS (Agendamentos)
         // ========================================================================
-        
-        // Para Aluguéis
-        $alugueisParaConcluir = Aluguel::where('status', 'confirmado')
-            ->whereDate('data_fim', '<', $hoje)
+        $servicosParaEstorno = Agendamento::whereIn('status_pagamento', ['pago', 'pago_online'])
+            ->where('status', '!=', 'concluido')
+            ->where('status', '!=', 'cancelado')
+            ->whereDate('data_agendamento', '<=', $limiteDias)
             ->get();
 
-        foreach ($alugueisParaConcluir as $aluguel) {
-            $aluguel->update(['status' => 'concluido']);
-            $this->liberarPagamentoParaRepasse($aluguel->id, 'aluguel');
-            $this->info("Aluguel {$aluguel->id} auto-concluído.");
-        }
+        foreach ($servicosParaEstorno as $agendamento) {
+            $pagamento = Pagamento::where('agendamento_id', $agendamento->id)->first();
 
-        // Para Serviços (Agendamentos)
-        $servicosParaConcluir = Agendamento::where('status', 'confirmado')
-            ->whereDate('data_servico', '<', $hoje) // ajuste para o nome da sua coluna de data
-            ->get();
+            if ($pagamento && $pagamento->id_transacao_gateway && $pagamento->status !== 'estornado') {
+                try {
+                    DB::transaction(function () use ($pagamentoService, $pagamento, $agendamento) {
+                        
+                        // Executa o estorno no Asaas (Devolve o dinheiro retido na custódia ao cliente)
+                        $pagamentoService->estornarPagamento($pagamento->id_transacao_gateway);
 
-        foreach ($servicosParaConcluir as $servico) {
-            $servico->update(['status' => 'concluido']);
-            $this->liberarPagamentoParaRepasse($servico->id, 'servico');
-            $this->info("Serviço {$servico->id} auto-concluído.");
-        }
+                        // Atualiza as tabelas locais
+                        $pagamento->update(['status' => 'estornado']);
+                        $agendamento->update(['status' => 'cancelado', 'status_pagamento' => 'estornado']);
 
-        // ========================================================================
-        // 2. ESTORNO AUTOMÁTICO VIA ASAAS (Cliente pagou, mas nunca usou/confirmou)
-        // ========================================================================
-        
-        // Buscar pagamentos que passaram do prazo limite (Exemplo: mais de 7 dias aguardando e nunca concluiu)
-        $pagamentosParaEstorno = Pagamento::where('status', 'RECEIVED')
-            ->where('status_repasse', 'aguardando')
-            ->whereDate('created_at', '<=', Carbon::today()->subDays(7)) // Se ficou 7 dias parado
-            ->get();
+                        // Identifica o Provider para deduzir o saldo
+                        $provider = DB::table('providers')
+                            ->join('estabelecimento_usuario', 'providers.user_id', '=', 'estabelecimento_usuario.usuario_id')
+                            ->where('estabelecimento_usuario.estabelecimento_id', $pagamento->estabelecimento_id)
+                            ->select('providers.id')
+                            ->first();
 
-        foreach ($pagamentosParaEstorno as $pagamento) {
-            $response = Http::withHeaders([
-                'access_token' => env('ASAAS_API_KEY'),
-            ])->post(env('ASAAS_URL') . "/payments/{$pagamento->transacao_id}/refund", [
-                'value' => $pagamento->valor_total,
-                'description' => 'Estorno automático: O serviço/aluguel não foi confirmado no prazo estipulado.'
-            ]);
+                        if ($provider) {
+                            DB::table('providers')->where('id', $provider->id)->decrement('saldo', $pagamento->valor_liquido);
 
-            if ($response->successful()) {
-                $pagamento->update(['status_repasse' => 'estornado']);
-                $this->info("Pagamento {$pagamento->id} estornado com sucesso.");
-            } else {
-                $this->error("Falha ao estornar pagamento {$pagamento->id}: " . $response->body());
-                Log::error("Falha ao estornar Asaas: " . $response->body());
+                            // Grava a movimentação de estorno no extrato
+                            DB::table('extrato_providers')->insert([
+                                'provider_id'      => $provider->id,
+                                'usuario_id'       => $pagamento->usuario_id,
+                                'origem_type'      => 'App\Models\Agendamento',
+                                'origem_id'        => $agendamento->id,
+                                'tipo'             => 'estorno',
+                                'valor_bruto'      => $pagamento->valor,
+                                'taxa_plataforma'  => $pagamento->taxa,
+                                'valor_liquido'    => $pagamento->valor_liquido * -1,
+                                'descricao'        => 'Estorno automático: Serviço não fornecido após 3 dias',
+                                'status'           => 'estornado',
+                                'codigo_transacao' => $pagamento->id_transacao_gateway,
+                                'metodo_pagamento' => $pagamento->metodo_pagamento === 'cartao' ? 'cartao_credito' : $pagamento->metodo_pagamento,
+                                'created_at'       => now()
+                            ]);
+                        }
+                    });
+
+                    $this->info("Serviço {$agendamento->id} estornado com sucesso.");
+                } catch (\Exception $e) {
+                    $this->error("Falha ao estornar Serviço {$agendamento->id}: " . $e->getMessage());
+                    Log::error("Falha no estorno automático do agendamento #{$agendamento->id}: " . $e->getMessage());
+                }
             }
         }
 
         // ========================================================================
-        // 3. REPASSE FINANCEIRO (Transferindo os 88% para a carteira do proprietário)
+        // 2. ESTORNO AUTOMÁTICO DE ALUGUÉIS (Reservas de Itens)
         // ========================================================================
-        
-        // Busca o dinheiro que já deu os 7 dias de "quarentena" após a conclusão
-        $pagamentosParaRepasse = Pagamento::where('status_repasse', 'liberado')
-            ->whereDate('data_liberacao_repasse', '<=', $hoje)
+        $alugueisParaEstorno = Aluguel::where('status', 'pago')
+            ->whereDate('data_fim', '<=', $limiteDias)
             ->get();
 
-        foreach ($pagamentosParaRepasse as $pagamento) {
-            
-            // Lógica para descobrir a carteira do Asaas de quem vai receber
-            // Adapte as relações abaixo conforme o seu banco de dados
-            $walletId = null;
-            if ($pagamento->agendamento_id) {
-                // Exemplo: Pagamento -> Agendamento -> Estabelecimento -> Provider (Dono)
-                $walletId = $pagamento->agendamento->estabelecimento->provider->asaas_wallet_id ?? null;
-            }
+        foreach ($alugueisParaEstorno as $aluguel) {
+            $pagamento = Pagamento::where('aluguel_id', $aluguel->id)->first();
 
-            if (!$walletId) {
-                $this->error("Carteira Asaas não encontrada para o repasse do Pagamento {$pagamento->id}");
-                continue; // Pula para o próximo se não achar a carteira
-            }
+            if ($pagamento && $pagamento->id_transacao_gateway && $pagamento->status !== 'estornado') {
+                try {
+                    DB::transaction(function () use ($pagamentoService, $pagamento, $aluguel) {
+                        
+                        $pagamentoService->estornarPagamento($pagamento->id_transacao_gateway);
 
-            // Faz a transferência interna no Asaas (Da sua conta para a subconta)
-            $responseTransfer = Http::withHeaders([
-                'access_token' => env('ASAAS_API_KEY'),
-            ])->post(env('ASAAS_URL') . "/transfers", [
-                'value' => $pagamento->valor_prestador, // Envia apenas os 88%
-                'walletId' => $walletId, // Destino do dinheiro
-                'description' => "Repasse do serviço/aluguel #" . ($pagamento->agendamento_id ?? 'N/A')
-            ]);
+                        $pagamento->update(['status' => 'estornado']);
+                        $aluguel->update(['status' => 'cancelado']);
 
-            if ($responseTransfer->successful()) {
-                $pagamento->update(['status_repasse' => 'repassado']);
-                $this->info("Repasse de R$ {$pagamento->valor_prestador} enviado para a carteira {$walletId}");
-            } else {
-                $this->error("Erro no repasse do Pagamento {$pagamento->id}: " . $responseTransfer->body());
-                Log::error("Erro Transferência Asaas: " . $responseTransfer->body());
+                        $provider = DB::table('providers')
+                            ->join('estabelecimento_usuario', 'providers.user_id', '=', 'estabelecimento_usuario.usuario_id')
+                            ->where('estabelecimento_usuario.estabelecimento_id', $pagamento->estabelecimento_id)
+                            ->select('providers.id')
+                            ->first();
+
+                        if ($provider) {
+                            DB::table('providers')->where('id', $provider->id)->decrement('saldo', $pagamento->valor_liquido);
+
+                            DB::table('extrato_providers')->insert([
+                                'provider_id'      => $provider->id,
+                                'usuario_id'       => $pagamento->usuario_id,
+                                'origem_type'      => 'App\Models\Aluguel',
+                                'origem_id'        => $aluguel->id,
+                                'tipo'             => 'estorno',
+                                'valor_bruto'      => $pagamento->valor,
+                                'taxa_plataforma'  => $pagamento->taxa,
+                                'valor_liquido'    => $pagamento->valor_liquido * -1,
+                                'descricao'        => 'Estorno automático: Reserva de item não usufruída após 3 dias',
+                                'status'           => 'estornado',
+                                'codigo_transacao' => $pagamento->id_transacao_gateway,
+                                'metodo_pagamento' => $pagamento->metodo_pagamento === 'cartao' ? 'cartao_credito' : $pagamento->metodo_pagamento,
+                                'created_at'       => now()
+                            ]);
+                        }
+                    });
+
+                    $this->info("Aluguel {$aluguel->id} estornado com sucesso.");
+                } catch (\Exception $e) {
+                    $this->error("Falha ao estornar Aluguel {$aluguel->id}: " . $e->getMessage());
+                    Log::error("Falha no estorno automático do aluguel #{$aluguel->id}: " . $e->getMessage());
+                }
             }
         }
 
         $this->info('Rotina financeira finalizada com sucesso!');
-    }
-
-    /**
-     * Função auxiliar para agendar o repasse para daqui a 7 dias quando o robô auto-conclui
-     */
-    private function liberarPagamentoParaRepasse($id, $tipo)
-    {
-        // Adapte a busca de acordo com o relacionamento que você usa
-        $pagamento = Pagamento::where($tipo === 'aluguel' ? 'aluguel_id' : 'agendamento_id', $id)->first();
-        
-        if ($pagamento && $pagamento->status_repasse === 'aguardando') {
-            $pagamento->update([
-                'status_repasse' => 'liberado',
-                'data_liberacao_repasse' => Carbon::today()->addDays(7)
-            ]);
-        }
     }
 }

@@ -13,7 +13,9 @@ import {
     ChevronRightIcon,
     ChartBarIcon,
     CreditCardIcon,
-    WalletIcon // <-- Ícone adicionado para a Carteira
+    WalletIcon, 
+    BanknotesIcon, 
+    CommandLineIcon // <-- Ícone adicionado para o Painel Admin Master
 } from '@heroicons/react/24/outline'; 
 
 export default function Dashboard({ auth, estabelecimentos = [], metricas = {} }) {
@@ -101,6 +103,18 @@ export default function Dashboard({ auth, estabelecimentos = [], metricas = {} }
                     </h3>
                     
                     <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                        
+                        {/* 👉 BOTÃO CONDICIONAL: APARECE APENAS SE FOR ADMIN */}
+                        {(auth?.user?.papel === 'admin' || auth?.user?.role === 'admin') && (
+                            <Link 
+                                href={route('admin.financeiro.index')} 
+                                className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 border border-transparent text-sm font-semibold text-white rounded-xl hover:bg-indigo-700 transition shadow-sm"
+                            >
+                                <CommandLineIcon className="w-4 h-4 text-indigo-200" />
+                                Painel Master
+                            </Link>
+                        )}
+
                         <button className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-700 dark:text-gray-200 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition shadow-sm">
                             <UserGroupIcon className="w-4 h-4 text-gray-500" />
                             Equipe
@@ -111,16 +125,23 @@ export default function Dashboard({ auth, estabelecimentos = [], metricas = {} }
                             className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-700 dark:text-gray-200 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition shadow-sm"
                         >
                             <CreditCardIcon className="w-4 h-4 text-gray-500" />
-                            Financeiro
+                            Contas
                         </Link>
 
-                        {/* --- NOVO BOTÃO DE CARTEIRA ADICIONADO AQUI --- */}
                         <Link 
                             href="/carteira" 
                             className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-700 dark:text-gray-200 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition shadow-sm"
                         >
                             <WalletIcon className="w-4 h-4 text-gray-500" />
                             Carteira
+                        </Link>
+
+                        <Link 
+                            href={route('provider.financeiro')} 
+                            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-700 dark:text-gray-200 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition shadow-sm"
+                        >
+                            <BanknotesIcon className="w-4 h-4 text-emerald-600" />
+                            Extrato Geral
                         </Link>
 
                         <Link 

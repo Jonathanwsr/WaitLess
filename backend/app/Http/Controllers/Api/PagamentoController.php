@@ -7,7 +7,7 @@ use Illuminate\Http\Request;
 use App\Models\Agendamento;
 use App\Models\Pagamento;
 use App\Models\Aluguel;
-use Illuminate\Support\Facades\Http;
+use App\Services\PagamentoService; // Injetando o Service contábil unificado
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
@@ -15,111 +15,73 @@ use Illuminate\Support\Facades\Auth;
 class PagamentoController extends Controller
 {
     /**
-     * 1. CRIAÇÃO DA COBRANÇA (Suporta PIX, BOLETO e CARTÃO PARCELADO)
+     * 1. CRIAÇÃO DA COBRANÇA (Suporta PIX, BOLETO, CARTÃO e PAGAMENTO NO LOCAL)
      */
-    public function processar(Request $request)
+    public function processar(Request $request, PagamentoService $pagamentoService)
     {
         $request->validate([
-            'agendamento_id' => 'required|exists:agendamentos,id',
-            'asaas_customer_id' => 'required|string',
-            'metodo_pagamento' => 'required|in:pix,boleto,cartao',
-            'parcelas' => 'nullable|integer|min:1|max:12'
+            'agendamento_id'    => 'required|exists:agendamentos,id',
+            'asaas_customer_id' => 'required_unless:metodo_pagamento,local|string', // Opcional se for pagamento no local
+            'metodo_pagamento'  => 'required|in:pix,boleto,cartao,local', // Adicionado 'local'
+            'parcelas'          => 'nullable|integer|min:1|max:12'
         ]);
 
-        $agendamento = Agendamento::findOrFail($request->agendamento_id);
-        $valorTotal = $agendamento->valor_total; 
-
-        // Calcula os valores da Custódia (12% Plataforma / 88% Prestador)
-        $taxaPlataforma = $valorTotal * 0.12; 
-        $valorPrestador = $valorTotal - $taxaPlataforma; 
-
-        // Mapeia o método enviado pelo seu App para o padrão aceito pelo Asaas
-        $billingTypeMap = [
-            'pix' => 'PIX',
-            'boleto' => 'BOLETO',
-            'cartao' => 'CREDIT_CARD'
-        ];
-        $billingTypeAsaas = $billingTypeMap[$request->metodo_pagamento];
+        $agendamento = Agendamento::with(['servico', 'estabelecimento'])->findOrFail($request->agendamento_id);
 
         try {
-            // Monta o payload básico para o Asaas
-            $payloadAsaas = [
-                'customer' => $request->asaas_customer_id, 
-                'billingType' => $billingTypeAsaas,
-                'dueDate' => date('Y-m-d'),
-                'description' => 'Reserva/Serviço #' . $agendamento->id,
-            ];
+            // =========================================================================
+            // 👉 CASO 1: O CLIENTE ESCOLHEU PAGAR PRESENCIALMENTE (NO LOCAL)
+            // =========================================================================
+            if ($request->metodo_pagamento === 'local') {
+                $codigoPin = str_pad(mt_rand(0, 9999), 4, '0', STR_PAD_LEFT);
 
-            // Se for cartão e houver solicitação de parcelamento
-            if ($request->metodo_pagamento === 'cartao' && $request->input('parcelas', 1) > 1) {
-                $payloadAsaas['installmentCount'] = $request->parcelas;
-                $payloadAsaas['installmentValue'] = round($valorTotal / $request->parcelas, 2); // Exigência do Asaas
-            } else {
-                $payloadAsaas['value'] = $valorTotal;
+                $agendamento->update([
+                    'status_pagamento'   => 'local', 
+                    'status'             => 'confirmado', // Já entra pré-confirmado na fila
+                    'codigo_verificacao' => $codigoPin,
+                ]);
+
+                // Dispara e-mail via Brevo notificando sobre a confirmação para pagamento no local
+                $pagamentoService->enviarEmailNotificacao($agendamento, 'local');
+
+                return response()->json([
+                    'status'  => 'success',
+                    'message' => 'Reserva confirmada para pagamento diretamente no estabelecimento!',
+                    'metodo'  => 'local'
+                ]);
             }
 
-            // Chama a API do Asaas usando a função config() para evitar bugs de cache do .env
-            $response = Http::withHeaders([
-                'access_token' => config('services.asaas.key'),
-            ])->post(config('services.asaas.url') . '/payments', $payloadAsaas);
+            // =========================================================================
+            // 👉 CASO 2: PAGAMENTO ONLINE (PIX, BOLETO OU CARTÃO) VIA SERVICE CENTRAL
+            // =========================================================================
+            // Chama o Service que trata a Custódia, cria a subconta, o split e envia o e-mail pendente
+            $resultadoAsaas = $pagamentoService->criarCobrancaAsaas(
+                $agendamento,
+                $request->metodo_pagamento,
+                $request->asaas_customer_id,
+                $request->input('parcelas', 1)
+            );
 
-            if ($response->failed()) {
-                Log::error("Falha ao gerar cobrança no Asaas", ['response' => $response->json()]);
-                return response()->json(['error' => 'Falha ao gerar cobrança no gateway.'], 400);
-            }
-
-            $asaasPayment = $response->json();
-
-            // Registra a movimentação financeira inicial na sua nova estrutura de tabela
-            $pagamento = Pagamento::create([
-                'usuario_id'             => $agendamento->usuario_id ?? Auth::id(), 
-                'estabelecimento_id'     => $agendamento->estabelecimento_id,       
-                'agendamento_id'         => $agendamento->id,
-                'gateway_pagamento'      => 'Asaas',
-                'id_transacao_gateway'   => $asaasPayment['id'], 
-                'valor'                  => $valorTotal,
-                'taxa'                   => $taxaPlataforma,
-                'valor_liquido'          => $valorPrestador,
-                'status'                 => 'pendente',
-                'metodo_pagamento'       => $request->metodo_pagamento,
-                'data_pagamento'         => null,
-            ]);
-
-            // Geração antecipada do PIN de Segurança
-            $codigoPin = str_pad(mt_rand(0, 9999), 4, '0', STR_PAD_LEFT);
-
-            $agendamento->update([
-                'status_pagamento' => 'aguardando_pagamento', 
-                'codigo_verificacao' => $codigoPin,
-                'pagamento_id' => $pagamento->id // Vincula o id do pagamento
-            ]);
-
+            // Retorna o payload completo incluindo a invoice_url que o frontend usará para abrir a página
             return response()->json([
                 'status'      => 'success',
                 'message'     => 'Cobrança gerada com sucesso!',
-                'payment_id'  => $asaasPayment['id'],
-                'pix_qr_code' => $asaasPayment['pixQrCode'] ?? null, 
-                'invoice_url' => $asaasPayment['invoiceUrl'] 
+                'payment_id'  => $resultadoAsaas['payment_id'],
+                'pix_qr_code' => $resultadoAsaas['pix_qr_code'], 
+                'invoice_url' => $resultadoAsaas['invoice_url'] // Link oficial de redirecionamento
             ]);
 
         } catch (\Exception $e) {
             Log::error("Erro no método processar do PagamentoController: " . $e->getMessage());
-            return response()->json([
-                'status'  => 'error',
-                'message' => 'Erro interno ao processar o pagamento.'
-            ], 500);
+            return response()->json(['error' => 'Erro interno ao processar a cobrança: ' . $e->getMessage()], 500);
         }
     }
 
     /**
-     * 2. WEBHOOK DO ASAAS (Blindado com Transações, Logs e Atualização de Aluguéis/Agendamentos)
+     * 2. WEBHOOK DO ASAAS - Sincronização, Fidelidade e Notificação de Confirmação de PIX/Cartão
      */
-    /**
-     * WEBHOOK DO ASAAS - Atualização Automática de Status
-     */
-    public function webhookAsaas(Request $request)
+    public function webhookAsaas(Request $request, PagamentoService $pagamentoService)
     {
-        // Validação de segurança com o token do config
         $authToken = $request->header('asaas-access-token');
         if ($authToken && $authToken !== config('services.asaas.webhook_token')) {
             return response()->json(['error' => 'Não autorizado'], 401);
@@ -128,7 +90,6 @@ class PagamentoController extends Controller
         $event = $request->input('event');
         $paymentData = $request->input('payment');
 
-        // Busca o pagamento local usando o ID do Asaas
         $pagamento = Pagamento::where('id_transacao_gateway', $paymentData['id'])->first();
 
         if (!$pagamento) {
@@ -136,12 +97,20 @@ class PagamentoController extends Controller
         }
 
         try {
-            DB::transaction(function () use ($pagamento, $event, $paymentData) {
+            DB::transaction(function () use ($pagamento, $event, $paymentData, $pagamentoService) {
                 
-                // Mapeia o que fazer de acordo com o evento enviado pelo Asaas
+                $metodoExtrato = match ($pagamento->metodo_pagamento) {
+                    'cartao' => 'cartao_credito',
+                    'pix'    => 'pix',
+                    'boleto' => 'boleto',
+                    default  => 'outro'
+                };
+
+                $origemType = $pagamento->agendamento_id ? 'App\Models\Agendamento' : ($pagamento->aluguel_id ? 'App\Models\Aluguel' : null);
+                $origemId = $pagamento->agendamento_id ?? $pagamento->aluguel_id;
+
                 switch ($event) {
                     
-                    // 1. DINHEIRO ENTROU (PIX recebido, Boleto compensado ou Cartão aprovado)
                     case 'PAYMENT_RECEIVED':
                     case 'PAYMENT_CONFIRMED':
                         if ($pagamento->status !== 'pago') {
@@ -150,7 +119,7 @@ class PagamentoController extends Controller
                                 'data_pagamento' => now()
                             ]);
 
-                            // Atualiza Agendamento (Serviço)
+                            $agendamento = null;
                             if ($pagamento->agendamento_id) {
                                 $agendamento = Agendamento::find($pagamento->agendamento_id);
                                 if ($agendamento) {
@@ -159,16 +128,14 @@ class PagamentoController extends Controller
                                         'status' => 'confirmado' 
                                     ]);
                                 }
-                            } 
-                            // Atualiza Aluguel (Reserva)
-                            elseif ($pagamento->aluguel_id) {
-                                $aluguel = \App\Models\Aluguel::find($pagamento->aluguel_id);
-                                if ($aluguel) {
-                                    $aluguel->update(['status' => 'pago']);
+                            } elseif ($pagamento->aluguel_id) {
+                                $agendamento = Aluguel::find($pagamento->aluguel_id);
+                                if ($agendamento) {
+                                    $agendamento->update(['status' => 'pago']);
                                 }
                             }
 
-                            // Alimenta o saldo acumulado do Provedor (os 88% do split)
+                            // Incrementa saldo temporário do Provedor
                             $provider = DB::table('providers')
                                 ->join('users', 'providers.user_id', '=', 'users.id')
                                 ->join('estabelecimento_usuario', 'users.id', '=', 'estabelecimento_usuario.usuario_id')
@@ -178,58 +145,111 @@ class PagamentoController extends Controller
 
                             if ($provider) {
                                 DB::table('providers')->where('id', $provider->id)->increment('saldo', $pagamento->valor_liquido);
+
+                                DB::table('extrato_providers')->insert([
+                                    'provider_id'      => $provider->id,
+                                    'usuario_id'       => $pagamento->usuario_id,
+                                    'origem_type'      => $origemType,
+                                    'origem_id'        => $origemId,
+                                    'tipo'             => 'credito',
+                                    'valor_bruto'      => $pagamento->valor,
+                                    'taxa_plataforma'  => $pagamento->taxa,
+                                    'valor_liquido'    => $pagamento->valor_liquido,
+                                    'descricao'        => $pagamento->agendamento_id ? 'Crédito por Serviço (Retido Custódia)' : 'Crédito por Locação (Retido Custódia)',
+                                    'status'           => 'pendente', // Retido na API do Asaas até validação do PIN
+                                    'codigo_transacao' => $paymentData['id'],
+                                    'metodo_pagamento' => $metodoExtrato,
+                                    'created_at'       => now()
+                                ]);
+                            }
+
+                            // Acumula pontos de fidelidade
+                            $pontosGanhos = floor($pagamento->valor); 
+                            if ($pontosGanhos > 0) {
+                                DB::table('historico_pontos')->insert([
+                                    'usuario_id' => $pagamento->usuario_id,
+                                    'estabelecimento_id' => $pagamento->estabelecimento_id,
+                                    'agendamento_id' => $pagamento->agendamento_id,
+                                    'tipo' => 'ganho',
+                                    'descricao' => 'Pontos acumulados em pagamento online',
+                                    'amount' => $pontosGanhos,
+                                    'created_at' => now()
+                                ]);
+
+                                DB::table('pontos_usuario_estabelecimento')->updateOrInsert(
+                                    ['usuario_id' => $pagamento->usuario_id, 'estabelecimento_id' => $pagamento->estabelecimento_id],
+                                    ['total_pontos' => DB::raw("total_pontos + {$pontosGanhos}"), 'updated_at' => now(), 'created_at' => now()]
+                                );
+                            }
+
+                            // =========================================================================
+                            // 👉 NOVO: DISPARA NOTIFICAÇÃO DE CONFIRMAÇÃO DE PAGAMENTO AUTOMÁTICA
+                            // =========================================================================
+                            if ($agendamento) {
+                                $pagamentoService->enviarEmailNotificacao(
+                                    $agendamento, 
+                                    'pago', 
+                                    null, 
+                                    $agendamento->codigo_verificacao
+                                );
                             }
                         }
                         break;
 
-                    // 2. CLIENTE COMPROU POR CARTÃO PARCELADO E FOI REPROVADO OU DEU ERRO
-                    case 'PAYMENT_DUNNING_RECEIVED':
-                    case 'PAYMENT_CHARGEBACK_REQUESTED':
-                        $pagamento->update(['status' => 'contestação_erro']);
-                        break;
-
-                    // 3. O BOLETO OU PIX VENCEU E O CLIENTE NÃO PAGOU NO PRAZO
                     case 'PAYMENT_OVERDUE':
                         $pagamento->update(['status' => 'vencido']);
-                        
                         if ($pagamento->agendamento_id) {
                             Agendamento::where('id', $pagamento->agendamento_id)->update(['status' => 'cancelado', 'status_pagamento' => 'cancelado']);
                         } elseif ($pagamento->aluguel_id) {
-                            \App\Models\Aluguel::where('id', $pagamento->aluguel_id)->update(['status' => 'cancelado']);
+                            Aluguel::where('id', $pagamento->aluguel_id)->update(['status' => 'cancelado']);
                         }
                         break;
 
-                    // 4. O PAGAMENTO FOI DEVOLVIDO/REEMBOLSADO (ESTORNADO) VIA PAINEL OU SERVIÇO
                     case 'PAYMENT_REFUNDED':
-                        $pagamento->update(['status' => 'estornado']);
-                        
-                        if ($pagamento->agendamento_id) {
-                            Agendamento::where('id', $pagamento->agendamento_id)->update(['status' => 'cancelado', 'status_pagamento' => 'estornado']);
-                        } elseif ($pagamento->aluguel_id) {
-                            \App\Models\Aluguel::where('id', $pagamento->aluguel_id)->update(['status' => 'cancelado']);
-                        }
+                        if ($pagamento->status !== 'estornado') {
+                            $pagamento->update(['status' => 'estornado']);
+                            
+                            if ($pagamento->agendamento_id) {
+                                Agendamento::where('id', $pagamento->agendamento_id)->update(['status' => 'cancelado', 'status_pagamento' => 'estornado']);
+                            } elseif ($pagamento->aluguel_id) {
+                                Aluguel::where('id', $pagamento->aluguel_id)->update(['status' => 'cancelado']);
+                            }
 
-                        // Se o dinheiro já tinha entrado no saldo do provedor antes, deduz o estorno do saldo dele
-                        $provider = DB::table('providers')
-                            ->join('users', 'providers.user_id', '=', 'users.id')
-                            ->join('estabelecimento_usuario', 'users.id', '=', 'estabelecimento_usuario.usuario_id')
-                            ->where('estabelecimento_usuario.estabelecimento_id', $pagamento->estabelecimento_id)
-                            ->select('providers.id')
-                            ->first();
+                            $provider = DB::table('providers')
+                                ->join('users', 'providers.user_id', '=', 'users.id')
+                                ->join('estabelecimento_usuario', 'users.id', '=', 'estabelecimento_usuario.usuario_id')
+                                ->where('estabelecimento_usuario.estabelecimento_id', $pagamento->estabelecimento_id)
+                                ->select('providers.id')
+                                ->first();
 
-                        if ($provider) {
-                            DB::table('providers')->where('id', $provider->id)->decrement('saldo', $pagamento->valor_liquido);
+                            if ($provider) {
+                                DB::table('providers')->where('id', $provider->id)->decrement('saldo', $pagamento->valor_liquido);
+
+                                DB::table('extrato_providers')->insert([
+                                    'provider_id'      => $provider->id,
+                                    'usuario_id'       => $pagamento->usuario_id,
+                                    'origem_type'      => $origemType,
+                                    'origem_id'        => $origemId,
+                                    'tipo'             => 'estorno',
+                                    'valor_bruto'      => $pagamento->valor,
+                                    'taxa_plataforma'  => $pagamento->taxa,
+                                    'valor_liquido'    => $pagamento->valor_liquido * -1,
+                                    'descricao'        => 'Estorno de valores de pagamento online',
+                                    'status'           => 'estornado',
+                                    'codigo_transacao' => $paymentData['id'],
+                                    'metodo_pagamento' => $metodoExtrato,
+                                    'created_at'       => now()
+                                ]);
+                            }
                         }
                         break;
 
-                    // 5. A COBRANÇA FOI APENAS GERADA (IGUALE AO SEU ERRO ANTERIOR, EVITA TIMEOUT)
                     case 'PAYMENT_CREATED':
-                        // Apenas ignora e responde 200 rápido pro Asaas
                         break;
                 }
             });
 
-            return response()->json(['status' => 'success', 'message' => 'Status sincronizado com sucesso.'], 200);
+            return response()->json(['status' => 'success'], 200);
 
         } catch (\Exception $e) {
             Log::error("Erro ao sincronizar webhook de pagamento: " . $e->getMessage());

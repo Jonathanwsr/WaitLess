@@ -12,6 +12,9 @@ use Exception;
 
 class ProviderController extends Controller
 {
+    /**
+     * Cadastrar um novo provedor (Integração Asaas + Banco Local)
+     */
     public function store(Request $request)
     {
         // 1. Validação
@@ -171,6 +174,79 @@ class ProviderController extends Controller
 
             return response()->json([
                 'error' => 'Ocorreu um erro inesperado ao processar sua solicitação. Por favor, tente novamente mais tarde.'
+            ], 500);
+        }
+    }
+
+    /**
+     * Obter as informações do provedor para o usuário logado.
+     */
+    public function show(Request $request)
+    {
+        try {
+            // Busca o provider associado ao usuário autenticado
+            $provider = Provider::where('user_id', $request->user()->id)->first();
+
+            // Se não encontrar nada, não quebra! Retorna um estado vazio estruturado
+            if (!$provider) {
+                return response()->json([
+                    'has_profile' => false,
+                    'provider' => null
+                ], 200);
+            }
+
+            // Se encontrar, retorna todos os campos da tabela
+            return response()->json([
+                'has_profile' => true,
+                'provider' => $provider
+            ], 200);
+
+        } catch (Exception $e) {
+            Log::error("Erro ao buscar perfil de provedor: " . $e->getMessage());
+
+            return response()->json([
+                'error' => 'Ocorreu um erro interno ao carregar as suas informações financeiras.'
+            ], 500);
+        }
+    }
+
+    /**
+     * Atualizar apenas as informações da Chave PIX do provedor logado.
+     */
+    public function update(Request $request)
+    {
+        // 1. Validação restrita apenas aos campos de PIX
+        $validated = $request->validate([
+            'pix_key_type' => 'required|in:CPF,CNPJ,EMAIL,PHONE,RANDOM',
+            'pix_key' => ['required', 'string', 'max:255', 'regex:/^[^<>]+$/'], 
+        ]);
+
+        try {
+            // 2. Localiza o provedor do usuário autenticado
+            $provider = Provider::where('user_id', $request->user()->id)->first();
+
+            if (!$provider) {
+                return response()->json([
+                    'error' => 'Perfil de recebimento não encontrado para este usuário.'
+                ], 404);
+            }
+
+            // 3. Atualiza exclusivamente os dados do PIX
+            $provider->update([
+                'pix_key_type' => $validated['pix_key_type'],
+                'pix_key' => trim($validated['pix_key']),
+            ]);
+
+            return response()->json([
+                'message' => 'Chave PIX atualizada com sucesso!',
+                'provider' => $provider
+            ], 200);
+
+        } catch (Exception $e) {
+            Log::error("Erro ao atualizar chave PIX do provedor: " . $e->getMessage());
+
+            return response()->json([
+                'error' => 'Ocorreu um erro interno ao tentar atualizar sua chave PIX.'
             ], 500);
         }
     }

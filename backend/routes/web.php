@@ -16,8 +16,10 @@ use App\Http\Controllers\Api\ProviderController;
 use App\Http\Controllers\Api\CupomController;
 use App\Http\Controllers\Api\FilaController;
 use App\Http\Controllers\Api\FuncionarioAreaController;
+use App\Http\Controllers\Api\AdminFinanceiroController;
 use App\Services\MercadoPagoService; 
 use App\Http\Controllers\Api\MensagemController; 
+use App\Http\Controllers\Api\ExtratoProviderController;
 use App\Http\Controllers\Api\AssinaturaController;
 use App\Http\Middleware\CheckAdmin;
 use App\Http\Controllers\Api\ClienteCupomController;
@@ -26,6 +28,7 @@ use App\Http\Controllers\Api\FuncionarioController;
 use App\Http\Controllers\Api\ItemAluguelController;
 use App\Http\Controllers\Api\AvaliacaoController;
 use App\Http\Controllers\Api\ContratoController;
+use App\Http\Controllers\Api\TravelAssistantController;
 use Illuminate\Foundation\Application; 
 use Illuminate\Support\Facades\Route;  
 use Inertia\Inertia;
@@ -79,10 +82,28 @@ Route::post('/assinaturas/nova', [App\Http\Controllers\Api\AssinaturaController:
 
 
 
-Route::post('/api/providers', [ProviderController::class, 'store'])->name('provider.store');
+Route::get('/api/provider', [ProviderController::class, 'show'])->name('provider.show');
+    
+    // 2. Rota POST: Salva ou atualiza o perfil (Singular!)
+    Route::post('/api/provider', [ProviderController::class, 'store'])->name('provider.store');
+
+    // troca a chave pix do provider
+
+    Route::put('/api/provider', [ProviderController::class, 'update'])->name('provider.update');
     
     // Dashboard
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+
+    Route::prefix('admin/financeiro')->group(function () {
+        // Tela principal para monitorar tabelas de jobs, saldos e failed_jobs
+        Route::get('/painel', [AdminFinanceiroController::class, 'index'])->name('admin.financeiro.index');
+        
+        // Ação do botão de clique para forçar o PIX do proprietário na hora
+        Route::post('/repassar-manual/{id}', [AdminFinanceiroController::class, 'repassarManual'])->name('admin.financeiro.repassar');
+        
+        // Ação do formulário para disparar e-mails customizados via Brevo
+        Route::post('/enviar-email', [AdminFinanceiroController::class, 'enviarEmailPersonalizado'])->name('admin.financeiro.email');
+    });
 
     // Perfil
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
@@ -100,6 +121,17 @@ Route::post('/api/providers', [ProviderController::class, 'store'])->name('provi
         Route::middleware('auth:sanctum')->get('/estabelecimentos/proximos', [DashboardController::class, 'getNearby']);
         // routes/web.php
        Route::get('/home', [DashboardController::class, 'showHome'])->name('home'); // 👈 name('home') minúsculo
+
+
+       
+
+Route::middleware(['auth'])->group(function () {
+    // Rota da tela do Dashboard Financeiro Completo
+    Route::get('/financeiro/extrato', [ExtratoProviderController::class, 'index'])->name('provider.financeiro');
+    
+    // Rota para disparar downloads de relatórios por período em planilhas Excel (CSV)
+    Route::get('/financeiro/extrato/exportar', [ExtratoProviderController::class, 'exportar'])->name('provider.financeiro.export');
+});
 
     // Estabelecimentos Menssagens
 
@@ -156,6 +188,29 @@ Route::get('/estabelecimentos/{estabelecimento}/fila', [AgendamentoController::c
         ->name('catalogo.itens.destroy');
 
 
+
+        Route::prefix('api')->group(function () {
+
+    // Rota Aberta de Busca Inteligente (Aceita busca textual ou coordenadas via GET)
+    // Ex de uso por busca escrita: /api/travel-assistant/search?busca=Maceió&dias=5&pessoas=2
+    // Ex de uso por GPS/Coordenadas: /api/travel-assistant/search?latitude=-9.66&longitude=-35.70&raio_km=15&dias=3
+    Route::get('/travel-assistant/search', [TravelAssistantController::class, 'searchDestination'])->name('api.travel.search');
+
+    // Rotas Privadas (Necessitam de Usuário Logado para Criar Viagens e Convidar Amigos)
+    Route::middleware('auth')->group(function () {
+        
+        // Listar todas as viagens do usuário (criadas por ele ou convidado)
+        Route::get('/viagens', [TravelAssistantController::class, 'listarMinhasViagens'])->name('api.viagens.index');
+        
+        // Criar uma nova viagem com orçamento, destino e gastos
+        Route::post('/viagens', [TravelAssistantController::class, 'criarViagem'])->name('api.viagens.store');
+        
+        // Convidar colaborador para planejar junto por email
+        Route::post('/viagens/{viagemId}/adicionar-amigo', [TravelAssistantController::class, 'adicionarMembroPorEmail'])->name('api.viagens.add-membro');
+    });
+     });
+
+
     //Detalhes cliente 
     Route::middleware(['auth'])->group(function () {
     // Rota para ver os detalhes do cliente
@@ -173,6 +228,12 @@ Route::get('/estabelecimentos/{estabelecimento}/fila', [AgendamentoController::c
   // Tela de Contratos do Lojista
     Route::get('/estabelecimentos/{estabelecimento}/contratos', [ContratoController::class, 'index'])
         ->name('estabelecimentos.contratos');
+
+        // ver conta da asass
+        Route::get('/provider', [ProviderController::class, 'show']);
+    
+    // Rota POST para salvar as informações enviadas (o método que você já tinha)
+    Route::post('/provider', [ProviderController::class, 'store']);
 
     // Salvar e Editar os Textos dos Modelos
     Route::post('/estabelecimentos/{estabelecimento}/contratos/template', [ContratoController::class, 'storeTemplate'])
@@ -301,6 +362,8 @@ Route::get('/estabelecimentos/{estabelecimento}/agenda-equipe', [App\Http\Contro
     Route::put('/funcionarios/{funcionario}', [FuncionarioController::class, 'update'])->name('funcionarios.update');
     Route::delete('/funcionarios/{funcionario}', [FuncionarioController::class, 'destroy'])->name('funcionarios.destroy');
      Route::get('/funcionarios', [FuncionarioController::class, 'index'])->name('funcionarios.index');
+
+     Route::get('/admin/dashboard-geral', [AdminFinanceiroController::class, 'obterDadosGeraisAdmin']);
 
      // Fila e Configurações (Aninhadas em Estabelecimentos)
     Route::get('/estabelecimentos/{estabelecimento}/fila', [EstabelecimentoController::class, 'fila'])->name('estabelecimentos.fila');
