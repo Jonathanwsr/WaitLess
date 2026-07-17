@@ -7,7 +7,7 @@ use App\Models\Pagamento;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail; // Adicionado para envio de e-mails
+use Illuminate\Support\Facades\Mail; 
 
 class PagamentoService
 {
@@ -97,7 +97,7 @@ class PagamentoService
             ]);
         }
 
-        // 👉 DISPARA O E-MAIL DE PAGAMENTO PENDENTE
+        // 👉 DISPARA O E-MAIL DE PAGAMENTO PENDENTE (Apenas Cliente)
         $this->enviarEmailNotificacao($agendamento, 'pendente', $asaasPayment['invoiceUrl'], $pin);
 
         return [
@@ -122,11 +122,21 @@ class PagamentoService
         return true;
     }
 
-    public function estornarPagamento($idTransacaoGateway)
+    /**
+     * 👉 ESTORNO DE PAGAMENTO (Suporta estorno parcial para retenção de taxas)
+     */
+    public function estornarPagamento($idTransacaoGateway, $valorEstorno = null)
     {
+        $payload = [];
+        
+        // Se foi passado um valor específico (menor que o total), manda pro Asaas
+        if ($valorEstorno) {
+            $payload['value'] = round($valorEstorno, 2);
+        }
+
         $response = Http::withHeaders([
             'access_token' => config('services.asaas.key'),
-        ])->post(config('services.asaas.url') . "/payments/{$idTransacaoGateway}/refund");
+        ])->post(config('services.asaas.url') . "/payments/{$idTransacaoGateway}/refund", $payload);
 
         if ($response->failed()) {
             Log::error("Erro ao estornar pagamento no Asaas", ['resposta' => $response->json()]);
@@ -172,56 +182,107 @@ class PagamentoService
     }
 
     /**
-     * 👉 SISTEMA CENTRAL DE NOTIFICAÇÕES POR E-MAIL PARA O CLIENTE
+     * 👉 SISTEMA CENTRAL DE NOTIFICAÇÕES POR E-MAIL (CLIENTE E PROPRIETÁRIO)
      */
     public function enviarEmailNotificacao($agendamento, $statusPagamento, $linkAsaas = null, $pin = null)
     {
-        // Garante que temos os dados do cliente
-        $cliente = DB::table('users')->where('id', $agendamento->usuario_id ?? $agendamento->locatario_id)->first();
+        $isAgendamento = isset($agendamento->servico_id);
+
+        // 1. DADOS DO CLIENTE
+        $cliente = DB::table('users')->where('id', $isAgendamento ? $agendamento->usuario_id : $agendamento->locatario_id)->first();
         if (!$cliente || !$cliente->email) return;
 
-        $nomeServico = $agendamento->servico->nome ?? 'sua reserva';
-        $dataStr = date('d/m/Y', strtotime($agendamento->data_agendamento ?? $agendamento->data_inicio));
-        $horaStr = substr($agendamento->hora_agendamento ?? $agendamento->hora_inicio, 0, 5);
+        // 2. DADOS DO ESTABELECIMENTO E PROPRIETÁRIO
+        $estabelecimentoNome = DB::table('estabelecimentos')->where('id', $agendamento->estabelecimento_id)->value('nome') ?? 'WaitLess';
+        
+        // Busca o email do dono do estabelecimento (admin/proprietario)
+        $dono = DB::table('estabelecimento_usuario')
+            ->join('users', 'estabelecimento_usuario.usuario_id', '=', 'users.id')
+            ->where('estabelecimento_usuario.estabelecimento_id', $agendamento->estabelecimento_id)
+            ->whereIn('users.papel', ['admin', 'proprietario', 'socio'])
+            ->select('users.email', 'users.name')
+            ->first();
 
-        $assunto = "Atualização da sua reserva na WaitLess";
-        $mensagem = "Olá, {$cliente->name}!\n\n";
+        // 3. VARIÁVEIS DO SERVIÇO/RESERVA
+        $nomeServico = $isAgendamento ? ($agendamento->servico->nome ?? 'Serviço') : 'Locação/Reserva';
+        $dataStr = date('d/m/Y', strtotime($isAgendamento ? $agendamento->data_agendamento : $agendamento->data_inicio));
+        $horaStr = substr($isAgendamento ? $agendamento->hora_agendamento : $agendamento->hora_inicio, 0, 5);
+        $valorBrutoStr = number_format($agendamento->valor_final ?? $agendamento->valor_total, 2, ',', '.');
+        $pinSeguranca = $pin ?? $agendamento->codigo_verificacao;
+
+        // ==========================================
+        // TEXTOS PARA O CLIENTE
+        // ==========================================
+        $assuntoCliente = "Atualização da sua reserva - {$estabelecimentoNome}";
+        $mensagemCliente = "Olá, {$cliente->name}!\n\n";
 
         switch ($statusPagamento) {
             case 'pendente':
-                $assunto = "Ação Necessária: Pague sua reserva WaitLess";
-                $mensagem .= "Sua reserva para o serviço '{$nomeServico}' no dia {$dataStr} às {$horaStr} foi gerada com sucesso.\n\n";
-                $mensagem .= "Para confirmar seu agendamento, realize o pagamento acessando a fatura oficial no link abaixo:\n";
-                $mensagem .= "👉 {$linkAsaas}\n\n";
-                if ($pin) {
-                    $mensagem .= "O seu PIN de segurança para apresentar no balcão é: {$pin}\n\n";
-                }
+                $assuntoCliente = "Ação Necessária: Pague sua reserva na {$estabelecimentoNome}";
+                $mensagemCliente .= "Sua reserva de '{$nomeServico}' no dia {$dataStr} às {$horaStr} foi separada com sucesso!\n\n";
+                $mensagemCliente .= "Para garantir sua vaga, efetue o pagamento de R$ {$valorBrutoStr} pelo link seguro oficial abaixo:\n";
+                $mensagemCliente .= "👉 {$linkAsaas}\n\n";
+                if ($pinSeguranca) $mensagemCliente .= "Seu PIN de segurança no balcão será: {$pinSeguranca}\n\n";
                 break;
 
             case 'pago':
-                $assunto = "Pagamento Confirmado! Reserva Garantida";
-                $mensagem .= "Recebemos o seu pagamento referente ao serviço '{$nomeServico}' no dia {$dataStr} às {$horaStr}.\n\n";
-                $mensagem .= "Sua reserva está 100% confirmada. Te esperamos no local!\n\n";
-                if ($pin) {
-                    $mensagem .= "Não esqueça o seu PIN de segurança: {$pin}\n\n";
-                }
+                $assuntoCliente = "Pagamento Confirmado! Reserva Garantida";
+                $mensagemCliente .= "Recebemos o seu pagamento de R$ {$valorBrutoStr} referente à '{$nomeServico}' no dia {$dataStr} às {$horaStr}.\n\n";
+                $mensagemCliente .= "Sua reserva está 100% confirmada. Te esperamos no local!\n\n";
+                if ($pinSeguranca) $mensagemCliente .= "Guarde o seu PIN de atendimento: {$pinSeguranca}\n\n";
                 break;
 
             case 'local':
-                $assunto = "Reserva Confirmada (Pagamento no Local)";
-                $mensagem .= "Sua reserva para o serviço '{$nomeServico}' no dia {$dataStr} às {$horaStr} foi confirmada!\n\n";
-                $mensagem .= "Você escolheu a opção de pagar no estabelecimento. Lembre-se de chegar com alguns minutos de antecedência.\n\n";
+                $assuntoCliente = "Reserva Confirmada (Pagar no Local)";
+                $mensagemCliente .= "Sua vaga para '{$nomeServico}' no dia {$dataStr} às {$horaStr} está confirmada!\n\n";
+                $mensagemCliente .= "Você optou por pagar o valor de R$ {$valorBrutoStr} diretamente no estabelecimento. Chegue com alguns minutos de antecedência.\n\n";
+                if ($pinSeguranca) $mensagemCliente .= "Seu PIN de atendimento é: {$pinSeguranca}\n\n";
                 break;
         }
+        $mensagemCliente .= "Equipe WaitLess";
 
-        $mensagem .= "Equipe WaitLess";
+        // ==========================================
+        // TEXTOS PARA O PROPRIETÁRIO/LOJISTA
+        // ==========================================
+        $assuntoDono = "";
+        $mensagemDono = "";
 
+        if ($dono && in_array($statusPagamento, ['local', 'pago'])) {
+            $mensagemDono = "Olá, {$dono->name}. O sistema WaitLess tem uma nova atualização para você:\n\n";
+
+            if ($statusPagamento === 'local') {
+                $assuntoDono = "💸 Nova Reserva (Pagar no Balcão) - {$dataStr}";
+                $mensagemDono .= "O cliente {$cliente->name} acabou de agendar '{$nomeServico}' para o dia {$dataStr} às {$horaStr}.\n";
+                $mensagemDono .= "Método escolhido: Pagar no Local.\n";
+                $mensagemDono .= "Valor a ser cobrado no balcão: R$ {$valorBrutoStr}\n\n";
+            } 
+            elseif ($statusPagamento === 'pago') {
+                $assuntoDono = "✅ Pagamento Recebido via App - {$dataStr}";
+                $mensagemDono .= "Excelente notícia! O cliente {$cliente->name} pagou online R$ {$valorBrutoStr} pela reserva de '{$nomeServico}' no dia {$dataStr} às {$horaStr}.\n";
+                $mensagemDono .= "O valor já está protegido na sua carteira Asaas (Custódia). Ele será liberado para saque assim que o serviço for concluído no painel usando o PIN do cliente.\n\n";
+            }
+
+            $mensagemDono .= "Acesse o painel para mais detalhes.\nSucesso nas vendas!";
+        }
+
+        // ==========================================
+        // DISPARO SIMULTÂNEO (BREVO SMTP)
+        // ==========================================
         try {
-            Mail::raw($mensagem, function ($mail) use ($cliente, $assunto) {
-                $mail->to($cliente->email)->subject($assunto);
+            // Envia para o Cliente
+            Mail::raw($mensagemCliente, function ($mail) use ($cliente, $assuntoCliente) {
+                $mail->to($cliente->email)->subject($assuntoCliente);
             });
+
+            // Envia para o Dono (Apenas quando Confirmado/Local)
+            if ($dono && $mensagemDono !== "") {
+                Mail::raw($mensagemDono, function ($mail) use ($dono, $assuntoDono) {
+                    $mail->to($dono->email)->subject($assuntoDono);
+                });
+            }
+
         } catch (\Exception $e) {
-            Log::error("Erro ao enviar email para o cliente: " . $e->getMessage());
+            Log::error("Erro ao enviar emails de notificação (Brevo): " . $e->getMessage());
         }
     }
 }

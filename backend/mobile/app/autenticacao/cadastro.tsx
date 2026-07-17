@@ -47,9 +47,9 @@ export default function Cadastro() {
 
     try {
       // SUBSTITUA PELA URL DO SEU SERVIDOR/IP DA SUA MÁQUINA
-      const URL_API = 'http://192.168.1.100:8000/api/mobile/cadastro';
+     const API_URL = 'https://waitless-g1yc.onrender.com/api/mobile/cadastro';
 
-      const response = await fetch(URL_API, {
+      const response = await fetch(API_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

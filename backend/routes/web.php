@@ -204,6 +204,8 @@ Route::get('/estabelecimentos/{estabelecimento}/fila', [AgendamentoController::c
         
         // Criar uma nova viagem com orçamento, destino e gastos
         Route::post('/viagens', [TravelAssistantController::class, 'criarViagem'])->name('api.viagens.store');
+
+        Route::get('/assistente-viagem', [TravelAssistantController::class, 'searchDestination'])->name('travel-assistant.index');
         
         // Convidar colaborador para planejar junto por email
         Route::post('/viagens/{viagemId}/adicionar-amigo', [TravelAssistantController::class, 'adicionarMembroPorEmail'])->name('api.viagens.add-membro');

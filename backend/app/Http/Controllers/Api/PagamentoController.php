@@ -7,7 +7,7 @@ use Illuminate\Http\Request;
 use App\Models\Agendamento;
 use App\Models\Pagamento;
 use App\Models\Aluguel;
-use App\Services\PagamentoService; // Injetando o Service contábil unificado
+use App\Services\PagamentoService; 
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
@@ -21,8 +21,8 @@ class PagamentoController extends Controller
     {
         $request->validate([
             'agendamento_id'    => 'required|exists:agendamentos,id',
-            'asaas_customer_id' => 'required_unless:metodo_pagamento,local|string', // Opcional se for pagamento no local
-            'metodo_pagamento'  => 'required|in:pix,boleto,cartao,local', // Adicionado 'local'
+            'asaas_customer_id' => 'required_unless:metodo_pagamento,local|string', 
+            'metodo_pagamento'  => 'required|in:pix,boleto,cartao,local', 
             'parcelas'          => 'nullable|integer|min:1|max:12'
         ]);
 
@@ -37,11 +37,11 @@ class PagamentoController extends Controller
 
                 $agendamento->update([
                     'status_pagamento'   => 'local', 
-                    'status'             => 'confirmado', // Já entra pré-confirmado na fila
+                    'status'             => 'confirmado', // Entra na fila para ser atendido
                     'codigo_verificacao' => $codigoPin,
                 ]);
 
-                // Dispara e-mail via Brevo notificando sobre a confirmação para pagamento no local
+                // Dispara e-mails simultâneos via Brevo (Cliente recebe o PIN, Dono recebe o aviso de reserva)
                 $pagamentoService->enviarEmailNotificacao($agendamento, 'local');
 
                 return response()->json([
@@ -52,9 +52,9 @@ class PagamentoController extends Controller
             }
 
             // =========================================================================
-            // 👉 CASO 2: PAGAMENTO ONLINE (PIX, BOLETO OU CARTÃO) VIA SERVICE CENTRAL
+            // 👉 CASO 2: PAGAMENTO ONLINE (PIX, BOLETO OU CARTÃO) VIA SERVICE
             // =========================================================================
-            // Chama o Service que trata a Custódia, cria a subconta, o split e envia o e-mail pendente
+            // O Service já cria a cobrança, divide o split (Custódia) e manda o E-mail Pendente
             $resultadoAsaas = $pagamentoService->criarCobrancaAsaas(
                 $agendamento,
                 $request->metodo_pagamento,
@@ -62,13 +62,12 @@ class PagamentoController extends Controller
                 $request->input('parcelas', 1)
             );
 
-            // Retorna o payload completo incluindo a invoice_url que o frontend usará para abrir a página
             return response()->json([
                 'status'      => 'success',
                 'message'     => 'Cobrança gerada com sucesso!',
                 'payment_id'  => $resultadoAsaas['payment_id'],
                 'pix_qr_code' => $resultadoAsaas['pix_qr_code'], 
-                'invoice_url' => $resultadoAsaas['invoice_url'] // Link oficial de redirecionamento
+                'invoice_url' => $resultadoAsaas['invoice_url'] 
             ]);
 
         } catch (\Exception $e) {
@@ -78,7 +77,7 @@ class PagamentoController extends Controller
     }
 
     /**
-     * 2. WEBHOOK DO ASAAS - Sincronização, Fidelidade e Notificação de Confirmação de PIX/Cartão
+     * 2. WEBHOOK DO ASAAS - Sincronização, Fidelidade e Notificações
      */
     public function webhookAsaas(Request $request, PagamentoService $pagamentoService)
     {
@@ -119,23 +118,24 @@ class PagamentoController extends Controller
                                 'data_pagamento' => now()
                             ]);
 
-                            $agendamento = null;
+                            $entidadeRelacionada = null;
+
                             if ($pagamento->agendamento_id) {
-                                $agendamento = Agendamento::find($pagamento->agendamento_id);
-                                if ($agendamento) {
-                                    $agendamento->update([
+                                $entidadeRelacionada = Agendamento::with('servico')->find($pagamento->agendamento_id);
+                                if ($entidadeRelacionada) {
+                                    $entidadeRelacionada->update([
                                         'status_pagamento' => 'pago_online',
                                         'status' => 'confirmado' 
                                     ]);
                                 }
                             } elseif ($pagamento->aluguel_id) {
-                                $agendamento = Aluguel::find($pagamento->aluguel_id);
-                                if ($agendamento) {
-                                    $agendamento->update(['status' => 'pago']);
+                                $entidadeRelacionada = Aluguel::find($pagamento->aluguel_id);
+                                if ($entidadeRelacionada) {
+                                    $entidadeRelacionada->update(['status' => 'pago']);
                                 }
                             }
 
-                            // Incrementa saldo temporário do Provedor
+                            // 1. Incrementa o saldo do Provedor (Fica pendente/bloqueado no extrato)
                             $provider = DB::table('providers')
                                 ->join('users', 'providers.user_id', '=', 'users.id')
                                 ->join('estabelecimento_usuario', 'users.id', '=', 'estabelecimento_usuario.usuario_id')
@@ -156,14 +156,14 @@ class PagamentoController extends Controller
                                     'taxa_plataforma'  => $pagamento->taxa,
                                     'valor_liquido'    => $pagamento->valor_liquido,
                                     'descricao'        => $pagamento->agendamento_id ? 'Crédito por Serviço (Retido Custódia)' : 'Crédito por Locação (Retido Custódia)',
-                                    'status'           => 'pendente', // Retido na API do Asaas até validação do PIN
+                                    'status'           => 'pendente', // Retido na API
                                     'codigo_transacao' => $paymentData['id'],
                                     'metodo_pagamento' => $metodoExtrato,
                                     'created_at'       => now()
                                 ]);
                             }
 
-                            // Acumula pontos de fidelidade
+                            // 2. Acumula pontos de fidelidade para o cliente
                             $pontosGanhos = floor($pagamento->valor); 
                             if ($pontosGanhos > 0) {
                                 DB::table('historico_pontos')->insert([
@@ -172,7 +172,7 @@ class PagamentoController extends Controller
                                     'agendamento_id' => $pagamento->agendamento_id,
                                     'tipo' => 'ganho',
                                     'descricao' => 'Pontos acumulados em pagamento online',
-                                    'amount' => $pontosGanhos,
+                                    'quantidade' => $pontosGanhos,
                                     'created_at' => now()
                                 ]);
 
@@ -183,14 +183,14 @@ class PagamentoController extends Controller
                             }
 
                             // =========================================================================
-                            // 👉 NOVO: DISPARA NOTIFICAÇÃO DE CONFIRMAÇÃO DE PAGAMENTO AUTOMÁTICA
+                            // 👉 3. DISPARA NOTIFICAÇÃO DE CONFIRMAÇÃO (CLIENTE E DONO)
                             // =========================================================================
-                            if ($agendamento) {
+                            if ($entidadeRelacionada) {
                                 $pagamentoService->enviarEmailNotificacao(
-                                    $agendamento, 
+                                    $entidadeRelacionada, 
                                     'pago', 
                                     null, 
-                                    $agendamento->codigo_verificacao
+                                    $entidadeRelacionada->codigo_verificacao ?? null // Passa o PIN apenas se existir
                                 );
                             }
                         }
@@ -233,7 +233,7 @@ class PagamentoController extends Controller
                                     'tipo'             => 'estorno',
                                     'valor_bruto'      => $pagamento->valor,
                                     'taxa_plataforma'  => $pagamento->taxa,
-                                    'valor_liquido'    => $pagamento->valor_liquido * -1,
+                                    'valor_liquido'    => $pagamento->valor_liquido * -1, // Negativo para abater
                                     'descricao'        => 'Estorno de valores de pagamento online',
                                     'status'           => 'estornado',
                                     'codigo_transacao' => $paymentData['id'],
@@ -242,9 +242,6 @@ class PagamentoController extends Controller
                                 ]);
                             }
                         }
-                        break;
-
-                    case 'PAYMENT_CREATED':
                         break;
                 }
             });

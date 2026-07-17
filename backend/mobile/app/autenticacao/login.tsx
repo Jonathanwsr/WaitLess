@@ -9,7 +9,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  SafeAreaView
+  SafeAreaView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -21,8 +21,8 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // MUDANÇA AQUI: IP da sua rede para o celular conseguir achar o Laravel
-  const API_URL = 'http://192.168.1.11:8000/api/mobile/login';
+  // IP ou URL do seu backend
+  const API_URL = 'https://waitless-g1yc.onrender.com/api/mobile/login';
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -37,57 +37,55 @@ export default function Login() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/json'
+          Accept: 'application/json',
         },
         body: JSON.stringify({
           email: email.trim(),
-          password: password
-        })
+          password: password,
+        }),
       });
 
-      // --- INÍCIO DO BLOCO DE DEPURAÇÃO ---
+      // --- DEPURAÇÃO ---
       const textoCru = await response.text();
-      console.log("RESPOSTA DO LARAVEL:", textoCru);
+      console.log('RESPOSTA DO LARAVEL:', textoCru);
 
       let data;
       try {
         data = JSON.parse(textoCru);
       } catch (e) {
-        Alert.alert('Erro Fatal no Backend', 'O Laravel quebrou. Aperte F12 e olhe a aba Console no navegador para ver o erro vermelho.');
+        Alert.alert(
+          'Erro Fatal no Backend',
+          'O Laravel retornou uma resposta inválida. Verifique o console.'
+        );
         setLoading(false);
         return;
       }
-      // --- FIM DO BLOCO DE DEPURAÇÃO ---
+      // --- FIM DA DEPURAÇÃO ---
 
       if (response.status === 421) {
-        Alert.alert('Acesso Negado', data.message || 'As credenciais estão incorretas.');
+        Alert.alert('Acesso Negado', data.message || 'Credenciais incorretas.');
         setLoading(false);
         return;
       }
 
-      // --- LOGIN BEM-SUCEDIDO: Salvando autenticação ---
+      // Login bem-sucedido
       if (response.ok && data.status === 'success') {
-
-        // 1. Salva o Token e dados do usuário com segurança
         await SecureStore.setItemAsync('userToken', data.token);
         await SecureStore.setItemAsync('userData', JSON.stringify(data.usuario));
 
-        // 2. Redirecionamento seguro
         if (data.destino === 'funcionario') {
-          router.replace('/src/screens/funcionario/Painel-funcioanario');
+          router.replace('/src/screens/funcionario/Painel-funcionario');
         } else {
           router.replace('/src/screens/Home');
         }
-
       } else {
-        Alert.alert('Erro', data.message || 'Não foi possível fazer o login.');
+        Alert.alert('Erro', data.message || 'Não foi possível fazer login.');
       }
-
     } catch (error) {
       console.error(error);
       Alert.alert(
         'Erro de Conexão',
-        'Não foi possível conectar ao servidor. Verifique se o Laravel está rodando com --host=0.0.0.0 e se o celular está no mesmo Wi-Fi.'
+        'Não foi possível conectar ao servidor. Verifique sua internet e se o backend está online.'
       );
     } finally {
       setLoading(false);
@@ -120,6 +118,7 @@ export default function Login() {
               placeholderTextColor="#A0A0A0"
               keyboardType="email-address"
               autoCapitalize="none"
+              autoCorrect={false}
               value={email}
               onChangeText={setEmail}
             />
@@ -148,7 +147,7 @@ export default function Login() {
             style={styles.loginButton}
             onPress={handleLogin}
             disabled={loading}
-            activeOpacity={0.8}
+            activeOpacity={0.85}
           >
             {loading ? (
               <ActivityIndicator color="#FFF" />
@@ -170,31 +169,104 @@ export default function Login() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
-  container: { flex: 1, paddingHorizontal: 28, paddingTop: Platform.OS === 'android' ? 40 : 20 },
-  backButton: { marginBottom: 32, alignSelf: 'flex-start' },
-  iconCircle: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#F7F7F9', justifyContent: 'center', alignItems: 'center' },
-  header: { marginBottom: 40 },
-  title: { fontSize: 34, fontWeight: '800', color: '#1A1A1A', marginBottom: 10, letterSpacing: -0.5 },
-  subtitle: { fontSize: 16, color: '#666666', lineHeight: 24 },
-  form: { flex: 1 },
-  inputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F7F7F9', borderWidth: 1, borderColor: '#EFEFEF', borderRadius: 16, marginBottom: 16, paddingHorizontal: 18, height: 60 },
-  inputIcon: { marginRight: 14 },
-  input: { flex: 1, color: '#1A1A1A', fontSize: 16 },
-  forgotPassword: { alignSelf: 'flex-end', marginBottom: 40, marginTop: 8 },
-  forgotPasswordText: { color: '#b24b2b', fontSize: 15, fontWeight: '600' },
-  loginButton: {
-    backgroundColor: '#b24b2b',
-    height: 60,
-    borderRadius: 16,
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  container: {
+    flex: 1,
+    paddingHorizontal: 28,
+    paddingTop: Platform.OS === 'android' ? 40 : 20,
+  },
+  backButton: {
+    marginBottom: 32,
+    alignSelf: 'flex-start',
+  },
+  iconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#F7F7F9',
     justifyContent: 'center',
     alignItems: 'center',
-    // MUDANÇA AQUI: Removidas as propriedades shadow antigas e adicionada a boxShadow moderna
-    boxShadow: '0px 6px 8px rgba(178, 75, 43, 0.25)',
-    elevation: 6
   },
-  loginButtonText: { color: '#FFFFFF', fontSize: 18, fontWeight: 'bold', letterSpacing: 0.5 },
-  signUpContainer: { flexDirection: 'row', justifyContent: 'center', marginTop: 40 },
-  signUpText: { color: '#666666', fontSize: 15 },
-  signUpLink: { color: '#b24b2b', fontSize: 15, fontWeight: 'bold' },
+  header: {
+    marginBottom: 48,
+  },
+  title: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#1A1A1A',
+    marginBottom: 12,
+    letterSpacing: -0.8,
+  },
+  subtitle: {
+    fontSize: 16.5,
+    color: '#666666',
+    lineHeight: 25,
+  },
+  form: {
+    flex: 1,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8F9FA',
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    borderRadius: 20,
+    marginBottom: 18,
+    paddingHorizontal: 20,
+    height: 64,
+  },
+  inputIcon: {
+    marginRight: 14,
+  },
+  input: {
+    flex: 1,
+    color: '#1A1A1A',
+    fontSize: 16.5,
+  },
+  forgotPassword: {
+    alignSelf: 'flex-end',
+    marginBottom: 42,
+    marginTop: 8,
+  },
+  forgotPasswordText: {
+    color: '#b24b2b',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  loginButton: {
+    backgroundColor: '#FF6B35', // Laranja mais vibrante e moderno
+    height: 64,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#FF6B35',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  loginButtonText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '700',
+    letterSpacing: 0.6,
+  },
+  signUpContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 48,
+  },
+  signUpText: {
+    color: '#666666',
+    fontSize: 15.5,
+  },
+  signUpLink: {
+    color: '#FF6B35',
+    fontSize: 15.5,
+    fontWeight: '700',
+  },
 });
