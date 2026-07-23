@@ -127,4 +127,8 @@ public function estabelecimentos()
                     ->withTimestamps();
     }
 
+    public function favoritos() {
+    return $this->hasMany(Favorito::class, 'usuario_id');
+}
+
 }

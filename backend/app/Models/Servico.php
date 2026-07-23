@@ -28,4 +28,8 @@ class Servico extends Model
     {
         return $this->hasMany(Agendamento::class);
     }
+
+    public function favoritadoPor() {
+    return $this->hasMany(Favorito::class);
+}
 }

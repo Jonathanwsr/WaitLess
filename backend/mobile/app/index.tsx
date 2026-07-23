@@ -8,226 +8,162 @@ import {
   SafeAreaView,
   StatusBar,
   Dimensions,
+  ImageBackground,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { FontAwesome5 } from '@expo/vector-icons';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 
 export default function TelaEntrada() {
   const router = useRouter();
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
+    <ImageBackground
+      // Mantive a imagem do Unsplash original, mas você pode trocar para a imagem de fundo exata do seu app
+      source={{ uri: 'https://images.unsplash.com/photo-1540541338287-41700207dee6?q=80&w=1000&auto=format&fit=crop' }}
+      style={styles.background}
+    >
+      {/* Overlay escuro para garantir a leitura do texto branco por cima da imagem */}
+      <View style={styles.overlay}>
+        <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
-      {/* Hero Image */}
-      <Image
-        source={{ uri: 'https://images.unsplash.com/photo-1540541338287-41700207dee6?q=80&w=1000&auto=format&fit=crop' }}
-        style={styles.heroImage}
-      />
+        <SafeAreaView style={styles.safeArea}>
+          {/* Conteúdo Principal Centralizado */}
+          <View style={styles.mainContent}>
+            {/* Logo Lokyva */}
+            <Image
+              // Ajuste o caminho '../assets/' de acordo com a profundidade da pasta onde este arquivo está
+             source={require('./assets/logo_lokyva.png')}
+              style={styles.logo}
+              resizeMode="contain"
+            />
+            
+            {/* Opcional: Se a imagem do logo já tiver a palavra "Lokyva", você pode remover este Text. 
+                Deixei aqui para simular o layout da imagem caso o arquivo de logo seja apenas o ícone. */}
+            <Text style={styles.title}>
+              Lok<Text style={styles.titleHighlight}>y</Text>va
+            </Text>
 
-      {/* Conteúdo principal */}
-      <View style={styles.contentContainer}>
-        {/* Header com Logo */}
-        <View style={styles.header}>
-          <View style={styles.logoContainer}>
-            <Text style={styles.logoIcon}>W</Text>
-          </View>
-          <View>
-            <Text style={styles.title}>Waitless</Text>
-            <Text style={styles.subtitle}>Reserve mais. Espere menos.</Text>
-          </View>
-        </View>
-
-        <Text style={styles.sectionTitle}>Como você deseja acessar?</Text>
-
-        {/* Cards Modernos */}
-        <View style={styles.cardsRow}>
-          <TouchableOpacity style={styles.card} activeOpacity={0.85}>
-            <View style={styles.cardIconContainer}>
-              <FontAwesome5 name="user-alt" size={28} color="#FF6B35" />
+            {/* Subtítulos */}
+            <View style={styles.subtitleContainer}>
+              <Text style={styles.subtitle}>
+                Conecte. <Text style={styles.subtitleHighlight}>Reserve.</Text>
+              </Text>
+              <Text style={styles.subtitle}>Viva mais experiências.</Text>
             </View>
-            <Text style={styles.cardTitle}>Cliente</Text>
-            <Text style={styles.cardSubtitle}>Faça reservas e aproveite os serviços</Text>
-          </TouchableOpacity>
+          </View>
 
-          <TouchableOpacity style={styles.card} activeOpacity={0.85}>
-            <View style={styles.cardIconContainer}>
-              <FontAwesome5 name="briefcase" size={28} color="#FF6B35" />
-            </View>
-            <Text style={styles.cardTitle}>Prestador</Text>
-            <Text style={styles.cardSubtitle}>Gerencie sua equipe e filas</Text>
-          </TouchableOpacity>
-        </View>
+          {/* Botões de Ação na parte inferior */}
+          <View style={styles.bottomContainer}>
+            <TouchableOpacity
+              style={styles.primaryButton}
+              activeOpacity={0.85}
+              onPress={() => router.push('/autenticacao/login')}
+            >
+              <Text style={styles.primaryButtonText}>Entrar</Text>
+            </TouchableOpacity>
 
-        <View style={styles.spacer} />
-
-        {/* Botões de Ação */}
-        <View style={styles.actionContainer}>
-          <TouchableOpacity
-            style={styles.primaryButton}
-            activeOpacity={0.85}
-            onPress={() => router.push('/autenticacao/login')}
-          >
-            <Text style={styles.primaryButtonText}>Entrar na minha conta</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.secondaryButton}
-            activeOpacity={0.85}
-            onPress={() => router.push('/autenticacao/cadastro')}
-          >
-            <Text style={styles.secondaryButtonText}>Criar nova conta</Text>
-          </TouchableOpacity>
-        </View>
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              activeOpacity={0.85}
+              onPress={() => router.push('/autenticacao/cadastro')}
+            >
+              <Text style={styles.secondaryButtonText}>Criar conta</Text>
+            </TouchableOpacity>
+          </View>
+        </SafeAreaView>
       </View>
-    </SafeAreaView>
+    </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  background: {
     flex: 1,
-    backgroundColor: '#FFF',
-  },
-  heroImage: {
     width: '100%',
-    height: 460,
-    resizeMode: 'cover',
-    position: 'absolute',
-    top: 0,
+    height: '100%',
   },
-  contentContainer: {
+  overlay: {
     flex: 1,
-    marginTop: 320,
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 40,
-    borderTopRightRadius: 40,
-    paddingHorizontal: 24,
-    paddingTop: 36,
-    paddingBottom: 40,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -10 },
-    shadowOpacity: 0.12,
-    shadowRadius: 20,
-    elevation: 15,
+    // Cria um gradiente escuro ou sombra por cima da imagem para destacar os textos brancos
+    backgroundColor: 'rgba(20, 10, 40, 0.4)', 
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 36,
+  safeArea: {
+    flex: 1,
+    justifyContent: 'space-between',
   },
-  logoContainer: {
-    width: 68,
-    height: 68,
-    borderRadius: 20,
-    backgroundColor: '#FF6B35',
+  mainContent: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 16,
-    shadowColor: '#FF6B35',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 8,
+    paddingHorizontal: 24,
   },
-  logoIcon: {
-    fontSize: 42,
-    fontWeight: '900',
-    color: '#FFFFFF',
-    letterSpacing: -2,
+  logo: {
+    width: 120,
+    height: 120,
+    marginBottom: 10,
   },
   title: {
-    fontSize: 26,
+    fontSize: 48,
     fontWeight: '800',
-    color: '#1F1F1F',
-    letterSpacing: -0.6,
-  },
-  subtitle: {
-    fontSize: 15.5,
-    color: '#666666',
-    marginTop: 2,
-  },
-  sectionTitle: {
-    fontSize: 17.5,
-    fontWeight: '700',
-    color: '#1F1F1F',
+    color: '#FFFFFF',
+    letterSpacing: -1,
     marginBottom: 20,
   },
-  cardsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  titleHighlight: {
+    color: '#FF6B35', // Ou o tom roxo/laranja da sua marca
+  },
+  subtitleContainer: {
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  subtitle: {
+    fontSize: 18,
+    color: '#FFFFFF',
+    fontWeight: '400',
+    lineHeight: 26,
+    textAlign: 'center',
+  },
+  subtitleHighlight: {
+    color: '#FF6B35', // Laranja conforme a imagem
+    fontWeight: '600',
+  },
+  bottomContainer: {
+    paddingHorizontal: 24,
+    // padding extra embaixo para evitar a barra de navegação/botões virtuais no Android e iOS
+    paddingBottom: Platform.OS === 'android' ? 40 : 20, 
     gap: 16,
   },
-  card: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1.5,
-    borderColor: '#F0F0F0',
-    borderRadius: 24,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  cardIconContainer: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
-    backgroundColor: '#FFF0E8',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  cardTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#1F1F1F',
-    marginBottom: 6,
-  },
-  cardSubtitle: {
-    fontSize: 13.5,
-    lineHeight: 18,
-    color: '#777777',
-  },
-  spacer: {
-    flex: 1,
-    minHeight: 30,
-  },
-  actionContainer: {
-    gap: 14,
-  },
   primaryButton: {
-    backgroundColor: '#FF6B35',
+    backgroundColor: '#FF6B35', // Todo laranja conforme solicitado
     paddingVertical: 18,
-    borderRadius: 20,
+    borderRadius: 16,
     alignItems: 'center',
     shadowColor: '#FF6B35',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    elevation: 10,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 8,
   },
   primaryButtonText: {
     color: '#FFFFFF',
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '700',
-    letterSpacing: 0.4,
+    letterSpacing: 0.5,
   },
   secondaryButton: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1.8,
-    borderColor: '#E5E5E5',
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: '#4A3B69', // Borda com cor inspirada na imagem (tom roxo escuro/transparente)
     paddingVertical: 18,
-    borderRadius: 20,
+    borderRadius: 16,
     alignItems: 'center',
   },
   secondaryButtonText: {
-    color: '#1F1F1F',
-    fontSize: 17,
+    color: '#FFFFFF',
+    fontSize: 18,
     fontWeight: '600',
+    letterSpacing: 0.5,
   },
 });

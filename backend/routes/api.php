@@ -25,11 +25,13 @@ use App\Http\Controllers\Api\ItemAluguelController;
 use App\Http\Controllers\Api\Mobile\MobileAuthController;
 use App\Http\Controllers\Api\Mobile\MobileHomeController;
 use App\Http\Controllers\Api\Mobile\MobileAgendamentoController;
-
+use App\Http\Controllers\Api\Mobile\EstabelecimentoCatalogoMobileController;
+use App\Http\Controllers\Api\Mobile\FavoritoMobileController;
 use App\Http\Controllers\Api\Mobile\ClienteExplorarMobileController;
-use App\Http\Controllers\Api\Mobile\ClienteAgendamentoMobileController; // Corrigido: Adicionado o ';' aqui
-
-
+use App\Http\Controllers\Api\Mobile\ClienteAgendamentoMobileController;
+use App\Http\Controllers\Api\Mobile\AnfitriaoMobileController;
+use App\Http\Controllers\Api\Mobile\CatalogoMobileController;
+use App\Http\Controllers\Api\Mobile\PagamentoMobileController; // IMPORTAÇÃO QUE FALTAVA
 
 /*
 |--------------------------------------------------------------------------
@@ -43,14 +45,9 @@ Route::post('/login', [AuthController::class, 'login']);
 Route::post('/webhook/mercadopago', [WebhookController::class, 'mercadopago']);
 
 // Rotas públicas Mobile
-Route::post('/mobile/login', [App\Http\Controllers\Api\Mobile\MobileAuthController::class, 'login']);
-Route::post('/mobile/cadastro', [App\Http\Controllers\Api\Mobile\MobileAuthController::class, 'register']);
-
-
-// --- ROTAS PÚBLICAS MOBILE ---
 Route::post('/mobile/login', [MobileAuthController::class, 'login']);
-Route::post('/mobile/cadastro', [MobileAuthController::class, 'register']);
-
+Route::post('/mobile/register', [MobileAuthController::class, 'register'])->name('mobile.register');
+Route::post('/mobile/cadastro', [MobileAuthController::class, 'register']); // Alias de compatibilidade
 
 /*
 |--------------------------------------------------------------------------
@@ -69,9 +66,14 @@ Route::middleware('auth:sanctum')->group(function () {
     // --- HOME MOBILE (Atualizar Endereço e Lojas) ---
     Route::get('/estabelecimentos/proximos', [MobileHomeController::class, 'getEstabelecimentosProximos']);
     Route::post('/user/update-address', [MobileHomeController::class, 'updateAddress']);
+    Route::get('/meus-pontos', [MobileHomeController::class, 'getHistoricoPontos']);
+    Route::get('/servicos', [MobileHomeController::class, 'getServicos']);
+    Route::get('/minhas-reservas', [MobileHomeController::class, 'getReservas']);
 
     // --- AGENDAMENTOS MOBILE ---
     Route::get('/agendamentos', [MobileAgendamentoController::class, 'index']);
+    Route::get('/agendamentos/meus', [MobileAgendamentoController::class, 'meusAgendamentos']); 
+    Route::get('/agendamentos/{id}', [MobileAgendamentoController::class, 'show']);
     Route::put('/agendamentos/{agendamento}/status', [MobileAgendamentoController::class, 'updateStatus']);
     Route::put('/agendamentos/{agendamento}/chamar', [MobileAgendamentoController::class, 'chamar']);
     Route::put('/agendamentos/{agendamento}/adiar', [MobileAgendamentoController::class, 'adiar']);
@@ -80,59 +82,59 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::put('/agendamentos/{agendamento}/funcionario', [MobileAgendamentoController::class, 'updateFuncionario']);
     Route::post('/agendamentos/{id}/avaliar', [MobileAgendamentoController::class, 'avaliar']);
     Route::post('/agendamentos/remarcar', [MobileAgendamentoController::class, 'remarcarServico']);
+    Route::delete('/agendamentos/{id}/cancelar', [MobileAgendamentoController::class, 'cancelarCliente']);
+    Route::post('/agendar/{estabelecimento}', [MobileAgendamentoController::class, 'agendarServico']);
 
-    // 👉 CLIENTES E TRIAGEM
-    // Corrigido typo de método 'obtenerHorariosDisponiveis' para manter compatibilidade com seu controller externo se necessário
+    // --- CHECKOUT E PAGAMENTOS MOBILE ---
+    Route::post('/pagamento/processar', [PagamentoMobileController::class, 'processar']);
+
+    // --- ANFITRIÃO / PROPRIETÁRIO ---
+    Route::put('/anfitriao/perfil', [AnfitriaoMobileController::class, 'updatePerfil']);
+
+    // --- CLIENTES E TRIAGEM ---
     Route::get('/clientes/{id}/detalhes', [MobileAgendamentoController::class, 'detalheCliente']);
     Route::get('/servicos/{id}/horarios', [MobileAgendamentoController::class, 'obtenerHorariosDisponiveis']);
     Route::put('/triagens/{id}/nota', [MobileAgendamentoController::class, 'salvarNotaTriagem']);
 
-    // Agendamento clientes mobile
-    Route::get('/mobile/estabelecimentos/{id}', [MobileAgendamentoController::class, 'verEstabelecimento']);
-    Route::post('/mobile/estabelecimentos/{id}/agendar', [MobileAgendamentoController::class, 'agendarServico']);
-    Route::get('/mobile/meus-agendamentos', [MobileAgendamentoController::class, 'meusAgendamentos']);
-    Route::delete('/mobile/agendamentos/{id}', [MobileAgendamentoController::class, 'cancelarCliente']);
-
-    // Explorar Mobile
+    // --- EXPLORAR MOBILE ---
     Route::get('/explorar', [ClienteExplorarMobileController::class, 'index']);
     Route::get('/explorar/destaques', [ClienteExplorarMobileController::class, 'destaques']);
     Route::get('/explorar/recentes', [ClienteExplorarMobileController::class, 'recentes']);
     Route::get('/explorar/cidade/{cidade}', [ClienteExplorarMobileController::class, 'porCidade']);
     Route::get('/explorar/categorias', [ClienteExplorarMobileController::class, 'categorias']);
-
-    // 🔥 Detalhe do estabelecimento (com serviços)
     Route::get('/explorar/{id}', [ClienteExplorarMobileController::class, 'show']);
 
-    // Corrigido: oute::get alterado para Route::get
     Route::get('/agendamentos/estabelecimento/{estabelecimento}', [ClienteAgendamentoMobileController::class, 'obterDadosAgendamento']);
-
-    // Tela para buscar especificações técnicas de uma casa/carro/item antes de alugar
     Route::get('/reservas/item/{id}', [ClienteAgendamentoMobileController::class, 'obterDadosReserva']);
-
-    // --- ENVIAR PEDIDOS (BOTÕES DE CONFIRMAÇÃO) ---
-    // Confirmação final do agendamento de cabelo/unha/barba (Salão)
     Route::post('/agendamentos/estabelecimento/{estabelecimento}/store', [ClienteAgendamentoMobileController::class, 'agendarServico']);
-
-    // Confirmação final do aluguel do item (Preenche endereços, diárias e gera caução)
-    // Corrigido: alterado ClienteAgendamentoController para ClienteAgendamentoMobileController
     Route::post('/reservas/item/{id}/store', [ClienteAgendamentoMobileController::class, 'reservarItem']);
 
+    // --- ROTAS PREFIXADAS /MOBILE ---
+    Route::prefix('mobile')->group(function () {
+        Route::get('/favoritos', [FavoritoMobileController::class, 'index']);
+        Route::post('/favoritos/toggle', [FavoritoMobileController::class, 'toggleFavorito']);
+        Route::get('/catalogo/servicos/{id}', [CatalogoMobileController::class, 'detalhesServico']);
+        Route::get('/catalogo/estabelecimentos/{id}', [CatalogoMobileController::class, 'perfilEstabelecimento']);
+        Route::get('/estabelecimentos/{id}', [MobileAgendamentoController::class, 'verEstabelecimento']);
+        Route::post('/estabelecimentos/{id}/agendar', [MobileAgendamentoController::class, 'agendarServico']);
+        Route::get('/meus-agendamentos', [MobileAgendamentoController::class, 'meusAgendamentos']);
+        Route::delete('/agendamentos/{id}', [MobileAgendamentoController::class, 'cancelarCliente']);
+        Route::get('/estabelecimentos/{id}/catalogo', [EstabelecimentoCatalogoMobileController::class, 'show']);
+        Route::post('/pedidos/sacola', [EstabelecimentoCatalogoMobileController::class, 'criarPedidoSacola']);
+    });
 
-    // 👉 ALUGUÉIS E CONTRATOS SAAS (D4SIGN)
+    // --- ALUGUÉIS E LOCAÇÕES ---
     Route::get('/alugueis', [MobileAgendamentoController::class, 'indexAlugueis']);
     Route::post('/alugueis', [MobileAgendamentoController::class, 'storeAluguel']);
-    Route::get('/alugueis/{id}', [MobileAgendamentoController::class, 'showAluguel']);
+    Route::get('/alugueis/{id}', [MobileAgendamentoController::class, 'showAluguelMobile']);
     Route::put('/alugueis/{id}', [MobileAgendamentoController::class, 'updateAluguel']);
     Route::delete('/alugueis/{id}', [MobileAgendamentoController::class, 'destroyAluguel']);
+    Route::delete('/alugueis/{id}/cancelar', [MobileAgendamentoController::class, 'destroyAluguel']);
     Route::post('/alugueis/{id}/contrato', [MobileAgendamentoController::class, 'generarEEnviarContrato']);
     Route::post('/mobile/d4sign/webhook', [MobileAgendamentoController::class, 'webhookD4Sign']);
 
     // --- RESOURCES PRINCIPAIS ---
-   Route::apiResource('estabelecimentos', EstabelecimentoController::class)->names('api.estabelecimentos');
-   // Route::apiResource('servicos', ServicoController::class);
-   // Route::apiResource('funcionarios', FuncionarioController::class);
-    //Route::apiResource('agendamentos', AgendamentoController::class);
-    //Route::apiResource('avaliacoes', AvaliacaoController::class);
+    Route::apiResource('estabelecimentos', EstabelecimentoController::class)->names('api.estabelecimentos');
 
     // --- CATÁLOGO DE ITENS ---
     Route::prefix('catalogo/itens')->group(function () {
@@ -145,13 +147,11 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // --- MÓDULO DE LOCAÇÕES / RESERVAS SAAS ---
     Route::prefix('locacoes')->group(function () {
-        Route::get('/', [AgendamentoController::class, 'indexAlugueis']);          // GET - Listar reservas
-        Route::post('/', [AgendamentoController::class, 'storeAluguel']);          // POST - Criar reserva
-        Route::get('/{id}', [AgendamentoController::class, 'showAluguel']);        // GET - Detalhe reserva
-        Route::patch('/{id}', [AgendamentoController::class, 'updateAluguel']);    // PATCH - Atualizar reserva
-        Route::delete('/{id}', [AgendamentoController::class, 'destroyAluguel']);  // DELETE - Cancelar/Apagar reserva
-        
-        // Contrato e Vitrine
+        Route::get('/', [AgendamentoController::class, 'indexAlugueis']);
+        Route::post('/', [AgendamentoController::class, 'storeAluguel']);
+        Route::get('/{id}', [AgendamentoController::class, 'showAluguel']);
+        Route::patch('/{id}', [AgendamentoController::class, 'updateAluguel']);
+        Route::delete('/{id}', [AgendamentoController::class, 'destroyAluguel']);
         Route::get('/vitrine/locacoes', [ItemAluguelController::class, 'buscarVitrineCliente']);
         Route::post('/{id}/gerar-contrato', [AgendamentoController::class, 'gerarEEnviarContrato']);
     });
@@ -167,5 +167,4 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::apiResource('respostas-triagem', RespostaTriagemController::class);
     Route::apiResource('contas-bancarias', ContaPagamentoEstabelecimentoController::class);
     Route::apiResource('gamificacoes', GamificacaoController::class);
-
 });

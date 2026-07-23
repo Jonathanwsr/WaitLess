@@ -68,4 +68,8 @@ class Estabelecimento extends Model
         ->having('distance', '<', $radius)
         ->orderBy('distance', 'asc');
     }
+
+    public function favoritadoPor() {
+    return $this->hasMany(Favorito::class);
+}
 }

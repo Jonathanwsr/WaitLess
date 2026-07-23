@@ -260,9 +260,23 @@ export default function Welcome({ auth, canLogin, canRegister }) {
                                 </a>
                             </span>
                         </div>
-                        <p className="text-sm text-center md:text-right">
-                            &copy; 2026 Waitless Tecnologia S.A. Todos os direitos reservados.
-                        </p>
+                        
+                        {/* Area de Direitos Autorais e Termos */}
+                        <div className="flex flex-col items-center md:items-end gap-2">
+                            <p className="text-sm text-center md:text-right">
+                                &copy; 2026 Waitless Tecnologia S.A. Todos os direitos reservados.
+                            </p>
+                            
+                            {/* LINK DO TERMO DE COMPROMISSO ADICIONADO AQUI */}
+                            <a 
+                                href="/documentos/Termo-decompromisso.pdf" 
+                                target="_blank" 
+                                rel="noopener noreferrer" 
+                                className="text-sm text-gray-500 hover:text-orange-400 transition-colors underline decoration-gray-700 underline-offset-4"
+                            >
+                                Termo de Compromisso
+                            </a>
+                        </div>
                     </div>
                 </footer>
             </div>

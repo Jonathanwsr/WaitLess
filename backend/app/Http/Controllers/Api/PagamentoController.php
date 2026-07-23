@@ -182,15 +182,13 @@ class PagamentoController extends Controller
                                 );
                             }
 
-                            // =========================================================================
-                            // 👉 3. DISPARA NOTIFICAÇÃO DE CONFIRMAÇÃO (CLIENTE E DONO)
-                            // =========================================================================
+                            // 3. Dispara Notificação de Confirmação
                             if ($entidadeRelacionada) {
                                 $pagamentoService->enviarEmailNotificacao(
                                     $entidadeRelacionada, 
                                     'pago', 
                                     null, 
-                                    $entidadeRelacionada->codigo_verificacao ?? null // Passa o PIN apenas se existir
+                                    $entidadeRelacionada->codigo_verificacao ?? null
                                 );
                             }
                         }
@@ -206,6 +204,8 @@ class PagamentoController extends Controller
                         break;
 
                     case 'PAYMENT_REFUNDED':
+                        // O bloco verifica se o status não é estornado para evitar rodar em duplicidade
+                        // caso o ClienteAgendamentoController já tenha feito o estorno no banco de dados.
                         if ($pagamento->status !== 'estornado') {
                             $pagamento->update(['status' => 'estornado']);
                             
@@ -214,6 +214,9 @@ class PagamentoController extends Controller
                             } elseif ($pagamento->aluguel_id) {
                                 Aluguel::where('id', $pagamento->aluguel_id)->update(['status' => 'cancelado']);
                             }
+
+                            // 👉 Retira os pontos ganhos nesta transação
+                            $this->reverterPontosDeFidelidadeWebhook($pagamento);
 
                             $provider = DB::table('providers')
                                 ->join('users', 'providers.user_id', '=', 'users.id')
@@ -234,7 +237,7 @@ class PagamentoController extends Controller
                                     'valor_bruto'      => $pagamento->valor,
                                     'taxa_plataforma'  => $pagamento->taxa,
                                     'valor_liquido'    => $pagamento->valor_liquido * -1, // Negativo para abater
-                                    'descricao'        => 'Estorno de valores de pagamento online',
+                                    'descricao'        => 'Estorno de valores processado via Gateway',
                                     'status'           => 'estornado',
                                     'codigo_transacao' => $paymentData['id'],
                                     'metodo_pagamento' => $metodoExtrato,
@@ -251,6 +254,37 @@ class PagamentoController extends Controller
         } catch (\Exception $e) {
             Log::error("Erro ao sincronizar webhook de pagamento: " . $e->getMessage());
             return response()->json(['error' => 'Internal Error'], 500);
+        }
+    }
+
+    /**
+     * 👉 FUNÇÃO AUXILIAR: Remove os pontos do usuário no Webhook em caso de reembolso tardio
+     */
+    private function reverterPontosDeFidelidadeWebhook($pagamento)
+    {
+        $colunaFiltro = $pagamento->agendamento_id ? 'agendamento_id' : 'aluguel_id';
+        $origemId = $pagamento->agendamento_id ?? $pagamento->aluguel_id;
+
+        $pontosGanhosNessaTransacao = DB::table('historico_pontos')
+            ->where($colunaFiltro, $origemId)
+            ->where('tipo', 'ganho')
+            ->sum('quantidade');
+
+        if ($pontosGanhosNessaTransacao > 0) {
+            DB::table('pontos_usuario_estabelecimento')
+                ->where('usuario_id', $pagamento->usuario_id)
+                ->where('estabelecimento_id', $pagamento->estabelecimento_id)
+                ->decrement('total_pontos', $pontosGanhosNessaTransacao);
+
+            DB::table('historico_pontos')->insert([
+                'usuario_id'         => $pagamento->usuario_id,
+                'estabelecimento_id' => $pagamento->estabelecimento_id,
+                $colunaFiltro        => $origemId,
+                'tipo'               => 'perda',
+                'descricao'          => 'Estorno de pontos de fidelidade após cancelamento',
+                'quantidade'         => $pontosGanhosNessaTransacao,
+                'created_at'         => now()
+            ]);
         }
     }
 }

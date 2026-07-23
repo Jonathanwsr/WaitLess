@@ -302,7 +302,7 @@ export default function AuthenticatedLayout({ header, children }) {
                                 </div>
                             </div>
 
-                            <div className="flex items-center gap-3 sm:gap-4 ml-auto">
+                            <div className="flex items-center gap-2 sm:gap-4 ml-auto">
                                 {!isGestor && !isFuncionario && (
                                     <Link href={route('cliente.carrinho')} className="relative p-2 text-gray-500 hover:text-indigo-600 transition rounded-full hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700">
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 sm:h-5 sm:w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -315,8 +315,6 @@ export default function AuthenticatedLayout({ header, children }) {
                                     </Link>
                                 )}
 
-                                {/* 👉 NOVO DESIGN: SINO DE NOTIFICAÇÃO + DIVISÓRIA + DROPDOWN DO USUÁRIO */}
-                                
                                 {/* Sino de Notificação */}
                                 <button className="relative p-2 text-[#4F5B67] hover:text-gray-900 transition rounded-full hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700">
                                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -328,38 +326,52 @@ export default function AuthenticatedLayout({ header, children }) {
                                     </span>
                                 </button>
 
-                                {/* Divisória Vertical */}
+                                {/* Divisória Vertical (Só no PC) */}
                                 <div className="h-8 w-[1px] bg-gray-300 dark:bg-gray-600 hidden sm:block mx-1"></div>
 
-                                {/* Menu Dropdown do Usuário */}
-                                <div className="hidden sm:block relative">
+                                {/* Menu Dropdown do Usuário (AGORA MOSTRA NO MOBILE COMO TRÊS PONTINHOS) */}
+                                <div className="relative">
                                     <Dropdown>
                                         <Dropdown.Trigger>
-                                            <button type="button" className="flex items-center gap-3 focus:outline-none hover:opacity-80 transition-opacity">
-                                                {/* Textos: Nome e Papel */}
-                                                <div className="text-right flex flex-col justify-center">
-                                                    <span className="text-[15px] font-bold text-[#202B36] dark:text-gray-200 leading-tight">
-                                                        {user.name}
-                                                    </span>
-                                                    <span className="text-[11px] font-semibold text-[#637381] dark:text-gray-400 uppercase tracking-widest">
-                                                        {getRoleLabel(user.papel)}
-                                                    </span>
-                                                </div>
+                                            <button type="button" className="flex items-center gap-2 focus:outline-none hover:opacity-80 transition-opacity">
                                                 
-                                                {/* Avatar Redondo */}
-                                                <div className="h-[42px] w-[42px] rounded-full border border-gray-200 bg-gray-100 flex items-center justify-center text-gray-700 font-bold uppercase text-sm overflow-hidden shadow-sm">
-                                                    {user.foto_perfil ? <img src={user.foto_perfil} alt={user.name} className="h-full w-full object-cover" /> : user.name.charAt(0)}
+                                                {/* VISUAL DESKTOP: Nome e Foto */}
+                                                <div className="hidden sm:flex items-center gap-3">
+                                                    <div className="text-right flex flex-col justify-center">
+                                                        <span className="text-[15px] font-bold text-[#202B36] dark:text-gray-200 leading-tight">
+                                                            {user.name}
+                                                        </span>
+                                                        <span className="text-[11px] font-semibold text-[#637381] dark:text-gray-400 uppercase tracking-widest">
+                                                            {getRoleLabel(user.papel)}
+                                                        </span>
+                                                    </div>
+                                                    <div className="h-[42px] w-[42px] rounded-full border border-gray-200 bg-gray-100 flex items-center justify-center text-gray-700 font-bold uppercase text-sm overflow-hidden shadow-sm">
+                                                        {user.foto_perfil ? <img src={user.foto_perfil} alt={user.name} className="h-full w-full object-cover" /> : user.name.charAt(0)}
+                                                    </div>
                                                 </div>
+
+                                                {/* VISUAL MOBILE: Três Pontinhos */}
+                                                <div className="sm:hidden p-2 text-[#4F5B67] hover:text-gray-900 transition rounded-full hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700">
+                                                    <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z"></path>
+                                                    </svg>
+                                                </div>
+
                                             </button>
                                         </Dropdown.Trigger>
 
-                                        {/* Conteúdo do Dropdown customizado com background #FCFAF8 e Borda Escura */}
-                                        <Dropdown.Content align="right" width="48" contentClasses="!bg-[#FCFAF8] !border !border-[#DCD5CF] shadow-xl rounded-xl mt-3 pb-1 pt-1">
+                                        {/* Conteúdo do Dropdown */}
+                                        <Dropdown.Content align="right" width="48" contentClasses="!bg-[#FCFAF8] !border !border-[#DCD5CF] shadow-xl rounded-xl mt-3 pb-1 pt-1 z-50">
                                             
-                                            {/* Meus Planos - CORRIGIDO PARA # */}
+                                            {/* Info de Usuário no Mobile (Opcional, mas útil já que a foto sumiu) */}
+                                            <div className="block sm:hidden px-4 py-3 border-b border-[#EAE3DE] mb-1">
+                                                <p className="text-sm font-bold text-[#202B36]">{user.name}</p>
+                                                <p className="text-xs font-semibold text-[#637381] uppercase mt-0.5">{getRoleLabel(user.papel)}</p>
+                                            </div>
+
+                                            {/* Meus Planos */}
                                             <Dropdown.Link href="#" className="hover:bg-[#f3ede8] transition-colors duration-150">
                                                 <div className="flex items-center gap-3 font-semibold text-[#202B36] py-1">
-                                                    {/* Ícone de Badge/Estrela Verde */}
                                                     <svg className="w-[22px] h-[22px] text-[#1E5F42]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
                                                         <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                                                     </svg>
@@ -370,7 +382,6 @@ export default function AuthenticatedLayout({ header, children }) {
                                             {/* Editar Perfil */}
                                             <Dropdown.Link href={route('profile.edit')} className="hover:bg-[#f3ede8] transition-colors duration-150">
                                                 <div className="flex items-center gap-3 font-semibold text-[#202B36] py-1">
-                                                    {/* Ícone de Usuário Cinza Azulado */}
                                                     <svg className="w-[22px] h-[22px] text-[#4F5B67]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
                                                         <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                                                     </svg>
@@ -384,7 +395,6 @@ export default function AuthenticatedLayout({ header, children }) {
                                             {/* Sair */}
                                             <Dropdown.Link href={route('logout')} method="post" as="button" className="w-full text-left hover:bg-[#f3ede8] transition-colors duration-150">
                                                 <div className="flex items-center gap-3 font-semibold text-[#9A423D] py-1">
-                                                    {/* Ícone de Sair Vermelho Escuro */}
                                                     <svg className="w-[22px] h-[22px] text-[#9A423D]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
                                                         <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                                                     </svg>
@@ -395,6 +405,7 @@ export default function AuthenticatedLayout({ header, children }) {
                                         </Dropdown.Content>
                                     </Dropdown>
                                 </div>
+
                             </div>
                         </div>
                     </div>

@@ -6,10 +6,13 @@ import { useRouter } from 'expo-router';
 import axios from 'axios';
 
 import { ThemedText } from '@/components/themed-text';
-import { Fonts } from '@/constants/theme';
+// import { Fonts } from '@/constants/theme'; // Descomente se for usar
 
-// Altere para o IP da sua máquina local ou domínio de produção da API Laravel
-const API_BASE_URL = 'http://192.168.1.100:8000/api';
+// Altere para o domínio de produção da API Laravel no Render
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api/mobile';
+
+// Cor Laranja Mais Viva para destaques e botões
+const VIVID_ORANGE = '#FF4500'; 
 
 export default function ExploreScreen() {
   const router = useRouter();
@@ -18,7 +21,7 @@ export default function ExploreScreen() {
   const [carregando, setCarregando] = useState<boolean>(true);
   const [categoriaAtiva, setCategoriaAtiva] = useState<string>('Tudo');
 
-  // Categorias mapeadas dinamicamente
+  // Categorias atualizadas com Materiais, Eventos e Restaurantes
   const categorias = [
     { nome: 'Tudo', icone: 'apps' },
     { nome: 'Beleza', icone: 'content-cut' },
@@ -26,6 +29,9 @@ export default function ExploreScreen() {
     { nome: 'Imóveis', icone: 'home' },
     { nome: 'Veículos', icone: 'directions-car' },
     { nome: 'Equipamentos', icone: 'build' },
+    { nome: 'Materiais', icone: 'handyman' }, // Nova
+    { nome: 'Eventos', icone: 'event' },      // Nova
+    { nome: 'Restaurantes', icone: 'restaurant' }, // Nova
   ];
 
   useEffect(() => {
@@ -36,13 +42,13 @@ export default function ExploreScreen() {
     try {
       setCarregando(true);
 
-      // Adaptado para buscar os dados de exploração integrando Serviços e Alugueis
+      // CORRIGIDO: Usando a constante API_URL corretamente
       const [resExplorar, resDestaques] = await Promise.all([
-        axios.get(`${API_BASE_URL}/explorar?categoria=${categoriaAtiva}`),
-        axios.get(`${API_BASE_URL}/explorar/destaques`),
+        axios.get(`${API_URL}/explorar?categoria=${categoriaAtiva}`),
+        axios.get(`${API_URL}/explorar/destaques`),
       ]);
 
-      // Mapeia os dados vindo da API ou define array vazio
+      // Mapeia os dados vindo da API Laravel
       setEstabelecimentos(resExplorar.data.data || resExplorar.data || []);
       setDestaques(resDestaques.data.data || resDestaques.data || []);
     } catch (e) {
@@ -52,7 +58,6 @@ export default function ExploreScreen() {
     }
   };
 
-  // Navega para a tela de agendamento de serviço ou reserva de item
   const irParaDetalhes = (id: number, tipo: 'servico' | 'aluguel') => {
     if (tipo === 'servico') {
       router.push({ pathname: '/reservas', params: { estabelecimentoId: id, tipo: 'servico' } });
@@ -65,7 +70,7 @@ export default function ExploreScreen() {
     <SafeAreaView style={styles.safeArea}>
       <ScrollView showsVerticalScrollIndicator={false} style={styles.container}>
 
-        {/* HEADER: Busca, Notificação e Perfil */}
+        {/* HEADER */}
         <View style={styles.header}>
           <View style={styles.searchContainer}>
             <Ionicons name="search" size={20} color="#777" />
@@ -88,7 +93,7 @@ export default function ExploreScreen() {
 
         {/* LOCALIZAÇÃO */}
         <View style={styles.locationContainer}>
-          <Ionicons name="location-outline" size={18} color="#FF5A00" />
+          <Ionicons name="location-outline" size={18} color={VIVID_ORANGE} />
           <ThemedText style={styles.locationText} numberOfLines={1}>
             Rua Professora Eunice de Vasconcelos Xavier, 100
           </ThemedText>
@@ -106,7 +111,7 @@ export default function ExploreScreen() {
                 onPress={() => setCategoriaAtiva(cat.nome)}
               >
                 <View style={[styles.iconContainer, isAtivo && styles.iconContainerAtivo]}>
-                  <MaterialIcons name={cat.icone as any} size={24} color={isAtivo ? '#FF5A00' : '#555'} />
+                  <MaterialIcons name={cat.icone as any} size={24} color={isAtivo ? VIVID_ORANGE : '#555'} />
                 </View>
                 <ThemedText style={[styles.categoriaTexto, isAtivo && styles.categoriaTextoAtivo]}>
                   {cat.nome}
@@ -134,17 +139,17 @@ export default function ExploreScreen() {
 
         {/* INDICADOR DE CARREGAMENTO */}
         {carregando && (
-          <ActivityIndicator size="large" color="#FF5A00" style={{ marginVertical: 20 }} />
+          <ActivityIndicator size="large" color={VIVID_ORANGE} style={{ marginVertical: 20 }} />
         )}
 
-        {/* DESTAQUES PARA VOCÊ (HORIZONTAL) */}
+        {/* DESTAQUES PARA VOCÊ */}
         <View style={styles.sectionHeader}>
           <ThemedText style={styles.sectionTitle}>Destaques para você</ThemedText>
           <TouchableOpacity><ThemedText style={styles.verTodos}>Ver todos</ThemedText></TouchableOpacity>
         </View>
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
-          {destaques.length > 0 ? (
+          {!carregando && destaques.length > 0 ? (
             destaques.map((item, index) => (
               <TouchableOpacity
                 key={item.id || index}
@@ -153,7 +158,7 @@ export default function ExploreScreen() {
               >
                 <View>
                   <Image
-                    source={{ uri: item.foto || 'https://images.unsplash.com/photo-1622286342621-4bd786c2447c?auto=format&fit=crop&q=80&w=400' }}
+                    source={{ uri: item.foto_perfil || item.foto || 'https://images.unsplash.com/photo-1622286342621-4bd786c2447c?auto=format&fit=crop&q=80&w=400' }}
                     style={styles.imageDestaque}
                     contentFit="cover"
                   />
@@ -170,7 +175,7 @@ export default function ExploreScreen() {
                   <View style={styles.ratingContainer}>
                     <Ionicons name="star" size={12} color="#FFB800" />
                     <ThemedText style={styles.ratingText}>
-                      {item.avaliacao || '4.9'} <ThemedText style={styles.ratingCount}>({item.total_avaliacoes || '120'})</ThemedText>
+                      {item.avaliacao || item.avaliacao_media || '4.9'} <ThemedText style={styles.ratingCount}>({item.votos || '120'})</ThemedText>
                     </ThemedText>
                   </View>
                   <ThemedText style={styles.priceLabel}>
@@ -183,14 +188,14 @@ export default function ExploreScreen() {
               </TouchableOpacity>
             ))
           ) : (
-            <ThemedText style={styles.emptyText}>Nenhum item em destaque.</ThemedText>
+            !carregando && <ThemedText style={styles.emptyText}>Nenhum item em destaque.</ThemedText>
           )}
         </ScrollView>
 
         {/* RECOMENDADOS (LISTA VERTICAL) */}
         <ThemedText style={styles.sectionTitle}>Recomendados na Região</ThemedText>
 
-        {estabelecimentos.length > 0 ? (
+        {!carregando && estabelecimentos.length > 0 ? (
           estabelecimentos.map((estab, index) => (
             <TouchableOpacity
               key={estab.id || index}
@@ -213,7 +218,7 @@ export default function ExploreScreen() {
                 <View style={styles.ratingContainer}>
                   <Ionicons name="star" size={12} color="#FFB800" />
                   <ThemedText style={styles.ratingText}>
-                    {estab.avaliacao || '4.8'} <ThemedText style={styles.ratingCount}>({estab.votos || '85'})</ThemedText>
+                    {estab.avaliacao || estab.avaliacao_media || '4.8'} <ThemedText style={styles.ratingCount}>({estab.votos || '85'})</ThemedText>
                   </ThemedText>
                 </View>
 
@@ -222,13 +227,13 @@ export default function ExploreScreen() {
                     <ThemedText style={styles.tagText}>{estab.bairro || 'Centro'}</ThemedText>
                   </View>
                   <View style={styles.tag}>
-                    <ThemedText style={styles.tagText}>{estab.cidade || 'Cidade'}</ThemedText>
+                    <ThemedText style={styles.tagText}>{estab.cidade || estab.categoria_tipo || 'Serviço'}</ThemedText>
                   </View>
                 </View>
 
                 <View style={styles.footerRecomendado}>
                   <ThemedText style={styles.priceLabel}>
-                    Status: <ThemedText style={styles.priceValueRec}>{estab.ativo ? 'Aberto' : 'Fechado'}</ThemedText>
+                    Status: <ThemedText style={styles.priceValueRec}>{estab.ativo || estab.disponivel ? 'Aberto' : 'Fechado'}</ThemedText>
                   </ThemedText>
                   <View style={styles.timeContainer}>
                     <Ionicons name="time-outline" size={12} color="#999" />
@@ -239,7 +244,7 @@ export default function ExploreScreen() {
             </TouchableOpacity>
           ))
         ) : (
-          <ThemedText style={styles.emptyText}>Nenhum recomendado encontrado para esta categoria.</ThemedText>
+          !carregando && <ThemedText style={styles.emptyText}>Nenhum recomendado encontrado para esta categoria.</ThemedText>
         )}
 
         <View style={{ height: 40 }} />
@@ -291,13 +296,13 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#FF5A00',
+    backgroundColor: VIVID_ORANGE,
   },
   profileButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#FF5A00',
+    backgroundColor: VIVID_ORANGE,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -337,15 +342,15 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   iconContainerAtivo: {
-    borderColor: '#FF5A00',
-    backgroundColor: '#FFF4ED',
+    borderColor: VIVID_ORANGE,
+    backgroundColor: '#FFF0E6', // Fundo levemente alaranjado
   },
   categoriaTexto: {
     fontSize: 12,
     color: '#555',
   },
   categoriaTextoAtivo: {
-    color: '#FF5A00',
+    color: VIVID_ORANGE,
     fontWeight: 'bold',
   },
   bannerContainer: {
@@ -368,7 +373,7 @@ const styles = StyleSheet.create({
     bottom: 0,
     padding: 20,
     justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.5)',
+    backgroundColor: 'rgba(255, 255, 255, 0.4)',
   },
   bannerTitle: {
     fontSize: 20,
@@ -380,9 +385,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#333',
     marginBottom: 15,
+    fontWeight: '600'
   },
   bannerButton: {
-    backgroundColor: '#FF5A00',
+    backgroundColor: VIVID_ORANGE,
     paddingVertical: 8,
     paddingHorizontal: 15,
     borderRadius: 20,
@@ -407,7 +413,7 @@ const styles = StyleSheet.create({
   },
   verTodos: {
     fontSize: 13,
-    color: '#FF5A00',
+    color: VIVID_ORANGE,
     fontWeight: '600',
   },
   horizontalScroll: {
@@ -468,7 +474,7 @@ const styles = StyleSheet.create({
   },
   priceValue: {
     fontSize: 14,
-    color: '#FF5A00',
+    color: VIVID_ORANGE,
     fontWeight: 'bold',
     marginTop: 2,
   },
@@ -524,7 +530,7 @@ const styles = StyleSheet.create({
   },
   priceValueRec: {
     fontSize: 13,
-    color: '#2563EB',
+    color: VIVID_ORANGE,
     fontWeight: 'bold',
   },
   timeContainer: {
