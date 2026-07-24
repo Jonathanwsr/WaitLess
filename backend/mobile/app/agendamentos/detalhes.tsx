@@ -28,7 +28,7 @@ const COLORS = {
   success: '#10B981'
 };
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api/mobile';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api/mobile/datalhes'; // Ajuste conforme a rota real do seu backend
 
 export default function DetalhesAgendamento() {
   const router = useRouter();

@@ -6,270 +6,477 @@ import {
   ScrollView,
   TouchableOpacity,
   Image,
-  TextInput,
   ActivityIndicator,
-  FlatList,
-  SafeAreaView
+  SafeAreaView,
+  Modal,
+  Dimensions,
+  Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+const { width } = Dimensions.get('window');
+
+// ----------------------------------------------------
+// INTERFACES (Definição dos tipos para evitar erro TS)
+// ----------------------------------------------------
+interface Estabelecimento {
+  id: number | string;
+  nome: string;
+  foto_banner?: string;
+  foto_perfil?: string;
+  cidade?: string;
+  estado?: string;
+  avaliacao_media?: string | number;
+  total_avaliacoes?: number;
+  preco_medio?: string | number;
+  valor?: string | number;
+  ramo_atuacao?: string;
+}
+
+interface Servico {
+  id: number | string;
+  nome: string;
+  foto?: string;
+  categoria?: string;
+  duracao_minutos?: number;
+  valor?: string | number;
+  avaliacao_media?: string | number;
+  total_avaliacoes?: number;
+  estabelecimento?: {
+    id?: number | string;
+    nome?: string;
+    foto_perfil?: string;
+  };
+  cidade?: string;
+}
+
+interface ItemRemover {
+  id: number | string;
+  nome: string;
+  tipo: 'estabelecimento' | 'servico';
+}
+
+interface DadosFavoritos {
+  estabelecimentos: Estabelecimento[];
+  servicos: Servico[];
+}
+
 // Cores da Identidade (Lokyva)
 const COLORS = {
-  primary: '#7C3AED', // Roxo Lokyva
-  primaryLight: '#F5F3FF',
-  accent: '#FF5A00', // Laranja
+  primary: '#FF5A00',      // Laranja Lokyva
+  primaryLight: '#FFF0E6',
   secondary: '#111827',
+  black: '#000000',        // Ícones em preto puro
   gray: '#6B7280',
   lightGray: '#F9FAFB',
   white: '#FFFFFF',
-  border: '#F3F4F6',
+  border: '#E5E7EB',
   error: '#DC2626',
+  warning: '#FFB800'
 };
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api/mobile';
 
 export default function FavoritosDashboard() {
   const router = useRouter();
-  const [abaAtiva, setAbaAtiva] = useState<'estabelecimentos' | 'servicos' | 'reservas'>('estabelecimentos');
-  const [busca, setBusca] = useState('');
   
-  // Estado inicial seguro para evitar erros de "undefined"
-  const [dados, setDados] = useState<any>({ 
-    estabelecimentos: [], 
-    servicos: [], 
-    reservas: { proximas: [], concluidas: [] } 
-  });
+  // Abas: 'todos' | 'estabelecimentos' | 'servicos'
+  const [abaAtiva, setAbaAtiva] = useState<'todos' | 'estabelecimentos' | 'servicos'>('todos');
   const [loading, setLoading] = useState(true);
+  
+  // Estado tipado corretamente para evitar o erro 'never'
+  const [dados, setDados] = useState<DadosFavoritos>({ 
+    estabelecimentos: [], 
+    servicos: [] 
+  });
+
+  // Estado para o Modal de Confirmação de Remoção
+  const [modalVisivel, setModalVisivel] = useState(false);
+  const [itemParaRemover, setItemParaRemover] = useState<ItemRemover | null>(null);
+  const [removendo, setRemovendo] = useState(false);
 
   useEffect(() => {
-    carregarDados();
+    carregarFavoritos();
   }, []);
 
-  const carregarDados = async () => {
+  const carregarFavoritos = async () => {
     setLoading(true);
     try {
-      const token = await AsyncStorage.getItem('@waitless_token');
+      const token = await AsyncStorage.getItem('@lokyva_token') || await AsyncStorage.getItem('@waitless_token');
       const res = await fetch(`${API_URL}/favoritos`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const json = await res.json();
+
       setDados({
         estabelecimentos: json.estabelecimentos || [],
-        servicos: json.servicos || [],
-        reservas: json.reservas || { proximas: [], concluidas: [] }
+        servicos: json.servicos || []
       });
     } catch (e) {
-      console.log('Erro ao carregar favoritos');
+      console.log('Erro ao carregar favoritos da API');
     } finally {
       setLoading(false);
     }
   };
 
-  const toggleFavorito = async (tipo: string, id: number) => {
+  // Abre o modal de confirmação antes de remover
+  const solicitarRemocao = (item: Estabelecimento | Servico, tipo: 'estabelecimento' | 'servico') => {
+    setItemParaRemover({
+      id: item.id,
+      nome: item.nome,
+      tipo
+    });
+    setModalVisivel(true);
+  };
+
+  // Executa a remoção via API e atualiza a tela
+  const confirmarRemocao = async () => {
+    if (!itemParaRemover) return;
+    setRemovendo(true);
+
     try {
-      const token = await AsyncStorage.getItem('@waitless_token');
+      const token = await AsyncStorage.getItem('@lokyva_token') || await AsyncStorage.getItem('@waitless_token');
       await fetch(`${API_URL}/favoritos/toggle`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tipo, id })
+        headers: { 
+          'Authorization': `Bearer ${token}`, 
+          'Content-Type': 'application/json' 
+        },
+        body: JSON.stringify({ 
+          tipo: itemParaRemover.tipo, 
+          id: itemParaRemover.id 
+        })
       });
-      carregarDados(); // Recarrega a lista para remover o item da tela
+
+      // Remove localmente para resposta instantânea
+      if (itemParaRemover.tipo === 'estabelecimento') {
+        setDados(prev => ({
+          ...prev,
+          estabelecimentos: prev.estabelecimentos.filter(e => e.id !== itemParaRemover.id)
+        }));
+      } else {
+        setDados(prev => ({
+          ...prev,
+          servicos: prev.servicos.filter(s => s.id !== itemParaRemover.id)
+        }));
+      }
+
     } catch (e) {
-      console.log('Erro ao favoritar');
+      console.log('Erro ao remover favorito');
+    } finally {
+      setRemovendo(false);
+      setModalVisivel(false);
+      setItemParaRemover(null);
     }
   };
 
-  // ==========================================
-  // RENDER: ESTABELECIMENTOS
-  // ==========================================
-  const renderEstabelecimento = ({ item }: { item: any }) => (
-    <TouchableOpacity 
-      style={styles.cardAirbnb} 
-      activeOpacity={0.9}
-      // Corrigido para a rota real que vi na sua imagem
-      onPress={() => router.push({ pathname: '/src/screens/EstabelecimentoDetalhes', params: { id: item.id } })}
-    >
-      <View style={styles.cardImageContainer}>
-        <Image source={{ uri: item.foto_banner || 'https://via.placeholder.com/400x200' }} style={styles.cardBanner} />
-        <TouchableOpacity style={styles.heartButton} onPress={() => toggleFavorito('estabelecimento', item.id)}>
-          <Ionicons name="heart" size={20} color={COLORS.accent} />
-        </TouchableOpacity>
-      </View>
-      <View style={styles.cardContent}>
-        <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle} numberOfLines={1}>{item.nome}</Text>
-          <View style={styles.ratingBox}>
-            <Ionicons name="star" size={12} color={COLORS.white} />
-            <Text style={styles.ratingText}>{item.avaliacao_media || '5.0'}</Text>
-          </View>
-        </View>
-        <Text style={styles.cardSub}>{item.ramo_atuacao} • A 2.5 km daqui</Text>
-      </View>
-    </TouchableOpacity>
-  );
-
-  // ==========================================
-  // RENDER: SERVIÇOS
-  // ==========================================
-  const renderServico = ({ item }: { item: any }) => (
-    <TouchableOpacity 
-      style={styles.cardServico}
-      // Corrigido para a tela de ExplorarDetalhes
-      onPress={() => router.push({ pathname: '/src/screens/ExplorarDetalhes', params: { id: item.id, tipo: 'servico' } })}
-    >
-      <Image source={{ uri: item.foto || 'https://via.placeholder.com/100' }} style={styles.imgServico} />
-      <View style={styles.infoServico}>
-        <Text style={styles.servicoNome} numberOfLines={1}>{item.nome}</Text>
-        <Text style={styles.servicoLoja}>{item.estabelecimento?.nome}</Text>
-        <View style={styles.rowSpecs}>
-          <Text style={styles.servicoTempo}><Ionicons name="time-outline" size={12}/> {item.duracao_minutos} min</Text>
-          <Text style={styles.servicoPreco}>R$ {Number(item.valor).toFixed(2).replace('.', ',')}</Text>
-        </View>
-      </View>
-      <TouchableOpacity style={styles.btnReservarServico}>
-        <Text style={styles.txtBtnReservar}>Agendar</Text>
-      </TouchableOpacity>
-    </TouchableOpacity>
-  );
-
-  // ==========================================
-  // RENDER: RESERVAS
-  // ==========================================
-  const renderReserva = ({ item, statusColor, statusLabel }: any) => (
-    <TouchableOpacity 
-      style={styles.cardReserva}
-      // Rota correta baseada na sua imagem
-      onPress={() => router.push({ pathname: '/agendamentos/detalhes', params: { id: item.id, tipo: 'servico' } })}
-    >
-      <View style={styles.reservaTop}>
-        <View style={[styles.badgeReserva, { backgroundColor: statusColor + '20' }]}>
-          <Text style={[styles.txtBadgeReserva, { color: statusColor }]}>{statusLabel}</Text>
-        </View>
-        <Text style={styles.reservaData}>{item.data_agendamento.split('-').reverse().join('/')} • {item.hora_agendamento.substring(0,5)}</Text>
-      </View>
-      <Text style={styles.reservaNome}>{item.servico?.nome}</Text>
-      <Text style={styles.reservaLocal}><Ionicons name="location-outline" size={12}/> {item.estabelecimento?.nome}</Text>
-      
-      <View style={styles.reservaFooter}>
-        <TouchableOpacity style={styles.btnAcaoList} onPress={() => router.push({ pathname: '/agendamentos/detalhes', params: { id: item.id, tipo: 'servico' } })}>
-          <Text style={styles.txtBtnAcaoList}>Ver detalhes</Text>
-        </TouchableOpacity>
-        {statusLabel === 'Próxima' ? (
-          <TouchableOpacity style={[styles.btnAcaoList, { backgroundColor: '#FEF2F2' }]}>
-            <Text style={[styles.txtBtnAcaoList, { color: COLORS.error }]}>Cancelar</Text>
-          </TouchableOpacity>
-        ) : null}
-      </View>
-    </TouchableOpacity>
-  );
+  const temEstabelecimentos = dados.estabelecimentos && dados.estabelecimentos.length > 0;
+  const temServicos = dados.servicos && dados.servicos.length > 0;
+  const estaVazio = !temEstabelecimentos && !temServicos;
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
+      <View style={styles.mainContainer}>
         
-        {/* BUSCA E FILTROS */}
-        <View style={styles.header}>
-          <Text style={styles.pageTitle}>Salvos</Text>
-          <View style={styles.searchBar}>
-            <Ionicons name="search" size={20} color={COLORS.gray} />
-            <TextInput 
-              style={styles.inputSearch} 
-              placeholder="Buscar em seus favoritos..." 
-              value={busca}
-              onChangeText={setBusca}
-            />
-            <TouchableOpacity style={styles.filterBtn}>
-              <Ionicons name="options-outline" size={20} color={COLORS.primary} />
-            </TouchableOpacity>
-          </View>
+        {/* HEADER TOP BAR */}
+        <View style={styles.headerBar}>
+          <TouchableOpacity style={styles.headerBtn} onPress={() => router.back()}>
+            <Ionicons name="arrow-back" size={22} color={COLORS.black} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Meus Favoritos</Text>
+          <TouchableOpacity style={styles.headerBtn}>
+            <Ionicons name="notifications-outline" size={22} color={COLORS.black} />
+          </TouchableOpacity>
         </View>
 
-        {/* ABAS */}
-        <View style={styles.tabsContainer}>
-          {['estabelecimentos', 'servicos', 'reservas'].map((tab) => (
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+          
+          {/* BANNER INFORMATIVO */}
+          <View style={styles.heroSection}>
+            <View style={styles.heroTextContainer}>
+              <Text style={styles.heroDescription}>
+                Acompanhe todos os lugares e serviços que você salvou para mais tarde.
+              </Text>
+            </View>
+            <View style={styles.heroBadgeCircle}>
+              <Ionicons name="heart-outline" size={24} color={COLORS.black} />
+            </View>
+          </View>
+
+          {/* ABAS DE NAVEGAÇÃO SUPERIOR */}
+          <View style={styles.tabsContainer}>
+            
             <TouchableOpacity 
-              key={tab} 
-              style={[styles.tab, abaAtiva === tab && styles.tabAtiva]}
-              onPress={() => setAbaAtiva(tab as any)}
+              style={[styles.tabItem, abaAtiva === 'todos' && styles.tabItemActive]}
+              onPress={() => setAbaAtiva('todos')}
             >
-              <Text style={[styles.tabText, abaAtiva === tab && styles.tabTextAtiva]}>
-                {tab.charAt(0).toUpperCase() + tab.slice(1)}
+              <Ionicons 
+                name="heart" 
+                size={18} 
+                color={abaAtiva === 'todos' ? COLORS.primary : COLORS.black} 
+              />
+              <Text style={[styles.tabText, abaAtiva === 'todos' && styles.tabTextActive]}>
+                Todos
               </Text>
             </TouchableOpacity>
-          ))}
-        </View>
 
-        {/* CONTEÚDO */}
-        {loading ? (
-          <View style={styles.center}><ActivityIndicator size="large" color={COLORS.primary} /></View>
-        ) : (
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-            
-            {abaAtiva === 'estabelecimentos' ? (
-              <FlatList 
-                data={dados.estabelecimentos}
-                scrollEnabled={false}
-                keyExtractor={i => i.id.toString()}
-                renderItem={renderEstabelecimento}
-                ListEmptyComponent={<Text style={styles.empty}>Nenhum estabelecimento salvo.</Text>}
+            <TouchableOpacity 
+              style={[styles.tabItem, abaAtiva === 'estabelecimentos' && styles.tabItemActive]}
+              onPress={() => setAbaAtiva('estabelecimentos')}
+            >
+              <Ionicons 
+                name="storefront-outline" 
+                size={18} 
+                color={abaAtiva === 'estabelecimentos' ? COLORS.primary : COLORS.black} 
               />
-            ) : null}
+              <Text style={[styles.tabText, abaAtiva === 'estabelecimentos' && styles.tabTextActive]}>
+                Estabelecimentos
+              </Text>
+            </TouchableOpacity>
 
-            {abaAtiva === 'servicos' ? (
-              <FlatList 
-                data={dados.servicos}
-                scrollEnabled={false}
-                keyExtractor={i => i.id.toString()}
-                renderItem={renderServico}
-                ListEmptyComponent={<Text style={styles.empty}>Nenhum serviço salvo.</Text>}
+            <TouchableOpacity 
+              style={[styles.tabItem, abaAtiva === 'servicos' && styles.tabItemActive]}
+              onPress={() => setAbaAtiva('servicos')}
+            >
+              <Ionicons 
+                name="briefcase-outline" 
+                size={18} 
+                color={abaAtiva === 'servicos' ? COLORS.primary : COLORS.black} 
               />
-            ) : null}
+              <Text style={[styles.tabText, abaAtiva === 'servicos' && styles.tabTextActive]}>
+                Serviços
+              </Text>
+            </TouchableOpacity>
 
-            {abaAtiva === 'reservas' ? (
-              <View>
-                {(dados.reservas?.proximas?.length ?? 0) > 0 ? (
-                  <>
-                    <Text style={styles.sectionTitle}>Próximas</Text>
-                    {dados.reservas.proximas.map((item: any) => renderReserva({ item, statusColor: COLORS.primary, statusLabel: 'Próxima' }))}
-                  </>
-                ) : null}
-                
-                {(dados.reservas?.concluidas?.length ?? 0) > 0 ? (
-                  <>
-                    <Text style={styles.sectionTitle}>Concluídas</Text>
-                    {dados.reservas.concluidas.map((item: any) => renderReserva({ item, statusColor: '#10B981', statusLabel: 'Finalizado' }))}
-                  </>
-                ) : null}
+          </View>
 
-                {(dados.reservas?.proximas?.length ?? 0) === 0 && (dados.reservas?.concluidas?.length ?? 0) === 0 ? (
-                    <Text style={styles.empty}>Nenhuma reserva encontrada.</Text>
-                ) : null}
-              </View>
-            ) : null}
-          </ScrollView>
-        )}
+          {/* CONTEÚDO PRINCIPAL */}
+          {loading ? (
+            <View style={styles.loadingBox}>
+              <ActivityIndicator size="large" color={COLORS.primary} />
+            </View>
+          ) : estaVazio ? (
+            <View style={styles.emptyStateContainer}>
+              <Ionicons name="heart-dislike-outline" size={60} color={COLORS.gray} />
+              <Text style={styles.emptyStateTitle}>Nenhum favorito salvo</Text>
+              <Text style={styles.emptyStateDesc}>
+                Você ainda não salvou nenhum local ou serviço. Explore a plataforma e clique no ícone de coração!
+              </Text>
+              <TouchableOpacity 
+                style={styles.btnExplorarState}
+                onPress={() => router.push('/src/screens/TelaExplorar')}
+              >
+                <Text style={styles.btnExplorarStateText}>Explorar Agora</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <>
+              {/* SEÇÃO: ESTABELECIMENTOS SALVOS */}
+              {(abaAtiva === 'todos' || abaAtiva === 'estabelecimentos') && temEstabelecimentos && (
+                <View style={styles.sectionBlock}>
+                  <View style={styles.sectionHeader}>
+                    <View style={styles.sectionHeaderLeft}>
+                      <View style={styles.sectionIconBg}>
+                        <Ionicons name="bed-outline" size={16} color={COLORS.primary} />
+                      </View>
+                      <Text style={styles.sectionTitle}>Reservas salvas</Text>
+                    </View>
+                    <TouchableOpacity onPress={() => router.push('/src/screens/TelaExplorar')}>
+                      <View style={styles.verTodasRow}>
+                        <Text style={styles.verTodasText}>Ver todas</Text>
+                        <Ionicons name="chevron-forward" size={14} color={COLORS.primary} />
+                      </View>
+                    </TouchableOpacity>
+                  </View>
 
-        {/* BOTTOM NAVIGATION (Caminhos Corrigidos) */}
+                  {dados.estabelecimentos.map((item) => (
+                    <TouchableOpacity 
+                      key={item.id} 
+                      style={styles.favoriteCard}
+                      activeOpacity={0.85}
+                      onPress={() => router.push({ pathname: '/src/screens/EstabelecimentoDetalhes', params: { id: item.id } })}
+                    >
+                      <Image 
+                        source={{ uri: item.foto_banner || item.foto_perfil || 'https://images.unsplash.com/photo-1566073771259-6a8506099945?q=80&w=300' }} 
+                        style={styles.cardImage} 
+                      />
+
+                      <View style={styles.cardInfo}>
+                        <Text style={styles.cardTitle} numberOfLines={1}>{item.nome}</Text>
+                        
+                        <View style={styles.cardMetaRow}>
+                          <Ionicons name="location-outline" size={12} color={COLORS.black} />
+                          <Text style={styles.cardMetaText} numberOfLines={1}>
+                            {item.cidade ? `${item.cidade}, ${item.estado}` : 'Rio de Janeiro, RJ'}
+                          </Text>
+                        </View>
+
+                        <View style={styles.ratingRow}>
+                          <Ionicons name="star" size={13} color={COLORS.warning} />
+                          <Text style={styles.ratingValue}>
+                            {item.avaliacao_media || '4.8'}{' '}
+                            <Text style={styles.ratingCount}>({item.total_avaliacoes || '86'})</Text>
+                          </Text>
+                        </View>
+
+                        <Text style={styles.priceText}>
+                          R$ {item.preco_medio || item.valor || '620'}{' '}
+                          <Text style={styles.priceUnit}>/ noite</Text>
+                        </Text>
+                      </View>
+
+                      <TouchableOpacity 
+                        style={styles.heartActionBtn}
+                        onPress={() => solicitarRemocao(item, 'estabelecimento')}
+                      >
+                        <Ionicons name="heart" size={22} color={COLORS.black} />
+                      </TouchableOpacity>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              {/* SEÇÃO: SERVIÇOS SALVOS */}
+              {(abaAtiva === 'todos' || abaAtiva === 'servicos') && temServicos && (
+                <View style={styles.sectionBlock}>
+                  <View style={styles.sectionHeader}>
+                    <View style={styles.sectionHeaderLeft}>
+                      <View style={styles.sectionIconBg}>
+                        <Ionicons name="bag-handle-outline" size={16} color={COLORS.primary} />
+                      </View>
+                      <Text style={styles.sectionTitle}>Serviços salvos</Text>
+                    </View>
+                    <TouchableOpacity onPress={() => router.push('/src/screens/TelaExplorar')}>
+                      <View style={styles.verTodasRow}>
+                        <Text style={styles.verTodasText}>Ver todos</Text>
+                        <Ionicons name="chevron-forward" size={14} color={COLORS.primary} />
+                      </View>
+                    </TouchableOpacity>
+                  </View>
+
+                  {dados.servicos.map((item) => (
+                    <TouchableOpacity 
+                      key={item.id} 
+                      style={styles.favoriteCard}
+                      activeOpacity={0.85}
+                      onPress={() => router.push({ pathname: '/src/screens/ExplorarDetalhes', params: { id: item.id, tipo: 'servico' } })}
+                    >
+                      <Image 
+                        source={{ uri: item.foto || item.estabelecimento?.foto_perfil || 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?q=80&w=300' }} 
+                        style={styles.cardImage} 
+                      />
+
+                      <View style={styles.cardInfo}>
+                        <Text style={styles.cardTitle} numberOfLines={1}>{item.nome}</Text>
+                        
+                        <View style={styles.cardMetaRow}>
+                          <Ionicons name="location-outline" size={12} color={COLORS.black} />
+                          <Text style={styles.cardMetaText} numberOfLines={1}>
+                            {item.estabelecimento?.nome || item.cidade || 'São Paulo, SP'}
+                          </Text>
+                        </View>
+
+                        <Text style={styles.categorySubtext}>
+                          {item.categoria || 'Gastronomia • Brasileira'}
+                        </Text>
+
+                        <View style={styles.ratingRow}>
+                          <Ionicons name="star" size={13} color={COLORS.warning} />
+                          <Text style={styles.ratingValue}>
+                            {item.avaliacao_media || '4.9'}{' '}
+                            <Text style={styles.ratingCount}>({item.total_avaliacoes || '230'})</Text>
+                          </Text>
+                        </View>
+                      </View>
+
+                      <TouchableOpacity 
+                        style={styles.heartActionBtn}
+                        onPress={() => solicitarRemocao(item, 'servico')}
+                      >
+                        <Ionicons name="heart" size={22} color={COLORS.black} />
+                      </TouchableOpacity>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </>
+          )}
+
+        </ScrollView>
+
+        {/* BOTTOM NAVIGATION BAR */}
         <View style={styles.bottomNav}>
           <TouchableOpacity style={styles.navItem} onPress={() => router.push('/src/screens/Home')}>
-            <Ionicons name="compass-outline" size={24} color={COLORS.gray} />
-            <Text style={styles.navText}>Explorar</Text>
+            <Ionicons name="home-outline" size={22} color={COLORS.black} />
+            <Text style={styles.navLabel}>Home</Text>
           </TouchableOpacity>
+
+          <TouchableOpacity style={styles.navItem} onPress={() => router.push('/src/screens/TelaExplorar')}>
+            <Ionicons name="compass-outline" size={22} color={COLORS.black} />
+            <Text style={styles.navLabel}>Explorar</Text>
+          </TouchableOpacity>
+
           <TouchableOpacity style={styles.navItem} onPress={() => router.push('/src/screens/MeusAgendamentos')}>
-            <Ionicons name="calendar-outline" size={24} color={COLORS.gray} />
-            <Text style={styles.navText}>Reservas</Text>
+            <Ionicons name="calendar-outline" size={22} color={COLORS.black} />
+            <Text style={styles.navLabel}>Reservas</Text>
           </TouchableOpacity>
+
           <TouchableOpacity style={styles.navItem}>
-            <Ionicons name="heart" size={24} color={COLORS.primary} />
-            <Text style={[styles.navText, { color: COLORS.primary, fontWeight: '800' }]}>Favoritos</Text>
+            <Ionicons name="heart" size={22} color={COLORS.primary} />
+            <Text style={[styles.navLabel, { color: COLORS.primary }]}>Favoritos</Text>
           </TouchableOpacity>
+
           <TouchableOpacity style={styles.navItem} onPress={() => router.push('/src/screens/TelaPerfil')}>
-            <Ionicons name="person-circle-outline" size={24} color={COLORS.gray} />
-            <Text style={styles.navText}>Perfil</Text>
+            <Ionicons name="person-outline" size={22} color={COLORS.black} />
+            <Text style={styles.navLabel}>Perfil</Text>
           </TouchableOpacity>
         </View>
+
+        {/* MODAL MODERNO DE CONFIRMAÇÃO DE REMOÇÃO */}
+        <Modal
+          visible={modalVisivel}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setModalVisivel(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContainer}>
+              <View style={styles.modalIconCircle}>
+                <Ionicons name="trash-outline" size={28} color={COLORS.error} />
+              </View>
+
+              <Text style={styles.modalTitle}>Remover dos Favoritos?</Text>
+              
+              <Text style={styles.modalMessage}>
+                Tem certeza que deseja remover <Text style={{ fontWeight: '800', color: COLORS.secondary }}>"{itemParaRemover?.nome}"</Text> dos seus salvos?
+              </Text>
+
+              <View style={styles.modalActions}>
+                <TouchableOpacity 
+                  style={styles.modalBtnCancel} 
+                  onPress={() => setModalVisivel(false)}
+                  disabled={removendo}
+                >
+                  <Text style={styles.modalBtnCancelText}>Cancelar</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={styles.modalBtnConfirm} 
+                  onPress={confirmarRemocao}
+                  disabled={removendo}
+                >
+                  {removendo ? (
+                    <ActivityIndicator color={COLORS.white} size="small" />
+                  ) : (
+                    <Text style={styles.modalBtnConfirmText}>Sim, remover</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
 
       </View>
     </SafeAreaView>
@@ -277,65 +484,342 @@ export default function FavoritosDashboard() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: COLORS.white },
-  container: { flex: 1, backgroundColor: COLORS.lightGray },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  scrollContent: { padding: 20, paddingBottom: 100 },
-  empty: { textAlign: 'center', color: COLORS.gray, marginTop: 40, fontSize: 15 },
+  safeArea: {
+    flex: 1,
+    backgroundColor: COLORS.white,
+    paddingTop: Platform.OS === 'android' ? 25 : 0
+  },
+  mainContainer: {
+    flex: 1,
+    backgroundColor: COLORS.white,
+    position: 'relative'
+  },
+  scrollContent: {
+    paddingBottom: 90
+  },
 
-  // Header & Search
-  header: { paddingHorizontal: 20, paddingTop: 20, backgroundColor: COLORS.white },
-  pageTitle: { fontSize: 32, fontWeight: '900', color: COLORS.secondary, letterSpacing: -1, marginBottom: 16 },
-  searchBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.white, borderRadius: 100, paddingHorizontal: 16, height: 50, borderWidth: 1, borderColor: COLORS.border, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 3 },
-  inputSearch: { flex: 1, marginLeft: 10, fontSize: 15, color: COLORS.secondary },
-  filterBtn: { backgroundColor: COLORS.primaryLight, padding: 6, borderRadius: 20 },
+  // HEADER BAR
+  headerBar: {
+    height: 54,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border
+  },
+  headerBtn: {
+    padding: 6
+  },
+  headerTitle: {
+    fontSize: 17,
+    fontWeight: '900',
+    color: COLORS.secondary
+  },
 
-  // Tabs
-  tabsContainer: { flexDirection: 'row', paddingHorizontal: 20, paddingTop: 20, paddingBottom: 10, backgroundColor: COLORS.white, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  tab: { marginRight: 16, paddingBottom: 12, borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  tabAtiva: { borderBottomColor: COLORS.primary },
-  tabText: { fontSize: 14, fontWeight: '700', color: COLORS.gray },
-  tabTextAtiva: { color: COLORS.primary, fontWeight: '900' },
+  // HERO BANNER
+  heroSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 18
+  },
+  heroTextContainer: {
+    flex: 1,
+    paddingRight: 12
+  },
+  heroDescription: {
+    fontSize: 13,
+    color: COLORS.gray,
+    lineHeight: 18,
+    fontWeight: '500'
+  },
+  heroBadgeCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: COLORS.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
 
-  // Card Airbnb Style (Estabelecimentos)
-  cardAirbnb: { backgroundColor: COLORS.white, borderRadius: 24, marginBottom: 24, overflow: 'hidden', borderWidth: 1, borderColor: COLORS.border, shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.05, shadowRadius: 12, elevation: 4 },
-  cardImageContainer: { position: 'relative' },
-  cardBanner: { width: '100%', height: 180 },
-  heartButton: { position: 'absolute', top: 16, right: 16, width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.white, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },
-  cardContent: { padding: 16 },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  cardTitle: { fontSize: 18, fontWeight: '900', color: COLORS.secondary, flex: 1 },
-  ratingBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.secondary, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-  ratingText: { color: COLORS.white, fontSize: 12, fontWeight: '900', marginLeft: 4 },
-  cardSub: { fontSize: 14, color: COLORS.gray, fontWeight: '500' },
+  // TABS SUPERIORES
+  tabsContainer: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    paddingHorizontal: 16
+  },
+  tabItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    marginRight: 20,
+    borderBottomWidth: 2,
+    borderBottomColor: 'transparent'
+  },
+  tabItemActive: {
+    borderBottomColor: COLORS.primary
+  },
+  tabText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: COLORS.black,
+    marginLeft: 6
+  },
+  tabTextActive: {
+    color: COLORS.primary,
+    fontWeight: '900'
+  },
 
-  // Card Serviços
-  cardServico: { flexDirection: 'row', backgroundColor: COLORS.white, padding: 12, borderRadius: 20, marginBottom: 16, borderWidth: 1, borderColor: COLORS.border, alignItems: 'center' },
-  imgServico: { width: 70, height: 70, borderRadius: 16 },
-  infoServico: { flex: 1, marginLeft: 12 },
-  servicoNome: { fontSize: 16, fontWeight: '900', color: COLORS.secondary },
-  servicoLoja: { fontSize: 12, color: COLORS.gray, marginBottom: 6 },
-  rowSpecs: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  servicoTempo: { fontSize: 12, color: COLORS.gray, fontWeight: '600' },
-  servicoPreco: { fontSize: 14, fontWeight: '900', color: COLORS.accent },
-  btnReservarServico: { backgroundColor: COLORS.primaryLight, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 100 },
-  txtBtnReservar: { color: COLORS.primary, fontWeight: '900', fontSize: 12 },
+  // SEÇÃO DE LISTA
+  sectionBlock: {
+    marginTop: 20,
+    paddingHorizontal: 16
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14
+  },
+  sectionHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center'
+  },
+  sectionIconBg: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: COLORS.primaryLight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: COLORS.secondary
+  },
+  verTodasRow: {
+    flexDirection: 'row',
+    alignItems: 'center'
+  },
+  verTodasText: {
+    fontSize: 12,
+    color: COLORS.primary,
+    fontWeight: '800',
+    marginRight: 2
+  },
 
-  // Card Reservas
-  sectionTitle: { fontSize: 18, fontWeight: '900', color: COLORS.secondary, marginTop: 10, marginBottom: 16 },
-  cardReserva: { backgroundColor: COLORS.white, padding: 20, borderRadius: 24, marginBottom: 16, borderWidth: 1, borderColor: COLORS.border },
-  reservaTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  badgeReserva: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
-  txtBadgeReserva: { fontSize: 10, fontWeight: '900', textTransform: 'uppercase' },
-  reservaData: { fontSize: 12, color: COLORS.gray, fontWeight: '700' },
-  reservaNome: { fontSize: 18, fontWeight: '900', color: COLORS.secondary, marginBottom: 4 },
-  reservaLocal: { fontSize: 13, color: COLORS.gray, fontWeight: '500', marginBottom: 16 },
-  reservaFooter: { flexDirection: 'row', gap: 12, borderTopWidth: 1, borderTopColor: COLORS.border, paddingTop: 16 },
-  btnAcaoList: { flex: 1, backgroundColor: COLORS.lightGray, paddingVertical: 12, borderRadius: 12, alignItems: 'center' },
-  txtBtnAcaoList: { fontSize: 13, fontWeight: '900', color: COLORS.secondary },
+  // CARD DE FAVORITO
+  favoriteCard: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    padding: 10,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 2
+  },
+  cardImage: {
+    width: 90,
+    height: 90,
+    borderRadius: 12,
+    backgroundColor: COLORS.lightGray
+  },
+  cardInfo: {
+    flex: 1,
+    marginLeft: 12,
+    justifyContent: 'center'
+  },
+  cardTitle: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: COLORS.secondary,
+    marginBottom: 2
+  },
+  cardMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4
+  },
+  cardMetaText: {
+    fontSize: 11,
+    color: COLORS.gray,
+    fontWeight: '600',
+    marginLeft: 4
+  },
+  categorySubtext: {
+    fontSize: 11,
+    color: COLORS.gray,
+    marginBottom: 4
+  },
+  ratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4
+  },
+  ratingValue: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: COLORS.secondary,
+    marginLeft: 4
+  },
+  ratingCount: {
+    color: COLORS.gray,
+    fontWeight: '500',
+    fontSize: 11
+  },
+  priceText: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: COLORS.primary
+  },
+  priceUnit: {
+    fontSize: 11,
+    color: COLORS.gray,
+    fontWeight: '500'
+  },
+  heartActionBtn: {
+    padding: 8
+  },
 
-  // Bottom Navigation
-  bottomNav: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 80, backgroundColor: COLORS.white, flexDirection: 'row', borderTopWidth: 1, borderTopColor: COLORS.border, paddingBottom: 20 },
-  navItem: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 10 },
-  navText: { fontSize: 10, fontWeight: '600', color: COLORS.gray, marginTop: 4 }
+  // EMPTY & LOADING STATES
+  loadingBox: {
+    paddingVertical: 50,
+    alignItems: 'center'
+  },
+  emptyStateContainer: {
+    alignItems: 'center',
+    paddingHorizontal: 30,
+    paddingVertical: 60
+  },
+  emptyStateTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: COLORS.secondary,
+    marginTop: 12,
+    marginBottom: 6
+  },
+  emptyStateDesc: {
+    fontSize: 13,
+    color: COLORS.gray,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 20
+  },
+  btnExplorarState: {
+    backgroundColor: COLORS.secondary,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 25
+  },
+  btnExplorarStateText: {
+    color: COLORS.white,
+    fontWeight: '800',
+    fontSize: 13
+  },
+
+  // BOTTOM NAVIGATION
+  bottomNav: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 60,
+    backgroundColor: COLORS.white,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    elevation: 8
+  },
+  navItem: {
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  navLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: COLORS.black,
+    marginTop: 2
+  },
+
+  // MODAL DE CONFIRMAÇÃO
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24
+  },
+  modalContainer: {
+    width: '100%',
+    backgroundColor: COLORS.white,
+    borderRadius: 24,
+    padding: 24,
+    alignItems: 'center',
+    elevation: 10
+  },
+  modalIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#FEE2E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: COLORS.secondary,
+    marginBottom: 8
+  },
+  modalMessage: {
+    fontSize: 13,
+    color: COLORS.gray,
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 24
+  },
+  modalActions: {
+    flexDirection: 'row',
+    width: '100%'
+  },
+  modalBtnCancel: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: COLORS.lightGray,
+    alignItems: 'center',
+    marginRight: 8
+  },
+  modalBtnCancelText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: COLORS.gray
+  },
+  modalBtnConfirm: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: COLORS.error,
+    alignItems: 'center',
+    marginLeft: 8
+  },
+  modalBtnConfirmText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: COLORS.white
+  }
 });

@@ -1,551 +1,392 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  ScrollView, 
+  TouchableOpacity, 
+  TextInput, 
+  SafeAreaView, 
+  ActivityIndicator,
+  Platform,
+  Dimensions
+} from 'react-native';
 import { Image } from 'expo-image';
-import { useEffect, useState } from 'react';
-import { StyleSheet, ScrollView, TouchableOpacity, View, TextInput, SafeAreaView, ActivityIndicator } from 'react-native';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import axios from 'axios';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { ThemedText } from '@/components/themed-text';
-// import { Fonts } from '@/constants/theme'; // Descomente se for usar
+const { width } = Dimensions.get('window');
 
-// Altere para o domínio de produção da API Laravel no Render
+// --- CORES PADRÃO ---
+const COLORS = {
+  primary: '#FF5A00', 
+  primaryLight: '#FFF4ED',
+  secondary: '#111827',
+  gray: '#6B7280',
+  lightGray: '#F3F4F6',
+  white: '#FFFFFF',
+  border: '#E5E7EB',
+  warning: '#FBBF24', 
+  success: '#10B981',
+};
+
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api/mobile';
 
-// Cor Laranja Mais Viva para destaques e botões
-const VIVID_ORANGE = '#FF4500'; 
+// Subcategorias de filtros
+const CATEGORIAS = [
+  { nome: 'Tudo', icone: 'apps', slug: 'tudo' },
+  { nome: 'Beleza', icone: 'content-cut', slug: 'beleza' },
+  { nome: 'Barbearia', icone: 'storefront', slug: 'barbearia' },
+  { nome: 'Estética', icone: 'face', slug: 'estetica' },
+  { nome: 'Automotivo', icone: 'directions-car', slug: 'automotivo' },
+  { nome: 'Pets', icone: 'pets', slug: 'pets' },
+  { nome: 'Casa/Faxina', icone: 'cleaning-services', slug: 'casa' },
+  { nome: 'Eventos', icone: 'event', slug: 'eventos' },
+  { nome: 'Saúde', icone: 'local-hospital', slug: 'saude' },
+  { nome: 'Equipamentos', icone: 'build', slug: 'equipamentos' },
+];
 
-export default function ExploreScreen() {
+export default function TelaExplorar() {
   const router = useRouter();
-  const [estabelecimentos, setEstabelecimentos] = useState<any[]>([]);
-  const [destaques, setDestaques] = useState<any[]>([]);
-  const [carregando, setCarregando] = useState<boolean>(true);
-  const [categoriaAtiva, setCategoriaAtiva] = useState<string>('Tudo');
+  const params = useLocalSearchParams();
 
-  // Categorias atualizadas com Materiais, Eventos e Restaurantes
-  const categorias = [
-    { nome: 'Tudo', icone: 'apps' },
-    { nome: 'Beleza', icone: 'content-cut' },
-    { nome: 'Barbearia', icone: 'storefront' },
-    { nome: 'Imóveis', icone: 'home' },
-    { nome: 'Veículos', icone: 'directions-car' },
-    { nome: 'Equipamentos', icone: 'build' },
-    { nome: 'Materiais', icone: 'handyman' }, // Nova
-    { nome: 'Eventos', icone: 'event' },      // Nova
-    { nome: 'Restaurantes', icone: 'restaurant' }, // Nova
-  ];
+  // CORREÇÃO AQUI: Adicionado <any[]> para evitar o erro "never"
+  const [itens, setItens] = useState<any[]>([]);
+  const [destaques, setDestaques] = useState<any[]>([]);
+  
+  const [carregando, setCarregando] = useState<boolean>(true);
+  const [busca, setBusca] = useState<string>(params.query ? params.query.toString() : '');
+  const [tipoAtivo, setTipoAtivo] = useState<string>('estabelecimentos'); 
+  const [categoriaAtiva, setCategoriaAtiva] = useState<string>('tudo');
 
   useEffect(() => {
-    carregarDados();
-  }, [categoriaAtiva]);
+    const delayDebounceFn = setTimeout(() => {
+      carregarDados();
+    }, 400); 
+    return () => clearTimeout(delayDebounceFn);
+  }, [busca, tipoAtivo, categoriaAtiva]);
 
   const carregarDados = async () => {
+    setCarregando(true);
     try {
-      setCarregando(true);
+      const token = await AsyncStorage.getItem('@waitless_token');
+      
+      const queryParams = new URLSearchParams({
+        tipo_busca: tipoAtivo,
+        categoria: categoriaAtiva === 'tudo' ? '' : categoriaAtiva,
+        busca: busca
+      }).toString();
 
-      // CORRIGIDO: Usando a constante API_URL corretamente
-      const [resExplorar, resDestaques] = await Promise.all([
-        axios.get(`${API_URL}/explorar?categoria=${categoriaAtiva}`),
-        axios.get(`${API_URL}/explorar/destaques`),
-      ]);
-
-      // Mapeia os dados vindo da API Laravel
-      setEstabelecimentos(resExplorar.data.data || resExplorar.data || []);
-      setDestaques(resDestaques.data.data || resDestaques.data || []);
+      const res = await fetch(`${API_URL}/explorar?${queryParams}`, {
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json' 
+        }
+      });
+      const data = await res.json();
+      
+      const resultados = Array.isArray(data) ? data : (data.data || []);
+      
+      setDestaques(resultados.slice(0, 4)); 
+      setItens(resultados.slice(4)); 
+      
     } catch (e) {
-      console.log('Erro ao conectar com a API Laravel:', e);
+      console.log('Erro ao conectar com a API:', e);
     } finally {
       setCarregando(false);
     }
   };
 
-  const irParaDetalhes = (id: number, tipo: 'servico' | 'aluguel') => {
-    if (tipo === 'servico') {
-      router.push({ pathname: '/reservas', params: { estabelecimentoId: id, tipo: 'servico' } });
-    } else {
-      router.push({ pathname: '/reservas', params: { itemId: id, tipo: 'aluguel' } });
-    }
+  const irParaDetalhes = (id: any) => {
+    router.push({ 
+      pathname: '/src/screens/ExplorarDetalhes', 
+      params: { 
+        id: id, 
+        tipo: tipoAtivo 
+      } 
+    });
   };
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView showsVerticalScrollIndicator={false} style={styles.container}>
-
-        {/* HEADER */}
-        <View style={styles.header}>
-          <View style={styles.searchContainer}>
-            <Ionicons name="search" size={20} color="#777" />
-            <TextInput
-              placeholder="Buscar serviços ou aluguéis..."
-              placeholderTextColor="#999"
-              style={styles.searchInput}
-            />
+      
+      {/* HEADER FIXO */}
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
+          <Text style={styles.logoText}>Explorar</Text>
+          <View style={styles.locationContainer}>
+            <Ionicons name="location-sharp" size={14} color={COLORS.primary} />
+            <Text style={styles.locationText} numberOfLines={1}>Sua Localização</Text>
+            <Ionicons name="chevron-down" size={14} color={COLORS.gray} />
           </View>
+        </View>
 
-          <TouchableOpacity style={styles.iconButton} onPress={() => router.push('/caixa-entrada')}>
-            <Ionicons name="notifications-outline" size={24} color="#333" />
+        <View style={styles.headerIcons}>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/src/screens/FavoritosDashboard' as any)}>
+            <Ionicons name="heart-outline" size={24} color={COLORS.secondary} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/src/screens/PagamentoScreen' as any)}>
+            <Ionicons name="cart-outline" size={24} color={COLORS.secondary} />
             <View style={styles.badge} />
           </TouchableOpacity>
-
-          <TouchableOpacity style={styles.profileButton}>
-            <ThemedText style={styles.profileText}>JR</ThemedText>
+          <TouchableOpacity style={styles.profileBtn} onPress={() => router.push('/src/screens/TelaPerfil' as any)}>
+            <Ionicons name="person" size={16} color={COLORS.white} />
           </TouchableOpacity>
         </View>
+      </View>
 
-        {/* LOCALIZAÇÃO */}
-        <View style={styles.locationContainer}>
-          <Ionicons name="location-outline" size={18} color={VIVID_ORANGE} />
-          <ThemedText style={styles.locationText} numberOfLines={1}>
-            Rua Professora Eunice de Vasconcelos Xavier, 100
-          </ThemedText>
-          <Ionicons name="chevron-down" size={16} color="#777" />
+      <ScrollView showsVerticalScrollIndicator={false} style={styles.container} contentContainerStyle={{ paddingBottom: 100 }}>
+
+        {/* BARRA DE PESQUISA */}
+        <View style={styles.searchContainer}>
+          <Ionicons name="search" size={20} color={COLORS.gray} style={{ marginRight: 10 }} />
+          <TextInput
+            placeholder="O que você está buscando?"
+            placeholderTextColor={COLORS.gray}
+            style={styles.searchInput}
+            value={busca}
+            onChangeText={setBusca}
+            clearButtonMode="while-editing"
+          />
         </View>
 
-        {/* CATEGORIAS */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoriesScroll}>
-          {categorias.map((cat, i) => {
-            const isAtivo = categoriaAtiva === cat.nome;
-            return (
-              <TouchableOpacity
-                key={i}
-                style={styles.categoriaCard}
-                onPress={() => setCategoriaAtiva(cat.nome)}
-              >
-                <View style={[styles.iconContainer, isAtivo && styles.iconContainerAtivo]}>
-                  <MaterialIcons name={cat.icone as any} size={24} color={isAtivo ? VIVID_ORANGE : '#555'} />
-                </View>
-                <ThemedText style={[styles.categoriaTexto, isAtivo && styles.categoriaTextoAtivo]}>
-                  {cat.nome}
-                </ThemedText>
-              </TouchableOpacity>
-            );
-          })}
+        {/* FILTRO PRINCIPAL (TIPO DE BUSCA) */}
+        <View style={styles.typeFilterContainer}>
+          {[
+            { label: 'Locais', value: 'estabelecimentos' },
+            { label: 'Serviços', value: 'servicos' },
+            { label: 'Aluguéis', value: 'reservas' }
+          ].map((tipo) => (
+            <TouchableOpacity 
+              key={tipo.value} 
+              style={[styles.typeBtn, tipoAtivo === tipo.value && styles.typeBtnAtivo]}
+              onPress={() => setTipoAtivo(tipo.value)}
+            >
+              <Text style={[styles.typeBtnText, tipoAtivo === tipo.value && styles.typeBtnTextAtivo]}>
+                {tipo.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* CARROSSEL DE CATEGORIAS */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoriesScroll} contentContainerStyle={{ paddingHorizontal: 16 }}>
+          {CATEGORIAS.map((cat, i) => (
+            <TouchableOpacity
+              key={i}
+              style={styles.categoriaCard}
+              onPress={() => setCategoriaAtiva(cat.slug)}
+            >
+              <View style={[styles.iconContainer, categoriaAtiva === cat.slug && styles.iconContainerAtivo]}>
+                <MaterialIcons name={cat.icone as any} size={26} color={categoriaAtiva === cat.slug ? COLORS.primary : COLORS.gray} />
+              </View>
+              <Text style={[styles.categoriaTexto, categoriaAtiva === cat.slug && styles.categoriaTextoAtivo]}>
+                {cat.nome}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </ScrollView>
 
-        {/* BANNER PRINCIPAL */}
-        <View style={styles.bannerContainer}>
-          <Image
-            source={{ uri: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&q=80&w=800' }}
-            style={styles.bannerImage}
-            contentFit="cover"
-          />
-          <View style={styles.bannerOverlay}>
-            <ThemedText style={styles.bannerTitle}>Cuide de você{'\n'}ou alugue com{'\n'}segurança.</ThemedText>
-            <ThemedText style={styles.bannerSub}>Tudo na palma da sua mão.</ThemedText>
-            <TouchableOpacity style={styles.bannerButton}>
-              <ThemedText style={styles.bannerButtonText}>Explorar agora  →</ThemedText>
+        {/* CONTEÚDO PRINCIPAL */}
+        {carregando ? (
+          <View style={styles.centerLoading}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+            <Text style={styles.loadingText}>Buscando o melhor para você...</Text>
+          </View>
+        ) : destaques.length === 0 && itens.length === 0 ? (
+          
+          <View style={styles.emptyState}>
+            <Ionicons name="search-outline" size={60} color={COLORS.border} style={{ marginBottom: 16 }} />
+            <Text style={styles.emptyTitle}>Poxa, não encontramos nada.</Text>
+            <Text style={styles.emptyDesc}>Nenhum(a) {tipoAtivo} está disponível para esta busca na sua região no momento.</Text>
+            <TouchableOpacity style={styles.clearBtn} onPress={() => { setBusca(''); setCategoriaAtiva('tudo'); }}>
+              <Text style={styles.clearBtnText}>Limpar Filtros</Text>
             </TouchableOpacity>
           </View>
-        </View>
 
-        {/* INDICADOR DE CARREGAMENTO */}
-        {carregando && (
-          <ActivityIndicator size="large" color={VIVID_ORANGE} style={{ marginVertical: 20 }} />
-        )}
-
-        {/* DESTAQUES PARA VOCÊ */}
-        <View style={styles.sectionHeader}>
-          <ThemedText style={styles.sectionTitle}>Destaques para você</ThemedText>
-          <TouchableOpacity><ThemedText style={styles.verTodos}>Ver todos</ThemedText></TouchableOpacity>
-        </View>
-
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.horizontalScroll}>
-          {!carregando && destaques.length > 0 ? (
-            destaques.map((item, index) => (
-              <TouchableOpacity
-                key={item.id || index}
-                style={styles.cardDestaque}
-                onPress={() => irParaDetalhes(item.id, item.tipo || 'servico')}
-              >
-                <View>
-                  <Image
-                    source={{ uri: item.foto_perfil || item.foto || 'https://images.unsplash.com/photo-1622286342621-4bd786c2447c?auto=format&fit=crop&q=80&w=400' }}
-                    style={styles.imageDestaque}
-                    contentFit="cover"
-                  />
-                  {index === 0 && (
-                    <View style={styles.badgeAlta}>
-                      <ThemedText style={styles.badgeText}>Em alta 🔥</ThemedText>
-                    </View>
-                  )}
-                </View>
-                <View style={styles.cardDestaqueInfo}>
-                  <ThemedText style={styles.cardDestaqueTitle} numberOfLines={1}>
-                    {item.nome || item.titulo || 'Item Premium'}
-                  </ThemedText>
-                  <View style={styles.ratingContainer}>
-                    <Ionicons name="star" size={12} color="#FFB800" />
-                    <ThemedText style={styles.ratingText}>
-                      {item.avaliacao || item.avaliacao_media || '4.9'} <ThemedText style={styles.ratingCount}>({item.votos || '120'})</ThemedText>
-                    </ThemedText>
-                  </View>
-                  <ThemedText style={styles.priceLabel}>
-                    {item.tipo_periodo ? `Aluguel por ${item.tipo_periodo}` : 'A partir de'}
-                  </ThemedText>
-                  <ThemedText style={styles.priceValue}>
-                    R$ {parseFloat(item.valor || item.valor_diaria || '0').toFixed(2)}
-                  </ThemedText>
-                </View>
-              </TouchableOpacity>
-            ))
-          ) : (
-            !carregando && <ThemedText style={styles.emptyText}>Nenhum item em destaque.</ThemedText>
-          )}
-        </ScrollView>
-
-        {/* RECOMENDADOS (LISTA VERTICAL) */}
-        <ThemedText style={styles.sectionTitle}>Recomendados na Região</ThemedText>
-
-        {!carregando && estabelecimentos.length > 0 ? (
-          estabelecimentos.map((estab, index) => (
-            <TouchableOpacity
-              key={estab.id || index}
-              style={styles.cardRecomendado}
-              onPress={() => irParaDetalhes(estab.id, estab.categoria_tipo === 'locacao' ? 'aluguel' : 'servico')}
-            >
-              <Image
-                source={{ uri: estab.foto_perfil || 'https://images.unsplash.com/photo-1521590832167-7bcbfaa6381f?auto=format&fit=crop&q=80&w=400' }}
-                style={styles.imageRecomendado}
-                contentFit="cover"
-              />
-              <View style={styles.infoRecomendado}>
-                <View style={styles.headerRecomendado}>
-                  <ThemedText style={styles.cardTitle} numberOfLines={1}>
-                    {estab.nome || estab.name || 'Estabelecimento'}
-                  </ThemedText>
-                  <Ionicons name="heart-outline" size={20} color="#999" />
-                </View>
-
-                <View style={styles.ratingContainer}>
-                  <Ionicons name="star" size={12} color="#FFB800" />
-                  <ThemedText style={styles.ratingText}>
-                    {estab.avaliacao || estab.avaliacao_media || '4.8'} <ThemedText style={styles.ratingCount}>({estab.votos || '85'})</ThemedText>
-                  </ThemedText>
-                </View>
-
-                <View style={styles.tagsContainer}>
-                  <View style={styles.tag}>
-                    <ThemedText style={styles.tagText}>{estab.bairro || 'Centro'}</ThemedText>
-                  </View>
-                  <View style={styles.tag}>
-                    <ThemedText style={styles.tagText}>{estab.cidade || estab.categoria_tipo || 'Serviço'}</ThemedText>
-                  </View>
-                </View>
-
-                <View style={styles.footerRecomendado}>
-                  <ThemedText style={styles.priceLabel}>
-                    Status: <ThemedText style={styles.priceValueRec}>{estab.ativo || estab.disponivel ? 'Aberto' : 'Fechado'}</ThemedText>
-                  </ThemedText>
-                  <View style={styles.timeContainer}>
-                    <Ionicons name="time-outline" size={12} color="#999" />
-                    <ThemedText style={styles.timeText}> Ver horários</ThemedText>
-                  </View>
-                </View>
-              </View>
-            </TouchableOpacity>
-          ))
         ) : (
-          !carregando && <ThemedText style={styles.emptyText}>Nenhum recomendado encontrado para esta categoria.</ThemedText>
-        )}
+          <>
+            {/* CARROSSEL DE DESTAQUES */}
+            {destaques.length > 0 && (
+              <View style={styles.section}>
+                <View style={styles.sectionHeader}>
+                  <Text style={styles.sectionTitle}>Em Destaque</Text>
+                </View>
+                
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16 }}>
+                  {destaques.map((item, index) => (
+                    <TouchableOpacity 
+                      key={index} 
+                      style={styles.cardDestaque}
+                      onPress={() => irParaDetalhes(item.id)}
+                      activeOpacity={0.9}
+                    >
+                      <View style={styles.imageDestaqueContainer}>
+                        <Image 
+                          source={{ uri: item.foto_perfil || item.fotos?.[0] || 'https://via.placeholder.com/300x200' }} 
+                          style={styles.imageDestaque} 
+                          contentFit="cover" 
+                        />
+                        <TouchableOpacity style={styles.heartBtnAbs}>
+                          <Ionicons name="heart-outline" size={20} color={COLORS.white} />
+                        </TouchableOpacity>
+                        {item.tem_promocao && (
+                          <View style={styles.promoBadge}><Text style={styles.promoText}>Promoção</Text></View>
+                        )}
+                      </View>
+                      
+                      <View style={styles.infoDestaque}>
+                        <View style={styles.rowBetween}>
+                          <Text style={styles.titleDestaque} numberOfLines={1}>{item.nome || item.name}</Text>
+                          <View style={styles.ratingRow}>
+                            <Ionicons name="star" size={12} color={COLORS.warning} />
+                            <Text style={styles.ratingText}> {item.avaliacao_media || '5.0'}</Text>
+                          </View>
+                        </View>
+                        <Text style={styles.subTitleDestaque} numberOfLines={1}>
+                          {item.ramo_atuacao || item.categoria} • {item.cidade || 'Local'}
+                        </Text>
+                        
+                        <View style={styles.priceRowDestaque}>
+                          <Text style={styles.priceLabel}>A partir de</Text>
+                          <Text style={styles.priceValue}>
+                            R$ {parseFloat(item.valor || item.valor_diaria || '0').toFixed(2).replace('.', ',')}
+                          </Text>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
 
-        <View style={{ height: 40 }} />
+            {/* LISTA VERTICAL DE RESULTADOS */}
+            {itens.length > 0 && (
+              <View style={[styles.section, { paddingHorizontal: 16 }]}>
+                <Text style={styles.sectionTitle}>Recomendados para você</Text>
+                
+                {itens.map((item, index) => (
+                  <TouchableOpacity 
+                    key={index} 
+                    style={styles.cardLista}
+                    onPress={() => irParaDetalhes(item.id)}
+                  >
+                    <Image 
+                      source={{ uri: item.foto_perfil || item.fotos?.[0] || 'https://via.placeholder.com/150' }} 
+                      style={styles.imageLista} 
+                      contentFit="cover" 
+                    />
+                    
+                    <View style={styles.infoLista}>
+                      <View style={styles.rowBetween}>
+                        <Text style={styles.titleLista} numberOfLines={1}>{item.nome || item.name}</Text>
+                        <Ionicons name="heart-outline" size={20} color={COLORS.gray} />
+                      </View>
+                      
+                      <Text style={styles.subTitleLista} numberOfLines={1}>
+                        {item.ramo_atuacao || item.categoria}
+                      </Text>
+                      
+                      <View style={styles.tagsRow}>
+                        <View style={styles.ratingTag}>
+                          <Ionicons name="star" size={12} color={COLORS.warning} />
+                          <Text style={styles.ratingTextTag}> {item.avaliacao_media || '5.0'}</Text>
+                        </View>
+                        <Text style={styles.dotSeparator}>•</Text>
+                        <Text style={styles.distanceText}>{item.distancia ? `${parseFloat(item.distancia).toFixed(1)} km` : 'Próximo'}</Text>
+                      </View>
+                      
+                      <View style={styles.priceRowLista}>
+                        <Text style={styles.priceValueLista}>
+                          R$ {parseFloat(item.valor || item.valor_diaria || '0').toFixed(2).replace('.', ',')}
+                        </Text>
+                        {item.duracao_minutos && (
+                          <Text style={styles.durationText}>/ {item.duracao_minutos} min</Text>
+                        )}
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  container: {
-    flex: 1,
-    paddingHorizontal: 16,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 50,
-    marginBottom: 15,
-  },
-  searchContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F5F5F5',
-    borderRadius: 25,
-    paddingHorizontal: 15,
-    height: 45,
-    marginRight: 10,
-  },
-  searchInput: {
-    flex: 1,
-    marginLeft: 8,
-    fontSize: 14,
-    color: '#333',
-  },
-  iconButton: {
-    padding: 8,
-    position: 'relative',
-    marginRight: 5,
-  },
-  badge: {
-    position: 'absolute',
-    top: 8,
-    right: 10,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: VIVID_ORANGE,
-  },
-  profileButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: VIVID_ORANGE,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  profileText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
-  locationContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  locationText: {
-    flex: 1,
-    fontSize: 13,
-    color: '#555',
-    marginLeft: 5,
-    marginRight: 5,
-  },
-  categoriesScroll: {
-    marginBottom: 20,
-  },
-  categoriaCard: {
-    alignItems: 'center',
-    marginRight: 15,
-  },
-  iconContainer: {
-    width: 60,
-    height: 60,
-    borderRadius: 15,
-    backgroundColor: '#F5F5F5',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 5,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  iconContainerAtivo: {
-    borderColor: VIVID_ORANGE,
-    backgroundColor: '#FFF0E6', // Fundo levemente alaranjado
-  },
-  categoriaTexto: {
-    fontSize: 12,
-    color: '#555',
-  },
-  categoriaTextoAtivo: {
-    color: VIVID_ORANGE,
-    fontWeight: 'bold',
-  },
-  bannerContainer: {
-    width: '100%',
-    height: 200,
-    borderRadius: 16,
-    overflow: 'hidden',
-    marginBottom: 25,
-    position: 'relative',
-  },
-  bannerImage: {
-    width: '100%',
-    height: '100%',
-  },
-  bannerOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    padding: 20,
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.4)',
-  },
-  bannerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#000',
-    marginBottom: 5,
-  },
-  bannerSub: {
-    fontSize: 12,
-    color: '#333',
-    marginBottom: 15,
-    fontWeight: '600'
-  },
-  bannerButton: {
-    backgroundColor: VIVID_ORANGE,
-    paddingVertical: 8,
-    paddingHorizontal: 15,
-    borderRadius: 20,
-    alignSelf: 'flex-start',
-  },
-  bannerButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 12,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 15,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#222',
-    marginVertical: 15,
-  },
-  verTodos: {
-    fontSize: 13,
-    color: VIVID_ORANGE,
-    fontWeight: '600',
-  },
-  horizontalScroll: {
-    marginBottom: 25,
-  },
-  cardDestaque: {
-    width: 150,
-    marginRight: 15,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#eee',
-    overflow: 'hidden',
-  },
-  imageDestaque: {
-    width: '100%',
-    height: 120,
-  },
-  badgeAlta: {
-    position: 'absolute',
-    top: 8,
-    left: 8,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  badgeText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: 'bold',
-  },
-  cardDestaqueInfo: {
-    padding: 10,
-  },
-  cardDestaqueTitle: {
-    fontWeight: 'bold',
-    fontSize: 14,
-    marginBottom: 2,
-  },
-  ratingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  ratingText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#555',
-  },
-  ratingCount: {
-    color: '#999',
-    fontWeight: 'normal',
-  },
-  priceLabel: {
-    fontSize: 11,
-    color: '#777',
-  },
-  priceValue: {
-    fontSize: 14,
-    color: VIVID_ORANGE,
-    fontWeight: 'bold',
-    marginTop: 2,
-  },
-  cardRecomendado: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
-    marginBottom: 15,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#f0f0f0',
-    padding: 8,
-  },
-  imageRecomendado: {
-    width: 100,
-    height: 100,
-    borderRadius: 12,
-  },
-  infoRecomendado: {
-    flex: 1,
-    marginLeft: 12,
-    justifyContent: 'space-between',
-  },
-  headerRecomendado: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  cardTitle: {
-    fontWeight: 'bold',
-    fontSize: 15,
-    color: '#222',
-    maxWidth: '85%',
-  },
-  tagsContainer: {
-    flexDirection: 'row',
-    marginVertical: 4,
-  },
-  tag: {
-    backgroundColor: '#F5F5F5',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    marginRight: 6,
-  },
-  tagText: {
-    fontSize: 10,
-    color: '#555',
-  },
-  footerRecomendado: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  priceValueRec: {
-    fontSize: 13,
-    color: VIVID_ORANGE,
-    fontWeight: 'bold',
-  },
-  timeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  timeText: {
-    fontSize: 11,
-    color: '#999',
-  },
-  emptyText: {
-    fontSize: 13,
-    color: '#999',
-    textAlign: 'center',
-    width: '100%',
-    marginVertical: 15,
-  }
+  safeArea: { flex: 1, backgroundColor: COLORS.white, paddingTop: Platform.OS === 'android' ? 30 : 0 },
+  container: { flex: 1 },
+  
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, backgroundColor: COLORS.white },
+  headerLeft: { flex: 1 },
+  logoText: { fontSize: 24, fontWeight: '900', color: COLORS.primary, letterSpacing: -1 },
+  locationContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
+  locationText: { fontSize: 13, fontWeight: '600', color: COLORS.gray, marginHorizontal: 4, maxWidth: '80%' },
+  headerIcons: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  iconBtn: { position: 'relative' },
+  badge: { position: 'absolute', top: -2, right: -4, width: 10, height: 10, borderRadius: 5, backgroundColor: COLORS.primary, borderWidth: 2, borderColor: COLORS.white },
+  profileBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
+
+  searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.lightGray, marginHorizontal: 16, borderRadius: 12, paddingHorizontal: 16, height: 50, marginBottom: 16, borderWidth: 1, borderColor: COLORS.border },
+  searchInput: { flex: 1, fontSize: 16, color: COLORS.secondary },
+
+  typeFilterContainer: { flexDirection: 'row', backgroundColor: COLORS.lightGray, marginHorizontal: 16, borderRadius: 12, padding: 4, marginBottom: 20 },
+  typeBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 8 },
+  typeBtnAtivo: { backgroundColor: COLORS.white, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 2 },
+  typeBtnText: { fontSize: 13, fontWeight: '700', color: COLORS.gray },
+  typeBtnTextAtivo: { color: COLORS.secondary, fontWeight: '900' },
+
+  categoriesScroll: { paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: COLORS.border, marginBottom: 20 },
+  categoriaCard: { alignItems: 'center', marginRight: 16 },
+  iconContainer: { width: 64, height: 64, borderRadius: 20, backgroundColor: COLORS.lightGray, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  iconContainerAtivo: { backgroundColor: COLORS.primaryLight, borderWidth: 1, borderColor: COLORS.primary },
+  categoriaTexto: { fontSize: 12, fontWeight: '600', color: COLORS.gray },
+  categoriaTextoAtivo: { color: COLORS.secondary, fontWeight: '900' },
+
+  section: { marginBottom: 30 },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', paddingHorizontal: 16, marginBottom: 16 },
+  sectionTitle: { fontSize: 20, fontWeight: '900', color: COLORS.secondary },
+  verTodosText: { fontSize: 14, fontWeight: '800', color: COLORS.primary },
+
+  cardDestaque: { width: width * 0.75, backgroundColor: COLORS.white, borderRadius: 20, marginRight: 16, borderWidth: 1, borderColor: COLORS.border, overflow: 'hidden' },
+  imageDestaqueContainer: { position: 'relative', width: '100%', height: 160 },
+  imageDestaque: { width: '100%', height: '100%', backgroundColor: COLORS.lightGray },
+  heartBtnAbs: { position: 'absolute', top: 12, right: 12, width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.3)', alignItems: 'center', justifyContent: 'center' },
+  promoBadge: { position: 'absolute', bottom: 12, left: 12, backgroundColor: COLORS.success, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  promoText: { color: COLORS.white, fontSize: 10, fontWeight: '900', textTransform: 'uppercase' },
+  infoDestaque: { padding: 16 },
+  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  titleDestaque: { fontSize: 16, fontWeight: '900', color: COLORS.secondary, flex: 1, marginRight: 8 },
+  subTitleDestaque: { fontSize: 13, color: COLORS.gray, marginTop: 4, marginBottom: 12 },
+  ratingRow: { flexDirection: 'row', alignItems: 'center' },
+  ratingText: { fontSize: 13, fontWeight: '800', color: COLORS.secondary },
+  priceRowDestaque: { flexDirection: 'row', alignItems: 'baseline' },
+  priceLabel: { fontSize: 11, color: COLORS.gray, marginRight: 4 },
+  priceValue: { fontSize: 16, fontWeight: '900', color: COLORS.primary },
+
+  cardLista: { flexDirection: 'row', backgroundColor: COLORS.white, borderRadius: 16, marginBottom: 16, borderWidth: 1, borderColor: COLORS.border, padding: 10 },
+  imageLista: { width: 90, height: 90, borderRadius: 12, backgroundColor: COLORS.lightGray },
+  infoLista: { flex: 1, marginLeft: 12, justifyContent: 'center' },
+  titleLista: { fontSize: 16, fontWeight: '900', color: COLORS.secondary, flex: 1, marginRight: 8 },
+  subTitleLista: { fontSize: 13, color: COLORS.gray, marginTop: 2, marginBottom: 8 },
+  tagsRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  ratingTag: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FEF3C7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  ratingTextTag: { fontSize: 12, fontWeight: '800', color: '#D97706' },
+  dotSeparator: { fontSize: 12, color: COLORS.gray, marginHorizontal: 8 },
+  distanceText: { fontSize: 12, fontWeight: '600', color: COLORS.gray },
+  priceRowLista: { flexDirection: 'row', alignItems: 'baseline' },
+  priceValueLista: { fontSize: 15, fontWeight: '900', color: COLORS.secondary },
+  durationText: { fontSize: 12, color: COLORS.gray, marginLeft: 4 },
+
+  centerLoading: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
+  loadingText: { marginTop: 12, color: COLORS.gray, fontWeight: '700' },
+  emptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, paddingHorizontal: 30, backgroundColor: COLORS.lightGray, marginHorizontal: 16, borderRadius: 24, marginTop: 20 },
+  emptyTitle: { fontSize: 18, fontWeight: '900', color: COLORS.secondary, marginBottom: 8, textAlign: 'center' },
+  emptyDesc: { fontSize: 14, color: COLORS.gray, textAlign: 'center', marginBottom: 24, lineHeight: 20 },
+  clearBtn: { backgroundColor: COLORS.primaryLight, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 100 },
+  clearBtnText: { color: COLORS.primary, fontWeight: '900', fontSize: 14 }
 });

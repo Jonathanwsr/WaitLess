@@ -61,6 +61,7 @@ Route::middleware('auth:sanctum')->group(function () {
         return response()->json($request->user());
     });
     Route::post('/logout', [AuthController::class, 'logout']);
+    Route::get('/mobile/me', [MobileAuthController::class, 'me']);
     Route::post('/mobile/logout', [MobileAuthController::class, 'logout']);
 
     // --- HOME MOBILE (Atualizar Endereço e Lojas) ---

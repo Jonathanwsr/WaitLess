@@ -12,25 +12,15 @@ import {
   ActivityIndicator,
   Image,
   SafeAreaView,
-  Linking
+  Linking,
+  ImageBackground,
+  StatusBar
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
-const COLORS = {
-  primary: '#FF5A00', 
-  primaryLight: '#FFF4ED', 
-  secondary: '#111827',
-  gray: '#6B7280',
-  lightGray: '#F9FAFB',
-  white: '#FFFFFF',
-  border: '#E5E7EB',
-  textInput: '#111827',
-  icon: '#000000', 
-};
-
 // URL DA SUA API
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api/mobile';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api/mobile/register';
 
 export default function Cadastro() {
   const router = useRouter();
@@ -40,11 +30,13 @@ export default function Cadastro() {
   const [email, setEmail] = useState('');
   const [cpfCnpj, setCpfCnpj] = useState('');
   const [mobilePhone, setMobilePhone] = useState('');
+  const [phone, setPhone] = useState(''); // ADICIONADO: Telefone fixo/secundário
+  const [birthDate, setBirthDate] = useState(''); // ADICIONADO: Data de nascimento
   
   const [postalCode, setPostalCode] = useState('');
   const [address, setAddress] = useState('');
   const [addressNumber, setAddressNumber] = useState('');
-  const [complement, setComplement] = useState('');
+  const [complement, setComplement] = useState(''); // Já existia no state, mas faltava na UI
   const [province, setProvince] = useState(''); 
   const [city, setCity] = useState('');
   const [stateUf, setStateUf] = useState('');
@@ -73,12 +65,21 @@ export default function Cadastro() {
     return value
       .replace(/\D/g, '')
       .replace(/(\d{2})(\d)/, '($1) $2')
-      .replace(/(\d{5})(\d)/, '$1-$2')
+      .replace(/(\d{4,5})(\d)/, '$1-$2')
       .replace(/(-\d{4})\d+?$/, '$1');
   };
 
   const maskCEP = (value: string): string => {
     return value.replace(/\D/g, '').replace(/(\d{5})(\d)/, '$1-$2').substring(0, 9);
+  };
+
+  // ADICIONADO: Máscara para Data de Nascimento
+  const maskDate = (value: string): string => {
+    return value
+      .replace(/\D/g, '')
+      .replace(/(\d{2})(\d)/, '$1/$2')
+      .replace(/(\d{2})(\d)/, '$1/$2')
+      .substring(0, 10);
   };
 
   // --- BUSCA CEP AUTOMÁTICA ---
@@ -125,7 +126,8 @@ export default function Cadastro() {
 
   // --- SUBMIT ---
   const handleCadastro = async () => {
-    if (!name || !email || !cpfCnpj || !mobilePhone || !postalCode || !address || !addressNumber || !password) {
+    // Validando campos obrigatórios conforme o Controller
+    if (!name || !email || !cpfCnpj || !mobilePhone || !postalCode || !address || !addressNumber || !province || !city || !stateUf || !password) {
       Alert.alert('Atenção', 'Por favor, preencha todos os campos obrigatórios.');
       return;
     }
@@ -143,9 +145,14 @@ export default function Cadastro() {
     setLoading(true);
 
     try {
-      // Captura o IP do usuário
       const userIp = await fetchUserIP();
       const userAgent = `WaitlessApp/${Platform.OS} (Version: ${Platform.Version})`;
+
+      // Formatar data de nascimento para o backend (YYYY-MM-DD) se houver
+      let formattedBirthDate = null;
+      if (birthDate && birthDate.length === 10) {
+        formattedBirthDate = birthDate.split('/').reverse().join('-');
+      }
 
       const payload = {
         name,
@@ -155,10 +162,12 @@ export default function Cadastro() {
         papel,
         cpf_cnpj: cpfCnpj.replace(/\D/g, ''),
         mobile_phone: mobilePhone.replace(/\D/g, ''),
+        phone: phone ? phone.replace(/\D/g, '') : null, // ADICIONADO
+        birth_date: formattedBirthDate, // ADICIONADO
         postal_code: postalCode.replace(/\D/g, ''),
         address,
         address_number: addressNumber,
-        complement,
+        complement: complement || null, // ADICIONADO
         province,
         city,
         state: stateUf,
@@ -191,7 +200,6 @@ export default function Cadastro() {
       router.replace('/src/screens/Home');
 
     } catch (error: unknown) {
-      // CORREÇÃO DO ERRO TS18046: Trata a variável 'error' como desconhecida com segurança
       const message = error instanceof Error ? error.message : 'Ocorreu um erro inesperado.';
       Alert.alert('Falha no Cadastro', message);
     } finally {
@@ -200,200 +208,322 @@ export default function Cadastro() {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: COLORS.white }}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
+    <ImageBackground
+      source={{ uri: 'https://images.unsplash.com/photo-1540541338287-41700207dee6?q=80&w=1000&auto=format&fit=crop' }}
+      style={styles.background}
+    >
+      <View style={styles.overlay}>
+        <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
         
-        {/* HEADER */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <Ionicons name="arrow-back" size={24} color={COLORS.icon} />
-          </TouchableOpacity>
-          <View style={styles.headerCenter}>
-            <Text style={styles.headerTitle}>Criar conta</Text>
-            <Text style={styles.headerSubtitle}>Preencha seus dados para começar</Text>
-          </View>
-          <View style={{ width: 40 }} />
-        </View>
-
-        <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-          
-          {/* LOGO */}
-          <View style={styles.logoContainer}>
-            <Image source={require('../assets/logo_lokyva.png')} style={styles.logo} resizeMode="contain" />
-          </View>
-
-          <View style={styles.form}>
+        <SafeAreaView style={styles.safeArea}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
             
-            <Text style={styles.sectionTitle}>Selecione seu Perfil</Text>
-            <View style={styles.badgeContainer}>
-              {[
-                { label: 'Sou Cliente', value: 'user' },
-                { label: 'Sou Proprietário (Criar Loja)', value: 'proprietario' },
-              ].map((item) => (
-                <TouchableOpacity
-                  key={item.value}
-                  style={[styles.badge, papel === item.value && styles.badgeSelected]}
-                  onPress={() => setPapel(item.value)}
-                >
-                  <Text style={[styles.badgeText, papel === item.value && styles.badgeTextSelected]}>{item.label}</Text>
+            {/* HEADER */}
+            <View style={styles.header}>
+              <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+                <Ionicons name="arrow-back" size={24} color="#FFFFFF" />
+              </TouchableOpacity>
+              <View style={styles.headerCenter}>
+                <Text style={styles.headerTitle}>Criar conta</Text>
+                <Text style={styles.headerSubtitle}>Preencha seus dados para começar</Text>
+              </View>
+              <View style={{ width: 44 }} />
+            </View>
+
+            <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
+              
+              {/* LOGO */}
+              <View style={styles.logoContainer}>
+             <Image source={require('../assets/logo_lokyva.png')} style={styles.logo} resizeMode="contain" />
+              </View>
+
+              <View style={styles.form}>
+                
+                <Text style={styles.sectionTitle}>Selecione seu Perfil</Text>
+                <View style={styles.badgeContainer}>
+                  {[
+                    { label: 'Sou Cliente', value: 'user' },
+                    { label: 'Sou Proprietário (Criar Loja)', value: 'proprietario' },
+                  ].map((item) => (
+                    <TouchableOpacity
+                      key={item.value}
+                      style={[styles.badge, papel === item.value && styles.badgeSelected]}
+                      onPress={() => setPapel(item.value)}
+                    >
+                      <Text style={[styles.badgeText, papel === item.value && styles.badgeTextSelected]}>
+                        {item.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                {/* DADOS PESSOAIS */}
+                <Text style={styles.sectionTitle}>Dados Pessoais</Text>
+
+                <View style={styles.inputContainer}>
+                  <Ionicons name="person-outline" size={20} color="#FF6B35" style={styles.inputIcon} />
+                  <TextInput style={styles.input} placeholder="Nome completo" placeholderTextColor="rgba(255, 255, 255, 0.6)" value={name} onChangeText={setName} autoCapitalize="words" />
+                </View>
+
+                <View style={styles.inputContainer}>
+                  <Ionicons name="mail-outline" size={20} color="#FF6B35" style={styles.inputIcon} />
+                  <TextInput style={styles.input} placeholder="E-mail" placeholderTextColor="rgba(255, 255, 255, 0.6)" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" />
+                </View>
+
+                <View style={styles.rowInputs}>
+                  <View style={[styles.inputContainer, { flex: 1, marginRight: 10 }]}>
+                    <Ionicons name="id-card-outline" size={20} color="#FF6B35" style={styles.inputIcon} />
+                    <TextInput style={styles.input} placeholder="CPF / CNPJ" placeholderTextColor="rgba(255, 255, 255, 0.6)" value={cpfCnpj} onChangeText={(t) => setCpfCnpj(maskCPF(t))} keyboardType="number-pad" />
+                  </View>
+                  <View style={[styles.inputContainer, { flex: 1 }]}>
+                    <Ionicons name="call-outline" size={20} color="#FF6B35" style={styles.inputIcon} />
+                    <TextInput style={styles.input} placeholder="Celular" placeholderTextColor="rgba(255, 255, 255, 0.6)" value={mobilePhone} onChangeText={(t) => setMobilePhone(maskPhone(t))} keyboardType="phone-pad" />
+                  </View>
+                </View>
+
+                {/* ADICIONADO: Novos Campos Pessoais - Telefone Secundário e Data de Nascimento */}
+                <View style={styles.rowInputs}>
+                  <View style={[styles.inputContainer, { flex: 1, marginRight: 10 }]}>
+                    <Ionicons name="call-outline" size={20} color="#FF6B35" style={styles.inputIcon} />
+                    <TextInput style={styles.input} placeholder="Fixo (Opcional)" placeholderTextColor="rgba(255, 255, 255, 0.6)" value={phone} onChangeText={(t) => setPhone(maskPhone(t))} keyboardType="phone-pad" />
+                  </View>
+                  <View style={[styles.inputContainer, { flex: 1 }]}>
+                    <Ionicons name="calendar-outline" size={20} color="#FF6B35" style={styles.inputIcon} />
+                    <TextInput style={styles.input} placeholder="Nascimento (Opcional)" placeholderTextColor="rgba(255, 255, 255, 0.6)" value={birthDate} onChangeText={(t) => setBirthDate(maskDate(t))} keyboardType="number-pad" />
+                  </View>
+                </View>
+
+                {/* ENDEREÇO */}
+                <Text style={styles.sectionTitle}>Endereço (Financeiro)</Text>
+
+                <View style={styles.rowInputs}>
+                  <View style={[styles.inputContainer, { flex: 1, marginRight: 10 }]}>
+                    <Ionicons name="map-outline" size={20} color="#FF6B35" style={styles.inputIcon} />
+                    <TextInput style={styles.input} placeholder="CEP" placeholderTextColor="rgba(255, 255, 255, 0.6)" value={postalCode} onChangeText={handleCepChange} keyboardType="number-pad" />
+                    {buscandoCep && <ActivityIndicator size="small" color="#FF6B35" style={{ position: 'absolute', right: 15 }} />}
+                  </View>
+                  <View style={[styles.inputContainer, { flex: 2, paddingLeft: 15 }]}>
+                    <TextInput style={styles.input} placeholder="Cidade / UF" placeholderTextColor="rgba(255, 255, 255, 0.6)" value={city ? `${city} - ${stateUf}` : ''} editable={false} />
+                  </View>
+                </View>
+
+                <View style={styles.inputContainer}>
+                  <Ionicons name="business-outline" size={20} color="#FF6B35" style={styles.inputIcon} />
+                  <TextInput style={styles.input} placeholder="Rua / Avenida" placeholderTextColor="rgba(255, 255, 255, 0.6)" value={address} onChangeText={setAddress} />
+                </View>
+
+                <View style={styles.rowInputs}>
+                  <View style={[styles.inputContainer, { flex: 1, marginRight: 10, paddingLeft: 15 }]}>
+                    <TextInput style={styles.input} placeholder="Número" placeholderTextColor="rgba(255, 255, 255, 0.6)" value={addressNumber} onChangeText={setAddressNumber} />
+                  </View>
+                  <View style={[styles.inputContainer, { flex: 1, paddingLeft: 15 }]}>
+                    <TextInput style={styles.input} placeholder="Bairro" placeholderTextColor="rgba(255, 255, 255, 0.6)" value={province} onChangeText={setProvince} />
+                  </View>
+                </View>
+
+                {/* ADICIONADO: Campo de Complemento */}
+                <View style={styles.inputContainer}>
+                  <Ionicons name="add-circle-outline" size={20} color="#FF6B35" style={styles.inputIcon} />
+                  <TextInput style={styles.input} placeholder="Complemento (Opcional)" placeholderTextColor="rgba(255, 255, 255, 0.6)" value={complement} onChangeText={setComplement} />
+                </View>
+
+                {/* SEGURANÇA */}
+                <Text style={styles.sectionTitle}>Segurança</Text>
+
+                <View style={styles.inputContainer}>
+                  <Ionicons name="lock-closed-outline" size={20} color="#FF6B35" style={styles.inputIcon} />
+                  <TextInput style={styles.input} placeholder="Senha" placeholderTextColor="rgba(255, 255, 255, 0.6)" value={password} onChangeText={setPassword} secureTextEntry={!showPassword} />
+                  <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
+                    <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color="rgba(255, 255, 255, 0.6)" />
+                  </TouchableOpacity>
+                </View>
+
+                <View style={styles.inputContainer}>
+                  <Ionicons name="lock-closed-outline" size={20} color="#FF6B35" style={styles.inputIcon} />
+                  <TextInput style={styles.input} placeholder="Confirmar senha" placeholderTextColor="rgba(255, 255, 255, 0.6)" value={passwordConfirmation} onChangeText={setPasswordConfirmation} secureTextEntry={!showPasswordConf} />
+                  <TouchableOpacity onPress={() => setShowPasswordConf(!showPasswordConf)} style={styles.eyeIcon}>
+                    <Ionicons name={showPasswordConf ? "eye-off-outline" : "eye-outline"} size={20} color="rgba(255, 255, 255, 0.6)" />
+                  </TouchableOpacity>
+                </View>
+
+                {/* TERMOS DE COMPROMISSO E PRIVACIDADE */}
+                <TouchableOpacity style={styles.checkboxContainer} onPress={() => setAceitoTermos(!aceitoTermos)}>
+                  <View style={[styles.checkbox, aceitoTermos && styles.checkboxChecked]}>
+                    {aceitoTermos && <Ionicons name="checkmark" size={14} color="#FFFFFF" />}
+                  </View>
+                  <Text style={styles.checkboxText}>
+                    Eu aceito o{' '}
+                    <Text style={styles.linkText} onPress={handleAbrirTermos}>Termo de Compromisso</Text>
+                  </Text>
                 </TouchableOpacity>
-              ))}
-            </View>
 
-            {/* DADOS PESSOAIS */}
-            <Text style={styles.sectionTitle}>Dados Pessoais</Text>
+                {/* BOTÃO */}
+                <TouchableOpacity style={styles.button} onPress={handleCadastro} disabled={loading} activeOpacity={0.85}>
+                  {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.buttonText}>Criar conta</Text>}
+                </TouchableOpacity>
 
-            <View style={styles.inputContainer}>
-              <Ionicons name="person-outline" size={20} color={COLORS.icon} style={styles.inputIcon} />
-              <TextInput style={styles.input} placeholder="Nome completo" placeholderTextColor={COLORS.gray} value={name} onChangeText={setName} autoCapitalize="words" />
-            </View>
+                {/* DIVISOR */}
+                <View style={styles.dividerContainer}>
+                  <View style={styles.dividerLine} />
+                  <Text style={styles.dividerText}>ou cadastre-se com</Text>
+                  <View style={styles.dividerLine} />
+                </View>
 
-            <View style={styles.inputContainer}>
-              <Ionicons name="mail-outline" size={20} color={COLORS.icon} style={styles.inputIcon} />
-              <TextInput style={styles.input} placeholder="E-mail" placeholderTextColor={COLORS.gray} value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" />
-            </View>
+                {/* SOCIAL LOGIN */}
+                <View style={styles.socialContainer}>
+                  <TouchableOpacity style={styles.socialButton}>
+                    <Ionicons name="logo-google" size={20} color="#EA4335" />
+                    <Text style={styles.socialButtonText}>Google</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.socialButton}>
+                    <Ionicons name="logo-apple" size={20} color="#FFFFFF" />
+                    <Text style={styles.socialButtonText}>Apple</Text>
+                  </TouchableOpacity>
+                </View>
 
-            <View style={styles.rowInputs}>
-              <View style={[styles.inputContainer, { flex: 1, marginRight: 10 }]}>
-                <Ionicons name="id-card-outline" size={20} color={COLORS.icon} style={styles.inputIcon} />
-                <TextInput style={styles.input} placeholder="CPF / CNPJ" placeholderTextColor={COLORS.gray} value={cpfCnpj} onChangeText={(t) => setCpfCnpj(maskCPF(t))} keyboardType="number-pad" />
+                {/* LINK LOGIN */}
+                <TouchableOpacity style={styles.loginLink} onPress={() => router.back()}>
+                  <Text style={styles.loginLinkTextDesc}>Já tem uma conta? <Text style={styles.loginLinkText}>Entrar</Text></Text>
+                </TouchableOpacity>
+
               </View>
-              <View style={[styles.inputContainer, { flex: 1 }]}>
-                <Ionicons name="call-outline" size={20} color={COLORS.icon} style={styles.inputIcon} />
-                <TextInput style={styles.input} placeholder="Telefone" placeholderTextColor={COLORS.gray} value={mobilePhone} onChangeText={(t) => setMobilePhone(maskPhone(t))} keyboardType="phone-pad" />
-              </View>
-            </View>
-
-            {/* ENDEREÇO */}
-            <Text style={styles.sectionTitle}>Endereço (Financeiro)</Text>
-
-            <View style={styles.rowInputs}>
-              <View style={[styles.inputContainer, { flex: 1, marginRight: 10 }]}>
-                <Ionicons name="map-outline" size={20} color={COLORS.icon} style={styles.inputIcon} />
-                <TextInput style={styles.input} placeholder="CEP" placeholderTextColor={COLORS.gray} value={postalCode} onChangeText={handleCepChange} keyboardType="number-pad" />
-                {buscandoCep && <ActivityIndicator size="small" color={COLORS.primary} style={{ position: 'absolute', right: 15 }} />}
-              </View>
-              <View style={[styles.inputContainer, { flex: 2 }]}>
-                <TextInput style={[styles.input, { paddingLeft: 15 }]} placeholder="Cidade / UF" placeholderTextColor={COLORS.gray} value={city ? `${city} - ${stateUf}` : ''} editable={false} />
-              </View>
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Ionicons name="business-outline" size={20} color={COLORS.icon} style={styles.inputIcon} />
-              <TextInput style={styles.input} placeholder="Rua / Avenida" placeholderTextColor={COLORS.gray} value={address} onChangeText={setAddress} />
-            </View>
-
-            <View style={styles.rowInputs}>
-              <View style={[styles.inputContainer, { flex: 1, marginRight: 10 }]}>
-                <TextInput style={[styles.input, { paddingLeft: 15 }]} placeholder="Número" placeholderTextColor={COLORS.gray} value={addressNumber} onChangeText={setAddressNumber} />
-              </View>
-              <View style={[styles.inputContainer, { flex: 1 }]}>
-                <TextInput style={[styles.input, { paddingLeft: 15 }]} placeholder="Bairro" placeholderTextColor={COLORS.gray} value={province} onChangeText={setProvince} />
-              </View>
-            </View>
-
-            {/* SEGURANÇA */}
-            <Text style={styles.sectionTitle}>Segurança</Text>
-
-            <View style={styles.inputContainer}>
-              <Ionicons name="lock-closed-outline" size={20} color={COLORS.icon} style={styles.inputIcon} />
-              <TextInput style={styles.input} placeholder="Senha" placeholderTextColor={COLORS.gray} value={password} onChangeText={setPassword} secureTextEntry={!showPassword} />
-              <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
-                <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color={COLORS.gray} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.inputContainer}>
-              <Ionicons name="lock-closed-outline" size={20} color={COLORS.icon} style={styles.inputIcon} />
-              <TextInput style={styles.input} placeholder="Confirmar senha" placeholderTextColor={COLORS.gray} value={passwordConfirmation} onChangeText={setPasswordConfirmation} secureTextEntry={!showPasswordConf} />
-              <TouchableOpacity onPress={() => setShowPasswordConf(!showPasswordConf)} style={styles.eyeIcon}>
-                <Ionicons name={showPasswordConf ? "eye-off-outline" : "eye-outline"} size={20} color={COLORS.gray} />
-              </TouchableOpacity>
-            </View>
-
-            {/* TERMOS DE COMPROMISSO E PRIVACIDADE */}
-            <TouchableOpacity style={styles.checkboxContainer} onPress={() => setAceitoTermos(!aceitoTermos)}>
-              <View style={[styles.checkbox, aceitoTermos && styles.checkboxChecked]}>
-                {aceitoTermos && <Ionicons name="checkmark" size={14} color={COLORS.white} />}
-              </View>
-              <Text style={styles.checkboxText}>
-                Eu aceito o{' '}
-                <Text style={styles.linkText} onPress={handleAbrirTermos}>Termo de Compromisso</Text>
-              </Text>
-            </TouchableOpacity>
-
-            {/* BOTÃO */}
-            <TouchableOpacity style={styles.button} onPress={handleCadastro} disabled={loading}>
-              {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.buttonText}>Criar conta</Text>}
-            </TouchableOpacity>
-
-            {/* DIVISOR */}
-            <View style={styles.dividerContainer}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>ou cadastre-se com</Text>
-              <View style={styles.dividerLine} />
-            </View>
-
-            {/* SOCIAL LOGIN */}
-            <View style={styles.socialContainer}>
-              <TouchableOpacity style={styles.socialButton}>
-                <Ionicons name="logo-google" size={20} color="#DB4437" />
-                <Text style={styles.socialButtonText}>Google</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.socialButton}>
-                <Ionicons name="logo-apple" size={20} color="#000" />
-                <Text style={styles.socialButtonText}>Apple</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* LINK LOGIN */}
-            <TouchableOpacity style={styles.loginLink} onPress={() => router.back()}>
-              <Text style={styles.loginLinkTextDesc}>Já tem uma conta? <Text style={styles.loginLinkText}>Entrar</Text></Text>
-            </TouchableOpacity>
-
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </View>
+    </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.white },
-  scrollContainer: { flexGrow: 1, paddingHorizontal: 24, paddingBottom: 40 },
-  header: { flexDirection: 'row', alignItems: 'center', marginTop: 10, marginBottom: 20 },
-  backButton: { padding: 8, marginLeft: -8 },
+  background: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+  },
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(20, 10, 40, 0.65)',
+  },
+  safeArea: {
+    flex: 1,
+  },
+  container: { 
+    flex: 1, 
+  },
+  scrollContainer: { 
+    flexGrow: 1, 
+    paddingHorizontal: 24, 
+    paddingBottom: 40 
+  },
+  header: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    paddingHorizontal: 24,
+    marginTop: Platform.OS === 'android' ? 40 : 10, 
+    marginBottom: 10 
+  },
+  backButton: { 
+    width: 44, 
+    height: 44, 
+    borderRadius: 22, 
+    backgroundColor: 'rgba(255, 255, 255, 0.15)', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    borderWidth: 1, 
+    borderColor: 'rgba(255, 255, 255, 0.2)' 
+  },
   headerCenter: { flex: 1, alignItems: 'center' },
-  headerTitle: { fontSize: 18, fontWeight: 'bold', color: COLORS.secondary },
-  headerSubtitle: { fontSize: 13, color: COLORS.gray, marginTop: 2 },
-  logoContainer: { alignItems: 'center', marginBottom: 30, marginTop: 10 },
-  logo: { width: 180, height: 60 },
+  headerTitle: { fontSize: 20, fontWeight: '700', color: '#FFFFFF' },
+  headerSubtitle: { fontSize: 13, color: '#E0E0E0', marginTop: 2 },
+  logoContainer: { alignItems: 'center', marginBottom: 20, marginTop: 10 },
+  logo: { width: 150, height: 50 },
   form: { flex: 1 },
-  sectionTitle: { fontSize: 12, fontWeight: 'bold', color: COLORS.gray, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 12, marginTop: 10 },
+  sectionTitle: { 
+    fontSize: 12, 
+    fontWeight: 'bold', 
+    color: '#E0E0E0', 
+    textTransform: 'uppercase', 
+    letterSpacing: 1, 
+    marginBottom: 12, 
+    marginTop: 15 
+  },
   badgeContainer: { flexDirection: 'row', gap: 10, marginBottom: 20 },
-  badge: { flex: 1, paddingVertical: 12, borderRadius: 12, backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border, alignItems: 'center' },
-  badgeSelected: { borderColor: COLORS.primary, backgroundColor: COLORS.primaryLight },
-  badgeText: { fontSize: 13, color: COLORS.gray, fontWeight: '600' },
-  badgeTextSelected: { color: COLORS.primary, fontWeight: 'bold' },
+  badge: { 
+    flex: 1, 
+    paddingVertical: 12, 
+    borderRadius: 16, 
+    backgroundColor: 'rgba(255, 255, 255, 0.08)', 
+    borderWidth: 1, 
+    borderColor: 'rgba(255, 255, 255, 0.2)', 
+    alignItems: 'center' 
+  },
+  badgeSelected: { 
+    borderColor: '#FF6B35', 
+    backgroundColor: 'rgba(255, 107, 53, 0.15)' 
+  },
+  badgeText: { fontSize: 13, color: '#E0E0E0', fontWeight: '600' },
+  badgeTextSelected: { color: '#FF6B35', fontWeight: 'bold' },
   rowInputs: { flexDirection: 'row', justifyContent: 'space-between' },
-  inputContainer: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, height: 55, paddingHorizontal: 15, marginBottom: 16, backgroundColor: COLORS.white },
+  inputContainer: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    borderWidth: 1.5, 
+    borderColor: 'rgba(255, 255, 255, 0.15)', 
+    borderRadius: 16, 
+    height: 58, 
+    paddingHorizontal: 15, 
+    marginBottom: 16, 
+    backgroundColor: 'rgba(255, 255, 255, 0.08)' 
+  },
   inputIcon: { marginRight: 10 },
-  input: { flex: 1, fontSize: 15, color: COLORS.textInput, height: '100%' },
+  input: { flex: 1, fontSize: 15, color: '#FFFFFF', height: '100%' },
   eyeIcon: { padding: 5 },
   checkboxContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 10, marginBottom: 24 },
-  checkbox: { width: 20, height: 20, borderRadius: 6, borderWidth: 1.5, borderColor: COLORS.gray, marginRight: 10, alignItems: 'center', justifyContent: 'center' },
-  checkboxChecked: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  checkboxText: { fontSize: 13, color: COLORS.gray },
-  linkText: { color: '#7C3AED', fontWeight: '600', textDecorationLine: 'underline' }, 
-  button: { backgroundColor: COLORS.primary, borderRadius: 12, height: 55, justifyContent: 'center', alignItems: 'center', shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 4 },
-  buttonText: { color: COLORS.white, fontSize: 16, fontWeight: 'bold' },
+  checkbox: { 
+    width: 22, 
+    height: 22, 
+    borderRadius: 6, 
+    borderWidth: 1.5, 
+    borderColor: 'rgba(255, 255, 255, 0.4)', 
+    marginRight: 10, 
+    alignItems: 'center', 
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)'
+  },
+  checkboxChecked: { backgroundColor: '#FF6B35', borderColor: '#FF6B35' },
+  checkboxText: { fontSize: 14, color: '#E0E0E0' },
+  linkText: { color: '#FF6B35', fontWeight: 'bold', textDecorationLine: 'underline' }, 
+  button: { 
+    backgroundColor: '#FF6B35', 
+    borderRadius: 16, 
+    height: 60, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    shadowColor: '#FF6B35', 
+    shadowOffset: { width: 0, height: 6 }, 
+    shadowOpacity: 0.4, 
+    shadowRadius: 10, 
+    elevation: 8 
+  },
+  buttonText: { color: '#FFFFFF', fontSize: 18, fontWeight: 'bold', letterSpacing: 0.5 },
   dividerContainer: { flexDirection: 'row', alignItems: 'center', marginVertical: 30 },
-  dividerLine: { flex: 1, height: 1, backgroundColor: COLORS.border },
-  dividerText: { marginHorizontal: 15, fontSize: 13, color: COLORS.gray },
+  dividerLine: { flex: 1, height: 1, backgroundColor: 'rgba(255, 255, 255, 0.2)' },
+  dividerText: { marginHorizontal: 15, fontSize: 14, color: '#E0E0E0' },
   socialContainer: { flexDirection: 'row', justifyContent: 'space-between', gap: 15, marginBottom: 30 },
-  socialButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, height: 55 },
-  socialButtonText: { marginLeft: 10, fontSize: 14, fontWeight: '600', color: COLORS.secondary },
+  socialButton: { 
+    flex: 1, 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    borderWidth: 1.5, 
+    borderColor: 'rgba(255, 255, 255, 0.15)', 
+    borderRadius: 16, 
+    height: 55,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)'
+  },
+  socialButtonText: { marginLeft: 10, fontSize: 15, fontWeight: '600', color: '#FFFFFF' },
   loginLink: { alignItems: 'center' },
-  loginLinkTextDesc: { color: COLORS.gray, fontSize: 14 },
-  loginLinkText: { color: '#7C3AED', fontWeight: 'bold' }, 
+  loginLinkTextDesc: { color: '#E0E0E0', fontSize: 15 },
+  loginLinkText: { color: '#FF6B35', fontWeight: 'bold' }, 
 });

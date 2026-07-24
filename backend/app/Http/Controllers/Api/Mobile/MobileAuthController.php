@@ -56,19 +56,6 @@ class MobileAuthController extends Controller
     }
 
     /**
-     * Trata o logout invalidando o token do aparelho.
-     */
-    public function logout(Request $request)
-    {
-        $request->user()->currentAccessToken()->delete();
-
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Sessão encerrada com sucesso no dispositivo móvel.'
-        ], 200);
-    }
-
-    /**
      * Cadastro completo com Integração Asaas (Customer e Wallet) e Aceite dos Termos
      */
     public function register(Request $request)
@@ -97,8 +84,6 @@ class MobileAuthController extends Controller
             // CAMPOS DO TERMO DE COMPROMISSO
             'termo_compromisso_aceito' => 'required|boolean|accepted',
             'termo_compromisso_versao' => 'required|string|max:20',
-            'termo_compromisso_ip'     => 'required|string|max:45',
-            'termo_compromisso_user_agent' => 'nullable|string|max:500',
         ]);
 
         // Limpa a formatação para a API do Asaas
@@ -161,12 +146,12 @@ class MobileAuthController extends Controller
                 'birth_date' => $request->birth_date,
                 'asaas_customer_id' => $asaasCustomerId,
 
-                // DADOS DO TERMO DE COMPROMISSO
+                // DADOS DO TERMO DE COMPROMISSO (Capturados de forma segura pelo próprio servidor)
                 'termo_compromisso_aceito' => $request->termo_compromisso_aceito,
-                'termo_compromisso_data'   => now(), // Data/Hora exata em que aceitou
+                'termo_compromisso_data'   => now(),
                 'termo_compromisso_versao' => $request->termo_compromisso_versao,
-                'termo_compromisso_ip'     => $request->termo_compromisso_ip,
-                'termo_compromisso_user_agent' => $request->termo_compromisso_user_agent,
+                'termo_compromisso_ip'     => $request->ip(),
+                'termo_compromisso_user_agent' => $request->userAgent(),
             ]);
 
             // =========================================================
@@ -237,6 +222,76 @@ class MobileAuthController extends Controller
             return response()->json([
                 'error' => 'Erro interno ao processar o cadastro.',
                 'details' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Retorna os dados do perfil do usuário autenticado
+     */
+    public function me(Request $request)
+    {
+        try {
+            /** @var User $user */
+            $user = $request->user();
+
+            // Carrega a assinatura ativa e estabelecimentos com seus pontos
+            $user->load(['assinaturaAtiva', 'pontos']);
+
+            // Calcula o saldo total de pontos acumulados
+            $totalPontos = $user->pontos_saldo ?? $user->pontos()->sum('total_pontos');
+
+            return response()->json([
+                'success' => true,
+                'user' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'papel' => $user->papel ?? 'Cliente',
+                    'telefone' => $user->telefone ?? $user->mobile_phone,
+                    'cpf_cnpj' => $user->cpf_cnpj,
+                    'cidade' => $user->city,
+                    'estado' => $user->state,
+                    'pontos_saldo' => (int) $totalPontos,
+                    'plano_atual' => $user->plano_atual, // Usando o Mutator getPlanoAtualAttribute() da Model
+                    'assinatura' => $user->assinaturaAtiva ? [
+                        'nome_plano' => $user->assinaturaAtiva->nome_plano,
+                        'tipo_publico' => $user->assinaturaAtiva->tipo_publico,
+                        'valor_mensal' => $user->assinaturaAtiva->valor_mensal,
+                        'status' => $user->assinaturaAtiva->status,
+                    ] : null,
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Erro ao carregar perfil: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Sair da conta no mobile (revoga o token Sanctum atual)
+     */
+    public function logout(Request $request)
+    {
+        try {
+            if ($request->user() && $request->user()->currentAccessToken()) {
+                $request->user()->currentAccessToken()->delete();
+            }
+
+            return response()->json([
+                'status' => 'success',
+                'success' => true,
+                'message' => 'Sessão encerrada com sucesso no dispositivo móvel.'
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'success' => false,
+                'message' => 'Erro ao realizar logout: ' . $e->getMessage()
             ], 500);
         }
     }

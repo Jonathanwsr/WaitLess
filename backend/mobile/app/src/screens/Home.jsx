@@ -7,52 +7,110 @@ import {
   TextInput,
   TouchableOpacity,
   Image,
+  ImageBackground,
   ActivityIndicator,
-  FlatList,
   Alert,
   SafeAreaView,
-  Platform
+  Platform,
+  Dimensions
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 
-// --- CORES PADRÃO (Inspirado na imagem) ---
+const { width } = Dimensions.get('window');
+
+// --- PALETA DE CORES ---
 const COLORS = {
-  primary: '#FF5A00', // Laranja
-  primaryLight: '#FFF4ED',
-  secondary: '#111827', // Quase preto para textos principais
+  primary: '#FF5A00',      // Laranja Lokyva
+  primaryLight: '#FFF0E6', // Laranja bem claro
+  secondary: '#111827',   // Texto escuro
+  black: '#000000',       // Preto puro para ícones
   gray: '#6B7280',
-  lightGray: '#F3F4F6',
+  lightGray: '#F8F9FA',
   white: '#FFFFFF',
   border: '#E5E7EB',
-  warning: '#FBBF24' // Amarelo para estrelas e pontos
+  warning: '#FFB800'
 };
 
 const STORAGE_KEYS = {
-  ADDRESS: '@waitless_address',
-  COORDS: '@waitless_coords',
-  FORMATTED: '@waitless_formatted'
+  ADDRESS: '@lokyva_address',
+  COORDS: '@lokyva_coords',
+  FORMATTED: '@lokyva_formatted'
 };
 
-// Ícones reais do Ionicons para garantir que vão aparecer
-const SERVICE_CATEGORIES = [
+// Textos dinâmicos para a barra de pesquisa
+const PLACEHOLDERS = [
+  'Procure por serviços...',
+  'Reservas em restaurantes...',
+  'Aluguel de carros...',
+  'Viagens, hotéis e pousadas...',
+  'Casas de temporada...'
+];
+
+// Categorias Principais
+const MAIN_CATEGORIES = [
   { id: '1', name: 'Hospedagens', slug: 'hospedagem', icone: 'bed-outline' },
   { id: '2', name: 'Restaurantes', slug: 'restaurante', icone: 'restaurant-outline' },
-  { id: '3', name: 'Serviços', slug: 'servico', icone: 'construct-outline' },
+  { id: '3', name: 'Serviços', slug: 'servico', icone: 'briefcase-outline' },
   { id: '4', name: 'Experiências', slug: 'experiencia', icone: 'camera-outline' },
-  { id: '5', name: 'Aluguel', slug: 'aluguel', icone: 'car-sport-outline' },
+  { id: '5', name: 'Aluguel de Carros', slug: 'aluguel', icone: 'car-sport-outline' },
+];
+
+// Categorias Secundárias
+const SECONDARY_CATEGORIES = [
+  { id: 'sec1', name: 'Eventos', icone: 'ticket-outline' },
+  { id: 'sec2', name: 'Passeios', icone: 'compass-outline' },
+  { id: 'sec3', name: 'Cupons', icone: 'pricetag-outline' },
+  { id: 'sec4', name: 'Pontos', icone: 'star-outline' },
+  { id: 'sec5', name: 'Favoritos', icone: 'heart-outline' },
+];
+
+// Destinos Estáticos de Fallback
+const DESTINOS_PADRAO = [
+  {
+    id: 'f1',
+    nome: 'Rio de Janeiro, RJ',
+    ramo_atuacao: 'Praia',
+    foto_perfil: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=400',
+    avaliacao_media: '4.8'
+  },
+  {
+    id: 'f2',
+    nome: 'Gramado, RS',
+    ramo_atuacao: 'Montanha',
+    foto_perfil: 'https://images.unsplash.com/photo-1519681393784-d120267933ba?q=80&w=400',
+    avaliacao_media: '4.9'
+  },
+  {
+    id: 'f3',
+    nome: 'Salvador, BA',
+    ramo_atuacao: 'Cultura & Praia',
+    foto_perfil: 'https://images.unsplash.com/photo-1548625361-18da90e633f8?q=80&w=400',
+    avaliacao_media: '4.7'
+  },
+  {
+    id: 'f4',
+    nome: 'Florianópolis, SC',
+    ramo_atuacao: 'Ilha & Surf',
+    foto_perfil: 'https://images.unsplash.com/photo-1583037189850-1921ae7c6c22?q=80&w=400',
+    avaliacao_media: '4.8'
+  }
 ];
 
 export default function Home() {
   const router = useRouter();
 
+  // Estados sem anotações de tipo TypeScript
   const [stores, setStores] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState('Buscando localização...');
   const [searchQuery, setSearchQuery] = useState('');
   const [categoriaAtiva, setCategoriaAtiva] = useState(null);
+
+  // Animação/Alternância de Placeholder da Pesquisa
+  const [placeholderIndex, setPlaceholderIndex] = useState(0);
 
   // Estados de Localização
   const [isEditingLocation, setIsEditingLocation] = useState(false);
@@ -60,6 +118,15 @@ export default function Home() {
   const [addressData, setAddressData] = useState({ logradouro: '', numero: '', cidadeUf: '' });
 
   const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api/mobile';
+
+  // Efeito para trocar o placeholder a cada 2.5 segundos
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setPlaceholderIndex((prevIndex) => (prevIndex + 1) % PLACEHOLDERS.length);
+    }, 2500);
+
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     loadSavedLocationOrFetchGPS();
@@ -72,10 +139,10 @@ export default function Home() {
       const storedFormatted = await AsyncStorage.getItem(STORAGE_KEYS.FORMATTED);
 
       if (storedCoords) {
-        setStatusMessage(storedFormatted || 'Usando GPS salvo');
+        setStatusMessage(storedFormatted || 'Sua Localização Atual');
         fetchNearbyStores(JSON.parse(storedCoords));
       } else if (storedAddress) {
-        setStatusMessage(storedFormatted || 'Usando endereço salvo');
+        setStatusMessage(storedFormatted || 'Endereço salvo');
         const parsed = JSON.parse(storedAddress);
         setAddressData(parsed);
         fetchNearbyStores(parsed);
@@ -120,7 +187,7 @@ export default function Home() {
   const fetchNearbyStores = async (params) => {
     setIsLoading(true);
     try {
-      const token = await AsyncStorage.getItem('@waitless_token');
+      const token = await AsyncStorage.getItem('@lokyva_token');
       const queryParams = new URLSearchParams(params).toString();
       const response = await fetch(`${API_BASE_URL}/estabelecimentos/proximos?${queryParams}&radius=15`, {
         headers: { 
@@ -140,7 +207,7 @@ export default function Home() {
 
   const handleCategorySearch = (categorySlug) => {
     if (categoriaAtiva === categorySlug) {
-      setCategoriaAtiva(null); // Desmarca se clicar de novo
+      setCategoriaAtiva(null);
       loadSavedLocationOrFetchGPS();
     } else {
       setCategoriaAtiva(categorySlug);
@@ -150,7 +217,6 @@ export default function Home() {
 
   const handleMainSearch = () => {
     if (!searchQuery.trim()) return;
-    // Redireciona para a Tela Explorar passando a busca
     router.push({
       pathname: '/src/screens/TelaExplorar',
       params: { query: searchQuery }
@@ -180,305 +246,672 @@ export default function Home() {
     }
   };
 
-  // Divide os dados para criar as duas seções da imagem ("Destinos em alta" e "Serviços recomendados")
-  const destaques = stores.slice(0, 3);
-  const recomendados = stores.slice(3, 8);
+  // Lista de destinos a ser exibida (da API ou o fallback estático)
+  const destinosExibicao = stores.length > 0 ? stores : DESTINOS_PADRAO;
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      
-      {/* HEADER SUPERIOR FIXO */}
-      <View style={styles.header}>
-        <Text style={styles.logoText}>waitless</Text>
-        <View style={styles.headerIcons}>
-          <TouchableOpacity onPress={() => router.push('/src/screens/FavoritosDashboard')}>
-            <Ionicons name="heart-outline" size={26} color={COLORS.secondary} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.push('/src/screens/PagamentoScreen')} style={styles.iconMargin}>
-            <Ionicons name="bag-handle-outline" size={26} color={COLORS.secondary} />
-            <View style={styles.badge} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => router.push('/src/screens/TelaPerfil')} style={styles.iconMargin}>
-            <View style={styles.profilePicPlaceholder}>
-              <Ionicons name="person" size={16} color={COLORS.white} />
-            </View>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <View style={styles.mainContainer}>
         
-        {/* BARRA DE PESQUISA */}
-        <View style={styles.searchContainer}>
-          <Ionicons name="search" size={20} color={COLORS.gray} style={styles.searchIcon} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Para onde você vai ou busca?"
-            placeholderTextColor={COLORS.gray}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            onSubmitEditing={handleMainSearch}
-            returnKeyType="search"
-          />
-          <TouchableOpacity style={styles.filterBtn} onPress={() => router.push('/modal')}>
-            <Ionicons name="options-outline" size={20} color={COLORS.primary} />
-          </TouchableOpacity>
-        </View>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+          
+          {/* HERO SECTION COM IMAGEM DE FUNDO */}
+          <ImageBackground
+            source={{ uri: 'https://images.unsplash.com/photo-1540541338287-41700207dee6?q=80&w=1000' }}
+            style={styles.heroBackground}
+            imageStyle={{ borderBottomLeftRadius: 24, borderBottomRightRadius: 24 }}
+          >
+            <View style={styles.heroOverlay}>
+              
+              {/* TOP HEADER */}
+              <View style={styles.heroHeader}>
+                <View style={styles.logoContainer}>
+                  <Text style={styles.logoTitle}>
+                    <Text style={styles.logoIcon}>w </Text>lokyva
+                  </Text>
+                  <Text style={styles.logoSubtitle}>Viaje. Reserve. Viva.</Text>
+                </View>
+                <TouchableOpacity style={styles.pularBtn}>
+                  <Text style={styles.pularBtnText}>Pular</Text>
+                </TouchableOpacity>
+              </View>
 
-        {/* CONTROLE DE LOCALIZAÇÃO (Moderno e Integrado) */}
-        <View style={styles.locationWrapper}>
-          {!isEditingLocation ? (
-            <TouchableOpacity style={styles.locationDisplay} onPress={() => setIsEditingLocation(true)}>
-              <Ionicons name="location" size={16} color={COLORS.primary} />
-              <Text style={styles.locationText} numberOfLines={1}>📍 {statusMessage}</Text>
-              <Text style={styles.locationChangeBtn}>Alterar</Text>
-            </TouchableOpacity>
-          ) : (
-            <View style={styles.locationForm}>
-              <View style={styles.locationFormHeader}>
-                <Text style={styles.locationFormTitle}>Definir localização</Text>
-                <TouchableOpacity onPress={getLocationViaGPS} style={styles.gpsBtn}>
-                  <Ionicons name="locate" size={16} color={COLORS.primary} />
-                  <Text style={styles.gpsBtnText}>Usar GPS</Text>
+              {/* TÍTULO HERO */}
+              <View style={styles.heroTitleContainer}>
+                <Text style={styles.heroTitle}>
+                  Sua próxima{'\n'}
+                  <Text style={styles.heroTitleHighlight}>experiência</Text>{'\n'}
+                  começa aqui.
+                </Text>
+                <Text style={styles.heroDescription}>
+                  Encontre os melhores destinos, hospedagens, serviços e experiências em um só lugar.
+                </Text>
+              </View>
+
+              {/* BARRA DE PESQUISA COM PLACEHOLDER ROTATIVO */}
+              <View style={styles.searchBox}>
+                <Ionicons name="search-outline" size={20} color={COLORS.black} style={styles.searchIcon} />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder={PLACEHOLDERS[placeholderIndex]}
+                  placeholderTextColor={COLORS.gray}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  onSubmitEditing={handleMainSearch}
+                  returnKeyType="search"
+                />
+                <TouchableOpacity style={styles.filterBtn} onPress={() => router.push('/modal')}>
+                  <Ionicons name="options-outline" size={20} color={COLORS.black} />
                 </TouchableOpacity>
               </View>
-              <TextInput style={styles.input} placeholder="Rua / Avenida" value={addressData.logradouro} onChangeText={t => setAddressData({...addressData, logradouro: t})} />
-              <View style={styles.row}>
-                <TextInput style={[styles.input, { flex: 1, marginRight: 8 }]} placeholder="Número" value={addressData.numero} onChangeText={t => setAddressData({...addressData, numero: t})} />
-                <TextInput style={[styles.input, { flex: 2 }]} placeholder="Cidade / UF" value={addressData.cidadeUf} onChangeText={t => setAddressData({...addressData, cidadeUf: t})} />
-              </View>
-              <View style={styles.formActions}>
-                <TouchableOpacity onPress={() => setIsEditingLocation(false)} style={styles.btnCancel}><Text style={styles.btnCancelText}>Cancelar</Text></TouchableOpacity>
-                <TouchableOpacity onPress={handleSaveLocation} style={styles.btnSave}>
-                  {isSavingLocation ? <ActivityIndicator color={COLORS.white} /> : <Text style={styles.btnSaveText}>Confirmar</Text>}
-                </TouchableOpacity>
-              </View>
+
             </View>
-          )}
-        </View>
+          </ImageBackground>
 
-        {/* CARD DE PONTOS (Estilo Imagem) */}
-        <View style={styles.pointsCard}>
-          <View style={styles.pointsIconBg}>
-            <Ionicons name="star" size={24} color={COLORS.white} />
-          </View>
-          <View style={styles.pointsInfo}>
-            <Text style={styles.pointsLabel}>Seus pontos</Text>
-            <Text style={styles.pointsValue}>4.250 <Text style={styles.pointsSuffix}>pts</Text></Text>
-          </View>
-          <TouchableOpacity style={styles.pointsBtn}>
-            <Text style={styles.pointsBtnText}>Ver meus pontos</Text>
-            <Ionicons name="chevron-forward" size={14} color={COLORS.primary} />
-          </TouchableOpacity>
-        </View>
-
-        {/* CATEGORIAS: "O que você deseja fazer?" */}
-        <Text style={styles.sectionTitle}>O que você deseja fazer?</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.categoriesScroll} contentContainerStyle={{ paddingHorizontal: 16 }}>
-          {SERVICE_CATEGORIES.map((cat) => (
-            <TouchableOpacity
-              key={cat.id}
-              style={[styles.categoriaCard, categoriaAtiva === cat.slug && styles.categoriaCardAtivo]}
-              onPress={() => handleCategorySearch(cat.slug)}
-            >
-              <Ionicons name={cat.icone} size={28} color={categoriaAtiva === cat.slug ? COLORS.white : COLORS.primary} />
-              <Text style={[styles.categoriaTexto, categoriaAtiva === cat.slug && styles.categoriaTextoAtivo]}>
-                {cat.name}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-
-        {/* BANNER PROMOCIONAL (Ganhe mais com Waitless) */}
-        <View style={styles.promoBanner}>
-          <View style={styles.promoIconBg}>
-            <Ionicons name="gift-outline" size={24} color={COLORS.primary} />
-          </View>
-          <View style={styles.promoTextContainer}>
-            <Text style={styles.promoTitle}>Ganhe mais com Waitless</Text>
-            <Text style={styles.promoDesc}>Acumule pontos em suas reservas e troque por descontos.</Text>
-          </View>
-        </View>
-
-        {/* CONTEÚDO DINÂMICO DO BANCO DE DADOS */}
-        {isLoading ? (
-          <View style={styles.loadingContainer}><ActivityIndicator size="large" color={COLORS.primary} /></View>
-        ) : stores.length > 0 ? (
-          <>
-            {/* DESTINOS/ESTABELECIMENTOS EM ALTA */}
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Locais em alta</Text>
-              <TouchableOpacity onPress={() => router.push('/src/screens/TelaExplorar')}>
-                <Text style={styles.verTodos}>Ver todos</Text>
+          {/* PAINEL DE LOCALIZAÇÃO */}
+          <View style={styles.locationWrapper}>
+            {!isEditingLocation ? (
+              <TouchableOpacity style={styles.locationDisplay} onPress={() => setIsEditingLocation(true)}>
+                <Ionicons name="location-outline" size={18} color={COLORS.black} />
+                <Text style={styles.locationText} numberOfLines={1}>{statusMessage}</Text>
+                <Text style={styles.locationChangeBtn}>Alterar</Text>
               </TouchableOpacity>
-            </View>
+            ) : (
+              <View style={styles.locationForm}>
+                <View style={styles.locationFormHeader}>
+                  <Text style={styles.locationFormTitle}>Definir localização</Text>
+                  <TouchableOpacity onPress={getLocationViaGPS} style={styles.gpsBtn}>
+                    <Ionicons name="locate-outline" size={16} color={COLORS.black} />
+                    <Text style={styles.gpsBtnText}>Usar GPS</Text>
+                  </TouchableOpacity>
+                </View>
+                <TextInput 
+                  style={styles.input} 
+                  placeholder="Rua / Avenida" 
+                  value={addressData.logradouro} 
+                  onChangeText={t => setAddressData({...addressData, logradouro: t})} 
+                />
+                <View style={styles.row}>
+                  <TextInput 
+                    style={[styles.input, { flex: 1, marginRight: 8 }]} 
+                    placeholder="Número" 
+                    value={addressData.numero} 
+                    onChangeText={t => setAddressData({...addressData, numero: t})} 
+                  />
+                  <TextInput 
+                    style={[styles.input, { flex: 2 }]} 
+                    placeholder="Cidade / UF" 
+                    value={addressData.cidadeUf} 
+                    onChangeText={t => setAddressData({...addressData, cidadeUf: t})} 
+                  />
+                </View>
+                <View style={styles.formActions}>
+                  <TouchableOpacity onPress={() => setIsEditingLocation(false)} style={styles.btnCancel}>
+                    <Text style={styles.btnCancelText}>Cancelar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={handleSaveLocation} style={styles.btnSave}>
+                    {isSavingLocation ? <ActivityIndicator color={COLORS.white} /> : <Text style={styles.btnSaveText}>Confirmar</Text>}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </View>
 
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }}>
-              {destaques.map((store) => (
+          {/* CATEGORIAS PRINCIPAIS */}
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false} 
+            style={styles.categoriesScroll}
+            contentContainerStyle={styles.categoriesContainer}
+          >
+            {MAIN_CATEGORIES.map((cat) => (
+              <TouchableOpacity
+                key={cat.id}
+                style={[
+                  styles.categoryCard,
+                  categoriaAtiva === cat.slug && styles.categoryCardActive
+                ]}
+                onPress={() => cat.slug && handleCategorySearch(cat.slug)}
+              >
+                <Ionicons name={cat.icone} size={26} color={COLORS.black} />
+                <Text style={styles.categoryText} numberOfLines={2}>
+                  {cat.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {/* SEÇÃO: DESTINOS EM ALTA (ROLÁVEL PARA OS DOIS LADOS) */}
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Destinos em alta</Text>
+            <TouchableOpacity onPress={() => router.push('/src/screens/TelaExplorar')} style={styles.verTodosBtn}>
+              <Text style={styles.verTodosText}>Ver todos</Text>
+              <Ionicons name="chevron-forward" size={14} color={COLORS.primary} />
+            </TouchableOpacity>
+          </View>
+
+          {isLoading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={COLORS.primary} />
+            </View>
+          ) : (
+            <ScrollView 
+              horizontal 
+              showsHorizontalScrollIndicator={false} 
+              decelerationRate="fast"
+              snapToAlignment="start"
+              contentContainerStyle={styles.destaquesScroll}
+            >
+              {destinosExibicao.map((item) => (
                 <TouchableOpacity 
-                  key={store.id} 
-                  style={styles.cardDestaque} 
+                  key={item.id} 
+                  style={styles.cardDestino}
                   activeOpacity={0.9}
-                  onPress={() => router.push({ pathname: '/src/screens/EstabelecimentoDetalhes', params: { id: store.id } })}
+                  onPress={() => router.push({ pathname: '/src/screens/EstabelecimentoDetalhes', params: { id: item.id } })}
                 >
-                  <Image source={{ uri: store.foto_perfil || 'https://via.placeholder.com/300x400' }} style={styles.imageDestaque} />
-                  <View style={styles.cardOverlay}>
-                    <View style={styles.cardTag}><Text style={styles.cardTagText}>{store.ramo_atuacao || 'Local'}</Text></View>
-                    <TouchableOpacity style={styles.cardHeart}><Ionicons name="heart-outline" size={20} color={COLORS.white} /></TouchableOpacity>
+                  <Image 
+                    source={{ uri: item.foto_perfil || 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=400' }} 
+                    style={styles.cardImage} 
+                  />
+                  
+                  {/* Tag Superior & Coração */}
+                  <View style={styles.cardHeaderOverlay}>
+                    <View style={styles.tagPill}>
+                      <Text style={styles.tagText}>{item.ramo_atuacao || 'Destino'}</Text>
+                    </View>
+                    <TouchableOpacity style={styles.heartBtn}>
+                      <Ionicons name="heart-outline" size={18} color={COLORS.white} />
+                    </TouchableOpacity>
                   </View>
-                  <View style={styles.cardDestaqueInfo}>
-                    <Text style={styles.cardDestaqueTitle} numberOfLines={1}>{store.nome}</Text>
-                    <Text style={styles.cardDestaqueSub} numberOfLines={2}>{store.cidade} - {store.estado}</Text>
-                    <View style={styles.ratingContainer}>
+
+                  {/* Informações Inferiores */}
+                  <View style={styles.cardBottomOverlay}>
+                    <Text style={styles.cardTitle} numberOfLines={1}>{item.nome}</Text>
+                    <View style={styles.ratingRow}>
                       <Ionicons name="star" size={14} color={COLORS.warning} />
-                      <Text style={styles.ratingText}> {store.avaliacao_media || 'Novo'} </Text>
+                      <Text style={styles.ratingText}>
+                        {item.avaliacao_media || '4.8'} <Text style={styles.ratingCount}>(128)</Text>
+                      </Text>
                     </View>
                   </View>
                 </TouchableOpacity>
               ))}
             </ScrollView>
+          )}
 
-            {/* SERVIÇOS RECOMENDADOS */}
-            {recomendados.length > 0 && (
-              <>
-                <View style={[styles.sectionHeader, { marginTop: 10 }]}>
-                  <Text style={styles.sectionTitle}>Recomendados para você</Text>
-                  <TouchableOpacity onPress={() => router.push('/src/screens/TelaExplorar')}>
-                    <Text style={styles.verTodos}>Ver todos</Text>
-                  </TouchableOpacity>
-                </View>
-
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }}>
-                  {recomendados.map((store) => (
-                    <TouchableOpacity 
-                      key={store.id} 
-                      style={styles.cardRecomendado}
-                      onPress={() => router.push({ pathname: '/src/screens/EstabelecimentoDetalhes', params: { id: store.id } })}
-                    >
-                      <Image source={{ uri: store.foto_perfil || 'https://via.placeholder.com/300x200' }} style={styles.imageRecomendado} />
-                      <View style={styles.infoRecomendado}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-                          <Ionicons name="storefront-outline" size={14} color={COLORS.primary} />
-                          <Text style={styles.recomendadoTag}> {store.ramo_atuacao || 'Serviço'}</Text>
-                        </View>
-                        <Text style={styles.recomendadoTitle} numberOfLines={1}>{store.nome}</Text>
-                        <Text style={styles.recomendadoSub} numberOfLines={1}>{store.distance ? `${store.distance} km daqui` : 'Próximo a você'}</Text>
-                      </View>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </>
-            )}
-          </>
-        ) : (
-          /* ESTADO VAZIO SE NÃO ENCONTRAR NADA */
-          <View style={styles.emptyState}>
-            <Ionicons name="sad-outline" size={60} color={COLORS.gray} style={{ opacity: 0.5, marginBottom: 16 }} />
-            <Text style={styles.emptyTitle}>Poxa, nada por aqui.</Text>
-            <Text style={styles.emptyDesc}>Nenhum serviço ou reserva está disponível para esta localização ou categoria no momento.</Text>
-            <TouchableOpacity style={styles.btnExploreTodos} onPress={() => { setCategoriaAtiva(null); loadSavedLocationOrFetchGPS(); }}>
-              <Text style={styles.btnExploreTodosText}>Limpar Filtros</Text>
+          {/* BANNER PROMOCIONAL: GANHE MAIS COM LOKYVA */}
+          <View style={styles.promoBanner}>
+            <View style={styles.promoIconContainer}>
+              <Ionicons name="gift-outline" size={28} color={COLORS.black} />
+            </View>
+            <View style={styles.promoTextContainer}>
+              <Text style={styles.promoTitle}>Ganhe mais com Lokyva</Text>
+              <Text style={styles.promoDesc}>
+                Acumule pontos em suas reservas e troque por benefícios exclusivos.
+              </Text>
+            </View>
+            <TouchableOpacity style={styles.saibaMaisBtn}>
+              <Text style={styles.saibaMaisText}>Saiba mais</Text>
+              <Ionicons name="chevron-forward" size={12} color={COLORS.white} />
             </TouchableOpacity>
           </View>
-        )}
-      </ScrollView>
+
+          {/* SEÇÃO: TUDO O QUE VOCÊ PRECISA */}
+          <Text style={[styles.sectionTitle, { marginLeft: 16, marginBottom: 16 }]}>
+            Tudo o que você precisa
+          </Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.secondaryCategoriesContainer}>
+            {SECONDARY_CATEGORIES.map((cat) => (
+              <TouchableOpacity key={cat.id} style={styles.secondaryCategoryCard}>
+                <Ionicons name={cat.icone} size={24} color={COLORS.black} />
+                <Text style={styles.secondaryCategoryText}>{cat.name}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {/* BOTÃO PRINCIPAL EXPLORAR */}
+          <TouchableOpacity 
+            style={styles.explorarAgoraBtn}
+            onPress={() => router.push('/src/screens/TelaExplorar')}
+          >
+            <Text style={styles.explorarAgoraText}>Explorar agora</Text>
+            <Ionicons name="chevron-forward" size={18} color={COLORS.white} />
+          </TouchableOpacity>
+
+        </ScrollView>
+
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: COLORS.white, paddingTop: Platform.OS === 'android' ? 25 : 0 },
-  
-  // Header
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12 },
-  logoText: { fontSize: 24, fontWeight: '900', color: COLORS.primary, letterSpacing: -1 },
-  headerIcons: { flexDirection: 'row', alignItems: 'center' },
-  iconMargin: { marginLeft: 16, position: 'relative' },
-  badge: { position: 'absolute', top: 0, right: 0, width: 10, height: 10, borderRadius: 5, backgroundColor: COLORS.primary, borderWidth: 1, borderColor: COLORS.white },
-  profilePicPlaceholder: { width: 30, height: 30, borderRadius: 15, backgroundColor: COLORS.secondary, alignItems: 'center', justifyContent: 'center' },
+  safeArea: {
+    flex: 1,
+    backgroundColor: COLORS.white,
+    paddingTop: Platform.OS === 'android' ? 25 : 0
+  },
+  mainContainer: {
+    flex: 1,
+    position: 'relative'
+  },
+  scrollContent: {
+    paddingBottom: 30
+  },
 
-  scrollContent: { paddingBottom: 100 },
+  // HERO BACKGROUND
+  heroBackground: {
+    width: '100%',
+    height: 380,
+    justifyContent: 'space-between'
+  },
+  heroOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 16,
+    justifyContent: 'space-between',
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24
+  },
+  heroHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center'
+  },
+  logoContainer: {
+    flexDirection: 'column'
+  },
+  logoTitle: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: COLORS.white,
+    letterSpacing: -0.5
+  },
+  logoIcon: {
+    color: COLORS.primary,
+    fontWeight: '900'
+  },
+  logoSubtitle: {
+    fontSize: 10,
+    color: COLORS.white,
+    opacity: 0.9,
+    marginTop: -2
+  },
+  pularBtn: {
+    backgroundColor: 'rgba(255, 255, 255, 0.25)',
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 20
+  },
+  pularBtnText: {
+    color: COLORS.white,
+    fontSize: 13,
+    fontWeight: '600'
+  },
+  heroTitleContainer: {
+    marginVertical: 10
+  },
+  heroTitle: {
+    fontSize: 28,
+    fontWeight: '900',
+    color: COLORS.white,
+    lineHeight: 34
+  },
+  heroTitleHighlight: {
+    color: COLORS.primary
+  },
+  heroDescription: {
+    fontSize: 13,
+    color: COLORS.white,
+    opacity: 0.9,
+    marginTop: 8,
+    maxWidth: '85%',
+    lineHeight: 18
+  },
 
-  // Search
-  searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, marginHorizontal: 16, paddingHorizontal: 12, height: 50, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2, marginBottom: 16 },
-  searchIcon: { marginRight: 8 },
-  searchInput: { flex: 1, fontSize: 15, color: COLORS.secondary },
-  filterBtn: { padding: 6, backgroundColor: COLORS.primaryLight, borderRadius: 8 },
+  // SEARCH BOX
+  searchBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.white,
+    borderRadius: 30,
+    paddingHorizontal: 16,
+    height: 52,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4
+  },
+  searchIcon: {
+    marginRight: 10
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: COLORS.secondary,
+    fontWeight: '500'
+  },
+  filterBtn: {
+    padding: 6
+  },
 
-  // Location
-  locationWrapper: { paddingHorizontal: 16, marginBottom: 20 },
-  locationDisplay: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.lightGray, padding: 12, borderRadius: 12 },
-  locationText: { flex: 1, fontSize: 13, color: COLORS.secondary, fontWeight: '600', marginLeft: 8 },
-  locationChangeBtn: { fontSize: 13, fontWeight: '800', color: COLORS.primary },
-  
-  locationForm: { backgroundColor: COLORS.white, padding: 16, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border },
-  locationFormHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  locationFormTitle: { fontSize: 14, fontWeight: '900', color: COLORS.secondary },
-  gpsBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.primaryLight, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-  gpsBtnText: { color: COLORS.primary, fontSize: 11, fontWeight: '800', marginLeft: 4 },
-  input: { backgroundColor: COLORS.lightGray, borderRadius: 8, padding: 12, marginBottom: 10, fontSize: 14 },
-  row: { flexDirection: 'row' },
-  formActions: { flexDirection: 'row', justifyContent: 'flex-end', marginTop: 8 },
-  btnCancel: { padding: 10, marginRight: 8 },
-  btnCancelText: { color: COLORS.gray, fontWeight: '700' },
-  btnSave: { backgroundColor: COLORS.primary, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 8 },
-  btnSaveText: { color: COLORS.white, fontWeight: '800' },
+  // LOCATION
+  locationWrapper: {
+    paddingHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 8
+  },
+  locationDisplay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.lightGray,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12
+  },
+  locationText: {
+    flex: 1,
+    fontSize: 12,
+    color: COLORS.secondary,
+    fontWeight: '600',
+    marginLeft: 6
+  },
+  locationChangeBtn: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: COLORS.primary
+  },
+  locationForm: {
+    backgroundColor: COLORS.white,
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border
+  },
+  locationFormHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10
+  },
+  locationFormTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: COLORS.secondary
+  },
+  gpsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.lightGray,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6
+  },
+  gpsBtnText: {
+    color: COLORS.black,
+    fontSize: 11,
+    fontWeight: '700',
+    marginLeft: 4
+  },
+  input: {
+    backgroundColor: COLORS.lightGray,
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 8,
+    fontSize: 13
+  },
+  row: {
+    flexDirection: 'row'
+  },
+  formActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginTop: 4
+  },
+  btnCancel: {
+    padding: 8,
+    marginRight: 8
+  },
+  btnCancelText: {
+    color: COLORS.gray,
+    fontWeight: '600',
+    fontSize: 13
+  },
+  btnSave: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8
+  },
+  btnSaveText: {
+    color: COLORS.white,
+    fontWeight: '800',
+    fontSize: 13
+  },
 
-  // Points Card
-  pointsCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border, borderRadius: 16, marginHorizontal: 16, padding: 16, marginBottom: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 4, elevation: 1 },
-  pointsIconBg: { width: 44, height: 44, borderRadius: 22, backgroundColor: COLORS.warning, alignItems: 'center', justifyContent: 'center', marginRight: 16 },
-  pointsInfo: { flex: 1 },
-  pointsLabel: { fontSize: 12, color: COLORS.gray, fontWeight: '600' },
-  pointsValue: { fontSize: 20, fontWeight: '900', color: COLORS.secondary },
-  pointsSuffix: { fontSize: 14, fontWeight: '600', color: COLORS.gray },
-  pointsBtn: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: COLORS.primary, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 100 },
-  pointsBtnText: { color: COLORS.primary, fontSize: 12, fontWeight: '800', marginRight: 4 },
+  // CATEGORIAS PRINCIPAIS
+  categoriesScroll: {
+    marginVertical: 12
+  },
+  categoriesContainer: {
+    paddingHorizontal: 16
+  },
+  categoryCard: {
+    width: 82,
+    height: 82,
+    backgroundColor: COLORS.lightGray,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+    padding: 6
+  },
+  categoryCardActive: {
+    borderWidth: 1.5,
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.white
+  },
+  categoryText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.black,
+    marginTop: 6,
+    textAlign: 'center'
+  },
 
-  // Categories
-  sectionTitle: { fontSize: 18, fontWeight: '900', color: COLORS.secondary, marginLeft: 16, marginBottom: 16 },
-  categoriesScroll: { marginBottom: 24 },
-  categoriaCard: { width: 100, height: 100, backgroundColor: COLORS.primaryLight, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-  categoriaCardAtivo: { backgroundColor: COLORS.primary },
-  categoriaTexto: { fontSize: 12, fontWeight: '800', color: COLORS.primary, marginTop: 8 },
-  categoriaTextoAtivo: { color: COLORS.white },
+  // HEADERS DE SEÇÃO
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 12
+  },
+  sectionTitle: {
+    fontSize: 17,
+    fontWeight: '900',
+    color: COLORS.secondary
+  },
+  verTodosBtn: {
+    flexDirection: 'row',
+    alignItems: 'center'
+  },
+  verTodosText: {
+    fontSize: 13,
+    color: COLORS.primary,
+    fontWeight: '700',
+    marginRight: 2
+  },
 
-  // Promo Banner
-  promoBanner: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border, borderRadius: 16, marginHorizontal: 16, padding: 16, marginBottom: 32 },
-  promoIconBg: { width: 48, height: 48, borderRadius: 12, backgroundColor: COLORS.primaryLight, alignItems: 'center', justifyContent: 'center', marginRight: 16 },
-  promoTextContainer: { flex: 1 },
-  promoTitle: { fontSize: 15, fontWeight: '900', color: COLORS.secondary, marginBottom: 4 },
-  promoDesc: { fontSize: 12, color: COLORS.gray, lineHeight: 16 },
+  // CARDS DE DESTINO EM ALTA (HORIZONTAL)
+  destaquesScroll: {
+    paddingHorizontal: 16,
+    paddingBottom: 8
+  },
+  cardDestino: {
+    width: width * 0.44,
+    height: 200,
+    borderRadius: 18,
+    marginRight: 12,
+    overflow: 'hidden',
+    backgroundColor: COLORS.secondary,
+    position: 'relative'
+  },
+  cardImage: {
+    width: '100%',
+    height: '100%',
+    position: 'absolute'
+  },
+  cardHeaderOverlay: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    padding: 10,
+    zIndex: 2
+  },
+  tagPill: {
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12
+  },
+  tagText: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: COLORS.secondary
+  },
+  heartBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  cardBottomOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: 12,
+    backgroundColor: 'rgba(0,0,0,0.45)'
+  },
+  cardTitle: {
+    color: COLORS.white,
+    fontSize: 14,
+    fontWeight: '800',
+    marginBottom: 2
+  },
+  ratingRow: {
+    flexDirection: 'row',
+    alignItems: 'center'
+  },
+  ratingText: {
+    color: COLORS.white,
+    fontSize: 12,
+    fontWeight: '800',
+    marginLeft: 4
+  },
+  ratingCount: {
+    color: COLORS.lightGray,
+    fontWeight: '400',
+    fontSize: 10
+  },
 
-  // Headers das Seções
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginHorizontal: 16, marginBottom: 16 },
-  verTodos: { fontSize: 14, color: COLORS.primary, fontWeight: '800' },
+  // BANNER PROMOCIONAL
+  promoBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.primaryLight,
+    borderRadius: 16,
+    marginHorizontal: 16,
+    padding: 14,
+    marginVertical: 20
+  },
+  promoIconContainer: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: COLORS.white,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12
+  },
+  promoTextContainer: {
+    flex: 1,
+    marginRight: 8
+  },
+  promoTitle: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: COLORS.secondary,
+    marginBottom: 2
+  },
+  promoDesc: {
+    fontSize: 11,
+    color: COLORS.gray,
+    lineHeight: 14
+  },
+  saibaMaisBtn: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    flexDirection: 'row',
+    alignItems: 'center'
+  },
+  saibaMaisText: {
+    color: COLORS.white,
+    fontSize: 11,
+    fontWeight: '800',
+    marginRight: 2
+  },
 
-  // Destaques (Cards Verticais)
-  cardDestaque: { width: 220, backgroundColor: COLORS.secondary, borderRadius: 20, marginRight: 16, overflow: 'hidden' },
-  imageDestaque: { width: '100%', height: 260, opacity: 0.8 },
-  cardOverlay: { position: 'absolute', top: 12, left: 12, right: 12, flexDirection: 'row', justifyContent: 'space-between' },
-  cardTag: { backgroundColor: COLORS.white, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-  cardTagText: { fontSize: 10, fontWeight: '900', color: COLORS.primary },
-  cardHeart: { width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center' },
-  cardDestaqueInfo: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 16, backgroundColor: 'rgba(0,0,0,0.4)' },
-  cardDestaqueTitle: { fontSize: 18, fontWeight: '900', color: COLORS.white, marginBottom: 4 },
-  cardDestaqueSub: { fontSize: 12, color: COLORS.lightGray, marginBottom: 8 },
-  ratingContainer: { flexDirection: 'row', alignItems: 'center' },
-  ratingText: { fontSize: 13, fontWeight: '900', color: COLORS.white },
+  // CATEGORIAS SECUNDÁRIAS ("TUDO O QUE VOCÊ PRECISA")
+  secondaryCategoriesContainer: {
+    paddingHorizontal: 16,
+    marginBottom: 20
+  },
+  secondaryCategoryCard: {
+    width: 72,
+    height: 72,
+    backgroundColor: COLORS.lightGray,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+    padding: 4
+  },
+  secondaryCategoryText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: COLORS.black,
+    marginTop: 4
+  },
 
-  // Recomendados (Cards Horizontais)
-  cardRecomendado: { width: 180, marginRight: 16, backgroundColor: COLORS.white, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border, overflow: 'hidden' },
-  imageRecomendado: { width: '100%', height: 110 },
-  infoRecomendado: { padding: 12 },
-  recomendadoTag: { fontSize: 10, fontWeight: '900', color: COLORS.primary, textTransform: 'uppercase' },
-  recomendadoTitle: { fontSize: 14, fontWeight: '900', color: COLORS.secondary, marginBottom: 4 },
-  recomendadoSub: { fontSize: 12, color: COLORS.gray },
+  // BOTÃO PRINCIPAL EXPLORAR
+  explorarAgoraBtn: {
+    backgroundColor: COLORS.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 30,
+    marginBottom: 10
+  },
+  explorarAgoraText: {
+    color: COLORS.white,
+    fontSize: 15,
+    fontWeight: '900',
+    marginRight: 4
+  },
 
-  // Loading & Empty
-  loadingContainer: { alignItems: 'center', paddingVertical: 40 },
-  emptyState: { alignItems: 'center', padding: 30, backgroundColor: COLORS.lightGray, marginHorizontal: 16, borderRadius: 20, marginTop: 10 },
-  emptyTitle: { fontSize: 16, fontWeight: '900', color: COLORS.secondary, textAlign: 'center', marginBottom: 8 },
-  emptyDesc: { color: COLORS.gray, textAlign: 'center', fontSize: 14, lineHeight: 22, marginBottom: 20 },
-  btnExploreTodos: { backgroundColor: COLORS.secondary, paddingVertical: 12, paddingHorizontal: 24, borderRadius: 100 },
-  btnExploreTodosText: { color: COLORS.white, fontWeight: '900', fontSize: 14 }
+  loadingContainer: {
+    alignItems: 'center',
+    paddingVertical: 30
+  }
 });
