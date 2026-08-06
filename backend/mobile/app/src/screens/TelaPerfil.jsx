@@ -7,25 +7,26 @@ import {
   TouchableOpacity, 
   SafeAreaView, 
   ActivityIndicator, 
-  Alert 
+  Alert,
+  Platform
 } from 'react-native';
-import { Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { Ionicons, Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api/mobile';
 
-// Cores Padrão da Aplicação
+// Cores baseadas no design
 const COLORS = {
-  primary: '#FF5A00',
-  secondary: '#111827',
-  gray: '#6B7280',
-  lightGray: '#F3F4F6',
+  primary: '#F05627', // Laranja do design
+  background: '#F8F9FA',
   white: '#FFFFFF',
-  border: '#E5E7EB',
+  textDark: '#1F2937',
+  textGray: '#6B7280',
+  textLight: '#9CA3AF',
+  border: '#F3F4F6',
   danger: '#EF4444',
-  dangerLight: '#FEE2E2',
-  warning: '#F59E0B'
+  avatarBg: '#E5E7EB'
 };
 
 export default function TelaPerfil() {
@@ -56,8 +57,8 @@ export default function TelaPerfil() {
       if (res.ok && data.success) {
         setUsuario(data.user);
       } else {
-        // Fallback genérico caso a API retorne erros de autenticação
         Alert.alert('Sessão expirada', 'Por favor, faça login novamente.');
+        await AsyncStorage.multiRemove(['@waitless_token', '@waitless_user']);
         router.replace('/src/screens/LoginScreen');
       }
     } catch (error) {
@@ -81,29 +82,22 @@ export default function TelaPerfil() {
               setSaindo(true);
               const token = await AsyncStorage.getItem('@waitless_token');
 
-              // Executa a chamada na rota informada
-              await fetch(`${API_URL}/logout`, {
-                method: 'POST',
-                headers: {
-                  'Authorization': `Bearer ${token}`,
-                  'Accept': 'application/json',
-                  'Content-Type': 'application/json'
-                }
-              });
-
-              // Limpa os dados salvos localmente
-              await AsyncStorage.removeItem('@waitless_token');
-              await AsyncStorage.removeItem('@waitless_user');
-
-              // Redireciona para a tela de login
-              router.replace('/src/screens/LoginScreen');
+              if (token) {
+                await fetch(`${API_URL}/logout`, {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                  }
+                });
+              }
             } catch (error) {
-              console.log('Erro ao realizar logout:', error);
-              // Mesmo com erro de rede, desloga localmente por segurança
-              await AsyncStorage.removeItem('@waitless_token');
-              router.replace('/src/screens/LoginScreen');
+              console.log('Erro na requisição de logout:', error);
             } finally {
+              await AsyncStorage.multiRemove(['@waitless_token', '@waitless_user']);
               setSaindo(false);
+              router.replace('/src/screens/LoginScreen');
             }
           }
         }
@@ -115,136 +109,117 @@ export default function TelaPerfil() {
     return (
       <SafeAreaView style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>Carregando informações...</Text>
+        <Text style={styles.loadingText}>Carregando perfil...</Text>
       </SafeAreaView>
     );
   }
 
+  // Dados mockados para preencher o visual caso não venham da API
+  const nomeExibicao = usuario?.name || 'Lucas Ferreira';
+  const emailExibicao = usuario?.email || 'lucas.ferreira@email.com';
+  const tipoExibicao = usuario?.plano_atual || 'Profissional';
+
+  // Componente de Item da Lista (Reutilizável)
+  const ListItem = ({ icon, title, value, subValue, valueColor, titleColor, isLast, onPress }) => (
+    <TouchableOpacity 
+      style={[styles.listItem, !isLast && styles.listItemBorder]} 
+      onPress={onPress}
+      disabled={!onPress}
+    >
+      <View style={styles.listItemLeft}>
+        <Ionicons name={icon} size={20} color={titleColor || COLORS.textGray} style={styles.listIcon} />
+        <View>
+          <Text style={[styles.listTitle, titleColor && { color: titleColor }]}>{title}</Text>
+          {subValue && <Text style={styles.listSubValue}>{subValue}</Text>}
+        </View>
+      </View>
+      <View style={styles.listItemRight}>
+        {value && <Text style={[styles.listValue, valueColor && { color: valueColor }]}>{value}</Text>}
+        <Feather name="chevron-right" size={18} color={COLORS.textLight} style={styles.chevron} />
+      </View>
+    </TouchableOpacity>
+  );
+
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-        
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Perfil</Text>
-        </View>
-
-        {/* Info do Usuário */}
-        <View style={styles.userInfoContainer}>
-          <View style={styles.avatar}>
-            <Ionicons name="person-circle-outline" size={60} color={COLORS.primary} />
-          </View>
-          <View style={styles.userDetails}>
-            <Text style={styles.userName}>
-              {usuario?.name ? usuario.name.toUpperCase() : 'USUÁRIO'}
-            </Text>
-            <View style={styles.tagDigital}>
-              <Text style={styles.tagText}>
-                {usuario?.plano_atual ? usuario.plano_atual.toUpperCase() : 'DIGITAL'}
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Card Nome de Exibição */}
-        <View style={styles.displayNameCard}>
-          <Text style={styles.label}>Nome de exibição</Text>
-          <Text style={styles.displayName}>{usuario?.name || 'Não informado'}</Text>
-          {usuario?.email && (
-            <Text style={styles.emailText}>{usuario.email}</Text>
-          )}
-        </View>
-
-        {/* Card Meus Pontos */}
-        <View style={styles.pointsCard}>
-          <View style={styles.pointsHeader}>
-            <Ionicons name="ribbon-outline" size={24} color={COLORS.warning} />
-            <Text style={styles.pointsTitle}>Meus Pontos</Text>
-          </View>
-          <Text style={styles.pointsValue}>{usuario?.pontos_saldo ?? 0} pts</Text>
-          <Text style={styles.pointsSub}>Acumulados em seus atendimentos</Text>
-        </View>
-
-        {/* Ações Rápidas (Horizontal) */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.quickActions}>
-          <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/src/screens/MinhaCarteira')}>
-            <Ionicons name="wallet-outline" size={22} color={COLORS.primary} style={styles.actionIcon} />
-            <Text style={styles.actionText}>Ver minha carteira</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.actionCard} onPress={() => router.push('/src/screens/MinhaAssinatura')}>
-            <Ionicons name="card-outline" size={22} color={COLORS.primary} style={styles.actionIcon} />
-            <Text style={styles.actionText}>Ver assinatura</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.actionCard}>
-            <Ionicons name="document-text-outline" size={22} color={COLORS.primary} style={styles.actionIcon} />
-            <Text style={styles.actionText}>Informe de rendimentos</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.actionCard}>
-            <Ionicons name="cash-outline" size={22} color={COLORS.primary} style={styles.actionIcon} />
-            <Text style={styles.actionText}>Meu Crédito</Text>
-          </TouchableOpacity>
-        </ScrollView>
-
-        {/* Central de Segurança */}
-        <Text style={styles.sectionTitle}>Central de Segurança</Text>
-        <View style={styles.securityContainer}>
-          <TouchableOpacity style={styles.securityCard}>
-            <Ionicons name="shield-checkmark-outline" size={20} color={COLORS.secondary} style={{ marginBottom: 6 }} />
-            <Text style={styles.cardTitle}>Meus Limites</Text>
-            <Text style={styles.cardSubtitle}>Gestão de limites diários</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.securityCard}>
-            <Ionicons name="qr-code-outline" size={20} color={COLORS.secondary} style={{ marginBottom: 6 }} />
-            <Text style={styles.cardTitle}>Token e Autorização</Text>
-            <Text style={styles.cardSubtitle}>Autenticar com QR Code</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Lista de Configurações */}
-        <View style={styles.listContainer}>
-          <TouchableOpacity style={styles.listItem}>
-            <View style={styles.listItemRow}>
-              <Ionicons name="gift-outline" size={20} color={COLORS.gray} style={{ marginRight: 12 }} />
-              <Text style={styles.listText}>Meus benefícios</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={COLORS.gray} />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.listItem}>
-            <View style={styles.listItemRow}>
-              <Ionicons name="chatbubbles-outline" size={20} color={COLORS.gray} style={{ marginRight: 12 }} />
-              <Text style={styles.listText}>Perfil do Fórum</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={COLORS.gray} />
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.listItem}>
-            <View style={styles.listItemRow}>
-              <Ionicons name="create-outline" size={20} color={COLORS.gray} style={{ marginRight: 12 }} />
-              <Text style={styles.listText}>Atualização cadastral</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={COLORS.gray} />
-          </TouchableOpacity>
-        </View>
-
-        {/* BOTÃO DE SAIR */}
-        <TouchableOpacity 
-          style={styles.logoutButton} 
-          onPress={handleLogout}
-          disabled={saindo}
-        >
-          {saindo ? (
-            <ActivityIndicator color={COLORS.danger} />
-          ) : (
-            <>
-              <Ionicons name="log-out-outline" size={22} color={COLORS.danger} style={{ marginRight: 8 }} />
-              <Text style={styles.logoutText}>Sair da conta</Text>
-            </>
-          )}
+      
+      {/* HEADER TOP BAR */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.headerButton} onPress={() => router.back()}>
+          <Feather name="chevron-left" size={24} color={COLORS.textDark} />
         </TouchableOpacity>
+        <Text style={styles.headerTitle}>Meu Perfil</Text>
+        <TouchableOpacity style={styles.headerButton}>
+          <Feather name="bell" size={20} color={COLORS.textDark} />
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        
+        {/* INFO DO USUÁRIO TOP */}
+        <TouchableOpacity style={styles.profileSummary}>
+          <View style={styles.avatarContainer}>
+            <View style={styles.avatar}>
+              <Ionicons name="person" size={32} color={COLORS.textGray} />
+            </View>
+            <View style={styles.avatarEditBadge}>
+              <Feather name="camera" size={10} color={COLORS.textDark} />
+            </View>
+          </View>
+          <View style={styles.profileDetails}>
+            <Text style={styles.profileName}>{nomeExibicao}</Text>
+            <Text style={styles.profileEmail}>{emailExibicao}</Text>
+            <View style={styles.tagBadge}>
+              <Text style={styles.tagText}>{tipoExibicao}</Text>
+            </View>
+          </View>
+          <Feather name="chevron-right" size={20} color={COLORS.textLight} />
+        </TouchableOpacity>
+
+        {/* 1. INFORMAÇÕES PESSOAIS */}
+        <Text style={styles.sectionTitle}>Informações pessoais</Text>
+        <View style={styles.cardGroup}>
+          <ListItem icon="person-outline" title="Nome completo" value={nomeExibicao} />
+          <ListItem icon="calendar-outline" title="Data de nascimento" value="15/07/1996" />
+          <ListItem icon="school-outline" title="Onde estuda" value="Universidade Federal" />
+          <ListItem icon="briefcase-outline" title="Profissão" value="Desenvolvedor" />
+          <ListItem icon="information-circle-outline" title="Sobre mim" value="Tecnologia e inovação..." isLast />
+        </View>
+
+        {/* 2. CONTA E PREFERÊNCIAS */}
+        <Text style={styles.sectionTitle}>Conta e preferências</Text>
+        <View style={styles.cardGroup}>
+          <ListItem icon="people-outline" title="Tipo de usuário" value="Profissional" valueColor={COLORS.primary} />
+          <ListItem 
+            icon="ribbon-outline" 
+            title="Plano atual" 
+            value="Plano Premium" 
+            subValue="Validade até 08/09/2026"
+            valueColor={COLORS.primary} 
+          />
+          <ListItem icon="card-outline" title="Método de pagamento" value="**** 4242 (Visa)" />
+          <ListItem icon="chatbubble-outline" title="Meus comentários" />
+          <ListItem icon="time-outline" title="Histórico de reservas" />
+          <ListItem icon="headset-outline" title="Suporte" isLast />
+        </View>
+
+        {/* 3. AÇÕES DA CONTA */}
+        <Text style={styles.sectionTitle}>Ações da conta</Text>
+        <View style={styles.cardGroup}>
+          <ListItem 
+            icon="log-out-outline" 
+            title="Sair da conta" 
+            subValue="Fazer logout do aplicativo" 
+            onPress={handleLogout}
+          />
+          <ListItem 
+            icon="trash-outline" 
+            title="Apagar minha conta" 
+            subValue="Excluir permanentemente sua conta e dados" 
+            titleColor={COLORS.danger}
+            isLast 
+          />
+        </View>
 
       </ScrollView>
     </SafeAreaView>
@@ -252,49 +227,163 @@ export default function TelaPerfil() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: COLORS.white },
-  container: { flex: 1, padding: 20 },
+  safeArea: { 
+    flex: 1, 
+    backgroundColor: COLORS.background 
+  },
+  loadingContainer: { 
+    flex: 1, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    backgroundColor: COLORS.background 
+  },
+  loadingText: { 
+    marginTop: 12, 
+    fontSize: 14, 
+    color: COLORS.textGray, 
+    fontWeight: '500' 
+  },
   
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.white },
-  loadingText: { marginTop: 12, fontSize: 14, color: COLORS.gray, fontWeight: '600' },
-
-  header: { marginBottom: 20 },
-  headerTitle: { fontSize: 28, fontWeight: 'bold', color: COLORS.secondary },
+  // Header Top Bar
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'android' ? 40 : 10,
+    paddingBottom: 15,
+    backgroundColor: COLORS.background
+  },
+  headerButton: { padding: 4 },
+  headerTitle: { fontSize: 16, fontWeight: '700', color: COLORS.textDark },
   
-  userInfoContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
-  avatar: { width: 70, height: 70, borderRadius: 35, backgroundColor: COLORS.lightGray, justifyContent: 'center', alignItems: 'center', marginRight: 15 },
-  userDetails: { flex: 1 },
-  userName: { fontSize: 16, fontWeight: 'bold', color: COLORS.secondary, marginBottom: 5 },
-  tagDigital: { backgroundColor: COLORS.primary, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, alignSelf: 'flex-start' },
-  tagText: { color: COLORS.white, fontSize: 11, fontWeight: 'bold' },
+  scrollContent: { paddingHorizontal: 20, paddingBottom: 40 },
 
-  displayNameCard: { borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, padding: 15, marginBottom: 15, backgroundColor: COLORS.white },
-  label: { fontSize: 12, color: COLORS.gray, marginBottom: 4 },
-  displayName: { fontSize: 16, fontWeight: '600', color: COLORS.secondary },
-  emailText: { fontSize: 13, color: COLORS.gray, marginTop: 2 },
+  // Profile Summary (Top)
+  profileSummary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 30,
+    marginTop: 10
+  },
+  avatarContainer: {
+    position: 'relative',
+    marginRight: 16
+  },
+  avatar: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: COLORS.avatarBg,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  avatarEditBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: COLORS.white,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 1.41,
+    elevation: 2
+  },
+  profileDetails: {
+    flex: 1
+  },
+  profileName: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORS.textDark,
+    marginBottom: 2
+  },
+  profileEmail: {
+    fontSize: 13,
+    color: COLORS.textGray,
+    marginBottom: 6
+  },
+  tagBadge: {
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 6,
+    alignSelf: 'flex-start'
+  },
+  tagText: {
+    color: COLORS.white,
+    fontSize: 11,
+    fontWeight: '600'
+  },
 
-  pointsCard: { backgroundColor: '#FEF3C7', borderRadius: 12, padding: 16, marginBottom: 20, borderWidth: 1, borderColor: '#FDE68A' },
-  pointsHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
-  pointsTitle: { fontSize: 14, fontWeight: '700', color: '#92400E', marginLeft: 8 },
-  pointsValue: { fontSize: 24, fontWeight: '900', color: '#B45309' },
-  pointsSub: { fontSize: 12, color: '#B45309', marginTop: 2 },
+  // Sections
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORS.textDark,
+    marginBottom: 12,
+    marginTop: 10
+  },
+  cardGroup: {
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: COLORS.border
+  },
 
-  quickActions: { flexDirection: 'row', marginBottom: 25 },
-  actionCard: { width: 130, height: 100, backgroundColor: COLORS.lightGray, borderRadius: 12, padding: 12, marginRight: 12, justifyContent: 'space-between' },
-  actionIcon: { alignSelf: 'flex-start' },
-  actionText: { fontSize: 13, fontWeight: '600', color: COLORS.secondary },
-
-  sectionTitle: { fontSize: 18, fontWeight: 'bold', color: COLORS.secondary, marginBottom: 15 },
-  securityContainer: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 25 },
-  securityCard: { flex: 1, backgroundColor: COLORS.lightGray, borderRadius: 12, padding: 15, marginHorizontal: 4 },
-  cardTitle: { fontSize: 14, fontWeight: 'bold', color: COLORS.secondary, marginBottom: 4 },
-  cardSubtitle: { fontSize: 12, color: COLORS.gray },
-
-  listContainer: { marginBottom: 20 },
-  listItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  listItemRow: { flexDirection: 'row', alignItems: 'center' },
-  listText: { fontSize: 15, color: COLORS.secondary, fontWeight: '500' },
-
-  logoutButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.dangerLight, borderRadius: 12, paddingVertical: 14, marginBottom: 40, marginTop: 10 },
-  logoutText: { color: COLORS.danger, fontSize: 16, fontWeight: '700' }
+  // List Items
+  listItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    backgroundColor: COLORS.white
+  },
+  listItemBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border
+  },
+  listItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1
+  },
+  listIcon: {
+    marginRight: 12,
+    width: 24,
+    textAlign: 'center'
+  },
+  listTitle: {
+    fontSize: 14,
+    color: COLORS.textDark,
+    fontWeight: '500'
+  },
+  listSubValue: {
+    fontSize: 11,
+    color: COLORS.textLight,
+    marginTop: 2
+  },
+  listItemRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    flex: 1
+  },
+  listValue: {
+    fontSize: 13,
+    color: COLORS.textGray,
+    marginRight: 8,
+    textAlign: 'right'
+  },
+  chevron: {
+    marginLeft: 4
+  }
 });

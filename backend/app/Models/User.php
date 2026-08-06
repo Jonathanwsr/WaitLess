@@ -25,6 +25,7 @@ class User extends Authenticatable
         'asaas_customer_id',
         'asaas_subscription_id',
         'asaas_subscription_status',
+        'expo_push_token',
 
 
        

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
   View, 
   Text, 
@@ -8,257 +8,355 @@ import {
   ActivityIndicator, 
   Alert,
   Platform,
-  Linking
+  Image,
+  TextInput,
+  SafeAreaView
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+
+const COLORS = {
+  primary: '#FF4500', // Laranja avermelhado da imagem
+  primaryLight: '#FFF0ED',
+  background: '#F9FAFB',
+  white: '#FFFFFF',
+  textDark: '#111827',
+  textGray: '#6B7280',
+  textLight: '#9CA3AF',
+  border: '#E5E7EB',
+  success: '#10B981', // Verde do botão extra
+  warning: '#F59E0B'
+};
 
 export default function ExplorarDetalhes() {
   const router = useRouter();
-  const { id, tipo } = useLocalSearchParams(); // ID do estabelecimento ou serviço
+  const { id, tipo } = useLocalSearchParams();
 
-  // Estados de UI e Carregamento
-  const [carregando, setCarregando] = useState(true);
+  // Estados de Processamento
   const [processando, setProcessando] = useState(false);
 
-  // Estados do Agendamento
-  const [dias, setDias] = useState<any[]>([]);
-  const [dataSelecionada, setDataSelecionada] = useState('');
-  
-  const [horarios, setHorarios] = useState<string[]>([]);
-  const [horarioSelecionado, setHorarioSelecionado] = useState('');
+  // Estados do Formulário baseados na nova UI
+  const [localRetirada, setLocalRetirada] = useState('estabelecimento');
+  const [veiculoSelecionado, setVeiculoSelecionado] = useState('jeep');
+  const [termosAceitos, setTermosAceitos] = useState(false);
 
-  // Estados Financeiros
-  const [formaPagamento, setFormaPagamento] = useState(''); // 'online_agora' ou 'presencial'
-  const [metodoPagamento, setMetodoPagamento] = useState(''); // 'pix', 'cartao', 'boleto', 'local'
-  const [parcelas, setParcelas] = useState(1);
-
-  // Dados Mockados do Serviço (Na prática, viria da API verEstabelecimento)
-  const servicoInfo = {
-    nome: tipo === 'aluguel' ? 'Equipamento Profissional' : 'Corte de Cabelo e Barba',
-    valor: 150.00,
-    duracao: '60 min'
+  // Dados Mockados para manter a estrutura do visual
+  const resumoReserva = {
+    diarias: 3,
+    veiculo: 'Jeep Compass',
+    total: 389.70
   };
 
-  useEffect(() => {
-    // 1. Gera os próximos 15 dias para o calendário horizontal
-    const gerarDias = () => {
-      let diasGerados = [];
-      let dataAtual = new Date();
-      const diasSemana = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'];
-      const meses = ['JAN', 'FEV', 'MAR', 'ABR', 'MAI', 'JUN', 'JUL', 'AGO', 'SET', 'OUT', 'NOV', 'DEZ'];
-
-      for (let i = 0; i < 15; i++) {
-        diasGerados.push({
-          dataIso: dataAtual.toISOString().split('T')[0],
-          diaSemana: diasSemana[dataAtual.getDay()],
-          diaMes: dataAtual.getDate(),
-          mesText: meses[dataAtual.getMonth()]
-        });
-        dataAtual.setDate(dataAtual.getDate() + 1);
-      }
-      setDias(diasGerados);
-      setDataSelecionada(diasGerados[0].dataIso);
-    };
-
-    gerarDias();
-  }, []);
-
-  useEffect(() => {
-    // 2. Busca os horários disponíveis sempre que a data mudar
-    if (!dataSelecionada) return;
-    
-    setCarregando(true);
-    setHorarioSelecionado('');
-    
-    // Simulação da chamada da API: /api/mobile/servicos/{id}/horarios?data=YYYY-MM-DD
-    setTimeout(() => {
-      setHorarios(['09:00', '10:00', '11:00', '14:00', '15:00', '16:00', '17:00']);
-      setCarregando(false);
-    }, 600);
-  }, [dataSelecionada]);
-
-  // Função para lidar com a seleção do método de pagamento
-  const handleSelecionarMetodo = (metodo: string) => {
-    if (metodo === 'local') {
-      setFormaPagamento('presencial');
-      setMetodoPagamento('local');
-    } else {
-      setFormaPagamento('online_agora');
-      setMetodoPagamento(metodo);
-      setParcelas(1); // Reseta parcelas
-    }
-  };
-
-  // 👉 A LÓGICA DE FINALIZAÇÃO (CONECTADA AOS SEUS CONTROLLERS)
   const handleConfirmar = async () => {
-    if (!horarioSelecionado) {
-      Alert.alert("Ação Necessária", "Por favor, selecione um horário para o seu agendamento.");
-      return;
-    }
-    if (!metodoPagamento) {
-      Alert.alert("Ação Necessária", "Escolha como deseja realizar o pagamento da sua reserva.");
+    if (!termosAceitos) {
+      Alert.alert("Atenção", "Você precisa aceitar os termos de uso e política de privacidade.");
       return;
     }
 
     setProcessando(true);
 
     try {
-      // ================================================================
-      // PASSO 1: CRIA A RESERVA (MobileAgendamentoController)
-      // POST /api/mobile/agendar/{estabelecimento_id}
-      // payload: { servico_id, data_agendamento, hora_agendamento, forma_pagamento }
-      // ================================================================
-      
-      // Simulando a resposta de sucesso da criação da reserva:
-      const agendamentoMockId = 123;
-
-      // ================================================================
-      // PASSO 2: PROCESSA O PAGAMENTO (PagamentoMobileController)
-      // POST /api/mobile/pagamento/processar
-      // payload: { agendamento_id, metodo_pagamento, parcelas }
-      // ================================================================
-      
+      // Simulação de processamento da API
       setTimeout(() => {
         setProcessando(false);
-
-        if (formaPagamento === 'presencial') {
-          // O backend retornará o PIN. Mostramos a tela de sucesso.
-          Alert.alert("Reserva Confirmada!", "Sua vaga está garantida. Realize o pagamento diretamente no balcão.", [
-            { text: "Ver Meus Agendamentos", onPress: () => router.push('/agendamentos') }
-          ]);
-        } else {
-          // O backend retornará a URL de pagamento da Asaas (invoice_url).
-          // Abrimos o navegador ou WebView para o cliente pagar.
-          Alert.alert("Quase lá!", "Você será redirecionado para o ambiente seguro de pagamento.", [
-            { 
-              text: "Pagar Agora", 
-              onPress: () => {
-                // Exemplo real: Linking.openURL(respostaAPI.invoice_url);
-                router.push('/agendamentos'); // Redireciona pro app após abrir
-              }
-            }
-          ]);
-        }
+        Alert.alert("Quase lá!", "Você será redirecionado para o ambiente seguro de pagamento.", [
+          { 
+            text: "Pagar Agora", 
+            onPress: () => router.push('/agendamentos') 
+          }
+        ]);
       }, 1500);
-
     } catch (error) {
       setProcessando(false);
       Alert.alert("Ops!", "Ocorreu um erro ao processar sua solicitação.");
     }
   };
 
-  if (carregando && dias.length === 0) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#C85A17" />
-      </View>
-    );
-  }
-
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.safeArea}>
+      {/* HEADER TOP BAR */}
+      <View style={styles.topBar}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <Feather name="chevron-left" size={24} color={COLORS.textDark} />
+        </TouchableOpacity>
+        <View style={styles.headerTitleContainer}>
+          <Text style={styles.headerTitle}>Criar reserva</Text>
+        </View>
+        <View style={{ width: 24 }} /> {/* Espaçador */}
+      </View>
+      <Text style={styles.headerSubtitle}>Preencha os detalhes para fazer sua reserva.</Text>
+
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         
-        {/* CABEÇALHO DO SERVIÇO */}
-        <View style={styles.cardHeader}>
-          <Text style={styles.categoriaText}>{tipo === 'aluguel' ? 'Locação' : 'Serviço Presencial'}</Text>
-          <Text style={styles.titulo}>{servicoInfo.nome}</Text>
-          <View style={styles.headerRow}>
-            <Text style={styles.preco}>R$ {servicoInfo.valor.toFixed(2).replace('.', ',')}</Text>
-            <View style={styles.badgeDuracao}>
-              <Text style={styles.badgeText}>{servicoInfo.duracao}</Text>
+        {/* CARD DO ESTABELECIMENTO */}
+        <View style={styles.storeCard}>
+          <View style={styles.storeImageContainer}>
+            <Image 
+              source={{ uri: 'https://images.unsplash.com/photo-1552519507-da3b142c6e3d?q=80&w=300&auto=format&fit=crop' }} 
+              style={styles.storeImage} 
+            />
+            <View style={styles.badgeReserva}>
+              <Text style={styles.badgeReservaText}>Reserva</Text>
+            </View>
+          </View>
+          <View style={styles.storeInfo}>
+            <Text style={styles.storeName}>Auto Reserva</Text>
+            <Text style={styles.storeType}>Locadora de veículos</Text>
+            
+            <View style={styles.ratingRow}>
+              <Ionicons name="star" size={12} color={COLORS.warning} />
+              <Text style={styles.ratingValue}>4,8</Text>
+              <Text style={styles.ratingCount}>(829 avaliações)</Text>
+            </View>
+
+            <View style={styles.tagsRow}>
+              <View style={styles.tag}><Text style={styles.tagText}>Econômico</Text></View>
+              <View style={styles.tag}><Text style={styles.tagText}>SUVs</Text></View>
+              <View style={styles.tag}><Text style={styles.tagText}>Premium</Text></View>
+            </View>
+
+            <View style={styles.priceRow}>
+              <Text style={styles.priceLabel}>A partir de</Text>
+              <Text style={styles.priceValue}>R$ 129,90<Text style={styles.priceUnit}>/dia</Text></Text>
+              <Text style={styles.freePickupText}>Retirada grátis</Text>
             </View>
           </View>
         </View>
 
-        {/* 1. SELEÇÃO DE DATA */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>1. Escolha a Data</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rowDates}>
-            {dias.map((dia) => {
-              const isSelected = dataSelecionada === dia.dataIso;
-              return (
-                <TouchableOpacity
-                  key={dia.dataIso}
-                  style={[styles.botaoData, isSelected && styles.botaoDataSelecionado]}
-                  onPress={() => setDataSelecionada(dia.dataIso)}
-                >
-                  <Text style={[styles.textoDiaSemana, isSelected && styles.textoBranco]}>{dia.diaSemana}</Text>
-                  <Text style={[styles.textoDiaMes, isSelected && styles.textoBranco]}>{dia.diaMes}</Text>
-                  <Text style={[styles.textoMes, isSelected && styles.textoBranco]}>{dia.mesText}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
+        {/* DETALHES DO VEÍCULO PRINCIPAL */}
+        <View style={styles.vehicleDetails}>
+          <Text style={styles.vehicleCategory}>SUV • Automático • 5 lugares</Text>
+          <Text style={styles.vehicleName}>Jeep Compass</Text>
+          
+          <View style={styles.tagsRowVehicle}>
+            <View style={styles.tagVehicle}><Text style={styles.tagText}>Econômica</Text></View>
+            <View style={styles.tagVehicle}><Text style={styles.tagText}>SUVs</Text></View>
+            <View style={styles.tagVehicle}><Text style={styles.tagText}>Premium</Text></View>
+          </View>
 
-        {/* 2. SELEÇÃO DE HORÁRIO */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>2. Horários Disponíveis</Text>
-          {carregando ? (
-            <ActivityIndicator size="small" color="#C85A17" style={{ alignSelf: 'flex-start', marginVertical: 20 }} />
-          ) : (
-            <View style={styles.gridHorarios}>
-              {horarios.length > 0 ? (
-                horarios.map((hora) => {
-                  const isSelected = horarioSelecionado === hora;
-                  return (
-                    <TouchableOpacity
-                      key={hora}
-                      style={[styles.botaoHora, isSelected && styles.botaoHoraSelecionado]}
-                      onPress={() => setHorarioSelecionado(hora)}
-                    >
-                      <Text style={[styles.textoHora, isSelected && styles.textoBranco]}>{hora}</Text>
-                    </TouchableOpacity>
-                  );
-                })
-              ) : (
-                <Text style={styles.textoVazio}>Nenhum horário disponível nesta data.</Text>
-              )}
+          <View style={styles.featuresGrid}>
+            <View style={styles.featureItem}>
+              <Feather name="shopping-bag" size={14} color={COLORS.textGray} />
+              <Text style={styles.featureText}>2 malas grandes</Text>
             </View>
-          )}
+            <View style={styles.featureItem}>
+              <Feather name="bluetooth" size={14} color={COLORS.textGray} />
+              <Text style={styles.featureText}>Bluetooth</Text>
+            </View>
+            <View style={styles.featureItem}>
+              <Ionicons name="snow-outline" size={14} color={COLORS.textGray} />
+              <Text style={styles.featureText}>Ar-condicionado</Text>
+            </View>
+            <View style={styles.featureItem}>
+              <Feather name="shield" size={14} color={COLORS.textGray} />
+              <Text style={styles.featureText}>Seguro incluso</Text>
+            </View>
+          </View>
+          
+          <View style={styles.vehicleRating}>
+            <Ionicons name="star" size={16} color={COLORS.warning} />
+            <Text style={styles.vehicleRatingValue}>4,8</Text>
+          </View>
         </View>
 
-        {/* 3. OPÇÕES DE PAGAMENTO */}
+        {/* 1. DATA E HORÁRIO */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>3. Como deseja pagar?</Text>
+          <Text style={styles.sectionTitle}>1. Escolha a data e horário</Text>
+          
+          <View style={styles.rowInputs}>
+            <View style={styles.inputBoxHalf}>
+              <Text style={styles.inputLabel}>Data de retirada</Text>
+              <View style={styles.inputField}>
+                <Feather name="calendar" size={16} color={COLORS.textGray} />
+                <View style={styles.inputTextContainer}>
+                  <Text style={styles.inputValue}>24/05/2025</Text>
+                  <Text style={styles.inputSub}>Sábado</Text>
+                </View>
+                <Feather name="chevron-down" size={16} color={COLORS.primary} />
+              </View>
+            </View>
+
+            <View style={styles.inputBoxHalf}>
+              <Text style={styles.inputLabel}>Horário de retirada</Text>
+              <View style={styles.inputField}>
+                <Feather name="clock" size={16} color={COLORS.textGray} />
+                <View style={styles.inputTextContainer}>
+                  <Text style={styles.inputValue}>10:00</Text>
+                </View>
+                <Feather name="chevron-down" size={16} color={COLORS.primary} />
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.rowInputs}>
+            <View style={styles.inputBoxHalf}>
+              <Text style={styles.inputLabel}>Data de devolução</Text>
+              <View style={styles.inputField}>
+                <Feather name="calendar" size={16} color={COLORS.textGray} />
+                <View style={styles.inputTextContainer}>
+                  <Text style={styles.inputValue}>27/05/2025</Text>
+                  <Text style={styles.inputSub}>Terça-feira</Text>
+                </View>
+                <Feather name="chevron-down" size={16} color={COLORS.primary} />
+              </View>
+            </View>
+
+            <View style={styles.inputBoxHalf}>
+              <Text style={styles.inputLabel}>Horário de devolução</Text>
+              <View style={styles.inputField}>
+                <Feather name="clock" size={16} color={COLORS.textGray} />
+                <View style={styles.inputTextContainer}>
+                  <Text style={styles.inputValue}>10:00</Text>
+                </View>
+                <Feather name="chevron-down" size={16} color={COLORS.primary} />
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.alertBox}>
+            <Feather name="clock" size={14} color={COLORS.primary} style={{ marginRight: 6 }} />
+            <Text style={styles.alertText}>Período selecionado: 3 diárias</Text>
+          </View>
+        </View>
+
+        {/* 2. LOCAL DE RETIRADA */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>2. Local de retirada e devolução</Text>
           
           <TouchableOpacity 
-            style={[styles.cardPagamento, metodoPagamento === 'pix' && styles.cardPagamentoSelecionado]}
-            onPress={() => handleSelecionarMetodo('pix')}
+            style={[styles.radioCard, localRetirada === 'estabelecimento' && styles.radioCardSelected]}
+            onPress={() => setLocalRetirada('estabelecimento')}
           >
-            <Text style={[styles.tituloPagamento, metodoPagamento === 'pix' && styles.textoPagamentoSelecionado]}>PIX Instantâneo</Text>
-            <Text style={styles.descPagamento}>Aprovação imediata e online</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={[styles.cardPagamento, metodoPagamento === 'cartao' && styles.cardPagamentoSelecionado]}
-            onPress={() => handleSelecionarMetodo('cartao')}
-          >
-            <Text style={[styles.tituloPagamento, metodoPagamento === 'cartao' && styles.textoPagamentoSelecionado]}>Cartão de Crédito</Text>
-            <Text style={styles.descPagamento}>Parcele em até 12x</Text>
-            
-            {metodoPagamento === 'cartao' && (
-              <View style={styles.parcelasContainer}>
-                {[1, 2, 3].map((num) => (
-                  <TouchableOpacity 
-                    key={num} 
-                    style={[styles.botaoParcela, parcelas === num && styles.botaoParcelaSelecionado]}
-                    onPress={() => setParcelas(num)}
-                  >
-                    <Text style={[styles.textoParcela, parcelas === num && styles.textoBranco]}>{num}x</Text>
-                  </TouchableOpacity>
-                ))}
+            <View style={styles.radioIconContainer}>
+              <View style={[styles.radioCircle, localRetirada === 'estabelecimento' && styles.radioCircleSelected]}>
+                {localRetirada === 'estabelecimento' && <View style={styles.radioDot} />}
               </View>
-            )}
+            </View>
+            <View style={styles.radioTextContainer}>
+              <Text style={styles.radioTitle}>Retirar no estabelecimento</Text>
+              <Text style={styles.radioDesc}>Auto Reserva - Av. Paulista, 1000. São Paulo - SP</Text>
+            </View>
+            <Feather name="chevron-right" size={16} color={COLORS.primary} />
           </TouchableOpacity>
 
           <TouchableOpacity 
-            style={[styles.cardPagamento, metodoPagamento === 'local' && styles.cardPagamentoSelecionado]}
-            onPress={() => handleSelecionarMetodo('local')}
+            style={[styles.radioCard, localRetirada === 'endereco' && styles.radioCardSelected]}
+            onPress={() => setLocalRetirada('endereco')}
           >
-            <Text style={[styles.tituloPagamento, metodoPagamento === 'local' && styles.textoPagamentoSelecionado]}>Pagar no Local</Text>
-            <Text style={styles.descPagamento}>Pague no balcão ao finalizar o serviço</Text>
+            <View style={styles.radioIconContainer}>
+              <View style={[styles.radioCircle, localRetirada === 'endereco' && styles.radioCircleSelected]}>
+                {localRetirada === 'endereco' && <View style={styles.radioDot} />}
+              </View>
+            </View>
+            <View style={styles.radioTextContainer}>
+              <Text style={styles.radioTitle}>Entrega no endereço</Text>
+              <Text style={styles.radioDesc}>Informe um endereço para entrega do veículo</Text>
+            </View>
+            <Feather name="chevron-right" size={16} color={COLORS.textLight} />
+          </TouchableOpacity>
+        </View>
+
+        {/* 3. ESCOLHA O VEÍCULO (OPCIONAL) */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>3. Escolha o veículo <Text style={styles.optionalText}>(opcional)</Text></Text>
+            <Text style={styles.seeAllText}>Ver todos</Text>
+          </View>
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.horizontalScroll}>
+            {/* Card 1 */}
+            <TouchableOpacity 
+              style={[styles.vehicleChoiceCard, veiculoSelecionado === 'jeep' && styles.vehicleChoiceCardSelected]}
+              onPress={() => setVeiculoSelecionado('jeep')}
+            >
+              <Image source={{ uri: 'https://images.unsplash.com/photo-1552519507-da3b142c6e3d?q=80&w=300&auto=format&fit=crop' }} style={styles.vehicleChoiceImage} />
+              {veiculoSelecionado === 'jeep' && (
+                <View style={styles.checkBadge}><Feather name="check" size={10} color={COLORS.white} /></View>
+              )}
+              <View style={styles.vehicleChoiceInfo}>
+                <Text style={styles.vehicleChoiceTitle}>Jeep Compass</Text>
+                <Text style={styles.vehicleChoiceSub}>SUVs Automático</Text>
+                <Text style={styles.vehicleChoicePrice}>R$ 129,90 <Text style={styles.priceUnit}>/ dia</Text></Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* Card 2 */}
+            <TouchableOpacity 
+              style={[styles.vehicleChoiceCard, veiculoSelecionado === 'fiat' && styles.vehicleChoiceCardSelected]}
+              onPress={() => setVeiculoSelecionado('fiat')}
+            >
+              <Image source={{ uri: 'https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?q=80&w=300&auto=format&fit=crop' }} style={styles.vehicleChoiceImage} />
+              {veiculoSelecionado === 'fiat' && (
+                <View style={styles.checkBadge}><Feather name="check" size={10} color={COLORS.white} /></View>
+              )}
+              <View style={styles.vehicleChoiceInfo}>
+                <Text style={styles.vehicleChoiceTitle}>Fiat Pulse</Text>
+                <Text style={styles.vehicleChoiceSub}>SUVs Automático</Text>
+                <Text style={styles.vehicleChoicePrice}>R$ 119,90 <Text style={styles.priceUnit}>/ dia</Text></Text>
+              </View>
+            </TouchableOpacity>
+          </ScrollView>
+
+          <TouchableOpacity style={styles.btnAddExtra}>
+            <Feather name="plus-circle" size={16} color={COLORS.white} />
+            <Text style={styles.btnAddExtraText}>Quer acrescentar ao pedido</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* 4. INFORMAÇÕES DO CONDUTOR */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>4. Informações do condutor</Text>
+          
+          <View style={styles.formGroup}>
+            <Text style={styles.inputLabel}>Nome completo</Text>
+            <View style={styles.formInputContainer}>
+              <Feather name="user" size={18} color={COLORS.textLight} />
+              <TextInput style={styles.formInput} placeholder="Digite seu nome completo" placeholderTextColor={COLORS.textLight} />
+            </View>
+          </View>
+
+          <View style={styles.rowInputs}>
+            <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
+              <Text style={styles.inputLabel}>CPF</Text>
+              <View style={styles.formInputContainer}>
+                <MaterialCommunityIcons name="card-account-details-outline" size={18} color={COLORS.textLight} />
+                <TextInput style={styles.formInput} placeholder="000.000.000-00" placeholderTextColor={COLORS.textLight} keyboardType="numeric" />
+              </View>
+            </View>
+            <View style={[styles.formGroup, { flex: 1, marginLeft: 8 }]}>
+              <Text style={styles.inputLabel}>Data de nascimento</Text>
+              <View style={styles.formInputContainer}>
+                <Feather name="calendar" size={18} color={COLORS.textLight} />
+                <TextInput style={styles.formInput} placeholder="dd/mm/aaaa" placeholderTextColor={COLORS.textLight} />
+                <Feather name="chevron-down" size={16} color={COLORS.textLight} />
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.rowInputs}>
+            <View style={[styles.formGroup, { flex: 1, marginRight: 8 }]}>
+              <Text style={styles.inputLabel}>E-mail</Text>
+              <View style={styles.formInputContainer}>
+                <Feather name="mail" size={18} color={COLORS.textLight} />
+                <TextInput style={styles.formInput} placeholder="seu@email.com" placeholderTextColor={COLORS.textLight} keyboardType="email-address" autoCapitalize="none" />
+              </View>
+            </View>
+            <View style={[styles.formGroup, { flex: 1, marginLeft: 8 }]}>
+              <Text style={styles.inputLabel}>Celular</Text>
+              <View style={styles.formInputContainer}>
+                <Feather name="phone" size={18} color={COLORS.textLight} />
+                <TextInput style={styles.formInput} placeholder="(11) 99999-9999" placeholderTextColor={COLORS.textLight} keyboardType="phone-pad" />
+              </View>
+            </View>
+          </View>
+
+          <TouchableOpacity style={styles.checkboxRow} onPress={() => setTermosAceitos(!termosAceitos)}>
+            <View style={[styles.checkbox, termosAceitos && styles.checkboxSelected]}>
+              {termosAceitos && <Feather name="check" size={12} color={COLORS.white} />}
+            </View>
+            <Text style={styles.checkboxText}>
+              Li e concordo com os <Text style={styles.linkText}>termos de uso</Text> e <Text style={styles.linkText}>política de privacidade</Text>.
+            </Text>
           </TouchableOpacity>
         </View>
 
@@ -266,84 +364,211 @@ export default function ExplorarDetalhes() {
 
       {/* RODAPÉ FIXO DE CHECKOUT */}
       <View style={styles.footer}>
-        <View style={styles.footerRow}>
-          <View>
-            <Text style={styles.footerTotalLabel}>Total a pagar</Text>
-            <Text style={styles.footerTotalValor}>R$ {servicoInfo.valor.toFixed(2).replace('.', ',')}</Text>
+        <View style={styles.footerInfoRow}>
+          <View style={styles.footerSummary}>
+            <Text style={styles.footerLabel}>Resumo da reserva</Text>
+            <Text style={styles.footerDesc}>{resumoReserva.diarias} diárias + {resumoReserva.veiculo}</Text>
+            <Text style={styles.footerSubText}>24/05/2025 (10:00) até 27/05/2025 (10:00)</Text>
           </View>
-          <TouchableOpacity 
-            style={[styles.botaoPrincipal, (!horarioSelecionado || !metodoPagamento || processando) && styles.botaoDesabilitado]} 
-            onPress={handleConfirmar}
-            disabled={!horarioSelecionado || !metodoPagamento || processando}
-          >
-            {processando ? (
-              <ActivityIndicator color="#FFF" />
-            ) : (
-              <Text style={styles.botaoPrincipalTexto}>
-                {formaPagamento === 'presencial' ? 'Confirmar' : 'Ir para o Pagamento'}
-              </Text>
-            )}
-          </TouchableOpacity>
+          <View style={styles.footerTotalBox}>
+            <Text style={styles.footerLabel}>Total estimado</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Text style={styles.footerTotalValue}>R$ {resumoReserva.total.toFixed(2).replace('.', ',')}</Text>
+              <Feather name="chevron-down" size={16} color={COLORS.primary} style={{ marginLeft: 4 }} />
+            </View>
+          </View>
         </View>
+
+        <TouchableOpacity 
+          style={[styles.botaoPrincipal, processando && styles.botaoDesabilitado]} 
+          onPress={handleConfirmar}
+          disabled={processando}
+        >
+          {processando ? (
+            <ActivityIndicator color={COLORS.white} />
+          ) : (
+            <Text style={styles.botaoPrincipalTexto}>Continuar para pagamento</Text>
+          )}
+        </TouchableOpacity>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FAFAFA' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  scrollContent: { padding: 20, paddingBottom: 120 },
+  safeArea: { 
+    flex: 1, 
+    backgroundColor: COLORS.background 
+  },
+  topBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'android' ? 40 : 10,
+    paddingBottom: 10,
+    backgroundColor: COLORS.white
+  },
+  backButton: { padding: 4 },
+  headerTitleContainer: { flex: 1, alignItems: 'center' },
+  headerTitle: { fontSize: 16, fontWeight: '700', color: COLORS.textDark },
+  headerSubtitle: { 
+    fontSize: 13, 
+    color: COLORS.textGray, 
+    textAlign: 'center', 
+    backgroundColor: COLORS.white, 
+    paddingBottom: 16 
+  },
   
-  // Header
-  cardHeader: { backgroundColor: '#FFF', padding: 24, borderRadius: 24, marginBottom: 30, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 3 },
-  categoriaText: { fontSize: 11, color: '#C85A17', fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 8 },
-  titulo: { fontSize: 26, fontWeight: '900', color: '#111827', marginBottom: 12, lineHeight: 32 },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  preco: { fontSize: 24, fontWeight: '900', color: '#111827' },
-  badgeDuracao: { backgroundColor: '#F3F4F6', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
-  badgeText: { fontSize: 12, fontWeight: '700', color: '#4B5563' },
-
-  // Sections
-  section: { marginBottom: 32 },
-  sectionTitle: { fontSize: 18, fontWeight: '900', color: '#111827', marginBottom: 16, letterSpacing: -0.5 },
+  scrollContent: { padding: 16, paddingBottom: 160 },
   
-  // Datas Horizontal
-  rowDates: { gap: 12, paddingRight: 20 },
-  botaoData: { width: 75, height: 95, backgroundColor: '#FFF', borderRadius: 20, borderWidth: 1, borderColor: '#E5E7EB', alignItems: 'center', justifyContent: 'center' },
-  botaoDataSelecionado: { backgroundColor: '#111827', borderColor: '#111827' },
-  textoDiaSemana: { fontSize: 10, fontWeight: '700', color: '#6B7280', marginBottom: 4 },
-  textoDiaMes: { fontSize: 24, fontWeight: '900', color: '#111827' },
-  textoMes: { fontSize: 10, fontWeight: '700', color: '#6B7280', marginTop: 4 },
-  textoBranco: { color: '#FFF' },
+  // Card Estabelecimento
+  storeCard: { 
+    backgroundColor: COLORS.white, 
+    borderRadius: 12, 
+    padding: 12, 
+    flexDirection: 'row', 
+    marginBottom: 16,
+    borderWidth: 1, 
+    borderColor: COLORS.border 
+  },
+  storeImageContainer: { position: 'relative', width: 100, height: 100, borderRadius: 8, overflow: 'hidden' },
+  storeImage: { width: '100%', height: '100%' },
+  badgeReserva: { 
+    position: 'absolute', 
+    top: 0, left: 0, 
+    backgroundColor: COLORS.primary, 
+    paddingHorizontal: 6, paddingVertical: 2, 
+    borderBottomRightRadius: 8 
+  },
+  badgeReservaText: { color: COLORS.white, fontSize: 10, fontWeight: 'bold', textTransform: 'uppercase' },
+  storeInfo: { flex: 1, marginLeft: 12 },
+  storeName: { fontSize: 16, fontWeight: '700', color: COLORS.textDark },
+  storeType: { fontSize: 12, color: COLORS.textGray, marginBottom: 4 },
+  ratingRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  ratingValue: { fontSize: 12, fontWeight: '700', marginLeft: 4, color: COLORS.textDark },
+  ratingCount: { fontSize: 12, color: COLORS.textGray, marginLeft: 4 },
+  tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
+  tag: { backgroundColor: '#F3F4F6', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 100 },
+  tagText: { fontSize: 10, color: COLORS.textDark, fontWeight: '500' },
+  priceRow: { marginTop: 'auto' },
+  priceLabel: { fontSize: 10, color: COLORS.textGray },
+  priceValue: { fontSize: 14, fontWeight: '700', color: COLORS.primary },
+  priceUnit: { fontSize: 12, color: COLORS.textGray, fontWeight: '400' },
+  freePickupText: { fontSize: 10, color: COLORS.textGray, marginTop: 2 },
 
-  // Grid Horários
-  gridHorarios: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  botaoHora: { width: '30%', paddingVertical: 14, backgroundColor: '#FFF', borderRadius: 16, borderWidth: 1, borderColor: '#E5E7EB', alignItems: 'center' },
-  botaoHoraSelecionado: { backgroundColor: '#111827', borderColor: '#111827' },
-  textoHora: { color: '#374151', fontWeight: '800', fontSize: 15 },
-  textoVazio: { color: '#9CA3AF', fontStyle: 'italic' },
+  // Veículo Detalhes
+  vehicleDetails: { marginBottom: 24, paddingHorizontal: 4 },
+  vehicleCategory: { fontSize: 12, color: COLORS.textGray, marginBottom: 4 },
+  vehicleName: { fontSize: 20, fontWeight: '800', color: COLORS.textDark, marginBottom: 12 },
+  tagsRowVehicle: { flexDirection: 'row', gap: 8, marginBottom: 16 },
+  tagVehicle: { borderWidth: 1, borderColor: COLORS.border, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 100 },
+  featuresGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginBottom: 12 },
+  featureItem: { width: '45%', flexDirection: 'row', alignItems: 'center' },
+  featureText: { fontSize: 12, color: COLORS.textGray, marginLeft: 6 },
+  vehicleRating: { position: 'absolute', top: 0, right: 0, flexDirection: 'row', alignItems: 'center' },
+  vehicleRatingValue: { fontSize: 14, fontWeight: '700', marginLeft: 4 },
 
-  // Pagamento
-  cardPagamento: { backgroundColor: '#FFF', padding: 20, borderRadius: 20, borderWidth: 1, borderColor: '#E5E7EB', marginBottom: 12 },
-  cardPagamentoSelecionado: { borderColor: '#C85A17', backgroundColor: '#FFF8F5' },
-  tituloPagamento: { fontSize: 16, fontWeight: '800', color: '#111827', marginBottom: 4 },
-  textoPagamentoSelecionado: { color: '#C85A17' },
-  descPagamento: { fontSize: 13, color: '#6B7280', fontWeight: '500' },
+  // Sections Base
+  section: { marginBottom: 24 },
+  sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  sectionTitle: { fontSize: 16, fontWeight: '700', color: COLORS.textDark, marginBottom: 12 },
+  optionalText: { fontSize: 14, color: COLORS.textGray, fontWeight: '400' },
+  seeAllText: { fontSize: 13, color: COLORS.primary, fontWeight: '600' },
+
+  // 1. Data e Horário
+  rowInputs: { flexDirection: 'row', gap: 12, marginBottom: 12 },
+  inputBoxHalf: { flex: 1 },
+  inputLabel: { fontSize: 10, color: COLORS.textGray, marginBottom: 4, marginLeft: 4 },
+  inputField: { 
+    flexDirection: 'row', alignItems: 'center', 
+    backgroundColor: COLORS.white, 
+    borderWidth: 1, borderColor: COLORS.border, 
+    borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8 
+  },
+  inputTextContainer: { flex: 1, marginLeft: 8 },
+  inputValue: { fontSize: 13, fontWeight: '600', color: COLORS.textDark },
+  inputSub: { fontSize: 11, color: COLORS.textGray },
+  alertBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.primaryLight, padding: 12, borderRadius: 8, marginTop: 4 },
+  alertText: { color: COLORS.primary, fontSize: 13, fontWeight: '600' },
+
+  // 2. Radio Buttons Local
+  radioCard: { 
+    flexDirection: 'row', alignItems: 'center', 
+    backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border, 
+    borderRadius: 8, padding: 16, marginBottom: 12 
+  },
+  radioCardSelected: { borderColor: COLORS.primary },
+  radioIconContainer: { marginRight: 12 },
+  radioCircle: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: COLORS.textLight, alignItems: 'center', justifyContent: 'center' },
+  radioCircleSelected: { borderColor: COLORS.primary },
+  radioDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: COLORS.primary },
+  radioTextContainer: { flex: 1 },
+  radioTitle: { fontSize: 14, fontWeight: '600', color: COLORS.textDark, marginBottom: 2 },
+  radioDesc: { fontSize: 12, color: COLORS.textGray },
+
+  // 3. Escolha o veículo
+  horizontalScroll: { paddingBottom: 16, gap: 12 },
+  vehicleChoiceCard: { 
+    width: 240, backgroundColor: COLORS.white, 
+    borderWidth: 1, borderColor: COLORS.border, 
+    borderRadius: 8, overflow: 'hidden', position: 'relative' 
+  },
+  vehicleChoiceCardSelected: { borderColor: COLORS.primary },
+  vehicleChoiceImage: { width: '100%', height: 100 },
+  checkBadge: { 
+    position: 'absolute', top: 8, right: 8, 
+    width: 20, height: 20, borderRadius: 10, 
+    backgroundColor: COLORS.primary, 
+    alignItems: 'center', justifyContent: 'center' 
+  },
+  vehicleChoiceInfo: { padding: 12 },
+  vehicleChoiceTitle: { fontSize: 14, fontWeight: '700', color: COLORS.textDark },
+  vehicleChoiceSub: { fontSize: 11, color: COLORS.textGray, marginBottom: 8 },
+  vehicleChoicePrice: { fontSize: 14, fontWeight: '700', color: COLORS.primary },
+  btnAddExtra: { 
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', 
+    backgroundColor: COLORS.success, borderRadius: 8, padding: 14, marginTop: 8 
+  },
+  btnAddExtraText: { color: COLORS.white, fontWeight: '700', fontSize: 14, marginLeft: 8 },
+
+  // 4. Form Info Condutor
+  formGroup: { marginBottom: 12 },
+  formInputContainer: { 
+    flexDirection: 'row', alignItems: 'center', 
+    backgroundColor: COLORS.white, 
+    borderWidth: 1, borderColor: COLORS.border, 
+    borderRadius: 8, paddingHorizontal: 12, height: 44 
+  },
+  formInput: { flex: 1, marginLeft: 8, fontSize: 13, color: COLORS.textDark },
+  checkboxRow: { flexDirection: 'row', alignItems: 'flex-start', marginTop: 12, paddingHorizontal: 4 },
+  checkbox: { 
+    width: 18, height: 18, borderRadius: 4, 
+    borderWidth: 1, borderColor: COLORS.border, 
+    alignItems: 'center', justifyContent: 'center', 
+    marginRight: 10, backgroundColor: COLORS.white, marginTop: 2 
+  },
+  checkboxSelected: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  checkboxText: { flex: 1, fontSize: 12, color: COLORS.textGray, lineHeight: 18 },
+  linkText: { color: COLORS.primary, fontWeight: '500' },
+
+  // Footer Fixo
+  footer: { 
+    position: 'absolute', bottom: 0, left: 0, right: 0, 
+    backgroundColor: COLORS.white, 
+    borderTopWidth: 1, borderTopColor: COLORS.border, 
+    paddingHorizontal: 20, paddingTop: 16, paddingBottom: Platform.OS === 'ios' ? 32 : 16,
+    shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.05, shadowRadius: 12, elevation: 10 
+  },
+  footerInfoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 },
+  footerSummary: { flex: 1, paddingRight: 16 },
+  footerLabel: { fontSize: 11, color: COLORS.textGray, marginBottom: 2 },
+  footerDesc: { fontSize: 13, fontWeight: '600', color: COLORS.textDark, marginBottom: 2 },
+  footerSubText: { fontSize: 10, color: COLORS.textLight },
+  footerTotalBox: { alignItems: 'flex-end', borderLeftWidth: 1, borderLeftColor: COLORS.border, paddingLeft: 16 },
+  footerTotalValue: { fontSize: 16, fontWeight: '800', color: COLORS.primary },
   
-  // Parcelas
-  parcelasContainer: { flexDirection: 'row', gap: 10, marginTop: 16, borderTopWidth: 1, borderTopColor: '#F3F4F6', paddingTop: 16 },
-  botaoParcela: { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 10, backgroundColor: '#F3F4F6' },
-  botaoParcelaSelecionado: { backgroundColor: '#C85A17' },
-  textoParcela: { fontWeight: '800', color: '#374151' },
-
-  // Footer / Checkout Sticky
-  footer: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#FFF', paddingHorizontal: 24, paddingVertical: 20, borderTopWidth: 1, borderTopColor: '#F3F4F6', shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.05, shadowRadius: 12, elevation: 10 },
-  footerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: Platform.OS === 'ios' ? 10 : 0 },
-  footerTotalLabel: { fontSize: 12, fontWeight: '700', color: '#6B7280', textTransform: 'uppercase', letterSpacing: 1 },
-  footerTotalValor: { fontSize: 24, fontWeight: '900', color: '#111827', marginTop: 2 },
-  
-  botaoPrincipal: { backgroundColor: '#C85A17', paddingVertical: 16, paddingHorizontal: 32, borderRadius: 100, alignItems: 'center', justifyContent: 'center' },
-  botaoDesabilitado: { backgroundColor: '#E5E7EB' },
-  botaoPrincipalTexto: { color: '#FFF', fontSize: 15, fontWeight: '900' }
+  botaoPrincipal: { backgroundColor: COLORS.primary, paddingVertical: 16, borderRadius: 8, alignItems: 'center' },
+  botaoDesabilitado: { backgroundColor: COLORS.textLight },
+  botaoPrincipalTexto: { color: COLORS.white, fontSize: 15, fontWeight: '700' }
 });

@@ -12,7 +12,9 @@ import {
   Alert,
   SafeAreaView,
   Platform,
-  Dimensions
+  Dimensions,
+  Modal,
+  StatusBar // <-- IMPORTADO PARA MOSTRAR A BATERIA
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Location from 'expo-location';
@@ -20,6 +22,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 
 const { width } = Dimensions.get('window');
+
+// Pega a URL do .env com fallback e limpa barras duplas no final
+const ENV_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api';
+const cleanBaseUrl = ENV_URL.endsWith('/') ? ENV_URL.slice(0, -1) : ENV_URL;
 
 // --- PALETA DE CORES ---
 const COLORS = {
@@ -40,7 +46,6 @@ const STORAGE_KEYS = {
   FORMATTED: '@lokyva_formatted'
 };
 
-// Textos dinâmicos para a barra de pesquisa
 const PLACEHOLDERS = [
   'Procure por serviços...',
   'Reservas em restaurantes...',
@@ -49,7 +54,6 @@ const PLACEHOLDERS = [
   'Casas de temporada...'
 ];
 
-// Categorias Principais
 const MAIN_CATEGORIES = [
   { id: '1', name: 'Hospedagens', slug: 'hospedagem', icone: 'bed-outline' },
   { id: '2', name: 'Restaurantes', slug: 'restaurante', icone: 'restaurant-outline' },
@@ -58,7 +62,6 @@ const MAIN_CATEGORIES = [
   { id: '5', name: 'Aluguel de Carros', slug: 'aluguel', icone: 'car-sport-outline' },
 ];
 
-// Categorias Secundárias
 const SECONDARY_CATEGORIES = [
   { id: 'sec1', name: 'Eventos', icone: 'ticket-outline' },
   { id: 'sec2', name: 'Passeios', icone: 'compass-outline' },
@@ -67,7 +70,6 @@ const SECONDARY_CATEGORIES = [
   { id: 'sec5', name: 'Favoritos', icone: 'heart-outline' },
 ];
 
-// Destinos Estáticos de Fallback
 const DESTINOS_PADRAO = [
   {
     id: 'f1',
@@ -102,24 +104,21 @@ const DESTINOS_PADRAO = [
 export default function Home() {
   const router = useRouter();
 
-  // Estados sem anotações de tipo TypeScript
   const [stores, setStores] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState('Buscando localização...');
   const [searchQuery, setSearchQuery] = useState('');
   const [categoriaAtiva, setCategoriaAtiva] = useState(null);
 
-  // Animação/Alternância de Placeholder da Pesquisa
+  // --- ESTADO PARA CONTROLAR O SEU MODAL ---
+  const [isFilterModalVisible, setIsFilterModalVisible] = useState(false);
+
   const [placeholderIndex, setPlaceholderIndex] = useState(0);
 
-  // Estados de Localização
   const [isEditingLocation, setIsEditingLocation] = useState(false);
   const [isSavingLocation, setIsSavingLocation] = useState(false);
   const [addressData, setAddressData] = useState({ logradouro: '', numero: '', cidadeUf: '' });
 
-  const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api/mobile';
-
-  // Efeito para trocar o placeholder a cada 2.5 segundos
   useEffect(() => {
     const interval = setInterval(() => {
       setPlaceholderIndex((prevIndex) => (prevIndex + 1) % PLACEHOLDERS.length);
@@ -189,7 +188,9 @@ export default function Home() {
     try {
       const token = await AsyncStorage.getItem('@lokyva_token');
       const queryParams = new URLSearchParams(params).toString();
-      const response = await fetch(`${API_BASE_URL}/estabelecimentos/proximos?${queryParams}&radius=15`, {
+      
+      // AJUSTE: Corrigido o nome da variável de API_BASE_URL para cleanBaseUrl
+      const response = await fetch(`${cleanBaseUrl}/estabelecimentos/proximos?${queryParams}&radius=15`, {
         headers: { 
           'Accept': 'application/json',
           'Authorization': `Bearer ${token}` 
@@ -246,24 +247,42 @@ export default function Home() {
     }
   };
 
-  // Lista de destinos a ser exibida (da API ou o fallback estático)
+  // --- NOVA FUNÇÃO PARA CHECAR LOGIN ANTES DE IR PRO PERFIL ---
+  const handleProfilePress = async () => {
+    try {
+      // Ajuste: A sua tela de login salvava como '@waitless_token' nos códigos anteriores, 
+      // alterei para tentar buscar ambos e garantir o login
+      let token = await AsyncStorage.getItem('@lokyva_token');
+      if (!token) token = await AsyncStorage.getItem('@waitless_token'); 
+
+      router.push({
+        pathname: '/src/screens/TelaPerfil',
+        params: { isLoggedIn: token ? 'true' : 'false' }
+      });
+    } catch (error) {
+      router.push({
+        pathname: '/src/screens/TelaPerfil',
+        params: { isLoggedIn: 'false' }
+      });
+    }
+  };
+
   const destinosExibicao = stores.length > 0 ? stores : DESTINOS_PADRAO;
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      {/* BARRA DE STATUS CONFIGURADA PARA APARECER BATERIA E HORA */}
+      <StatusBar barStyle="dark-content" backgroundColor={COLORS.white} translucent={false} />
+      
       <View style={styles.mainContainer}>
-        
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
           
-          {/* HERO SECTION COM IMAGEM DE FUNDO */}
           <ImageBackground
             source={{ uri: 'https://images.unsplash.com/photo-1540541338287-41700207dee6?q=80&w=1000' }}
             style={styles.heroBackground}
             imageStyle={{ borderBottomLeftRadius: 24, borderBottomRightRadius: 24 }}
           >
             <View style={styles.heroOverlay}>
-              
-              {/* TOP HEADER */}
               <View style={styles.heroHeader}>
                 <View style={styles.logoContainer}>
                   <Text style={styles.logoTitle}>
@@ -276,7 +295,6 @@ export default function Home() {
                 </TouchableOpacity>
               </View>
 
-              {/* TÍTULO HERO */}
               <View style={styles.heroTitleContainer}>
                 <Text style={styles.heroTitle}>
                   Sua próxima{'\n'}
@@ -288,7 +306,6 @@ export default function Home() {
                 </Text>
               </View>
 
-              {/* BARRA DE PESQUISA COM PLACEHOLDER ROTATIVO */}
               <View style={styles.searchBox}>
                 <Ionicons name="search-outline" size={20} color={COLORS.black} style={styles.searchIcon} />
                 <TextInput
@@ -300,7 +317,9 @@ export default function Home() {
                   onSubmitEditing={handleMainSearch}
                   returnKeyType="search"
                 />
-                <TouchableOpacity style={styles.filterBtn} onPress={() => router.push('/modal')}>
+                
+                {/* BOTÃO ALTERADO AQUI PARA ABRIR O SEU MODAL */}
+                <TouchableOpacity style={styles.filterBtn} onPress={() => setIsFilterModalVisible(true)}>
                   <Ionicons name="options-outline" size={20} color={COLORS.black} />
                 </TouchableOpacity>
               </View>
@@ -308,7 +327,6 @@ export default function Home() {
             </View>
           </ImageBackground>
 
-          {/* PAINEL DE LOCALIZAÇÃO */}
           <View style={styles.locationWrapper}>
             {!isEditingLocation ? (
               <TouchableOpacity style={styles.locationDisplay} onPress={() => setIsEditingLocation(true)}>
@@ -357,7 +375,6 @@ export default function Home() {
             )}
           </View>
 
-          {/* CATEGORIAS PRINCIPAIS */}
           <ScrollView 
             horizontal 
             showsHorizontalScrollIndicator={false} 
@@ -381,7 +398,6 @@ export default function Home() {
             ))}
           </ScrollView>
 
-          {/* SEÇÃO: DESTINOS EM ALTA (ROLÁVEL PARA OS DOIS LADOS) */}
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Destinos em alta</Text>
             <TouchableOpacity onPress={() => router.push('/src/screens/TelaExplorar')} style={styles.verTodosBtn}>
@@ -414,7 +430,6 @@ export default function Home() {
                     style={styles.cardImage} 
                   />
                   
-                  {/* Tag Superior & Coração */}
                   <View style={styles.cardHeaderOverlay}>
                     <View style={styles.tagPill}>
                       <Text style={styles.tagText}>{item.ramo_atuacao || 'Destino'}</Text>
@@ -424,7 +439,6 @@ export default function Home() {
                     </TouchableOpacity>
                   </View>
 
-                  {/* Informações Inferiores */}
                   <View style={styles.cardBottomOverlay}>
                     <Text style={styles.cardTitle} numberOfLines={1}>{item.nome}</Text>
                     <View style={styles.ratingRow}>
@@ -439,7 +453,6 @@ export default function Home() {
             </ScrollView>
           )}
 
-          {/* BANNER PROMOCIONAL: GANHE MAIS COM LOKYVA */}
           <View style={styles.promoBanner}>
             <View style={styles.promoIconContainer}>
               <Ionicons name="gift-outline" size={28} color={COLORS.black} />
@@ -456,7 +469,6 @@ export default function Home() {
             </TouchableOpacity>
           </View>
 
-          {/* SEÇÃO: TUDO O QUE VOCÊ PRECISA */}
           <Text style={[styles.sectionTitle, { marginLeft: 16, marginBottom: 16 }]}>
             Tudo o que você precisa
           </Text>
@@ -469,7 +481,6 @@ export default function Home() {
             ))}
           </ScrollView>
 
-          {/* BOTÃO PRINCIPAL EXPLORAR */}
           <TouchableOpacity 
             style={styles.explorarAgoraBtn}
             onPress={() => router.push('/src/screens/TelaExplorar')}
@@ -480,7 +491,67 @@ export default function Home() {
 
         </ScrollView>
 
+        {/* --- MENU DE NAVEGAÇÃO INFERIOR FLUTUANTE --- */}
+        <View style={styles.bottomNavContainer}>
+          <TouchableOpacity style={styles.navItem} onPress={() => router.push('/src/screens/TelaExplorar')}>
+            <Ionicons name="compass-outline" size={24} color={COLORS.black} />
+            <Text style={styles.navText}>Explorar</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={styles.navItem} onPress={() => router.push('/src/screens/FavoritosDashboard')}>
+            <Ionicons name="heart-outline" size={24} color={COLORS.black} />
+            <Text style={styles.navText}>Favoritos</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.navItem} onPress={() => router.push('/src/screens/TelaCarrinho')}>
+            <Ionicons name="cart-outline" size={24} color={COLORS.black} />
+            <Text style={styles.navText}>Carrinho</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.navItem} onPress={() => router.push('/(tabs)/carteira')}>
+            <Ionicons name="wallet-outline" size={24} color={COLORS.black} />
+            <Text style={styles.navText}>Carteira</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.navItem} onPress={() => router.push('/(tabs)/caixa-entrada')}>
+            <Ionicons name="chatbubbles-outline" size={24} color={COLORS.black} />
+            <Text style={styles.navText}>Inbox</Text>
+          </TouchableOpacity>
+
+          {/* ATUALIZADO PARA USAR A NOVA FUNÇÃO handleProfilePress */}
+          <TouchableOpacity style={styles.navItem} onPress={handleProfilePress}>
+            <Ionicons name="person-outline" size={24} color={COLORS.black} />
+            <Text style={styles.navText}>Perfil</Text>
+          </TouchableOpacity>
+        </View>
+        {/* ------------------------------------------- */}
       </View>
+
+      {/* --- AQUI ENTRA O SEU MODAL --- */}
+      <Modal
+        visible={isFilterModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setIsFilterModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Filtros</Text>
+              <TouchableOpacity onPress={() => setIsFilterModalVisible(false)}>
+                <Ionicons name="close" size={24} color={COLORS.black} />
+              </TouchableOpacity>
+            </View>
+            
+            <Text style={{ marginTop: 20, textAlign: 'center', color: COLORS.gray }}>
+              Coloque o conteúdo do seu modal aqui
+            </Text>
+
+          </View>
+        </View>
+      </Modal>
+
     </SafeAreaView>
   );
 }
@@ -489,14 +560,16 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: COLORS.white,
-    paddingTop: Platform.OS === 'android' ? 25 : 0
+    // Ajuste responsivo e de compatibilidade para a Status Bar no Android
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0
   },
   mainContainer: {
     flex: 1,
     position: 'relative'
   },
   scrollContent: {
-    paddingBottom: 30
+    // Aumentado para 120 para compensar que o menu subiu
+    paddingBottom: 120
   },
 
   // HERO BACKGROUND
@@ -913,5 +986,67 @@ const styles = StyleSheet.create({
   loadingContainer: {
     alignItems: 'center',
     paddingVertical: 30
+  },
+
+  // --- NOVOS ESTILOS PARA O MODAL ---
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.4)'
+  },
+  modalContent: {
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    minHeight: '50%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 5
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '900',
+    color: COLORS.secondary
+  },
+
+  // --- ESTILOS DO MENU INFERIOR (BOTTOM NAV) ---
+  bottomNavContainer: {
+    position: 'absolute',
+    // <-- AJUSTADO PARA SUBIR O MENU (de 24/16 para 40/32)
+    bottom: Platform.OS === 'ios' ? 40 : 32,
+    left: 16,
+    right: 16,
+    backgroundColor: COLORS.white,
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    paddingVertical: 14,
+    borderRadius: 30,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  navItem: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  navText: {
+    fontSize: 10,
+    color: COLORS.black,
+    fontWeight: '600',
+    marginTop: 2,
   }
 });

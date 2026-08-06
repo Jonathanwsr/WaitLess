@@ -28,13 +28,44 @@ const COLORS = {
   success: '#10B981'
 };
 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api/mobile/datalhes'; // Ajuste conforme a rota real do seu backend
+const API_URL = process.env.EXPO_PUBLIC_API_URL;
+
+// Interfaces para evitar o uso de 'any'
+interface Servico {
+  nome: string;
+  descricao: string;
+  duracao_minutos: number;
+}
+
+interface Estabelecimento {
+  nome: string;
+  telefone: string;
+  rua: string;
+  numero: string;
+  bairro: string;
+  cidade: string;
+  estado: string;
+}
+
+interface Reserva {
+  id: string | string[];
+  status: string;
+  status_pagamento: string;
+  codigo_verificacao?: string;
+  data_agendamento: string;
+  hora_agendamento: string;
+  valor_final: number;
+  posicao_fila?: number;
+  servico: Servico;
+  estabelecimento: Estabelecimento;
+}
 
 export default function DetalhesAgendamento() {
   const router = useRouter();
   const { id, tipo } = useLocalSearchParams(); // tipo: 'servico' ou 'aluguel'
 
-  const [reserva, setReserva] = useState<any>(null);
+  // Utilizando a tipagem Reserva para evitar erro de 'any'
+  const [reserva, setReserva] = useState<Reserva | null>(null);
   const [loading, setLoading] = useState(true);
   const [processando, setProcessando] = useState(false);
 
@@ -44,38 +75,27 @@ export default function DetalhesAgendamento() {
 
   const carregarDetalhes = async () => {
     try {
-      // Simulação da busca de dados da API.
-      // Substitua pelo fetch real: await fetch(`${API_BASE_URL}/${tipo === 'aluguel' ? 'alugueis' : 'agendamentos'}/${id}`)
+      const token = await AsyncStorage.getItem('@waitless_token');
       
-      setTimeout(() => {
-        setReserva({
-          id: id,
-          status: 'confirmado', // pendente, confirmado, em_atendimento, finalizado, cancelado
-          status_pagamento: 'pago_online',
-          codigo_verificacao: '8492',
-          data_agendamento: '2026-07-25',
-          hora_agendamento: '14:30:00',
-          valor_final: 150.00,
-          posicao_fila: 2, // Dado calculado pela API
-          servico: {
-            nome: 'Corte Premium + Barba Terapia',
-            descricao: 'Serviço completo com toalha quente e massagem facial.',
-            duracao_minutos: 60
-          },
-          estabelecimento: {
-            nome: 'WaitLess Barber Shop',
-            telefone: '(81) 99999-9999',
-            rua: 'Av. Henrique de Holanda',
-            numero: '1000',
-            bairro: 'Matriz',
-            cidade: 'Vitória de Santo Antão',
-            estado: 'PE'
-          }
-        });
-        setLoading(false);
-      }, 800);
+      // Ajustado para o endpoint solicitado
+      const response = await fetch(`${API_URL}/reservas/item/${id}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json'
+        }
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok) {
+        setReserva(data);
+      } else {
+        Alert.alert('Erro', data.error || 'Não foi possível carregar os detalhes.');
+      }
     } catch (error) {
-      Alert.alert('Erro', 'Não foi possível carregar os detalhes.');
+      Alert.alert('Erro', 'Falha ao conectar com o servidor.');
+    } finally {
       setLoading(false);
     }
   };
@@ -98,7 +118,8 @@ export default function DetalhesAgendamento() {
               const token = await AsyncStorage.getItem('@waitless_token');
               const endpoint = isAluguel ? `alugueis/${id}/cancelar` : `agendamentos/${id}/cancelar`;
 
-              const response = await fetch(`${API_BASE_URL}/${endpoint}`, {
+              // Corrigido API_BASE_URL para API_URL
+              const response = await fetch(`${API_URL}/${endpoint}`, {
                 method: 'DELETE',
                 headers: {
                   'Authorization': `Bearer ${token}`,
@@ -125,9 +146,10 @@ export default function DetalhesAgendamento() {
   };
 
   const handleBaixarComprovante = async () => {
+    if (!reserva) return;
+    
     setProcessando(true);
     try {
-      // Gera um PDF HTML simples usando os dados da reserva
       const html = `
         <html>
           <head>
@@ -185,6 +207,7 @@ export default function DetalhesAgendamento() {
   };
 
   const abrirMapa = () => {
+    if (!reserva) return;
     const address = `${reserva.estabelecimento.rua}, ${reserva.estabelecimento.numero}, ${reserva.estabelecimento.cidade}, ${reserva.estabelecimento.estado}`;
     const url = Platform.select({
       ios: `maps:0,0?q=${address}`,
@@ -206,7 +229,6 @@ export default function DetalhesAgendamento() {
 
   return (
     <View style={styles.container}>
-      {/* HEADER SIMPLES */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={24} color={COLORS.secondary} />
@@ -217,7 +239,6 @@ export default function DetalhesAgendamento() {
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         
-        {/* BANNER DE STATUS E PIN */}
         <View style={[styles.statusCard, isCancelado ? styles.bgError : styles.bgPrimary]}>
           <View style={styles.statusHeader}>
             <Text style={styles.statusText}>{isCancelado ? 'RESERVA CANCELADA' : 'RESERVA ATIVA'}</Text>
@@ -235,7 +256,6 @@ export default function DetalhesAgendamento() {
           )}
         </View>
 
-        {/* STATUS DA FILA (SE APLICÁVEL) */}
         {!isCancelado && reserva.posicao_fila && (
           <View style={styles.queueCard}>
             <View style={styles.queueIcon}>
@@ -248,30 +268,28 @@ export default function DetalhesAgendamento() {
           </View>
         )}
 
-        {/* DETALHES DO SERVIÇO */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>O que está incluso</Text>
           <View style={styles.infoBox}>
-            <Text style={styles.infoHighlight}>{reserva.servico.nome}</Text>
-            <Text style={styles.infoNormal}>{reserva.servico.descricao}</Text>
+            <Text style={styles.infoHighlight}>{reserva.servico?.nome}</Text>
+            <Text style={styles.infoNormal}>{reserva.servico?.descricao}</Text>
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>Duração Estimada:</Text>
-              <Text style={styles.infoData}>{reserva.servico.duracao_minutos} minutos</Text>
+              <Text style={styles.infoData}>{reserva.servico?.duracao_minutos} minutos</Text>
             </View>
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>Valor Pago:</Text>
-              <Text style={[styles.infoData, { color: COLORS.primary }]}>R$ {reserva.valor_final.toFixed(2).replace('.', ',')}</Text>
+              <Text style={[styles.infoData, { color: COLORS.primary }]}>R$ {reserva.valor_final?.toFixed(2).replace('.', ',')}</Text>
             </View>
           </View>
         </View>
 
-        {/* LOCALIZAÇÃO */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Localização</Text>
           <View style={styles.infoBox}>
-            <Text style={styles.infoHighlight}>{reserva.estabelecimento.nome}</Text>
-            <Text style={styles.infoNormal}>{reserva.estabelecimento.rua}, {reserva.estabelecimento.numero}</Text>
-            <Text style={styles.infoNormal}>{reserva.estabelecimento.bairro} - {reserva.estabelecimento.cidade}/{reserva.estabelecimento.estado}</Text>
+            <Text style={styles.infoHighlight}>{reserva.estabelecimento?.nome}</Text>
+            <Text style={styles.infoNormal}>{reserva.estabelecimento?.rua}, {reserva.estabelecimento?.numero}</Text>
+            <Text style={styles.infoNormal}>{reserva.estabelecimento?.bairro} - {reserva.estabelecimento?.cidade}/{reserva.estabelecimento?.estado}</Text>
             
             <TouchableOpacity style={styles.actionButtonLight} onPress={abrirMapa}>
               <Ionicons name="map-outline" size={18} color={COLORS.secondary} />
@@ -280,7 +298,6 @@ export default function DetalhesAgendamento() {
           </View>
         </View>
 
-        {/* AÇÕES FINAIS (DOWNLOAD / CANCELAR) */}
         <View style={styles.actionsContainer}>
           <TouchableOpacity style={styles.downloadButton} onPress={handleBaixarComprovante} disabled={processando}>
             {processando ? <ActivityIndicator color={COLORS.white} /> : (
@@ -355,5 +372,3 @@ const styles = StyleSheet.create({
   cancelButton: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#FEF2F2', paddingVertical: 16, borderRadius: 16 },
   cancelButtonText: { fontSize: 15, fontWeight: '900', color: COLORS.error },
 });
-
-

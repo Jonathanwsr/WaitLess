@@ -28,6 +28,7 @@ use App\Http\Controllers\Api\FuncionarioController;
 use App\Http\Controllers\Api\ItemAluguelController;
 use App\Http\Controllers\Api\AvaliacaoController;
 use App\Http\Controllers\Api\ContratoController;
+use App\Http\Controllers\Api\EstornoController;
 use App\Http\Controllers\Api\TravelAssistantController;
 use Illuminate\Foundation\Application; 
 use Illuminate\Support\Facades\Route;  
@@ -133,6 +134,40 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/financeiro/extrato/exportar', [ExtratoProviderController::class, 'exportar'])->name('provider.financeiro.export');
 });
 
+
+Route::prefix('estornos')->group(function () {
+        
+        // Listar as solicitações do usuário (Como cliente ou prestador)
+        Route::get('/', [EstornoController::class, 'minhasSolicitacoes']);
+        
+        // Visualizar os detalhes, fotos e motivos de um estorno específico
+        Route::get('/{id}/detalhes', [EstornoController::class, 'detalhes']);
+        
+        // Cliente solicita um estorno para um pagamento finalizado (aceita upload de imagens)
+        Route::post('/solicitar/pagamento/{pagamento_id}', [EstornoController::class, 'solicitar']);
+        
+        // Proprietário envia sua defesa/contestação contra um estorno de um cliente (aceita imagens)
+        Route::post('/{id}/contestar', [EstornoController::class, 'contestar']);
+    });
+
+
+    Route::prefix('admin/estornos')->group(function () {
+        
+        // Ver todos os estornos do sistema com filtros (status, categoria, dia, mês, ano)
+        Route::get('/', [EstornoController::class, 'adminIndex']);
+        
+        // O administrador julga que o cliente tem razão e aprova a devolução (API Asaas)
+        Route::post('/{id}/aprovar', [EstornoController::class, 'adminAprovar']);
+        
+        // O administrador julga que o prestador tem razão e recusa o estorno
+        Route::post('/{id}/reprovar', [EstornoController::class, 'adminReprovar']);
+
+        Route::get('/estornos', [EstornoController::class, 'index'])->name('estornos.index');
+
+        // Exemplo de como deve estar no seu routes/web.php
+Route::get('/meus-estornos', [EstornoController::class, 'index'])->name('cliente.estornos');
+    });
+
     // Estabelecimentos Menssagens
 
     Route::get('/mensagens', [MensagemController::class, 'index'])->name('mensagens.index');
@@ -155,6 +190,30 @@ Route::get('/estabelecimentos/{estabelecimento}/fila', [AgendamentoController::c
 
     // Agendamentos
     Route::put('/agendamentos/{agendamento}/status', [AgendamentoController::class, 'updateStatus'])->name('agendamentos.status.update');
+    // ========================================================
+    // 💎 GESTÃO DE ASSINATURAS E PLANOS
+    // ========================================================
+    // Visualizar o status atual da assinatura
+    Route::get('/minha-assinatura/status', [AssinaturaController::class, 'status'])->name('assinatura.status');
+    
+    // Ação de assinar um novo plano (Recebe 'plano' e 'metodo' no Request)
+    Route::post('/minha-assinatura/assinar', [AssinaturaController::class, 'assinar'])->name('assinaturas.assinar');
+    
+    // Ação de cancelamento seguro (Mantém benefícios até o fim do ciclo)
+    Route::post('/minha-assinatura/cancelar', [AssinaturaController::class, 'cancelar'])->name('assinaturas.cancelar');
+    
+    // Atualização de dados financeiros (Ex: Endereço, travado para 1x ao mês)
+    Route::put('/minha-assinatura/dados-financeiros', [AssinaturaController::class, 'atualizarDadosFinanceiros'])->name('assinaturas.dados_financeiros');
+
+    Route::get('/minha-assinatura/status', [AssinaturaController::class, 'status'])->name('assinatura.status');
+
+    Route::prefix('admin')->group(function () {
+        // Listagem de todas as assinaturas ativas/canceladas/pendentes da plataforma
+        Route::get('/assinaturas', [AssinaturaController::class, 'adminIndex'])->name('admin.assinaturas.index');
+        
+        // Ações forçadas do Admin (Travar, Cancelar Imediatamente, Marcar como Pago)
+        Route::post('/assinaturas/{id}/acao', [AssinaturaController::class, 'adminAcao'])->name('admin.assinaturas.acao');
+    });
 
 
     //RESERVAS

@@ -3,7 +3,7 @@ import { Head, Link, useForm, usePage, router } from '@inertiajs/react';
 import { 
     StarIcon, SparklesIcon, CheckBadgeIcon, TicketIcon, 
     BoltIcon, ShieldCheckIcon, DocumentTextIcon, LifebuoyIcon,
-    QuestionMarkCircleIcon, ArrowRightIcon
+    QuestionMarkCircleIcon, ArrowRightIcon, ExclamationTriangleIcon
 } from '@heroicons/react/24/solid';
 import { useState, useEffect } from 'react';
 
@@ -169,7 +169,6 @@ export default function Carteira({ auth, recompensas = [], meusCupons = [] }) {
                                         <div>
                                             <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-2">Valor Atual</p>
                                             <div className="flex items-baseline gap-1 mb-2">
-                                                {/* Atualizado para 12 reais conforme solicitação */}
                                                 <span className="text-5xl font-black text-[#0F172A]">{isPlus ? 'R$ 12,00' : 'R$ 0,00'}</span>
                                                 <span className="text-base font-bold text-gray-500">/mês</span>
                                             </div>
@@ -420,68 +419,111 @@ export default function Carteira({ auth, recompensas = [], meusCupons = [] }) {
                                     <p className="text-gray-500 font-medium text-lg">Escolha o plano que melhor se adapta ao tamanho e às necessidades do seu estabelecimento.</p>
                                 </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl mx-auto">
-                                    
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                                     {/* PLANO BÁSICO */}
-                                    <div className={`bg-white rounded-[2rem] p-8 border border-gray-100 shadow-sm flex flex-col h-full ${isBasico ? 'ring-2 ring-[#0F172A]' : ''}`}>
-                                        <div className="mb-8">
-                                            <span className="bg-gray-100 text-gray-700 font-black px-3 py-1.5 rounded-md text-[10px] uppercase tracking-widest">Básico</span>
-                                            <h4 className="text-4xl font-black text-gray-900 mt-6">R$ 20<span className="text-lg text-gray-400 font-bold">/mês</span></h4>
-                                            <p className="text-sm font-medium text-gray-500 mt-3">Ideal para profissionais autónomos e quem está a começar.</p>
+                                    <div className="bg-white rounded-[2rem] p-8 border border-gray-100 shadow-sm relative flex flex-col">
+                                        {isBasico && <div className="absolute top-0 inset-x-0 h-1.5 bg-emerald-500 rounded-t-[2rem]"></div>}
+                                        <h4 className="text-2xl font-black text-gray-900 mb-2">Básico</h4>
+                                        <p className="text-sm font-medium text-gray-500 mb-6">Para negócios locais que estão começando.</p>
+                                        <div className="flex items-baseline gap-1 mb-8">
+                                            <span className="text-4xl font-black text-[#0F172A]">R$ 49,90</span>
+                                            <span className="text-base font-bold text-gray-500">/mês</span>
                                         </div>
-                                        <ul className="space-y-4 mb-8 flex-grow">
-                                            <li className="flex items-start gap-3 text-sm font-bold text-gray-700"><CheckBadgeIcon className="w-5 h-5 text-[#E05D36] shrink-0"/> Até 3 estabelecimentos</li>
-                                            <li className="flex items-start gap-3 text-sm font-bold text-gray-700"><CheckBadgeIcon className="w-5 h-5 text-[#E05D36] shrink-0"/> Até 15 serviços por local</li>
-                                            <li className="flex items-start gap-3 text-sm font-bold text-gray-700"><CheckBadgeIcon className="w-5 h-5 text-[#E05D36] shrink-0"/> Agendamento online e Fila em tempo real</li>
-                                            <li className="flex items-start gap-3 text-sm font-bold text-gray-700"><CheckBadgeIcon className="w-5 h-5 text-[#E05D36] shrink-0"/> Recebimentos via plataforma (Mercado Pago)</li>
+                                        <ul className="space-y-4 mb-8 flex-1">
+                                            <li className="flex items-center gap-3 text-sm font-bold text-gray-700">
+                                                <CheckBadgeIcon className="w-5 h-5 text-[#E05D36] shrink-0" /> Até 100 agendamentos
+                                            </li>
+                                            <li className="flex items-center gap-3 text-sm font-bold text-gray-700">
+                                                <CheckBadgeIcon className="w-5 h-5 text-[#E05D36] shrink-0" /> Fila virtual básica
+                                            </li>
                                         </ul>
-                                        <button onClick={() => assinarPlano('basico')} disabled={processing || isBasico} className={`w-full py-4 rounded-2xl font-bold transition-all ${isBasico ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-white border-2 border-gray-200 text-gray-900 hover:border-gray-900'}`}>
+                                        <button 
+                                            onClick={() => assinarPlano('basico')} 
+                                            disabled={processing || isBasico} 
+                                            className={`w-full py-4 rounded-xl font-bold transition-all ${isBasico ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-gray-100 text-gray-900 hover:bg-gray-200'}`}
+                                        >
                                             {isBasico ? 'Plano Atual' : 'Assinar Básico'}
                                         </button>
                                     </div>
 
                                     {/* PLANO PROFISSIONAL */}
-                                    <div className={`bg-white rounded-[2rem] p-8 border border-gray-100 shadow-xl transform md:-translate-y-4 flex flex-col h-full relative ${isPro ? 'ring-2 ring-[#0F172A]' : ''}`}>
-                                        <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-[#0F172A] text-white text-[10px] font-black px-4 py-1.5 rounded-full uppercase tracking-widest shadow-md">Mais Popular</div>
-                                        <div className="mb-8">
-                                            <span className="bg-[#FFF2EE] text-[#E05D36] font-black px-3 py-1.5 rounded-md text-[10px] uppercase tracking-widest">Profissional</span>
-                                            <h4 className="text-4xl font-black text-gray-900 mt-6">R$ 49,90<span className="text-lg text-gray-400 font-bold">/mês</span></h4>
-                                            <p className="text-sm font-medium text-gray-500 mt-3">Para clínicas, barbearias em crescimento e pequenas redes.</p>
+                                    <div className="bg-[#0F172A] rounded-[2rem] p-8 shadow-xl relative flex flex-col transform md:-translate-y-4 border border-gray-800">
+                                        {isPro && <div className="absolute top-0 inset-x-0 h-1.5 bg-emerald-500 rounded-t-[2rem]"></div>}
+                                        <div className="absolute top-0 right-6 transform -translate-y-1/2">
+                                            <span className="bg-[#E05D36] text-white text-[10px] font-black uppercase tracking-wider px-4 py-1.5 rounded-full shadow-md">
+                                                Recomendado
+                                            </span>
                                         </div>
-                                        <ul className="space-y-4 mb-8 flex-grow">
-                                            <li className="flex items-start gap-3 text-sm font-black text-gray-900"><CheckBadgeIcon className="w-5 h-5 text-[#0F172A] shrink-0"/> Tudo do Básico +</li>
-                                            <li className="flex items-start gap-3 text-sm font-bold text-gray-700"><CheckBadgeIcon className="w-5 h-5 text-[#E05D36] shrink-0"/> Até 15 estabelecimentos</li>
-                                            <li className="flex items-start gap-3 text-sm font-bold text-gray-700"><CheckBadgeIcon className="w-5 h-5 text-[#E05D36] shrink-0"/> Até 60 serviços cadastrados</li>
-                                            <li className="flex items-start gap-3 text-sm font-bold text-gray-700"><CheckBadgeIcon className="w-5 h-5 text-[#E05D36] shrink-0"/> Criação de Cupons e Marketing</li>
-                                            <li className="flex items-start gap-3 text-sm font-bold text-gray-700"><CheckBadgeIcon className="w-5 h-5 text-[#E05D36] shrink-0"/> Destaque nas buscas e Visor de Fila</li>
+                                        <h4 className="text-2xl font-black text-white mb-2">Profissional</h4>
+                                        <p className="text-sm font-medium text-gray-400 mb-6">Para estabelecimentos em crescimento.</p>
+                                        <div className="flex items-baseline gap-1 mb-8">
+                                            <span className="text-4xl font-black text-white">R$ 99,90</span>
+                                            <span className="text-base font-bold text-gray-400">/mês</span>
+                                        </div>
+                                        <ul className="space-y-4 mb-8 flex-1">
+                                            <li className="flex items-center gap-3 text-sm font-bold text-gray-300">
+                                                <CheckBadgeIcon className="w-5 h-5 text-[#E05D36] shrink-0" /> Agendamentos ilimitados
+                                            </li>
+                                            <li className="flex items-center gap-3 text-sm font-bold text-gray-300">
+                                                <CheckBadgeIcon className="w-5 h-5 text-[#E05D36] shrink-0" /> Criação de recompensas
+                                            </li>
+                                            <li className="flex items-center gap-3 text-sm font-bold text-gray-300">
+                                                <CheckBadgeIcon className="w-5 h-5 text-[#E05D36] shrink-0" /> Relatórios gerenciais
+                                            </li>
                                         </ul>
-                                        <button onClick={() => assinarPlano('profissional')} disabled={processing || isPro} className={`w-full py-4 rounded-2xl font-bold transition-all shadow-md ${isPro ? 'bg-gray-100 text-gray-400 cursor-not-allowed shadow-none' : 'bg-[#E05D36] hover:bg-[#C74B27] text-white'}`}>
+                                        <button 
+                                            onClick={() => assinarPlano('profissional')} 
+                                            disabled={processing || isPro} 
+                                            className={`w-full py-4 rounded-xl font-bold transition-all shadow-md ${isPro ? 'bg-emerald-500 text-white' : 'bg-[#E05D36] text-white hover:bg-[#b3401f]'}`}
+                                        >
                                             {isPro ? 'Plano Atual' : 'Assinar Profissional'}
                                         </button>
                                     </div>
 
                                     {/* PLANO PREMIUM */}
-                                    <div className={`bg-[#0F172A] rounded-[2rem] p-8 border border-[#0F172A] shadow-lg flex flex-col h-full text-white ${isPremium ? 'ring-2 ring-[#E05D36]' : ''}`}>
-                                        <div className="mb-8">
-                                            <span className="bg-white/10 text-white font-black px-3 py-1.5 rounded-md text-[10px] uppercase tracking-widest">Premium</span>
-                                            <h4 className="text-4xl font-black text-white mt-6">R$ 99,90<span className="text-lg text-gray-400 font-bold">/mês</span></h4>
-                                            <p className="text-sm font-medium text-gray-400 mt-3">Sem limites. Para grandes redes e negócios estruturados.</p>
+                                    <div className="bg-white rounded-[2rem] p-8 border border-gray-100 shadow-sm relative flex flex-col">
+                                        {isPremium && <div className="absolute top-0 inset-x-0 h-1.5 bg-emerald-500 rounded-t-[2rem]"></div>}
+                                        <h4 className="text-2xl font-black text-gray-900 mb-2">Premium</h4>
+                                        <p className="text-sm font-medium text-gray-500 mb-6">Acesso total para escalar suas vendas.</p>
+                                        <div className="flex items-baseline gap-1 mb-8">
+                                            <span className="text-4xl font-black text-[#0F172A]">R$ 149,90</span>
+                                            <span className="text-base font-bold text-gray-500">/mês</span>
                                         </div>
-                                        <ul className="space-y-4 mb-8 flex-grow">
-                                            <li className="flex items-start gap-3 text-sm font-black text-white"><CheckBadgeIcon className="w-5 h-5 text-[#E05D36] shrink-0"/> Tudo do Profissional +</li>
-                                            <li className="flex items-start gap-3 text-sm font-bold text-gray-300"><CheckBadgeIcon className="w-5 h-5 text-[#E05D36] shrink-0"/> Estabelecimentos e Serviços Ilimitados</li>
-                                            <li className="flex items-start gap-3 text-sm font-bold text-gray-300"><CheckBadgeIcon className="w-5 h-5 text-[#E05D36] shrink-0"/> Dashboard avançado de métricas</li>
-                                            <li className="flex items-start gap-3 text-sm font-bold text-gray-300"><CheckBadgeIcon className="w-5 h-5 text-[#E05D36] shrink-0"/> Integração com WhatsApp</li>
-                                            <li className="flex items-start gap-3 text-sm font-bold text-gray-300"><CheckBadgeIcon className="w-5 h-5 text-[#E05D36] shrink-0"/> Campanhas patrocinadas internas</li>
+                                        <ul className="space-y-4 mb-8 flex-1">
+                                            <li className="flex items-center gap-3 text-sm font-bold text-gray-700">
+                                                <CheckBadgeIcon className="w-5 h-5 text-[#E05D36] shrink-0" /> Tudo do plano Profissional
+                                            </li>
+                                            <li className="flex items-center gap-3 text-sm font-bold text-gray-700">
+                                                <CheckBadgeIcon className="w-5 h-5 text-[#E05D36] shrink-0" /> Destaque no Marketplace
+                                            </li>
+                                            <li className="flex items-center gap-3 text-sm font-bold text-gray-700">
+                                                <CheckBadgeIcon className="w-5 h-5 text-[#E05D36] shrink-0" /> Suporte prioritário 24/7
+                                            </li>
                                         </ul>
-                                        <button onClick={() => assinarPlano('premium')} disabled={processing || isPremium} className={`w-full py-4 rounded-2xl font-bold transition-all ${isPremium ? 'bg-white/10 text-white/50 cursor-not-allowed' : 'bg-white text-[#0F172A] hover:bg-gray-100'}`}>
+                                        <button 
+                                            onClick={() => assinarPlano('premium')} 
+                                            disabled={processing || isPremium} 
+                                            className={`w-full py-4 rounded-xl font-bold transition-all ${isPremium ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-gray-100 text-gray-900 hover:bg-gray-200'}`}
+                                        >
                                             {isPremium ? 'Plano Atual' : 'Assinar Premium'}
                                         </button>
                                     </div>
-
                                 </div>
+
+                                {temPlanoAtivo && (
+                                    <div className="mt-12 text-center">
+                                        <button 
+                                            onClick={cancelarAssinatura} 
+                                            disabled={processing}
+                                            className="text-sm font-bold text-gray-400 hover:text-red-500 transition-colors underline"
+                                        >
+                                            Deseja cancelar sua assinatura como lojista?
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         )}
+                        
                     </div>
                 </div>
             </div>

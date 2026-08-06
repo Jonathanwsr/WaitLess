@@ -9,232 +9,912 @@ import {
   TextInput, 
   ActivityIndicator, 
   SafeAreaView,
-  Platform
+  Platform,
+  ScrollView,
+  Dimensions
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// --- CORES ATUALIZADAS CONFORME O SEU PADRÃO ---
+const { width } = Dimensions.get('window');
+
 const COLORS = {
-  primary: '#b24b2b',
-  primaryLight: '#fdeee9',
+  primary: '#FF8C00', 
+  primaryLight: '#FFF0E6', 
   secondary: '#111827',
-  accent: '#FBBF24',
+  textDark: '#374151',
   gray: '#6B7280',
   lightGray: '#F9FAFB',
   white: '#FFFFFF',
-  border: '#F3F4F6',
-  error: '#DC2626',
+  border: '#E5E7EB',
+  success: '#10B981', 
 };
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api';
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api/mobile';
 
-// Categorias para o Filtro Superior
+// Categorias adaptadas para o visual com ícones circulares
 const CATEGORIAS = [
-  { id: '1', name: 'Tudo', slug: 'tudo', icon: 'grid-outline' },
-  { id: '2', name: 'Beleza', slug: 'beleza', icon: 'color-palette-outline' },
-  { id: '3', name: 'Barbearia', slug: 'barbearia', icon: 'cut-outline' },
-  { id: '4', name: 'Saúde', slug: 'saude', icon: 'medkit-outline' },
-  { id: '5', name: 'Veículos', slug: 'veiculos', icon: 'car-sport-outline' },
-  { id: '6', name: 'Pets', slug: 'pets', icon: 'paw-outline' },
-  { id: '7', name: 'Eventos', slug: 'eventos', icon: 'calendar-outline' },
+  { id: '1', name: 'Tudo', slug: 'tudo', icon: 'all-inclusive' },
+  { id: '2', name: 'Locais', slug: 'estabelecimentos', icon: 'storefront-outline' },
+  { id: '3', name: 'Serviços', slug: 'servicos', icon: 'briefcase-outline' },
+  { id: '4', name: 'Abertos', slug: 'abertos', icon: 'clock-outline' },
 ];
 
 export default function TelaExplorar() {
   const router = useRouter();
   const params = useLocalSearchParams();
   
-  // Estados de Filtro e Busca
-  const [busca, setBusca] = useState(params.query?.toString() || '');
-  const [categoriaAtiva, setCategoriaAtiva] = useState('tudo');
+  const [inputText, setInputText] = useState(params.query?.toString() || '');
+  const [buscaAtiva, setBuscaAtiva] = useState(params.query?.toString() || '');
   
-  // Estados de Dados
+  const [categoriaAtiva, setCategoriaAtiva] = useState('tudo');
   const [lojas, setLojas] = useState([]);
+  
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  
+  const [userFoto, setUserFoto] = useState(null);
+  const [favoritos, setFavoritos] = useState([]);
+  const [carrinhoItens, setCarrinhoItens] = useState(0); 
 
   useEffect(() => {
-    fetchExplorar();
+    carregarUsuario();
   }, []);
 
-  const fetchExplorar = async () => {
-    setLoading(true);
+  useEffect(() => {
+    setPage(1);
+    setHasMore(true);
+    fetchExplorar(1, true);
+  }, [buscaAtiva, categoriaAtiva]);
+
+  const carregarUsuario = async () => {
+    try {
+      const userStr = await AsyncStorage.getItem('@waitless_user');
+      if (userStr) {
+        const user = JSON.parse(userStr);
+        setUserFoto(user.foto || user.avatar || null);
+      }
+    } catch (e) {
+      console.log('Erro ao carregar usuário:', e);
+    }
+  };
+
+  const fetchExplorar = async (pageNumber, isRefresh = false) => {
+    if (isRefresh) setLoading(true);
+    else setLoadingMore(true);
+
     try {
       const token = await AsyncStorage.getItem('@waitless_token');
-      // Bate na rota que você configurou no seu api.php
-      const res = await fetch(`${API_URL}/explorar`, {
+      let queryUrl = `${API_URL}/explorar?page=${pageNumber}&`;
+      
+      if (categoriaAtiva === 'estabelecimentos') queryUrl += `tipo_busca=estabelecimentos&`;
+      else if (categoriaAtiva === 'servicos') queryUrl += `tipo_busca=servicos&`;
+      else if (categoriaAtiva === 'tudo') queryUrl += `tipo_busca=tudo&`;
+
+      if (buscaAtiva.trim() !== '') queryUrl += `busca=${encodeURIComponent(buscaAtiva)}&`;
+      
+      if (categoriaAtiva === 'abertos') {
+        queryUrl += `tipo_busca=estabelecimentos&apenas_abertos=1&`;
+      }
+
+      const res = await fetch(queryUrl, {
         headers: { 
           'Authorization': `Bearer ${token}`,
           'Accept': 'application/json'
         }
       });
-      const data = await res.json();
-      setLojas(Array.isArray(data) ? data : (data.data || [])); // Garante que é um array
+      
+      const json = await res.json();
+      let novosDados = [];
+      let ultimaPagina = 1;
+
+      if (json.data && Array.isArray(json.data)) {
+        novosDados = json.data;
+        ultimaPagina = json.last_page || 1;
+      } else if (Array.isArray(json)) {
+        novosDados = json;
+        ultimaPagina = 1;
+      }
+
+      if (isRefresh) {
+        setLojas(novosDados);
+      } else {
+        setLojas(prev => [...prev, ...novosDados]);
+      }
+
+      setHasMore(pageNumber < ultimaPagina);
+      
     } catch (e) {
-      console.log('Erro ao buscar estabelecimentos:', e);
+      console.log('Erro ao buscar dados:', e);
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   };
 
-  // --- LÓGICA DE FILTRAGEM DUPLA (Busca + Categoria) ---
-  const lojasFiltradas = lojas.filter(loja => {
-    const termoBusca = busca.toLowerCase();
-    const matchBusca = 
-      loja.nome?.toLowerCase().includes(termoBusca) || 
-      loja.ramo_atuacao?.toLowerCase().includes(termoBusca) ||
-      loja.cidade?.toLowerCase().includes(termoBusca);
-      
-    const matchCategoria = 
-      categoriaAtiva === 'tudo' || 
-      loja.ramo_atuacao?.toLowerCase() === categoriaAtiva ||
-      loja.categoria?.toLowerCase() === categoriaAtiva; // Depende de como está no seu BD
+  const handleLoadMore = () => {
+    if (!loading && !loadingMore && hasMore) {
+      const nextPage = page + 1;
+      setPage(nextPage);
+      fetchExplorar(nextPage);
+    }
+  };
 
-    return matchBusca && matchCategoria;
-  });
+  const handleSearchSubmit = () => {
+    setBuscaAtiva(inputText);
+  };
 
-  // --- RENDERIZAÇÃO DO CARD ---
-  const renderItem = ({ item }) => (
-    <TouchableOpacity 
-      style={styles.card}
-      activeOpacity={0.9}
-      onPress={() => router.push({ pathname: '/src/screens/EstabelecimentoDetalhes', params: { id: item.id } })}
-    >
-      <View style={styles.imageContainer}>
-        <Image source={{ uri: item.foto_perfil || 'https://via.placeholder.com/400x200' }} style={styles.image} />
-        <TouchableOpacity style={styles.favoriteBtn}>
-          <Ionicons name="heart-outline" size={20} color={COLORS.white} />
-        </TouchableOpacity>
-      </View>
-      
-      <View style={styles.info}>
-        <View style={styles.titleRow}>
-          <Text style={styles.title} numberOfLines={1}>{item.nome}</Text>
-          <View style={styles.ratingBox}>
-            <Ionicons name="star" size={12} color={COLORS.accent} />
-            <Text style={styles.ratingText}>{item.avaliacao_media || 'Novo'}</Text>
+  const clearSearch = () => {
+    setInputText('');
+    setBuscaAtiva('');
+  };
+
+  const toggleFavorito = async (item) => {
+    const idItem = item.id;
+    setFavoritos(prev => 
+      prev.includes(idItem) ? prev.filter(favId => favId !== idItem) : [...prev, idItem]
+    );
+
+    try {
+      const token = await AsyncStorage.getItem('@waitless_token');
+      const isServico = item.tipo === 'servico' || item.tipo === 'aluguel' || item.estabelecimento_id != null;
+      const bodyParams = isServico ? { servico_id: idItem } : { estabelecimento_id: idItem };
+
+      await fetch(`${API_URL}/favoritos/toggle`, {
+        method: 'POST',
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(bodyParams)
+      });
+    } catch (error) {
+      console.log('Erro ao favoritar', error);
+    }
+  };
+
+  const navegarParaDetalhes = (item) => {
+    if (item.tipo === 'servico' || item.tipo === 'aluguel') {
+      router.push({ 
+        pathname: '/src/screens/ServicoDetalhes', 
+        params: { id: item.id, tipo: item.tipo } 
+      });
+    } else {
+      const estId = item.estabelecimento_id ? item.estabelecimento_id : item.id;
+      router.push({ 
+        pathname: '/src/screens/EstabelecimentoDetalhes', 
+        params: { id: estId } 
+      });
+    }
+  };
+
+  const renderItem = ({ item }) => {
+    const isFavorito = favoritos.includes(item.id);
+    const isServico = item.tipo === 'servico' || item.tipo === 'aluguel' || item.estabelecimento_id != null;
+    const nomeExibicao = item.nome || item.titulo || 'Sem título';
+    
+    let imageUrl = item.foto_capa || item.foto_perfil || item.foto;
+    if (!imageUrl && item.fotos) {
+      const fotosArray = typeof item.fotos === 'string' ? JSON.parse(item.fotos) : item.fotos;
+      if (Array.isArray(fotosArray) && fotosArray.length > 0) {
+        imageUrl = fotosArray[0];
+      }
+    }
+
+    const valor = item.valor || item.valor_diaria;
+
+    return (
+      <TouchableOpacity 
+        style={styles.card}
+        activeOpacity={0.95}
+        onPress={() => navegarParaDetalhes(item)}
+      >
+        <View style={styles.imageContainer}>
+          {imageUrl ? (
+            <Image source={{ uri: imageUrl }} style={styles.image} resizeMode="cover" />
+          ) : (
+            <View style={styles.imagePlaceholder}>
+              <Ionicons name="image-outline" size={40} color={COLORS.gray} />
+              <Text style={styles.placeholderText}>Sem imagem</Text>
+            </View>
+          )}
+          
+          {categoriaAtiva === 'abertos' && !isServico && (
+            <View style={styles.badgeAberto}>
+              <Text style={styles.badgeAbertoText}>+ Aberto</Text>
+            </View>
+          )}
+
+          {isServico && (
+            <View style={styles.badgeServico}>
+              <Text style={styles.badgeServicoText}>{item.tipo === 'aluguel' ? 'Locação' : 'Serviço'}</Text>
+            </View>
+          )}
+          
+          <TouchableOpacity style={styles.favoriteBtn} onPress={() => toggleFavorito(item)}>
+            <Ionicons name={isFavorito ? "heart" : "heart-outline"} size={20} color={isFavorito ? COLORS.primary : COLORS.white} />
+          </TouchableOpacity>
+        </View>
+        
+        <View style={styles.info}>
+          <View style={styles.cardHeaderRow}>
+            <Text style={styles.title} numberOfLines={1}>{nomeExibicao}</Text>
+            <View style={styles.ratingRow}>
+              <Ionicons name="star" size={14} color="#FFD700" />
+              <Text style={styles.ratingTextPrincipal}>
+                {item.avaliacao_media ? Number(item.avaliacao_media).toFixed(1) : 'Novo'}
+              </Text>
+              {item.total_avaliacoes ? (
+                 <Text style={styles.ratingTextSecundario}>({item.total_avaliacoes})</Text>
+              ) : null}
+            </View>
+          </View>
+          
+          <View style={styles.distanceRow}>
+            <Feather name="map-pin" size={12} color={COLORS.gray} />
+            <Text style={styles.distanceText}>{item.distancia || 'Calculando...'}</Text>
+          </View>
+          
+          <View style={styles.bottomCardRow}>
+            <View style={styles.branchContainer}>
+              <Text style={styles.subtitle} numberOfLines={1}>
+                {item.ramo_atuacao || 'Estabelecimento Parceiro'}
+              </Text>
+              {isServico ? (
+                 <View style={styles.priceContainer}>
+                   <Text style={styles.priceLabel}>A PARTIR DE</Text>
+                   <Text style={styles.priceValue}>
+                     R$ {valor ? Number(valor).toFixed(2).replace('.', ',') : '0,00'}
+                   </Text>
+                 </View>
+              ) : (
+                <View style={styles.agendamentoRow}>
+                  <Feather name="check" size={14} color={COLORS.success} />
+                  <Text style={styles.agendamentoText}>Agendamento online</Text>
+                </View>
+              )}
+            </View>
+            
+            <TouchableOpacity 
+              style={styles.agendarBtn}
+              onPress={() => navegarParaDetalhes(item)}
+            >
+              <Text style={styles.agendarBtnText}>Detalhes</Text>
+            </TouchableOpacity>
           </View>
         </View>
-        <Text style={styles.subtitle}>{item.ramo_atuacao || 'Serviços'} • {item.cidade}</Text>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderHeader = () => (
+    <View style={styles.headerComponentContainer}>
+      <View style={styles.topHeader}>
+        <View>
+          <Text style={styles.mainTitle}>Explorar</Text>
+          <Text style={styles.mainSubtitle}>Encontre viagens, serviços e experiências</Text>
+        </View>
+        
+        <View style={styles.headerIcons}>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/src/screens/TelaCarrinho')}>
+            <Feather name="shopping-cart" size={24} color={COLORS.secondary} />
+            {carrinhoItens > 0 && (
+              <View style={styles.badge}><Text style={styles.badgeText}>{carrinhoItens}</Text></View>
+            )}
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={styles.iconBtnCircleHeart} onPress={() => router.push('/src/screens/FavoritosDashboard')}>
+            <Ionicons name="heart-outline" size={20} color={COLORS.secondary} />
+            {favoritos.length > 0 && (
+              <View style={styles.badge}><Text style={styles.badgeText}>{favoritos.length}</Text></View>
+            )}
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.avatarContainer}
+            onPress={() => router.push('/src/screens/TelaPerfil')}
+          >
+            {userFoto ? (
+              <Image source={{ uri: userFoto }} style={styles.avatar} />
+            ) : (
+              <View style={styles.avatarPlaceholder}>
+                <Ionicons name="person" size={18} color={COLORS.gray} />
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
-    </TouchableOpacity>
+
+      <View style={styles.searchRow}>
+        <View style={styles.searchContainer}>
+          <Feather name="search" size={20} color={COLORS.gray} />
+          <TextInput 
+            style={styles.searchInput} 
+            placeholder="Buscar destinos, voos, serviços, passeios..." 
+            placeholderTextColor={COLORS.gray}
+            value={inputText} 
+            onChangeText={setInputText} 
+            onSubmitEditing={handleSearchSubmit}
+            returnKeyType="search"
+            autoCapitalize="none"
+          />
+          {inputText.length > 0 ? (
+            <TouchableOpacity onPress={clearSearch} style={{ padding: 4 }}>
+              <Ionicons name="close-circle" size={20} color={COLORS.gray} />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity>
+              <MaterialCommunityIcons name="tune" size={20} color={COLORS.secondary} />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryGridContainer}>
+        {CATEGORIAS.map((item) => {
+          const isActive = categoriaAtiva === item.slug;
+          return (
+            <TouchableOpacity 
+              key={item.id} 
+              style={styles.categoryGridItem} 
+              onPress={() => setCategoriaAtiva(item.slug)}
+            >
+              <View style={[styles.categoryGridIconCircle, isActive && styles.categoryGridIconCircleActive]}>
+                <MaterialCommunityIcons name={item.icon} size={28} color={isActive ? COLORS.primary : COLORS.gray} />
+              </View>
+              <Text style={[styles.categoryGridText, isActive && styles.categoryGridTextActive]}>{item.name}</Text>
+            </TouchableOpacity>
+          )
+        })}
+      </ScrollView>
+
+      {/* Banner de Viagem/Lokyva */}
+      <View style={styles.bannerContainer}>
+        <Image 
+          source={{ uri: 'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?q=80&w=800&auto=format&fit=crop' }} 
+          style={styles.bannerImage} 
+          resizeMode="cover" 
+        />
+        <View style={styles.bannerOverlay} />
+        <View style={styles.bannerContent}>
+          <View style={styles.bannerBadge}><Text style={styles.bannerBadgeText}>LOKYVA VIAGENS</Text></View>
+          <Text style={styles.bannerTitle}>Explore novos destinos e viva experiências incríveis</Text>
+          <Text style={styles.bannerSubtitle}>Rápido, prático e inesquecível!</Text>
+        </View>
+      </View>
+
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>
+          {categoriaAtiva === 'servicos' ? 'Serviços encontrados' : 
+           categoriaAtiva === 'estabelecimentos' ? 'Locais e Destinos em destaque' : 
+           'Recomendados para você'}
+        </Text>
+      </View>
+    </View>
   );
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      
-      {/* HEADER E BARRA DE PESQUISA */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={24} color={COLORS.secondary} />
-        </TouchableOpacity>
-        
-        <View style={styles.searchContainer}>
-          <Ionicons name="search" size={18} color={COLORS.gray} />
-          <TextInput 
-            style={styles.searchInput} 
-            placeholder="Buscar serviços, locais..." 
-            placeholderTextColor={COLORS.gray}
-            value={busca} 
-            onChangeText={setBusca} 
-            autoCapitalize="none"
-            clearButtonMode="while-editing"
-          />
-        </View>
-      </View>
-
-      {/* FILTRO DE CATEGORIAS HORIZONTAL */}
-      <View style={styles.categoriesContainer}>
-        <FlatList
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          data={CATEGORIAS}
-          keyExtractor={item => item.id}
-          contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}
-          renderItem={({ item }) => (
-            <TouchableOpacity 
-              style={[styles.categoryChip, categoriaAtiva === item.slug && styles.categoryChipAtivo]}
-              onPress={() => setCategoriaAtiva(item.slug)}
-            >
-              <Ionicons 
-                name={item.icon} 
-                size={16} 
-                color={categoriaAtiva === item.slug ? COLORS.primary : COLORS.gray} 
-                style={{ marginRight: 6 }} 
-              />
-              <Text style={[styles.categoryText, categoriaAtiva === item.slug && styles.categoryTextAtivo]}>
-                {item.name}
-              </Text>
-            </TouchableOpacity>
-          )}
-        />
-      </View>
-
-      {/* LISTAGEM DE RESULTADOS */}
-      {loading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={COLORS.primary}/>
-          <Text style={styles.loadingText}>Buscando...</Text>
+      {loading && page === 1 ? (
+        <View style={{ flex: 1, backgroundColor: COLORS.white }}>
+          {renderHeader()}
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+          </View>
         </View>
       ) : (
         <FlatList
-          data={lojasFiltradas}
-          keyExtractor={i => i.id.toString()}
+          data={lojas}
+          keyExtractor={(i, index) => i.id.toString() + (i.tipo || '') + index}
+          ListHeaderComponent={renderHeader}
           renderItem={renderItem}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
+          onEndReached={handleLoadMore}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={
+            loadingMore ? (
+              <View style={{ padding: 20, alignItems: 'center' }}>
+                <ActivityIndicator size="small" color={COLORS.primary} />
+              </View>
+            ) : <View style={{ height: 20 }} />
+          }
           ListEmptyComponent={
             <View style={styles.emptyContainer}>
-              <Ionicons name="search-outline" size={60} color={COLORS.border} style={{ marginBottom: 16 }} />
-              <Text style={styles.emptyTitle}>Nenhum resultado</Text>
-              <Text style={styles.emptyDesc}>Não encontramos nada para "{busca}" nesta categoria.</Text>
-              <TouchableOpacity style={styles.clearBtn} onPress={() => { setBusca(''); setCategoriaAtiva('tudo'); }}>
-                <Text style={styles.clearBtnText}>Limpar filtros</Text>
-              </TouchableOpacity>
+              <Ionicons name="search-outline" size={60} color={COLORS.border} />
+              <Text style={styles.emptyTitle}>Nenhum resultado encontrado</Text>
+              <Text style={styles.emptySubtitle}>Tente mudar os filtros de busca ou termo</Text>
             </View>
           }
         />
       )}
+
+      {/* Menu Inferior exatamente conforme a imagem */}
+      <View style={styles.bottomNavContainer}>
+        <TouchableOpacity style={styles.bottomNavItem} onPress={() => router.push('/')}>
+          <Feather name="home" size={20} color={COLORS.gray} />
+          <Text style={styles.bottomNavText}>Início</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.bottomNavItem}>
+          <Ionicons name="compass" size={22} color={COLORS.primary} />
+          <Text style={[styles.bottomNavText, styles.bottomNavTextActive]}>Explorar</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.bottomNavItem} onPress={() => router.push('/src/screens/Agendamentos')}>
+          <Ionicons name="calendar-outline" size={20} color={COLORS.gray} />
+          <Text style={styles.bottomNavText} numberOfLines={1}>Agendamentos</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.bottomNavItem} onPress={() => router.push('/src/screens/Promocoes')}>
+          <Ionicons name="pricetag-outline" size={20} color={COLORS.gray} />
+          <Text style={styles.bottomNavText}>Promoções</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.bottomNavItem} onPress={() => router.push('/src/screens/TelaCarrinho')}>
+          <Feather name="shopping-cart" size={20} color={COLORS.gray} />
+          <Text style={styles.bottomNavText}>Carrinho</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.bottomNavItem} onPress={() => router.push('/src/screens/FavoritosDashboard')}>
+          <Ionicons name="heart-outline" size={20} color={COLORS.gray} />
+          <Text style={styles.bottomNavText}>Favoritos</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.bottomNavItem} onPress={() => router.push('/src/screens/TelaPerfil')}>
+          <Feather name="user" size={20} color={COLORS.gray} />
+          <Text style={styles.bottomNavText}>Perfil</Text>
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: COLORS.white, paddingTop: Platform.OS === 'android' ? 25 : 0 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  
-  // Header
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, backgroundColor: COLORS.white },
-  backBtn: { paddingRight: 12 },
-  searchContainer: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.lightGray, borderRadius: 100, paddingHorizontal: 16, height: 46, borderWidth: 1, borderColor: COLORS.border },
-  searchInput: { flex: 1, marginLeft: 8, fontSize: 15, color: COLORS.secondary },
-  
-  // Categorias
-  categoriesContainer: { paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  categoryChip: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 100 },
-  categoryChipAtivo: { backgroundColor: COLORS.primaryLight, borderColor: COLORS.primary },
-  categoryText: { fontSize: 13, fontWeight: '600', color: COLORS.gray },
-  categoryTextAtivo: { color: COLORS.primary, fontWeight: '800' },
+  safeArea: { 
+    flex: 1, 
+    backgroundColor: '#FFFFFF', 
+    paddingTop: Platform.OS === 'android' ? 40 : 0 
+  },
+  headerComponentContainer: {
+    backgroundColor: '#FFFFFF',
+    paddingBottom: 10,
+  },
+  topHeader: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    paddingHorizontal: 16, 
+    paddingTop: 10,
+    paddingBottom: 16
+  },
+  mainTitle: { 
+    fontSize: 24, 
+    fontWeight: '900', 
+    color: COLORS.secondary, 
+    letterSpacing: -0.5
+  },
+  mainSubtitle: {
+    fontSize: 12,
+    color: COLORS.gray,
+    marginTop: 2,
+  },
+  headerIcons: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    gap: 12
+  },
+  iconBtn: { 
+    position: 'relative', 
+    padding: 2 
+  },
+  iconBtnCircleHeart: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badge: { 
+    position: 'absolute', 
+    top: -6, 
+    right: -8, 
+    backgroundColor: COLORS.primary, 
+    width: 18, 
+    height: 18, 
+    borderRadius: 9, 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    borderWidth: 2, 
+    borderColor: '#FFFFFF' 
+  },
+  badgeText: { 
+    color: COLORS.white, 
+    fontSize: 9, 
+    fontWeight: 'bold' 
+  },
+  avatarContainer: { 
+    width: 40, 
+    height: 40, 
+    borderRadius: 20, 
+    overflow: 'hidden', 
+    borderWidth: 2,
+    borderColor: COLORS.border,
+  },
+  avatar: { 
+    width: '100%', 
+    height: '100%' 
+  },
+  avatarPlaceholder: {
+    flex: 1,
+    backgroundColor: COLORS.lightGray,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 
-  // Listagem
-  list: { padding: 16, paddingBottom: 40 },
-  card: { backgroundColor: COLORS.white, borderRadius: 20, marginBottom: 24, overflow: 'hidden', borderWidth: 1, borderColor: COLORS.border, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 3 },
-  imageContainer: { position: 'relative', width: '100%', height: 180 },
-  image: { width: '100%', height: '100%', backgroundColor: COLORS.lightGray },
-  favoriteBtn: { position: 'absolute', top: 12, right: 12, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.3)', alignItems: 'center', justifyContent: 'center' },
+  searchRow: {
+    paddingHorizontal: 16,
+    marginBottom: 16,
+  },
+  searchContainer: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: '#FFFFFF',
+    borderRadius: 100, 
+    paddingHorizontal: 20, 
+    height: 52,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  searchInput: { 
+    flex: 1, 
+    marginLeft: 12, 
+    fontSize: 14, 
+    color: COLORS.textDark, 
+    fontWeight: '500' 
+  },
   
-  info: { padding: 16 },
-  titleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
-  title: { fontSize: 18, fontWeight: '900', color: COLORS.secondary, flex: 1, marginRight: 10 },
-  subtitle: { fontSize: 14, color: COLORS.gray, fontWeight: '500' },
-  ratingBox: { flexDirection: 'row', alignItems: 'center' },
-  ratingText: { fontSize: 14, fontWeight: '800', color: COLORS.secondary, marginLeft: 4 },
+  categoryGridContainer: {
+    paddingHorizontal: 16,
+    paddingBottom: 24,
+  },
+  categoryGridItem: {
+    alignItems: 'center',
+    marginRight: 20,
+    width: 70,
+  },
+  categoryGridIconCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    borderWidth: 2,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+    backgroundColor: COLORS.white,
+  },
+  categoryGridIconCircleActive: {
+    borderColor: COLORS.primary, 
+    backgroundColor: COLORS.primaryLight,
+  },
+  categoryGridText: {
+    fontSize: 11,
+    color: COLORS.gray,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  categoryGridTextActive: {
+    color: COLORS.primary, 
+    fontWeight: '700',
+  },
 
-  // Empty State & Loading
-  loadingText: { marginTop: 12, color: COLORS.gray, fontWeight: '600' },
-  emptyContainer: { alignItems: 'center', justifyContent: 'center', marginTop: 60, paddingHorizontal: 20 },
-  emptyTitle: { fontSize: 18, fontWeight: '900', color: COLORS.secondary, marginBottom: 8 },
-  emptyDesc: { textAlign: 'center', color: COLORS.gray, fontSize: 14, lineHeight: 20, marginBottom: 20 },
-  clearBtn: { backgroundColor: COLORS.primaryLight, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 100 },
-  clearBtnText: { color: COLORS.primary, fontWeight: '800', fontSize: 14 }
+  /* Banner de Viagem */
+  bannerContainer: {
+    width: width - 32,
+    height: 180,
+    borderRadius: 20,
+    marginHorizontal: 16,
+    marginBottom: 24,
+    overflow: 'hidden',
+    position: 'relative',
+    backgroundColor: '#000',
+  },
+  bannerImage: {
+    width: '100%',
+    height: '100%',
+  },
+  bannerOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+  },
+  bannerContent: {
+    position: 'absolute',
+    top: 24,
+    left: 20,
+    right: 20,
+  },
+  bannerBadge: {
+    backgroundColor: COLORS.primary, 
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+    marginBottom: 10,
+  },
+  bannerBadgeText: {
+    color: COLORS.white, 
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  bannerTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: COLORS.white,
+    lineHeight: 24,
+  },
+  bannerSubtitle: {
+    fontSize: 12,
+    color: '#E5E7EB',
+    marginTop: 6,
+    fontWeight: '500',
+  },
+  
+  sectionHeader: { 
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginHorizontal: 16, 
+    marginBottom: 16 
+  },
+  sectionTitle: { 
+    fontSize: 16, 
+    fontWeight: '800', 
+    color: COLORS.secondary 
+  },
+  
+  list: { 
+    paddingBottom: 20 
+  }, 
+  
+  card: { 
+    backgroundColor: COLORS.white, 
+    borderRadius: 16, 
+    marginHorizontal: 16,
+    marginBottom: 20,
+    overflow: 'hidden', 
+    borderWidth: 1, 
+    borderColor: '#F0F0F0',
+    shadowColor: '#000', 
+    shadowOffset: { width: 0, height: 2 }, 
+    shadowOpacity: 0.05, 
+    shadowRadius: 8, 
+    elevation: 2 
+  },
+  imageContainer: { 
+    width: '100%', 
+    height: 180, 
+    position: 'relative' 
+  },
+  image: { 
+    width: '100%', 
+    height: '100%' 
+  },
+  imagePlaceholder: {
+    width: '100%', 
+    height: '100%',
+    backgroundColor: '#E5E7EB',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  placeholderText: {
+    color: COLORS.gray,
+    fontSize: 12,
+    marginTop: 6,
+    fontWeight: '600'
+  },
+  badgeAberto: { 
+    position: 'absolute', 
+    top: 16, 
+    left: 16, 
+    backgroundColor: 'rgba(16, 185, 129, 0.9)', 
+    paddingHorizontal: 12, 
+    paddingVertical: 6, 
+    borderRadius: 8
+  },
+  badgeAbertoText: { 
+    fontSize: 10, 
+    fontWeight: '800', 
+    color: COLORS.white,
+    textTransform: 'uppercase',
+  },
+  badgeServico: { 
+    position: 'absolute', 
+    top: 16, 
+    left: 16, 
+    backgroundColor: COLORS.primary, 
+    paddingHorizontal: 12, 
+    paddingVertical: 6, 
+    borderRadius: 8 
+  },
+  badgeServicoText: { 
+    fontSize: 10, 
+    fontWeight: '800', 
+    color: COLORS.white,
+    textTransform: 'uppercase'
+  },
+  favoriteBtn: { 
+    position: 'absolute', 
+    top: 16, 
+    right: 16, 
+    width: 36, 
+    height: 36, 
+    borderRadius: 18, 
+    backgroundColor: 'rgba(0,0,0,0.3)', 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+  },
+  
+  info: { 
+    padding: 16,
+  },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  title: { 
+    flex: 1,
+    fontSize: 16, 
+    fontWeight: '800', 
+    color: COLORS.secondary, 
+    marginRight: 10
+  },
+  ratingRow: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    gap: 4
+  },
+  ratingTextPrincipal: { 
+    fontSize: 13, 
+    color: COLORS.textDark, 
+    fontWeight: '800' 
+  },
+  ratingTextSecundario: {
+    fontSize: 12,
+    color: COLORS.gray,
+    fontWeight: '500',
+  },
+  
+  distanceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 16,
+  },
+  distanceText: {
+    fontSize: 12,
+    color: COLORS.gray,
+    fontWeight: '500'
+  },
+  
+  subtitle: { 
+    fontSize: 12, 
+    color: COLORS.gray, 
+    marginBottom: 10, 
+    fontWeight: '500',
+    flex: 1,
+  },
+  
+  bottomCardRow: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'flex-end',
+    gap: 16,
+  },
+  branchContainer: {
+    flex: 1,
+  },
+  priceContainer: { 
+    alignItems: 'flex-start',
+  },
+  priceLabel: { 
+    fontSize: 10, 
+    color: COLORS.gray, 
+    marginBottom: 4,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  priceValue: { 
+    fontSize: 17, 
+    fontWeight: '900', 
+    color: COLORS.primary, 
+  },
+  agendamentoRow: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    gap: 4 
+  },
+  agendamentoText: { 
+    color: COLORS.success, 
+    fontSize: 12, 
+    fontWeight: '700' 
+  },
+  agendarBtn: {
+    backgroundColor: COLORS.primaryLight,
+    borderWidth: 1,
+    borderColor: COLORS.primary, 
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+  },
+  agendarBtnText: {
+    color: COLORS.primary, 
+    fontSize: 13,
+    fontWeight: '800',
+  },
+
+  emptyContainer: { 
+    alignItems: 'center', 
+    marginTop: 60, 
+    paddingHorizontal: 20 
+  },
+  emptyTitle: { 
+    fontSize: 16, 
+    fontWeight: '800', 
+    color: COLORS.secondary, 
+    marginTop: 12 
+  },
+  emptySubtitle: { 
+    fontSize: 13, 
+    color: COLORS.gray, 
+    marginTop: 6, 
+    textAlign: 'center', 
+    fontWeight: '500' 
+  },
+
+  /* Menu Inferior Estilizado conforme a imagem */
+  bottomNavContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+    paddingVertical: 8,
+    paddingBottom: Platform.OS === 'ios' ? 20 : 8,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+  },
+  bottomNavItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bottomNavText: {
+    fontSize: 9,
+    color: COLORS.gray,
+    marginTop: 4,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  bottomNavTextActive: {
+    color: COLORS.primary,
+    fontWeight: '700',
+  }
 });

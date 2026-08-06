@@ -7,6 +7,8 @@ use Illuminate\Http\Request;
 use App\Models\Servico;
 use App\Models\Estabelecimento;
 use App\Models\Avaliacao;
+use App\Models\ItemAluguel; // Importante adicionar o Model
+use App\Models\Agendamento; // Importante adicionar o Model
 use Carbon\Carbon;
 
 class CatalogoMobileController extends Controller
@@ -36,6 +38,8 @@ class CatalogoMobileController extends Controller
             ], 200);
 
         } catch (\Exception $e) {
+            // Adicionado log para ajudar você a debugar caso dê erro 500
+            \Log::error('Erro ao buscar detalhes do serviço: ' . $e->getMessage());
             return response()->json(['error' => 'Serviço não encontrado.'], 404);
         }
     }
@@ -45,10 +49,17 @@ class CatalogoMobileController extends Controller
         try {
             $estabelecimento = Estabelecimento::findOrFail($id);
 
-            $outrosServicos = Servico::where('estabelecimento_id', $id)
+            // 1. Busca os serviços ativos
+            $servicos = Servico::where('estabelecimento_id', $id)
                 ->where('ativo', true)
                 ->get();
 
+            // 2. Busca os itens de aluguel ativos e disponíveis
+            $itensAluguel = ItemAluguel::where('estabelecimento_id', $id)
+                ->where('ativo', true)
+                ->get();
+
+            // 3. Busca as avaliações
             $avaliacoes = Avaliacao::with('usuario:id,name,foto_perfil')
                 ->where('estabelecimento_id', $id)
                 ->where('publica', true)
@@ -68,11 +79,13 @@ class CatalogoMobileController extends Controller
                     'cidade' => $estabelecimento->cidade,
                     'estado' => $estabelecimento->estado,
                 ],
-                'servicos_oferecidos' => $outrosServicos,
+                'servicos_oferecidos' => $servicos,
+                'itens_aluguel' => $itensAluguel, // Enviando os itens de aluguel para o app
                 'todas_avaliacoes' => $avaliacoes
             ], 200);
 
         } catch (\Exception $e) {
+            \Log::error('Erro ao buscar catálogo do estabelecimento: ' . $e->getMessage());
             return response()->json(['error' => 'Estabelecimento não encontrado.'], 404);
         }
     }

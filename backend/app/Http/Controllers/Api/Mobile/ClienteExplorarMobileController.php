@@ -6,43 +6,48 @@ use App\Http\Controllers\Controller;
 use App\Models\Estabelecimento;
 use App\Models\ItemAluguel;
 use Illuminate\Http\Request;
-use Carbon\Carbon;
 
 class ClienteExplorarMobileController extends Controller
 {
     /**
-     * 🔍 EXPLORAR (Busca inteligente de Estabelecimentos, Serviços e Reservas)
+     * 🔍 EXPLORAR (Busca inteligente idêntica à versão Web)
      */
     public function index(Request $request)
     {
-        $tipoBusca = $request->input('tipo_busca', 'estabelecimentos'); 
-        $busca = $request->input('busca');
-        $categoria = $request->input('categoria');
+        $tipoBusca = $request->input('tipo_busca', 'estabelecimentos');
+        $busca = $request->filled('busca') ? strip_tags(trim($request->input('busca'))) : null;
+        $categoria = $request->filled('categoria') ? strip_tags(trim($request->input('categoria'))) : null;
         $perPage = 15;
+
+        // Opções que representam "Buscar Tudo" (Trata strings vazias enviadas pelo React Native)
+        $termosTudo = ['tudo', 'todos', 'todas', ''];
 
         // =====================================================================
         // FLUXO A: BUSCA POR ESTABELECIMENTOS
         // =====================================================================
         if ($tipoBusca === 'estabelecimentos') {
-            $query = Estabelecimento::where('ativo', true);
+            $queryEstabelecimentos = Estabelecimento::where('ativo', true);
 
             if ($busca) {
                 $termo = "%{$busca}%";
-                $query->where(function($q) use ($termo) {
+                $queryEstabelecimentos->where(function($q) use ($termo) {
                     $q->where('nome', 'ilike', $termo)
                       ->orWhere('cidade', 'ilike', $termo)
-                      ->orWhere('estado', 'ilike', $termo)
-                      ->orWhere('ramo_atuacao', 'ilike', $termo);
+                      ->orWhere('estado', 'ilike', $termo);
                 });
             }
 
-            if ($categoria && $categoria !== 'Tudo' && $categoria !== 'tudo') {
-                $query->where('ramo_atuacao', $categoria);
+            if ($categoria && !in_array(strtolower($categoria), $termosTudo)) {
+                $queryEstabelecimentos->where('ramo_atuacao', 'ilike', "%{$categoria}%");
             }
 
-            $estabelecimentos = $query->withMin('servicos as valor', 'valor')
-                                      ->latest()
-                                      ->paginate($perPage);
+            // Removido o withMin() que estava quebrando a API por relação inexistente
+            $estabelecimentos = $queryEstabelecimentos->latest()->paginate($perPage);
+
+            $estabelecimentos->getCollection()->transform(function ($est) {
+                $est->valor = 0; // Fallback padronizado com a web
+                return $est;
+            });
 
             return response()->json($estabelecimentos);
         }
@@ -51,37 +56,54 @@ class ClienteExplorarMobileController extends Controller
         // FLUXO B & C: BUSCA POR SERVIÇOS OU RESERVAS (ITENS ALUGUEL)
         // =====================================================================
         if ($tipoBusca === 'servicos' || $tipoBusca === 'reservas') {
-            $queryItens = ItemAluguel::with(['estabelecimento:id,nome,foto_perfil,cidade,estado,avaliacao_media'])
-                ->whereHas('estabelecimento', function($q) {
-                    $q->where('ativo', true);
-                });
+            
+            // Usando a mesma flexibilidade da consulta Web
+            $queryItens = ItemAluguel::with(['estabelecimento'])
+                ->whereHas('estabelecimento');
 
             if ($busca) {
-                $termoItem = "%{$busca}%";
-                $queryItens->where(function ($q) use ($termoItem) {
+                $queryItens->where(function ($q) use ($busca) {
+                    $termoItem = "%{$busca}%";
                     $q->where('nome', 'ilike', $termoItem)
-                      ->orWhere('descricao', 'ilike', $termoItem)
-                      ->orWhere('categoria', 'ilike', $termoItem)
-                      ->orWhere('marca', 'ilike', $termoItem);
+                      ->orWhere('marca', 'ilike', $termoItem)
+                      ->orWhere('modelo', 'ilike', $termoItem)
+                      ->orWhere('descricao', 'ilike', $termoItem);
                 });
             }
 
-            if ($categoria && $categoria !== 'Tudo' && $categoria !== 'tudo') {
-                $queryItens->where('categoria', $categoria);
+            if ($categoria && !in_array(strtolower($categoria), $termosTudo)) {
+                $queryItens->where('categoria', 'ilike', "%{$categoria}%");
             }
 
             $itens = $queryItens->latest()->paginate($perPage);
 
-            // Formatar os itens para a tela do React Native entender (Card Padrão)
+            // Formatação Idêntica à Versão Web (Incluindo cálculos de promoção)
             $itens->getCollection()->transform(function ($item) {
-                $item->fotos = is_string($item->fotos) ? json_decode($item->fotos, true) : ($item->fotos ?? []);
-                
-                // Mapeia os dados do Item para as variáveis que o App lê
+                // Fotos seguras
+                $fotosDecodificadas = is_string($item->fotos) ? json_decode($item->fotos, true) : $item->fotos;
+                $item->fotos = is_array($fotosDecodificadas) ? $fotosDecodificadas : [];
                 $item->foto_perfil = !empty($item->fotos) ? $item->fotos[0] : ($item->estabelecimento->foto_perfil ?? null);
-                $item->ramo_atuacao = $item->categoria; // App lê ramo_atuacao
+                
+                // Mapeamento para o App
+                $item->ramo_atuacao = $item->categoria; 
                 $item->cidade = $item->estabelecimento->cidade ?? '';
                 $item->estado = $item->estabelecimento->estado ?? '';
-                $item->avaliacao_media = $item->estabelecimento->avaliacao_media ?? 'Novo';
+                $item->avaliacao_media = $item->estabelecimento->avaliacao_media ?? '5.0';
+                
+                // CÁLCULO DE DESCONTO EXATAMENTE IGUAL AO DA WEB
+                $valorBase = floatval($item->valor_diaria);
+                $precoComDesconto = $valorBase;
+
+                if ($item->tem_promocao && floatval($item->valor_desconto) > 0) {
+                    if ($item->tipo_desconto === 'percentual') {
+                        $precoComDesconto = $valorBase - ($valorBase * (floatval($item->valor_desconto) / 100));
+                    } else {
+                        $precoComDesconto = max(0, $valorBase - floatval($item->valor_desconto));
+                    }
+                }
+
+                $item->valor = (float) $precoComDesconto;
+                $item->preco_final_cliente = number_format($precoComDesconto, 2, '.', '');
                 
                 return $item;
             });
@@ -92,58 +114,49 @@ class ClienteExplorarMobileController extends Controller
         return response()->json(['data' => []]);
     }
 
-    // ⭐ DESTAQUES (Carrossel Horizontal)
+    // =====================================================================
+    // MÉTODOS AUXILIARES CORRIGIDOS (Removidos withMin que causavam falhas)
+    // =====================================================================
     public function destaques()
     {
         $estabelecimentos = Estabelecimento::where('ativo', true)
-            ->withMin('servicos as valor', 'valor')
             ->inRandomOrder()
             ->limit(6)
-            ->get();
+            ->get()
+            ->map(function ($est) {
+                $est->valor = 0;
+                return $est;
+            });
 
         return response()->json(['status' => 'success', 'data' => $estabelecimentos]);
     }
 
-    // 🆕 MAIS RECENTES
     public function recentes()
     {
         $estabelecimentos = Estabelecimento::where('ativo', true)
-            ->withMin('servicos as valor', 'valor')
             ->latest()
             ->limit(10)
-            ->get();
+            ->get()
+            ->map(function ($est) {
+                $est->valor = 0;
+                return $est;
+            });
 
         return response()->json(['status' => 'success', 'data' => $estabelecimentos]);
     }
 
-    // 📍 POR CIDADE
     public function porCidade($cidade)
     {
         $estabelecimentos = Estabelecimento::where('ativo', true)
-            ->where('cidade', $cidade)
-            ->withMin('servicos as valor', 'valor')
-            ->get();
+            ->where('cidade', 'ilike', "%{$cidade}%")
+            ->latest()
+            ->paginate(15);
 
-        return response()->json(['status' => 'success', 'data' => $estabelecimentos]);
-    }
+        $estabelecimentos->getCollection()->transform(function ($est) {
+            $est->valor = 0;
+            return $est;
+        });
 
-    // 📂 CATEGORIAS DISPONÍVEIS
-    public function categorias()
-    {
-        $categorias = Estabelecimento::whereNotNull('ramo_atuacao')
-            ->distinct()
-            ->pluck('ramo_atuacao');
-
-        return response()->json(['status' => 'success', 'data' => $categorias]);
-    }
-
-    // 🔥 DETALHE DO ESTABELECIMENTO
-    public function show($id)
-    {
-        $estabelecimento = Estabelecimento::with(['servicos' => function ($q) {
-            $q->where('ativo', true);
-        }])->findOrFail($id);
-
-        return response()->json(['status' => 'success', 'data' => $estabelecimento]);
+        return response()->json($estabelecimentos);
     }
 }

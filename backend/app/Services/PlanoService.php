@@ -3,73 +3,73 @@
 namespace App\Services;
 
 use App\Models\User;
+use App\Models\HistoricoPonto;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class PlanoService
 {
-   
-    const LIMITES = [
-        'gratuito' => [ 
-            'max_estabelecimentos' => 1,
-            'max_servicos' => 5,
-            'max_funcionarios' => 1,
-            'tem_relatorio_avancado' => false,
-            'pode_criar_cupons' => false,
+    // Catálogo Oficial com as Regras de Negócio e Pontuação
+    const CATALOGO = [
+        'cliente_flex' => [
+            'valor' => 14.90, 'pontos' => 500, 'ciclo' => 'mensal', 'tipo' => 'cliente'
         ],
-        'basico' => [
-            'max_estabelecimentos' => 3,
-            'max_servicos' => 15,
-            'max_funcionarios' => 2,
-            'tem_relatorio_avancado' => false,
-            'pode_criar_cupons' => false,
+        'cliente_anual' => [
+            'valor' => 9.90, 'pontos' => 600, 'ciclo' => 'anual', 'tipo' => 'cliente'
         ],
-        'profissional' => [
-            'max_estabelecimentos' => 15,
-            'max_servicos' => 60,
-            'max_funcionarios' => 10,
-            'tem_relatorio_avancado' => true,
-            'pode_criar_cupons' => true, 
+        'proprietario' => [
+            'valor' => 25.00, 'pontos' => 1000, 'ciclo' => 'mensal', 'tipo' => 'estabelecimento',
+            'max_estabelecimentos' => 1, 'max_servicos' => 20
         ],
-        'premium' => [
-            'max_estabelecimentos' => 9999, 
-            'max_servicos' => 9999, 
-            'max_funcionarios' => 9999, 
-            'tem_relatorio_avancado' => true,
-            'pode_criar_cupons' => true,
+        'socio_mensal' => [
+            'valor' => 50.00, 'pontos' => 2500, 'ciclo' => 'mensal', 'tipo' => 'estabelecimento',
+            'max_estabelecimentos' => 3, 'max_servicos' => 999
+        ],
+        'socio_anual' => [
+            'valor' => 520.00, 'pontos' => 2500, 'ciclo' => 'anual', 'tipo' => 'estabelecimento',
+            'parcelas' => 5, 'valor_parcela' => 104.00,
+            'max_estabelecimentos' => 3, 'max_servicos' => 999
         ]
     ];
 
     /**
-     * Verifica se o usuário pode criar mais um estabelecimento
+     * Adiciona os pontos ao usuário e registra no histórico de forma segura
      */
-    public function podeCriarEstabelecimento(User $user): bool
+    public function distribuirPontosAssinatura(User $user, string $plano)
     {
-        $plano = $user->plano_atual; // Usa o helper que criamos no Model
-        $limite = self::LIMITES[$plano]['max_estabelecimentos'] ?? 1;
-        
-        $cadastrados = $user->estabelecimentos()->count();
-        
-        return $cadastrados < $limite;
+        if (!array_key_exists($plano, self::CATALOGO)) return false;
+
+        $pontosGanhos = self::CATALOGO[$plano]['pontos'];
+
+        DB::transaction(function () use ($user, $pontosGanhos, $plano) {
+            // Acumula no saldo principal do usuário
+            $user->increment('pontos_saldo', $pontosGanhos);
+
+            // Grava o extrato
+            HistoricoPonto::create([
+                'usuario_id' => $user->id,
+                'estabelecimento_id' => null, // Pontos globais da plataforma
+                'tipo' => 'ganho',
+                'descricao' => "Renovação do plano {$plano}",
+                'quantidade' => $pontosGanhos,
+            ]);
+        });
+
+        // Dispara notificação push (exemplo abstrato)
+        // $user->notify(new PontosDisponiveisNotification($pontosGanhos));
+
+        return true;
     }
 
     /**
-     * Verifica se pode criar mais um serviço dentro de um estabelecimento
+     * Retorna os benefícios ativos, permitindo o uso até a data de expiração 
+     * mesmo se cancelado antes (controle de ciclo de vida)
      */
-    public function podeCriarServico(User $user, $estabelecimentoId): bool
+    public function obterStatusBeneficios(User $user)
     {
-        $plano = $user->plano_atual;
-        $limite = self::LIMITES[$plano]['max_servicos'] ?? 5;
-        
-        $cadastrados = \App\Models\Servico::where('estabelecimento_id', $estabelecimentoId)->count();
-        
-        return $cadastrados < $limite;
-    }
-
-    /**
-     * Retorna se a loja tem acesso à aba de Marketing (Cupons)
-     */
-    public function temAcessoMarketing(User $user): bool
-    {
-        $plano = $user->plano_atual;
-        return self::LIMITES[$plano]['pode_criar_cupons'] ?? false;
+        if ($user->plano_expira_em && Carbon::now()->lessThanOrEqualTo($user->plano_expira_em)) {
+            return 'ativo';
+        }
+        return 'inativo';
     }
 }

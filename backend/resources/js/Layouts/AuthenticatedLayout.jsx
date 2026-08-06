@@ -139,6 +139,15 @@ export default function AuthenticatedLayout({ header, children }) {
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Dashboard</span>
                             </Link>
 
+                            {/* 👇 AQUI ESTÁ O NOVO LINK DE ESTORNOS PARA O CLIENTE */}
+                            <Link href={route('cliente.estornos')} title="Estornos" className={`${baseLinkClass} ${route().current('cliente.estornos') ? activeLinkClass : inactiveLinkClass}`}>
+                                <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path>
+                                </svg>
+                                <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Meus Estornos</span>
+                            </Link>
+                            {/* 👆 FIM DO LINK DE ESTORNOS */}
+
                             <Link href={route('estabelecimentos.index')} title="Estabelecimentos" className={`${baseLinkClass} ${inactiveLinkClass}`}>
                                 <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V10l-9-4-9 4v11m18 0h-4v-5H9v5H5m14 0H5"></path></svg>
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Estabelecimentos</span>
@@ -224,6 +233,17 @@ export default function AuthenticatedLayout({ header, children }) {
         Assistente de Viagens
     </span>
 </Link>
+
+
+
+{/* 👇 AQUI ESTÁ O NOVO LINK DE ESTORNOS PARA O CLIENTE */}
+                            <Link href={route('cliente.estornos')} title="Estornos" className={`${baseLinkClass} ${route().current('cliente.estornos') ? activeLinkClass : inactiveLinkClass}`}>
+                                <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path>
+                                </svg>
+                                <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Meus Estornos</span>
+                            </Link>
+                            {/* 👆 FIM DO LINK DE ESTORNOS */}
                             
                             <Link href={route('cliente.carteira')} title="Carteira" className={`${baseLinkClass} ${route().current('cliente.carteira') ? activeLinkClass : inactiveLinkClass}`}>
                                <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg>

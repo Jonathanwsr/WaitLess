@@ -9,37 +9,43 @@ import {
   SafeAreaView, 
   ActivityIndicator,
   Platform,
-  Dimensions
+  useWindowDimensions
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const { width } = Dimensions.get('window');
+import * as SecureStore from 'expo-secure-store';
 
 // --- CORES PADRÃO ---
 const COLORS = {
-  primary: '#FF5A00', 
+  primary: '#FF5A00', // Laranja Principal
   primaryLight: '#FFF4ED',
-  secondary: '#111827',
-  gray: '#6B7280',
-  lightGray: '#F3F4F6',
+  secondary: '#222222', // Cinza quase escuro (Estilo Airbnb)
+  gray: '#717171', // Cinza texto (Estilo Airbnb)
+  lightGray: '#F7F7F9',
   white: '#FFFFFF',
-  border: '#E5E7EB',
-  warning: '#FBBF24', 
+  border: '#EBEBEB',
+  warning: '#FF385C', 
+  star: '#FFB800',
   success: '#10B981',
 };
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api/mobile';
+// Tratamento seguro da URL para evitar barras duplicadas e erros de rota
+const ENV_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api';
+const cleanBaseUrl = ENV_URL.endsWith('/') ? ENV_URL.slice(0, -1) : ENV_URL;
+const API_URL = `${cleanBaseUrl}/mobile`;
 
-// Subcategorias de filtros
-const CATEGORIAS = [
+type MaterialIconName = React.ComponentProps<typeof MaterialIcons>['name'];
+
+const CATEGORIAS: { nome: string; icone: MaterialIconName; slug: string }[] = [
   { nome: 'Tudo', icone: 'apps', slug: 'tudo' },
   { nome: 'Beleza', icone: 'content-cut', slug: 'beleza' },
   { nome: 'Barbearia', icone: 'storefront', slug: 'barbearia' },
   { nome: 'Estética', icone: 'face', slug: 'estetica' },
   { nome: 'Automotivo', icone: 'directions-car', slug: 'automotivo' },
+  { nome: 'Carros/Motos', icone: 'two-wheeler', slug: 'veiculos' },
+  { nome: 'Flats/Estadias', icone: 'hotel', slug: 'flats' },
   { nome: 'Pets', icone: 'pets', slug: 'pets' },
   { nome: 'Casa/Faxina', icone: 'cleaning-services', slug: 'casa' },
   { nome: 'Eventos', icone: 'event', slug: 'eventos' },
@@ -47,13 +53,32 @@ const CATEGORIAS = [
   { nome: 'Equipamentos', icone: 'build', slug: 'equipamentos' },
 ];
 
+interface ItemExplorar {
+  id: string | number;
+  nome?: string;
+  name?: string;
+  foto_perfil?: string;
+  fotos?: string[];
+  tem_promocao?: boolean;
+  avaliacao_media?: string | number;
+  ramo_atuacao?: string;
+  categoria?: string;
+  cidade?: string;
+  estado?: string;
+  valor?: string | number;
+  valor_diaria?: string | number;
+  modelo?: string;
+  distancia?: string | number;
+  duracao_minutos?: string | number;
+}
+
 export default function TelaExplorar() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const { width } = useWindowDimensions(); // Usado para garantir a responsividade
 
-  // CORREÇÃO AQUI: Adicionado <any[]> para evitar o erro "never"
-  const [itens, setItens] = useState<any[]>([]);
-  const [destaques, setDestaques] = useState<any[]>([]);
+  const [itens, setItens] = useState<ItemExplorar[]>([]);
+  const [destaques, setDestaques] = useState<ItemExplorar[]>([]);
   
   const [carregando, setCarregando] = useState<boolean>(true);
   const [busca, setBusca] = useState<string>(params.query ? params.query.toString() : '');
@@ -72,37 +97,67 @@ export default function TelaExplorar() {
     try {
       const token = await AsyncStorage.getItem('@waitless_token');
       
-      const queryParams = new URLSearchParams({
-        tipo_busca: tipoAtivo,
-        categoria: categoriaAtiva === 'tudo' ? '' : categoriaAtiva,
-        busca: busca
-      }).toString();
+      if (!token) {
+        router.replace('/autenticacao/login' as never);
+        return;
+      }
 
-      const res = await fetch(`${API_URL}/explorar?${queryParams}`, {
+      const userDataString = await SecureStore.getItemAsync('userData');
+      let userId = '';
+      if (userDataString) {
+        const usuario = JSON.parse(userDataString);
+        userId = usuario.id || usuario.user_id || ''; 
+      }
+      
+      const paramsObj: Record<string, string> = {
+        tipo_busca: tipoAtivo,
+      };
+
+      if (busca.trim() !== '') {
+        paramsObj.busca = busca.trim();
+      }
+      if (categoriaAtiva !== 'tudo') {
+        paramsObj.categoria = categoriaAtiva;
+      }
+      if (userId) {
+        paramsObj.user_id = userId;
+      }
+
+      const queryParams = new URLSearchParams(paramsObj).toString();
+      const endpoint = `${API_URL}/explorar?${queryParams}`;
+
+      const res = await fetch(endpoint, {
+        method: 'GET',
         headers: { 
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${token}`, 
           'Accept': 'application/json' 
         }
       });
-      const data = await res.json();
       
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Erro no servidor: ${res.status}`);
+      }
+
+      const data = await res.json();
       const resultados = Array.isArray(data) ? data : (data.data || []);
       
       setDestaques(resultados.slice(0, 4)); 
       setItens(resultados.slice(4)); 
       
     } catch (e) {
-      console.log('Erro ao conectar com a API:', e);
+      setDestaques([]);
+      setItens([]);
     } finally {
       setCarregando(false);
     }
   };
 
-  const irParaDetalhes = (id: any) => {
+  const irParaDetalhes = (id: string | number) => {
     router.push({ 
-      pathname: '/src/screens/ExplorarDetalhes', 
+      pathname: '/src/screens/ExplorarDetalhes' as never, 
       params: { 
-        id: id, 
+        id: id.toString(), 
         tipo: tipoAtivo 
       } 
     });
@@ -123,14 +178,24 @@ export default function TelaExplorar() {
         </View>
 
         <View style={styles.headerIcons}>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/src/screens/FavoritosDashboard' as any)}>
+          <TouchableOpacity 
+            style={styles.iconBtn} 
+            onPress={() => router.push('/modal' as never)}
+          >
+            <Ionicons name="grid-outline" size={24} color={COLORS.secondary} />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/src/screens/FavoritosDashboard' as never)}>
             <Ionicons name="heart-outline" size={24} color={COLORS.secondary} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/src/screens/PagamentoScreen' as any)}>
+
+          <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/src/screens/TelaCarrinho' as never)}>
             <Ionicons name="cart-outline" size={24} color={COLORS.secondary} />
             <View style={styles.badge} />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.profileBtn} onPress={() => router.push('/src/screens/TelaPerfil' as any)}>
+
+          {/* Rota ajustada e correta para TelaPerfil */}
+          <TouchableOpacity style={styles.profileBtn} onPress={() => router.push('/src/screens/TelaPerfil' as never)}>
             <Ionicons name="person" size={16} color={COLORS.white} />
           </TouchableOpacity>
         </View>
@@ -140,9 +205,9 @@ export default function TelaExplorar() {
 
         {/* BARRA DE PESQUISA */}
         <View style={styles.searchContainer}>
-          <Ionicons name="search" size={20} color={COLORS.gray} style={{ marginRight: 10 }} />
+          <Ionicons name="search" size={20} color={COLORS.secondary} style={{ marginRight: 10 }} />
           <TextInput
-            placeholder="O que você está buscando?"
+            placeholder="Busque por nome, marca, modelo, flat, pet..."
             placeholderTextColor={COLORS.gray}
             style={styles.searchInput}
             value={busca}
@@ -151,7 +216,7 @@ export default function TelaExplorar() {
           />
         </View>
 
-        {/* FILTRO PRINCIPAL (TIPO DE BUSCA) */}
+        {/* FILTRO PRINCIPAL */}
         <View style={styles.typeFilterContainer}>
           {[
             { label: 'Locais', value: 'estabelecimentos' },
@@ -162,6 +227,7 @@ export default function TelaExplorar() {
               key={tipo.value} 
               style={[styles.typeBtn, tipoAtivo === tipo.value && styles.typeBtnAtivo]}
               onPress={() => setTipoAtivo(tipo.value)}
+              activeOpacity={0.8}
             >
               <Text style={[styles.typeBtnText, tipoAtivo === tipo.value && styles.typeBtnTextAtivo]}>
                 {tipo.label}
@@ -179,7 +245,11 @@ export default function TelaExplorar() {
               onPress={() => setCategoriaAtiva(cat.slug)}
             >
               <View style={[styles.iconContainer, categoriaAtiva === cat.slug && styles.iconContainerAtivo]}>
-                <MaterialIcons name={cat.icone as any} size={26} color={categoriaAtiva === cat.slug ? COLORS.primary : COLORS.gray} />
+                <MaterialIcons 
+                  name={cat.icone} 
+                  size={26} 
+                  color={categoriaAtiva === cat.slug ? COLORS.white : COLORS.secondary} 
+                />
               </View>
               <Text style={[styles.categoriaTexto, categoriaAtiva === cat.slug && styles.categoriaTextoAtivo]}>
                 {cat.nome}
@@ -218,7 +288,7 @@ export default function TelaExplorar() {
                   {destaques.map((item, index) => (
                     <TouchableOpacity 
                       key={index} 
-                      style={styles.cardDestaque}
+                      style={[styles.cardDestaque, { width: width * 0.75 }]} // Largura baseada no tamanho da tela
                       onPress={() => irParaDetalhes(item.id)}
                       activeOpacity={0.9}
                     >
@@ -240,7 +310,7 @@ export default function TelaExplorar() {
                         <View style={styles.rowBetween}>
                           <Text style={styles.titleDestaque} numberOfLines={1}>{item.nome || item.name}</Text>
                           <View style={styles.ratingRow}>
-                            <Ionicons name="star" size={12} color={COLORS.warning} />
+                            <Ionicons name="star" size={12} color={COLORS.star} />
                             <Text style={styles.ratingText}> {item.avaliacao_media || '5.0'}</Text>
                           </View>
                         </View>
@@ -248,11 +318,11 @@ export default function TelaExplorar() {
                           {item.ramo_atuacao || item.categoria} • {item.cidade || 'Local'}
                         </Text>
                         
-                        <View style={styles.priceRowDestaque}>
-                          <Text style={styles.priceLabel}>A partir de</Text>
+                        <View style={styles.priceRow}>
                           <Text style={styles.priceValue}>
-                            R$ {parseFloat(item.valor || item.valor_diaria || '0').toFixed(2).replace('.', ',')}
+                            R$ {parseFloat((item.valor || item.valor_diaria || '0').toString()).toFixed(2).replace('.', ',')}
                           </Text>
+                          <Text style={styles.priceLabel}> / diária ou serviço</Text>
                         </View>
                       </View>
                     </TouchableOpacity>
@@ -269,40 +339,44 @@ export default function TelaExplorar() {
                 {itens.map((item, index) => (
                   <TouchableOpacity 
                     key={index} 
-                    style={styles.cardLista}
+                    style={styles.cardAirbnb}
                     onPress={() => irParaDetalhes(item.id)}
+                    activeOpacity={0.9}
                   >
-                    <Image 
-                      source={{ uri: item.foto_perfil || item.fotos?.[0] || 'https://via.placeholder.com/150' }} 
-                      style={styles.imageLista} 
-                      contentFit="cover" 
-                    />
+                    <View style={styles.imageAirbnbContainer}>
+                      <Image 
+                        source={{ uri: item.foto_perfil || item.fotos?.[0] || 'https://via.placeholder.com/400x300' }} 
+                        style={styles.imageAirbnb} 
+                        contentFit="cover" 
+                      />
+                      <TouchableOpacity style={styles.heartBtnAbs}>
+                        <Ionicons name="heart-outline" size={24} color={COLORS.white} />
+                      </TouchableOpacity>
+                    </View>
                     
-                    <View style={styles.infoLista}>
+                    <View style={styles.infoAirbnb}>
                       <View style={styles.rowBetween}>
-                        <Text style={styles.titleLista} numberOfLines={1}>{item.nome || item.name}</Text>
-                        <Ionicons name="heart-outline" size={20} color={COLORS.gray} />
+                        <Text style={styles.titleAirbnb} numberOfLines={1}>{item.nome || item.name}</Text>
+                        <View style={styles.ratingRow}>
+                          <Ionicons name="star" size={14} color={COLORS.star} />
+                          <Text style={styles.ratingTextAirbnb}> {item.avaliacao_media || '5.0'}</Text>
+                        </View>
                       </View>
                       
-                      <Text style={styles.subTitleLista} numberOfLines={1}>
-                        {item.ramo_atuacao || item.categoria}
+                      <Text style={styles.subTitleAirbnb} numberOfLines={1}>
+                        {item.ramo_atuacao || item.categoria} {item.modelo ? `• ${item.modelo}` : ''}
                       </Text>
                       
-                      <View style={styles.tagsRow}>
-                        <View style={styles.ratingTag}>
-                          <Ionicons name="star" size={12} color={COLORS.warning} />
-                          <Text style={styles.ratingTextTag}> {item.avaliacao_media || '5.0'}</Text>
-                        </View>
-                        <Text style={styles.dotSeparator}>•</Text>
-                        <Text style={styles.distanceText}>{item.distancia ? `${parseFloat(item.distancia).toFixed(1)} km` : 'Próximo'}</Text>
-                      </View>
+                      <Text style={styles.distanceText}>
+                        {item.distancia ? `${parseFloat(item.distancia.toString()).toFixed(1)} km de distância` : `${item.cidade || 'Local'} - ${item.estado || ''}`}
+                      </Text>
                       
-                      <View style={styles.priceRowLista}>
-                        <Text style={styles.priceValueLista}>
-                          R$ {parseFloat(item.valor || item.valor_diaria || '0').toFixed(2).replace('.', ',')}
+                      <View style={styles.priceRow}>
+                        <Text style={styles.priceValueAirbnb}>
+                          R$ {parseFloat((item.valor || item.valor_diaria || '0').toString()).toFixed(2).replace('.', ',')}
                         </Text>
                         {item.duracao_minutos && (
-                          <Text style={styles.durationText}>/ {item.duracao_minutos} min</Text>
+                          <Text style={styles.durationTextAirbnb}> a cada {item.duracao_minutos} min</Text>
                         )}
                       </View>
                     </View>
@@ -326,67 +400,67 @@ const styles = StyleSheet.create({
   logoText: { fontSize: 24, fontWeight: '900', color: COLORS.primary, letterSpacing: -1 },
   locationContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
   locationText: { fontSize: 13, fontWeight: '600', color: COLORS.gray, marginHorizontal: 4, maxWidth: '80%' },
-  headerIcons: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  headerIcons: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   iconBtn: { position: 'relative' },
   badge: { position: 'absolute', top: -2, right: -4, width: 10, height: 10, borderRadius: 5, backgroundColor: COLORS.primary, borderWidth: 2, borderColor: COLORS.white },
   profileBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
 
-  searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.lightGray, marginHorizontal: 16, borderRadius: 12, paddingHorizontal: 16, height: 50, marginBottom: 16, borderWidth: 1, borderColor: COLORS.border },
-  searchInput: { flex: 1, fontSize: 16, color: COLORS.secondary },
+  searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.white, marginHorizontal: 16, borderRadius: 30, paddingHorizontal: 16, height: 56, marginBottom: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12, elevation: 5 },
+  searchInput: { flex: 1, fontSize: 15, color: COLORS.secondary, fontWeight: '500' },
 
-  typeFilterContainer: { flexDirection: 'row', backgroundColor: COLORS.lightGray, marginHorizontal: 16, borderRadius: 12, padding: 4, marginBottom: 20 },
-  typeBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 8 },
-  typeBtnAtivo: { backgroundColor: COLORS.white, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 2 },
-  typeBtnText: { fontSize: 13, fontWeight: '700', color: COLORS.gray },
-  typeBtnTextAtivo: { color: COLORS.secondary, fontWeight: '900' },
+  typeFilterContainer: { flexDirection: 'row', backgroundColor: COLORS.lightGray, marginHorizontal: 16, borderRadius: 100, padding: 4, marginBottom: 24 },
+  typeBtn: { flex: 1, paddingVertical: 12, alignItems: 'center', borderRadius: 100 },
+  typeBtnAtivo: { backgroundColor: COLORS.primary, shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 4 },
+  typeBtnText: { fontSize: 14, fontWeight: '700', color: COLORS.gray },
+  typeBtnTextAtivo: { color: COLORS.white, fontWeight: '900' },
 
-  categoriesScroll: { paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: COLORS.border, marginBottom: 20 },
-  categoriaCard: { alignItems: 'center', marginRight: 16 },
-  iconContainer: { width: 64, height: 64, borderRadius: 20, backgroundColor: COLORS.lightGray, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
-  iconContainerAtivo: { backgroundColor: COLORS.primaryLight, borderWidth: 1, borderColor: COLORS.primary },
-  categoriaTexto: { fontSize: 12, fontWeight: '600', color: COLORS.gray },
-  categoriaTextoAtivo: { color: COLORS.secondary, fontWeight: '900' },
+  categoriesScroll: { paddingBottom: 16, marginBottom: 10 },
+  categoriaCard: { alignItems: 'center', marginRight: 24 },
+  iconContainer: { width: 64, height: 64, borderRadius: 32, backgroundColor: COLORS.lightGray, alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  iconContainerAtivo: { backgroundColor: COLORS.primary, shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 6, elevation: 4 },
+  categoriaTexto: { fontSize: 13, fontWeight: '600', color: COLORS.gray },
+  categoriaTextoAtivo: { color: COLORS.primary, fontWeight: '900' },
 
-  section: { marginBottom: 30 },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', paddingHorizontal: 16, marginBottom: 16 },
-  sectionTitle: { fontSize: 20, fontWeight: '900', color: COLORS.secondary },
-  verTodosText: { fontSize: 14, fontWeight: '800', color: COLORS.primary },
+  section: { marginBottom: 32 },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', paddingHorizontal: 16, marginBottom: 20 },
+  sectionTitle: { fontSize: 22, fontWeight: '800', color: COLORS.secondary, letterSpacing: -0.5 },
 
-  cardDestaque: { width: width * 0.75, backgroundColor: COLORS.white, borderRadius: 20, marginRight: 16, borderWidth: 1, borderColor: COLORS.border, overflow: 'hidden' },
-  imageDestaqueContainer: { position: 'relative', width: '100%', height: 160 },
+  cardDestaque: { marginRight: 16, overflow: 'hidden' },
+  imageDestaqueContainer: { position: 'relative', width: '100%', height: 180, borderRadius: 16, overflow: 'hidden', marginBottom: 12 },
   imageDestaque: { width: '100%', height: '100%', backgroundColor: COLORS.lightGray },
-  heartBtnAbs: { position: 'absolute', top: 12, right: 12, width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.3)', alignItems: 'center', justifyContent: 'center' },
   promoBadge: { position: 'absolute', bottom: 12, left: 12, backgroundColor: COLORS.success, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
   promoText: { color: COLORS.white, fontSize: 10, fontWeight: '900', textTransform: 'uppercase' },
-  infoDestaque: { padding: 16 },
-  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  titleDestaque: { fontSize: 16, fontWeight: '900', color: COLORS.secondary, flex: 1, marginRight: 8 },
-  subTitleDestaque: { fontSize: 13, color: COLORS.gray, marginTop: 4, marginBottom: 12 },
+  infoDestaque: { paddingHorizontal: 4 },
+  titleDestaque: { fontSize: 16, fontWeight: '800', color: COLORS.secondary, flex: 1, marginRight: 8 },
+  subTitleDestaque: { fontSize: 14, color: COLORS.gray, marginTop: 2, marginBottom: 4 },
+
+  cardAirbnb: { width: '100%', marginBottom: 32 },
+  imageAirbnbContainer: { width: '100%', height: 280, borderRadius: 16, overflow: 'hidden', marginBottom: 12, position: 'relative' },
+  imageAirbnb: { width: '100%', height: '100%', backgroundColor: COLORS.lightGray },
+  heartBtnAbs: { position: 'absolute', top: 12, right: 12, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.25)', alignItems: 'center', justifyContent: 'center' },
+  
+  infoAirbnb: { paddingHorizontal: 4 },
+  titleAirbnb: { fontSize: 18, fontWeight: '700', color: COLORS.secondary, flex: 1, marginRight: 8 },
+  subTitleAirbnb: { fontSize: 15, color: COLORS.gray, marginTop: 2 },
+  distanceText: { fontSize: 15, color: COLORS.gray, marginTop: 2, marginBottom: 6 },
+  
   ratingRow: { flexDirection: 'row', alignItems: 'center' },
-  ratingText: { fontSize: 13, fontWeight: '800', color: COLORS.secondary },
-  priceRowDestaque: { flexDirection: 'row', alignItems: 'baseline' },
-  priceLabel: { fontSize: 11, color: COLORS.gray, marginRight: 4 },
-  priceValue: { fontSize: 16, fontWeight: '900', color: COLORS.primary },
+  ratingText: { fontSize: 14, fontWeight: '700', color: COLORS.secondary },
+  ratingTextAirbnb: { fontSize: 15, fontWeight: '600', color: COLORS.secondary },
+  
+  priceRow: { flexDirection: 'row', alignItems: 'baseline', marginTop: 4 },
+  priceValue: { fontSize: 16, fontWeight: '800', color: COLORS.secondary },
+  priceValueAirbnb: { fontSize: 17, fontWeight: '800', color: COLORS.secondary },
+  priceLabel: { fontSize: 14, color: COLORS.gray },
+  durationTextAirbnb: { fontSize: 15, color: COLORS.gray },
 
-  cardLista: { flexDirection: 'row', backgroundColor: COLORS.white, borderRadius: 16, marginBottom: 16, borderWidth: 1, borderColor: COLORS.border, padding: 10 },
-  imageLista: { width: 90, height: 90, borderRadius: 12, backgroundColor: COLORS.lightGray },
-  infoLista: { flex: 1, marginLeft: 12, justifyContent: 'center' },
-  titleLista: { fontSize: 16, fontWeight: '900', color: COLORS.secondary, flex: 1, marginRight: 8 },
-  subTitleLista: { fontSize: 13, color: COLORS.gray, marginTop: 2, marginBottom: 8 },
-  tagsRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  ratingTag: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FEF3C7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
-  ratingTextTag: { fontSize: 12, fontWeight: '800', color: '#D97706' },
-  dotSeparator: { fontSize: 12, color: COLORS.gray, marginHorizontal: 8 },
-  distanceText: { fontSize: 12, fontWeight: '600', color: COLORS.gray },
-  priceRowLista: { flexDirection: 'row', alignItems: 'baseline' },
-  priceValueLista: { fontSize: 15, fontWeight: '900', color: COLORS.secondary },
-  durationText: { fontSize: 12, color: COLORS.gray, marginLeft: 4 },
+  rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
 
-  centerLoading: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
-  loadingText: { marginTop: 12, color: COLORS.gray, fontWeight: '700' },
+  centerLoading: { alignItems: 'center', justifyContent: 'center', paddingVertical: 80 },
+  loadingText: { marginTop: 16, color: COLORS.gray, fontWeight: '600', fontSize: 16 },
   emptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60, paddingHorizontal: 30, backgroundColor: COLORS.lightGray, marginHorizontal: 16, borderRadius: 24, marginTop: 20 },
   emptyTitle: { fontSize: 18, fontWeight: '900', color: COLORS.secondary, marginBottom: 8, textAlign: 'center' },
-  emptyDesc: { fontSize: 14, color: COLORS.gray, textAlign: 'center', marginBottom: 24, lineHeight: 20 },
-  clearBtn: { backgroundColor: COLORS.primaryLight, paddingHorizontal: 24, paddingVertical: 12, borderRadius: 100 },
-  clearBtnText: { color: COLORS.primary, fontWeight: '900', fontSize: 14 }
+  emptyDesc: { fontSize: 15, color: COLORS.gray, textAlign: 'center', marginBottom: 24, lineHeight: 22 },
+  clearBtn: { backgroundColor: COLORS.secondary, paddingHorizontal: 24, paddingVertical: 14, borderRadius: 100 },
+  clearBtnText: { color: COLORS.white, fontWeight: '800', fontSize: 15 }
 });

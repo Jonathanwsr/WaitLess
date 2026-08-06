@@ -1,3 +1,9 @@
+// --- CORREÇÃO DO DOMEXCEPTION PARA O HERMES ---
+// --- CORREÇÃO DO DOMEXCEPTION PARA O HERMES ---
+if (typeof global.DOMException === 'undefined') {
+  global.DOMException = Error as any;
+}
+// ----------------------------------------------
 import { Tabs } from 'expo-router';
 import { Feather, Ionicons } from '@expo/vector-icons';
 

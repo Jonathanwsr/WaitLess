@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -10,42 +10,84 @@ import {
   Dimensions,
   ImageBackground,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 
 const { width, height } = Dimensions.get('window');
 
 export default function TelaEntrada() {
   const router = useRouter();
+  
+  // Estado para controlar a tela de carregamento enquanto verifica o login
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+
+  useEffect(() => {
+    verificarLogin();
+  }, []);
+
+  const verificarLogin = async () => {
+    try {
+      // Procura o token e os dados salvos no celular
+      const token = await AsyncStorage.getItem('@waitless_token');
+      const userDataString = await SecureStore.getItemAsync('userData');
+      
+      if (token && userDataString) {
+        const usuario = JSON.parse(userDataString);
+        const papelUsuario = usuario?.papel?.toLowerCase() || '';
+        
+        // Redirecionamento corrigido com base no papel do usuário
+        if (['socio', 'proprietario', 'gerente'].includes(papelUsuario)) {
+          // Agora envia os donos para o Dashboard correto
+          router.replace('/Proprietario/dashboard');
+        } else if (['funcionario', 'admin'].includes(papelUsuario)) {
+          router.replace('/src/funcionario/Painel-funcioanario');
+        } else {
+          router.replace('/src/screens/Home');
+        }
+      } else {
+        // Se não tiver token, para de carregar e mostra a tela de entrada normal
+        setIsCheckingAuth(false);
+      }
+    } catch (error) {
+      console.log('Erro ao verificar login no index:', error);
+      setIsCheckingAuth(false);
+    }
+  };
+
+  // Enquanto verifica o login, mostra uma tela de carregamento
+  if (isCheckingAuth) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#FF6B35" />
+      </View>
+    );
+  }
 
   return (
     <ImageBackground
-      // Mantive a imagem do Unsplash original, mas você pode trocar para a imagem de fundo exata do seu app
       source={{ uri: 'https://images.unsplash.com/photo-1540541338287-41700207dee6?q=80&w=1000&auto=format&fit=crop' }}
       style={styles.background}
     >
-      {/* Overlay escuro para garantir a leitura do texto branco por cima da imagem */}
       <View style={styles.overlay}>
         <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
         <SafeAreaView style={styles.safeArea}>
-          {/* Conteúdo Principal Centralizado */}
           <View style={styles.mainContent}>
-            {/* Logo Lokyva */}
+            
+            {/* O caminho './assets/logo_lokyva.png' está correto de acordo com a sua estrutura de pastas */}
             <Image
-              // Ajuste o caminho '../assets/' de acordo com a profundidade da pasta onde este arquivo está
-             source={require('./assets/logo_lokyva.png')}
+              source={require('./assets/logo_lokyva.png')}
               style={styles.logo}
               resizeMode="contain"
             />
             
-            {/* Opcional: Se a imagem do logo já tiver a palavra "Lokyva", você pode remover este Text. 
-                Deixei aqui para simular o layout da imagem caso o arquivo de logo seja apenas o ícone. */}
             <Text style={styles.title}>
               Lok<Text style={styles.titleHighlight}>y</Text>va
             </Text>
 
-            {/* Subtítulos */}
             <View style={styles.subtitleContainer}>
               <Text style={styles.subtitle}>
                 Conecte. <Text style={styles.subtitleHighlight}>Reserve.</Text>
@@ -54,7 +96,6 @@ export default function TelaEntrada() {
             </View>
           </View>
 
-          {/* Botões de Ação na parte inferior */}
           <View style={styles.bottomContainer}>
             <TouchableOpacity
               style={styles.primaryButton}
@@ -79,6 +120,12 @@ export default function TelaEntrada() {
 }
 
 const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: '#140A28',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   background: {
     flex: 1,
     width: '100%',
@@ -86,7 +133,6 @@ const styles = StyleSheet.create({
   },
   overlay: {
     flex: 1,
-    // Cria um gradiente escuro ou sombra por cima da imagem para destacar os textos brancos
     backgroundColor: 'rgba(20, 10, 40, 0.4)', 
   },
   safeArea: {
@@ -112,7 +158,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   titleHighlight: {
-    color: '#FF6B35', // Ou o tom roxo/laranja da sua marca
+    color: '#FF6B35',
   },
   subtitleContainer: {
     alignItems: 'center',
@@ -126,44 +172,40 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   subtitleHighlight: {
-    color: '#FF6B35', // Laranja conforme a imagem
+    color: '#FF6B35',
     fontWeight: '600',
   },
   bottomContainer: {
     paddingHorizontal: 24,
-    // padding extra embaixo para evitar a barra de navegação/botões virtuais no Android e iOS
     paddingBottom: Platform.OS === 'android' ? 40 : 20, 
-    gap: 16,
+    gap: 16, // Mantém o espaçamento uniforme entre os botões
   },
+  
+  // --- ESTILOS DOS BOTÕES ATUALIZADOS PARA O FORMATO DA IMAGEM ---
   primaryButton: {
-    backgroundColor: '#FF6B35', // Todo laranja conforme solicitado
-    paddingVertical: 18,
-    borderRadius: 16,
+    backgroundColor: '#FF6B35',
+    height: 60,
+    borderRadius: 30, // Metade da altura para criar o formato de pílula perfeito
+    justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#FF6B35',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 8,
   },
   primaryButtonText: {
     color: '#FFFFFF',
     fontSize: 18,
     fontWeight: '700',
-    letterSpacing: 0.5,
   },
   secondaryButton: {
     backgroundColor: 'transparent',
-    borderWidth: 1.5,
-    borderColor: '#4A3B69', // Borda com cor inspirada na imagem (tom roxo escuro/transparente)
-    paddingVertical: 18,
-    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#FFFFFF', // Borda branca sólida
+    height: 60,
+    borderRadius: 30, // Metade da altura para criar o formato de pílula
+    justifyContent: 'center',
     alignItems: 'center',
   },
   secondaryButtonText: {
     color: '#FFFFFF',
     fontSize: 18,
-    fontWeight: '600',
-    letterSpacing: 0.5,
+    fontWeight: '700', // Em negrito para dar o mesmo peso visual do botão de cima
   },
 });

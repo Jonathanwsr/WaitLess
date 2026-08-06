@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use App\Models\User;
 use App\Models\Funcionario;
 use Illuminate\Validation\Rules;
@@ -22,6 +23,7 @@ class MobileAuthController extends Controller
         $request->validate([
             'email' => 'required|email',
             'password' => 'required',
+            'expo_push_token' => 'nullable|string'
         ]);
 
         $user = User::where('email', $request->email)->first();
@@ -35,12 +37,24 @@ class MobileAuthController extends Controller
         $papel = strtolower(trim($user->papel ?? ''));
         $isFuncionario = Funcionario::where('usuario_id', $user->id)->exists();
 
+        // LÓGICA DE REDIRECIONAMENTO AJUSTADA
         $destino = 'cliente';
-        if (in_array($papel, ['admin', 'socio', 'proprietario', 'funcionario', 'atendente']) || $isFuncionario) {
-            $destino = 'funcionario';
+        if (in_array($papel, ['socio', 'proprietario', 'gerente'])) {
+            $destino = 'dashboard'; // Redireciona para /Proprietario/dashboard no app
+        } elseif (in_array($papel, ['admin', 'funcionario', 'atendente']) || $isFuncionario) {
+            $destino = 'funcionario'; // Redireciona para /src/funcionario/Painel-funcioanario
         }
 
+        // Apaga os tokens antigos para otimização
+        $user->tokens()->where('name', 'mobile_auth_token')->delete();
+
+        // Cria novo token Sanctum
         $token = $user->createToken('mobile_auth_token')->plainTextToken;
+
+        // Salva o Expo Push Token se enviado
+        if ($request->filled('expo_push_token')) {
+            $user->update(['expo_push_token' => $request->expo_push_token]);
+        }
 
         return response()->json([
             'status' => 'success',
@@ -56,11 +70,10 @@ class MobileAuthController extends Controller
     }
 
     /**
-     * Cadastro completo com Integração Asaas (Customer e Wallet) e Aceite dos Termos
+     * Cadastro completo com Asaas, sanitização de segurança e E-mail via Brevo
      */
     public function register(Request $request)
     {
-        // 1. Validação estendida com os campos do Asaas e do Termo
         $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|string|lowercase|email|max:255|unique:'.User::class,
@@ -81,12 +94,25 @@ class MobileAuthController extends Controller
             'person_type' => 'required|in:FISICA,JURIDICA',
             'birth_date' => 'nullable|date',
 
+            // NOVOS CAMPOS DO PERFIL
+            'onde_estudei' => 'nullable|string|max:255',
+            'onde_moro' => 'nullable|string|max:255',
+            'idiomas' => 'nullable|string|max:255',
+            'profissao' => 'nullable|string|max:255',
+            'sobre_mim' => 'nullable|string|max:1000',
+
             // CAMPOS DO TERMO DE COMPROMISSO
             'termo_compromisso_aceito' => 'required|boolean|accepted',
             'termo_compromisso_versao' => 'required|string|max:20',
+            
+            'expo_push_token' => 'nullable|string'
         ]);
 
-        // Limpa a formatação para a API do Asaas
+        // Função de Sanitização (Bloqueia scripts, tags HTML e códigos maliciosos)
+        $cleanText = function ($input) {
+            return $input ? trim(strip_tags($input)) : null;
+        };
+
         $cpfCnpjLimpo = preg_replace('/[^0-9]/', '', $request->cpf_cnpj);
         $telefoneLimpo = preg_replace('/[^0-9]/', '', $request->mobile_phone);
         $cepLimpo = preg_replace('/[^0-9]/', '', $request->postal_code);
@@ -97,23 +123,21 @@ class MobileAuthController extends Controller
             $asaasUrl = config('services.asaas.url');
             $asaasKey = config('services.asaas.key');
 
-            // =========================================================
             // PASSO 1: Criar o ID de Pagador (Customer) no Asaas
-            // =========================================================
             $responseCustomer = Http::withHeaders([
                 'access_token' => $asaasKey,
                 'Content-Type' => 'application/json',
             ])->post($asaasUrl . '/customers', [
-                'name' => $request->name,
+                'name' => $cleanText($request->name),
                 'cpfCnpj' => $cpfCnpjLimpo,
                 'email' => $request->email,
                 'mobilePhone' => $telefoneLimpo,
                 'postalCode' => $cepLimpo,
-                'address' => $request->address,
-                'addressNumber' => $request->address_number,
-                'complement' => $request->complement,
-                'province' => $request->province,
-                'city' => $request->city,
+                'address' => $cleanText($request->address),
+                'addressNumber' => $cleanText($request->address_number),
+                'complement' => $cleanText($request->complement),
+                'province' => $cleanText($request->province),
+                'city' => $cleanText($request->city),
                 'state' => strtoupper($request->state),
             ]);
 
@@ -124,29 +148,36 @@ class MobileAuthController extends Controller
 
             $asaasCustomerId = $responseCustomer->json()['id'];
 
-            // =========================================================
-            // PASSO 2: Salvar o Usuário no Banco de Dados
-            // =========================================================
+            // PASSO 2: Salvar o Usuário no Banco de Dados (com sanitização)
             $user = User::create([
-                'name' => $request->name,
+                'name' => $cleanText($request->name),
                 'email' => $request->email,
                 'password' => Hash::make($request->password),
                 'papel' => $request->papel,
                 'cpf_cnpj' => $cpfCnpjLimpo,
                 'mobile_phone' => $telefoneLimpo,
-                'phone' => $request->phone,
+                'phone' => $request->phone ? preg_replace('/[^0-9]/', '', $request->phone) : null,
                 'postal_code' => $cepLimpo,
-                'address' => $request->address,
-                'address_number' => $request->address_number,
-                'complement' => $request->complement,
-                'province' => $request->province,
-                'city' => $request->city,
+                'address' => $cleanText($request->address),
+                'address_number' => $cleanText($request->address_number),
+                'complement' => $cleanText($request->complement),
+                'province' => $cleanText($request->province),
+                'city' => $cleanText($request->city),
                 'state' => strtoupper($request->state),
                 'person_type' => $request->person_type,
                 'birth_date' => $request->birth_date,
-                'asaas_customer_id' => $asaasCustomerId,
+                
+                // Novos campos sanitizados
+                'onde_estudei' => $cleanText($request->onde_estudei),
+                'onde_moro' => $cleanText($request->onde_moro),
+                'idiomas' => $cleanText($request->idiomas),
+                'profissao' => $cleanText($request->profissao),
+                'sobre_mim' => $cleanText($request->sobre_mim),
 
-                // DADOS DO TERMO DE COMPROMISSO (Capturados de forma segura pelo próprio servidor)
+                'asaas_customer_id' => $asaasCustomerId,
+                'expo_push_token' => $request->expo_push_token ?? null,
+
+                // DADOS DO TERMO DE COMPROMISSO
                 'termo_compromisso_aceito' => $request->termo_compromisso_aceito,
                 'termo_compromisso_data'   => now(),
                 'termo_compromisso_versao' => $request->termo_compromisso_versao,
@@ -154,33 +185,30 @@ class MobileAuthController extends Controller
                 'termo_compromisso_user_agent' => $request->userAgent(),
             ]);
 
-            // =========================================================
             // PASSO 3: Criar Subconta/Wallet (Apenas Proprietários/Sócios)
-            // =========================================================
             if (in_array($request->papel, ['admin', 'socio', 'proprietario'])) {
                 $responseAccount = Http::withHeaders([
                     'access_token' => $asaasKey,
                     'Content-Type' => 'application/json',
                 ])->post($asaasUrl . '/accounts', [
-                    'name' => $request->name,
-                    'email' => $request->email,
-                    'loginEmail' => $request->email,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'loginEmail' => $user->email,
                     'cpfCnpj' => $cpfCnpjLimpo,
                     'birthDate' => $request->birth_date,
                     'companyType' => $request->person_type === 'JURIDICA' ? 'LIMITED' : null,
                     'phone' => $telefoneLimpo,
                     'mobilePhone' => $telefoneLimpo,
-                    'address' => $request->address,
-                    'addressNumber' => $request->address_number,
-                    'complement' => $request->complement,
-                    'province' => $request->province,
+                    'address' => $user->address,
+                    'addressNumber' => $user->address_number,
+                    'complement' => $user->complement,
+                    'province' => $user->province,
                     'postalCode' => $cepLimpo,
                 ]);
 
                 if ($responseAccount->successful()) {
                     $accountData = $responseAccount->json();
                     
-                    // Salva a carteira oficial do dono na tabela providers
                     DB::table('providers')->insert([
                         'user_id' => $user->id,
                         'asaas_wallet_id' => $accountData['walletId'],
@@ -198,11 +226,18 @@ class MobileAuthController extends Controller
 
             DB::commit();
 
-            // Redirecionamento
-            $papel = strtolower(trim($user->papel ?? ''));
-            $destino = in_array($papel, ['admin', 'socio', 'proprietario', 'funcionario', 'atendente']) ? 'funcionario' : 'cliente';
+            // PASSO 4: Envio de E-mail de Boas-Vindas via Brevo API
+            $this->enviarEmailBrevo($user);
 
-            // Gera o Token de Autenticação Automática
+            // LÓGICA DE REDIRECIONAMENTO AJUSTADA NO REGISTRO
+            $papel = strtolower(trim($user->papel ?? ''));
+            $destino = 'cliente';
+            if (in_array($papel, ['socio', 'proprietario', 'gerente'])) {
+                $destino = 'dashboard';
+            } elseif (in_array($papel, ['admin', 'funcionario', 'atendente'])) {
+                $destino = 'funcionario';
+            }
+
             $token = $user->createToken('mobile_auth_token')->plainTextToken;
 
             return response()->json([
@@ -235,10 +270,8 @@ class MobileAuthController extends Controller
             /** @var User $user */
             $user = $request->user();
 
-            // Carrega a assinatura ativa e estabelecimentos com seus pontos
             $user->load(['assinaturaAtiva', 'pontos']);
 
-            // Calcula o saldo total de pontos acumulados
             $totalPontos = $user->pontos_saldo ?? $user->pontos()->sum('total_pontos');
 
             return response()->json([
@@ -252,8 +285,16 @@ class MobileAuthController extends Controller
                     'cpf_cnpj' => $user->cpf_cnpj,
                     'cidade' => $user->city,
                     'estado' => $user->state,
+                    
+                    // Retorno dos novos campos no perfil
+                    'onde_estudei' => $user->onde_estudei,
+                    'onde_moro' => $user->onde_moro,
+                    'idiomas' => $user->idiomas,
+                    'profissao' => $user->profissao,
+                    'sobre_mim' => $user->sobre_mim,
+
                     'pontos_saldo' => (int) $totalPontos,
-                    'plano_atual' => $user->plano_atual, // Usando o Mutator getPlanoAtualAttribute() da Model
+                    'plano_atual' => $user->plano_atual, 
                     'assinatura' => $user->assinaturaAtiva ? [
                         'nome_plano' => $user->assinaturaAtiva->nome_plano,
                         'tipo_publico' => $user->assinaturaAtiva->tipo_publico,
@@ -272,13 +313,17 @@ class MobileAuthController extends Controller
     }
 
     /**
-     * Sair da conta no mobile (revoga o token Sanctum atual)
+     * Sair da conta no mobile
      */
     public function logout(Request $request)
     {
         try {
-            if ($request->user() && $request->user()->currentAccessToken()) {
-                $request->user()->currentAccessToken()->delete();
+            if ($request->user()) {
+                $request->user()->update(['expo_push_token' => null]);
+
+                if ($request->user()->currentAccessToken()) {
+                    $request->user()->currentAccessToken()->delete();
+                }
             }
 
             return response()->json([
@@ -293,6 +338,55 @@ class MobileAuthController extends Controller
                 'success' => false,
                 'message' => 'Erro ao realizar logout: ' . $e->getMessage()
             ], 500);
+        }
+    }
+
+    /**
+     * Envia o e-mail de boas-vindas diretamente via Brevo API
+     */
+    private function enviarEmailBrevo(User $user)
+    {
+        try {
+            $brevoApiKey = config('services.brevo.key');
+
+            if (!$brevoApiKey) {
+                Log::warning('Chave da Brevo não configurada em config/services.php');
+                return;
+            }
+
+            Http::withHeaders([
+                'api-key' => $brevoApiKey,
+                'Content-Type' => 'application/json',
+                'Accept' => 'application/json',
+            ])->post('https://api.brevo.com/v3/smtp/email', [
+                'sender' => [
+                    'name' => config('app.name', 'Lokyva'),
+                    'email' => config('mail.from.address', 'no-reply@lokyva.com')
+                ],
+                'to' => [
+                    [
+                        'email' => $user->email,
+                        'name'  => $user->name,
+                    ]
+                ],
+                'subject' => 'Parabéns, seja bem-vindo ao Lokyva!',
+                'htmlContent' => '
+                    <div style="font-family: Arial, sans-serif; color: #333; line-height: 1.6; max-width: 600px; margin: 0 auto; border: 1px solid #eee; padding: 20px; border-radius: 8px;">
+                        <h2 style="color: #4A90E2; text-align: center;">Seja muito bem-vindo ao Lokyva!</h2>
+                        <p>Olá, <strong>' . htmlspecialchars($user->name) . '</strong>!</p>
+                        <p>Ficamos muito felizes em ter você conosco. Sua conta foi criada com sucesso e você já pode aproveitar todos os nossos recursos.</p>
+                        <br>
+                        <div style="text-align: center; margin: 20px 0;">
+                            <span style="background-color: #4A90E2; color: #fff; padding: 10px 20px; border-radius: 5px; text-decoration: none; font-weight: bold;">Sua conta está ativa</span>
+                        </div>
+                        <br>
+                        <p>Atenciosamente,<br><strong>Equipe Lokyva</strong></p>
+                    </div>
+                '
+            ]);
+        } catch (\Exception $e) {
+            // Loga a falha sem interromper o fluxo de resposta ao aplicativo
+            Log::error('Erro ao enviar e-mail via Brevo: ' . $e->getMessage());
         }
     }
 }

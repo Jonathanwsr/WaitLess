@@ -122,4 +122,33 @@ class WebhookController extends Controller
             }
         }
     }
+
+    // No seu WebhookController.php:
+
+public function asaasWebhook(Request $request, EstornoService $estornoService)
+{
+    $evento = $request->input('event');
+    $pagamentoAsaasId = $request->input('payment.id');
+
+    if ($evento === 'PAYMENT_REFUNDED') {
+        $pagamento = Pagamento::where('asaas_payment_id', $pagamentoAsaasId)->first();
+        
+        // Verifica se já temos esse estorno mapeado
+        $estornoExistente = Estorno::where('id_transacao_asaas', $pagamentoAsaasId)->first();
+        
+        if ($pagamento && !$estornoExistente) {
+            // O admin estornou direto pelo painel do Asaas. Vamos forçar a regra financeira aqui!
+            $estorno = new Estorno();
+            $estorno->pagamento_id = $pagamento->id;
+            $estorno->usuario_id = $pagamento->user_id;
+            $estorno->prestador_id = $pagamento->estabelecimento->user_id;
+            $estorno->valor_estornado = $pagamento->valor;
+            // Configura os demais relacionamentos mínimos para não dar erro...
+            
+            $estorno->processarEstornoConcluido(); 
+        }
+    }
+    
+    return response()->json(['status' => 'received']);
+}
 }

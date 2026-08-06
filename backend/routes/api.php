@@ -21,7 +21,14 @@ use App\Http\Controllers\Api\GamificacaoController;
 use App\Http\Controllers\Api\WebhookController;
 use App\Http\Controllers\Api\ItemAluguelController;
 
+
+
 // Importações - Mobile
+use App\Http\Controllers\Api\Mobile\CarteiraMobileController;
+use App\Http\Controllers\Api\Proprietario\ProviderMobileController;
+use App\Http\Controllers\Api\Mobile\Proprietario\CriarServicosReservasController;
+use App\Http\Controllers\Api\Mobile\Proprietario\EstabelecimentoController as MobileEstabelecimentoController;
+use App\Http\Controllers\Api\Mobile\AssinaturaMobileController;
 use App\Http\Controllers\Api\Mobile\MobileAuthController;
 use App\Http\Controllers\Api\Mobile\MobileHomeController;
 use App\Http\Controllers\Api\Mobile\MobileAgendamentoController;
@@ -32,6 +39,9 @@ use App\Http\Controllers\Api\Mobile\ClienteAgendamentoMobileController;
 use App\Http\Controllers\Api\Mobile\AnfitriaoMobileController;
 use App\Http\Controllers\Api\Mobile\CatalogoMobileController;
 use App\Http\Controllers\Api\Mobile\PagamentoMobileController; // IMPORTAÇÃO QUE FALTAVA
+use App\Http\Controllers\Api\Mobile\Proprietario\DashboardController as ProprietarioDashboard;
+use App\Http\Controllers\Api\Mobile\Proprietario\FuncionarioMobileController as FuncionarioMobileController;
+
 
 /*
 |--------------------------------------------------------------------------
@@ -96,6 +106,13 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/clientes/{id}/detalhes', [MobileAgendamentoController::class, 'detalheCliente']);
     Route::get('/servicos/{id}/horarios', [MobileAgendamentoController::class, 'obtenerHorariosDisponiveis']);
     Route::put('/triagens/{id}/nota', [MobileAgendamentoController::class, 'salvarNotaTriagem']);
+    Route::post('/checkout/misto', [App\Http\Controllers\Api\Mobile\MobileAgendamentoController::class, 'checkoutMisto']);
+
+    Route::get('/catalogo/servicos', [App\Http\Controllers\Api\Mobile\MobileAgendamentoController::class, 'listarServicosCatalogo']);
+        Route::get('/alugueis/itens', [App\Http\Controllers\Api\Mobile\MobileAgendamentoController::class, 'listarItensAluguelCatalogo']);
+        
+        // Rota de horários
+        Route::get('/horarios-disponiveis/{id}', [App\Http\Controllers\Api\Mobile\MobileAgendamentoController::class, 'obtenerHorariosDisponiveis']);
 
     // --- EXPLORAR MOBILE ---
     Route::get('/explorar', [ClienteExplorarMobileController::class, 'index']);
@@ -104,6 +121,44 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/explorar/cidade/{cidade}', [ClienteExplorarMobileController::class, 'porCidade']);
     Route::get('/explorar/categorias', [ClienteExplorarMobileController::class, 'categorias']);
     Route::get('/explorar/{id}', [ClienteExplorarMobileController::class, 'show']);
+
+
+    Route::post('/servicos', [CriarServicosReservasController::class, 'storeServico']);
+    Route::post('/servicos/{id}', [CriarServicosReservasController::class, 'updateServico']); // Usando POST com _method=PUT se for enviar arquivos via FormData
+    Route::delete('/servicos/{id}', [CriarServicosReservasController::class, 'destroyServico']);
+
+
+    // ============================================
+    // ROTAS DE RESERVAS / ITENS DE ALUGUEL
+    // ============================================
+    Route::get('/reservas-itens', [CriarServicosReservasController::class, 'indexItens']);
+    Route::get('/reservas-itens/{id}', [CriarServicosReservasController::class, 'showItem']);
+    Route::post('/reservas-itens', [CriarServicosReservasController::class, 'storeItem']);
+    Route::post('/reservas-itens/{id}', [CriarServicosReservasController::class, 'updateItem']); // Usando POST com _method=PUT para upload de imagens no mobile
+    Route::delete('/reservas-itens/{id}', [CriarServicosReservasController::class, 'destroyItem']);
+
+    Route::get('/v1/funcionarios', [FuncionarioMobileController::class, 'index']);
+    Route::post('/v1/funcionarios', [FuncionarioMobileController::class, 'store']);
+    Route::get('/v1/funcionarios/{id}', [FuncionarioMobileController::class, 'show']);
+    Route::put('/v1/funcionarios/{id}', [FuncionarioMobileController::class, 'update']);
+    Route::delete('/v1/funcionarios/{id}', [FuncionarioMobileController::class, 'destroy']);
+
+  
+
+Route::middleware('auth:sanctum')->group(function () {
+    
+    // Rota para o App Mobile buscar os estabelecimentos do usuário logado (Dropdown/Select)
+    Route::get('/mobile/estabelecimentos', [ProviderMobileController::class, 'getEstabelecimentos']);
+
+    // Rotas de perfil financeiro/provedor para mobile
+    Route::get('/mobile/provider', [ProviderMobileController::class, 'show']);
+    Route::post('/mobile/provider', [ProviderMobileController::class, 'store']);
+    Route::put('/mobile/provider', [ProviderMobileController::class, 'update']);
+
+});
+    
+    // Decisão de Folgas / Ausências
+    Route::post('/v1/ausencias/{id}/decidir', [FuncionarioMobileController::class, 'decidirAusencia']);
 
     Route::get('/agendamentos/estabelecimento/{estabelecimento}', [ClienteAgendamentoMobileController::class, 'obterDadosAgendamento']);
     Route::get('/reservas/item/{id}', [ClienteAgendamentoMobileController::class, 'obterDadosReserva']);
@@ -115,13 +170,105 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/favoritos', [FavoritoMobileController::class, 'index']);
         Route::post('/favoritos/toggle', [FavoritoMobileController::class, 'toggleFavorito']);
         Route::get('/catalogo/servicos/{id}', [CatalogoMobileController::class, 'detalhesServico']);
-        Route::get('/catalogo/estabelecimentos/{id}', [CatalogoMobileController::class, 'perfilEstabelecimento']);
+   Route::get('/catalogo/estabelecimentos/{id}', [AnfitriaoMobileController::class, 'getPerfil']);
+
+   Route::get('/estabelecimentos/{id}/catalogo', [CatalogoMobileController::class, 'perfilEstabelecimento']);
+    
+    // Rota para ver os detalhes de um serviço específico
+    Route::get('/servicos/{id}', [CatalogoMobileController::class, 'detalhesServico']);
+
+    // Rotas para o fluxo de Fila em Tempo Real
+Route::get('/agendamentos/{id}/fila', [MobileAgendamentoController::class, 'statusFila']);
+Route::post('/agendamentos/{id}/sair-fila', [MobileAgendamentoController::class, 'sairDaFila']);
+Route::get('/agendamentos/{id}/checkout', [App\Http\Controllers\Api\Mobile\PagamentoMobileController::class, 'detalhesCheckout']);
         Route::get('/estabelecimentos/{id}', [MobileAgendamentoController::class, 'verEstabelecimento']);
         Route::post('/estabelecimentos/{id}/agendar', [MobileAgendamentoController::class, 'agendarServico']);
         Route::get('/meus-agendamentos', [MobileAgendamentoController::class, 'meusAgendamentos']);
         Route::delete('/agendamentos/{id}', [MobileAgendamentoController::class, 'cancelarCliente']);
         Route::get('/estabelecimentos/{id}/catalogo', [EstabelecimentoCatalogoMobileController::class, 'show']);
         Route::post('/pedidos/sacola', [EstabelecimentoCatalogoMobileController::class, 'criarPedidoSacola']);
+
+
+        Route::middleware('auth:sanctum')->prefix('proprietario')->group(function () { // <-- Corrigido aqui de 'mobile/proprietario' para 'proprietario'
+    
+    Route::get('/dashboard', [ProprietarioDashboard::class, 'index']); // <-- ROTA DO DASHBOARD MOVIDA PARA CÁ
+    
+    Route::post('/estabelecimentos', [MobileEstabelecimentoController::class, 'store']);
+    Route::delete('/estabelecimentos/{id}', [MobileEstabelecimentoController::class, 'destroy']);
+
+    Route::post('/estabelecimentos/{id}/update', [MobileEstabelecimentoController::class, 'update']);
+    
+    Route::delete('/estabelecimentos/{id}', [MobileEstabelecimentoController::class, 'destroy']);
+    Route::patch('/estabelecimentos/{id}/status', [MobileEstabelecimentoController::class, 'toggleStatus']);
+
+
+
+
+    // Rota para buscar todos os dados de configurações (Mobile Carregamento Inicial)
+    Route::get('/configuracoes', [ConfiguracoesMobileController::class, 'index']);
+
+    // ==========================================
+    // 1. ESTABELECIMENTO (PERFIL)
+    // ==========================================
+    Route::put('/estabelecimentos/{estabelecimento}', [ConfiguracoesMobileController::class, 'updateEstabelecimento']);
+    Route::patch('/estabelecimentos/{estabelecimento}/toggle-status', [ConfiguracoesMobileController::class, 'toggleStatusEstabelecimento']);
+
+    // ==========================================
+    // 2. FUNCIONÁRIOS (EQUIPE)
+    // ==========================================
+    Route::post('/estabelecimentos/{estabelecimento}/funcionarios', [ConfiguracoesMobileController::class, 'storeFuncionario']);
+    Route::put('/funcionarios/{funcionario}', [ConfiguracoesMobileController::class, 'updateFuncionario']);
+    Route::delete('/funcionarios/{funcionario}', [ConfiguracoesMobileController::class, 'destroyFuncionario']);
+
+    // ==========================================
+    // 3. SERVIÇOS (CATÁLOGO)
+    // ==========================================
+    Route::post('/servicos', [ConfiguracoesMobileController::class, 'storeServico']);
+    
+    Route::put('/servicos/{servico}', [ConfiguracoesMobileController::class, 'updateServico']);
+    Route::delete('/servicos/{servico}', [ConfiguracoesMobileController::class, 'destroyServico']);
+
+    // ==========================================
+    // 4. RESERVAS / LOCAÇÕES (SAAS MÓDULO)
+    // ==========================================
+    // Rota GET que você usa no React via fetch('/api/catalogo/itens')
+    Route::get('/catalogo/itens', [ConfiguracoesMobileController::class, 'indexItensAluguel']); 
+    Route::post('/itens-aluguel', [ConfiguracoesMobileController::class, 'storeItemAluguel']);
+    Route::put('/itens-aluguel/{item}', [ConfiguracoesMobileController::class, 'updateItemAluguel']);
+    Route::delete('/itens-aluguel/{item}', [ConfiguracoesMobileController::class, 'destroyItemAluguel']);
+});
+
+
+
+
+        Route::post('/save-push-token', function (\Illuminate\Http\Request $request) {
+    $request->validate(['token' => 'required|string']);
+    $user = \Illuminate\Support\Facades\Auth::user();
+    $user->update(['expo_push_token' => $request->token]);
+    return response()->json(['status' => 'success']);
+});
+
+        Route::get('/minha-carteira', [CarteiraMobileController::class, 'index']);
+Route::post('/minha-carteira/saque', [CarteiraMobileController::class, 'solicitarSaque']);
+Route::post('/minha-carteira/fechar-dia', [CarteiraMobileController::class, 'fecharDia']);
+Route::post('/minha-carteira/assinar-plus', [CarteiraMobileController::class, 'assinarPlus']);
+Route::post('/minha-carteira/resgatar/{id}', [CarteiraMobileController::class, 'resgatarCupom']);
+
+// --- CARRINHO / SACOLA ---
+    Route::get('/carrinho', [CarrinhoMobileController::class, 'index']);
+    Route::post('/carrinho', [CarrinhoMobileController::class, 'store']);
+    Route::put('/carrinho/{id}', [CarrinhoMobileController::class, 'update']);
+    Route::delete('/carrinho/{id}', [CarrinhoMobileController::class, 'destroy']);
+
+    Route::post('/carrinho/checkout', [CarrinhoMobileController::class, 'gerarCheckout']);
+
+Route::post('/assinaturas/assinar', [AssinaturaMobileController::class, 'assinar']);
+Route::post('/assinaturas/cancelar', [AssinaturaMobileController::class, 'cancelar']);
+Route::put('/assinaturas/dados-financeiros', [AssinaturaMobileController::class, 'atualizarDadosFinanceiros']);
+
+Route::get('/assinaturas/status', [AssinaturaMobileController::class, 'status']);
+
+
     });
 
     // --- ALUGUÉIS E LOCAÇÕES ---

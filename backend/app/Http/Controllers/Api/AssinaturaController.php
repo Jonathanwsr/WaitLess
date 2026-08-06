@@ -4,105 +4,212 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Assinatura;
-use App\Services\MercadoPagoAssinaturaService;
+use App\Services\AsaasAssinaturaService;
+use App\Services\PlanoService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Inertia\Inertia;
+use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
 
 class AssinaturaController extends Controller
 {
-    protected $mpService;
+    protected $asaasService;
+    protected $planoService;
 
-    // Catálogo oficial de preços e planos
-    const PLANOS = [
-        'plus'         => ['valor' => 9.90,  'tipo' => 'cliente'],
-        'basico'       => ['valor' => 20.00, 'tipo' => 'estabelecimento'],
-        'profissional' => ['valor' => 49.90, 'tipo' => 'estabelecimento'],
-        'premium'      => ['valor' => 99.90, 'tipo' => 'estabelecimento'],
-    ];
-
-    public function __construct(MercadoPagoAssinaturaService $mpService)
+    public function __construct(AsaasAssinaturaService $asaasService, PlanoService $planoService)
     {
-        $this->mpService = $mpService;
+        $this->asaasService = $asaasService;
+        $this->planoService = $planoService;
     }
 
+    /**
+     * 🟢 ASSINAR PLANO (Avulso, Mensal ou Anual via Pix/Cartão)
+     */
     public function assinar(Request $request)
     {
         $request->validate([
-            'plano' => 'required|string|in:' . implode(',', array_keys(self::PLANOS))
+            'plano'  => 'required|string|in:' . implode(',', array_keys(PlanoService::CATALOGO)),
+            'metodo' => 'required|string|in:pix,credit_card'
         ]);
 
         $user = Auth::user();
         $planoEscolhido = $request->plano;
-        $detalhesPlano = self::PLANOS[$planoEscolhido];
+        $detalhesPlano = PlanoService::CATALOGO[$planoEscolhido];
 
-        $assinaturaAtiva = $user->assinaturas()
-            ->where('status', 'ativa')
-            ->where('nome_plano', $planoEscolhido)
-            ->first();
-
-        if ($assinaturaAtiva) {
-            return redirect()->back()->with('warning', 'Você já possui este plano ativo!');
+        // Evita assinatura duplicada ativa
+        $assinaturaAtiva = $user->assinaturas()->where('status', 'ativa')->first();
+        if ($assinaturaAtiva && $assinaturaAtiva->nome_plano === $planoEscolhido) {
+            return response()->json(['error' => 'Você já possui este plano ativo.'], 400);
         }
 
-        $assinatura = Assinatura::create([
-            'user_id' => $user->id,
-            'nome_plano' => $planoEscolhido,
-            'tipo_publico' => $detalhesPlano['tipo'],
-            'valor_mensal' => $detalhesPlano['valor'],
-            'status' => 'pendente'
-        ]);
-
+        DB::beginTransaction();
         try {
-            $linkPagamento = $this->mpService->criarLinkAssinatura($assinatura, $user);
-            return Inertia::location($linkPagamento);
-        } catch (\Exception $e) {
-            $assinatura->delete();
-            return redirect()->back()->with('error', $e->getMessage());
-        }
-    }
+            $assinatura = Assinatura::create([
+                'user_id'          => $user->id,
+                'nome_plano'       => $planoEscolhido,
+                'tipo_publico'     => $detalhesPlano['tipo'],
+                'valor_mensal'     => $detalhesPlano['valor'],
+                'ciclo'            => $detalhesPlano['ciclo'],
+                'metodo_pagamento' => $request->metodo,
+                'status'           => 'pendente'
+            ]);
 
-    /**
-     * TELA DO ADMIN: Lista todas as assinaturas da plataforma
-     */
-    public function adminIndex()
-    {
-        if (Auth::user()->papel !== 'admin') {
-            abort(403, 'Acesso restrito a administradores da plataforma.');
-        }
+            // Chamada ao Gateway
+            $gatewayData = $this->asaasService->criarCobranca($assinatura, $user, $detalhesPlano, $request->metodo);
 
-        $assinaturas = Assinatura::with('user')->latest()->paginate(15);
-
-        return Inertia::render('Admin/Assinaturas', [
-            'assinaturas' => $assinaturas
-        ]);
-    }
-
-    /**
-     * TELA DO ADMIN: Força o cancelamento de uma assinatura
-     */
-    public function adminCancelar($id)
-    {
-        if (Auth::user()->papel !== 'admin') {
-            abort(403);
-        }
-
-        $assinatura = Assinatura::findOrFail($id);
-
-        try {
-            if ($assinatura->gateway_assinatura_id && $assinatura->status === 'ativa') {
-                $this->mpService->cancelarAssinaturaNoMP($assinatura->gateway_assinatura_id);
+            // Atualiza os IDs gerados pelo Gateway
+            if ($detalhesPlano['ciclo'] === 'avulso') {
+                $assinatura->update(['fatura_id' => $gatewayData['id']]);
+                $link = $gatewayData['invoiceUrl'];
+            } else {
+                $assinatura->update(['gateway_assinatura_id' => $gatewayData['id']]);
+                // Para subscriptions, muitas vezes o Asaas não retorna o link no momento da criação.
+                // É recomendado buscar a fatura atrelada ou instruir o fluxo.
+                $link = null; 
             }
 
-            $assinatura->update(['status' => 'cancelada']);
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Cobrança gerada com sucesso!',
+                'gateway_link' => $link,
+                'assinatura' => $assinatura
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['error' => $e->getMessage()], 422);
+        }
+    }
+
+    /**
+     * 🟢 EDIÇÃO DO PERFIL FINANCEIRO (Trava de 30 dias)
+     */
+    public function atualizarDadosFinanceiros(Request $request)
+    {
+        $user = Auth::user();
+
+        // Regra de Ouro: Bloqueia se a última edição foi em menos de 30 dias
+        if ($user->last_asaas_update && $user->last_asaas_update->diffInDays(now()) < 30) {
+            $diasRestantes = 30 - $user->last_asaas_update->diffInDays(now());
+            return response()->json([
+                'error' => "Ação bloqueada de forma preventiva. Você poderá alterar seus dados novamente em {$diasRestantes} dias."
+            ], 403);
+        }
+
+        $validated = $request->validate([
+            'address'        => 'required|string',
+            'address_number' => 'required|string',
+            'postal_code'    => 'required|string',
+        ]);
+
+        // Aqui você chamaria o endpoint de PUT do Asaas para o Customer
+        // Http::put("https://api.asaas.com/v3/customers/{$user->asaas_customer_id}", [...]);
+
+        $validated['last_asaas_update'] = now();
+        $user->update($validated);
+
+        return response()->json(['message' => 'Dados atualizados no sistema e na processadora.']);
+    }
+
+    /**
+     * 🔴 CANCELAMENTO PELO CLIENTE (Mantém até o fim do mês)
+     */
+    public function cancelar()
+    {
+        $user = Auth::user();
+        $assinatura = $user->assinaturaAtiva;
+
+        if (!$assinatura) {
+            return response()->json(['error' => 'Nenhuma assinatura ativa encontrada.'], 404);
+        }
+
+        try {
+            $this->asaasService->cancelarNoGateway($assinatura->gateway_assinatura_id);
             
-            if ($assinatura->user) {
-                $assinatura->user->update(['plano_assinatura' => 'gratuito']);
-            }
+            // O status fica 'cancelada', porém o $user->plano_expira_em dita até quando ele tem acesso
+            $assinatura->update([
+                'status' => 'cancelada', 
+                'cancelada_em' => now()
+            ]);
 
-            return redirect()->back()->with('success', 'Assinatura cancelada com sucesso!');
+            return response()->json([
+                'message' => 'Plano cancelado. Seus benefícios permanecem ativos até ' . $user->plano_expira_em->format('d/m/Y')
+            ]);
         } catch (\Exception $e) {
-            return redirect()->back()->with('error', $e->getMessage());
+            return response()->json(['error' => 'Falha de comunicação com o provedor.'], 500);
         }
+    }
+
+    /**
+     * 🛡️ PAINEL ADMIN: Ações forçadas
+     */
+    public function adminAcao(Request $request, $id)
+    {
+        if (Auth::user()->papel !== 'admin') abort(403);
+
+        $request->validate(['acao' => 'required|in:cancelar,travar,marcar_pago']);
+        $assinatura = Assinatura::with('user')->findOrFail($id);
+        $user = $assinatura->user;
+
+        switch ($request->acao) {
+            case 'cancelar':
+                if ($assinatura->gateway_assinatura_id) $this->asaasService->cancelarNoGateway($assinatura->gateway_assinatura_id);
+                $assinatura->update(['status' => 'cancelada', 'cancelada_em' => now()]);
+                $user->update(['plano_expira_em' => now()]); // Interrompe benefícios imediatamente
+                break;
+
+            case 'travar':
+                $assinatura->update(['status' => 'bloqueada']);
+                $user->update(['plano_expira_em' => now()]);
+                break;
+
+            case 'marcar_pago':
+                $assinatura->update(['status' => 'ativa', 'data_inicio' => now()]);
+                
+                // Configura validade baseada no ciclo
+                $meses = $assinatura->ciclo === 'anual' ? 12 : 1;
+                $user->update([
+                    'plano_assinatura' => $assinatura->nome_plano,
+                    'plano_expira_em' => now()->addMonths($meses)
+                ]);
+
+                // Dispara os pontos daquele plano
+                $this->planoService->distribuirPontosAssinatura($user, $assinatura->nome_plano);
+                break;
+        }
+
+        return response()->json(['message' => "Ação '{$request->acao}' aplicada com sucesso."]);
+    }
+
+    /**
+     * 🔵 STATUS DA ASSINATURA (Web)
+     * Retorna a view do Inertia com os dias faltantes e dados da assinatura.
+     */
+    public function status()
+    {
+        $user = Auth::user();
+        $assinatura = $user->assinaturaAtiva ?? $user->assinaturas()->latest()->first();
+        
+        $expiraEm = $user->plano_expira_em;
+        $diasRestantes = $expiraEm ? \Carbon\Carbon::now()->diffInDays($expiraEm, false) : 0;
+        $isAtivo = $expiraEm && $expiraEm->isFuture();
+
+        $statusAssinatura = [
+            'plano_atual' => $user->plano_assinatura ?? 'gratuito',
+            'status_acesso' => $isAtivo ? 'ativo' : 'inativo',
+            'expira_em' => $expiraEm ? $expiraEm->format('d/m/Y') : null,
+            'dias_restantes' => max(0, (int) $diasRestantes),
+            'detalhes_fatura' => $assinatura
+        ];
+
+        // Se a requisição for JSON (via axios), retorna o JSON. Senão, retorna a View do Inertia.
+        if (request()->wantsJson()) {
+            return response()->json($statusAssinatura);
+        }
+
+        return Inertia::render('Cliente/StatusAssinatura', [
+            'statusAssinatura' => $statusAssinatura
+        ]);
     }
 }

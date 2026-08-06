@@ -79,4 +79,29 @@ class PagamentoMobileController extends Controller
             ], 500);
         }
     }
+
+
+    public function detalhesCheckout($id)
+    {
+        try {
+            $agendamento = \App\Models\Agendamento::with(['estabelecimento', 'funcionario', 'servico'])
+                            ->findOrFail($id);
+
+            return response()->json([
+                'id' => $agendamento->id,
+                'estabelecimento_nome' => $agendamento->estabelecimento->nome,
+                'estabelecimento_foto' => $agendamento->estabelecimento->foto_perfil,
+                'servico_nome' => $agendamento->servico->nome,
+                'funcionario_nome' => $agendamento->funcionario->nome ?? 'Profissional da casa',
+                'data_formatada' => \Carbon\Carbon::parse($agendamento->data_agendamento)->format('d/m/Y'),
+                'hora_formatada' => \Carbon\Carbon::parse($agendamento->hora_agendamento)->format('H:i'),
+                'duracao_minutos' => $agendamento->servico->duracao ?? 45,
+                'valor_total' => $agendamento->valor_final,
+                'pin' => str_pad($agendamento->id % 10000, 4, '0', STR_PAD_LEFT) // Gera um PIN visual
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Agendamento não encontrado.'], 404);
+        }
+    }
 }
