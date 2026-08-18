@@ -347,6 +347,8 @@ Route::get('/itens/{id}/detalhes', [App\Http\Controllers\Api\ItemAluguelControll
     Route::get('/itens/{id}/avaliacoes', [App\Http\Controllers\Api\AvaliacaoController::class, 'indexReact'])
     ->name('avaliacoes.pagina');
 
+    Route::post('/avaliacoes', [AvaliacaoController::class, 'store'])->name('avaliacoes.store');
+
         
 
 });

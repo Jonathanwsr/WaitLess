@@ -33,13 +33,141 @@ const COLORS = {
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api/mobile';
 
-// Categorias adaptadas para o visual com ícones circulares
 const CATEGORIAS = [
   { id: '1', name: 'Tudo', slug: 'tudo', icon: 'all-inclusive' },
   { id: '2', name: 'Locais', slug: 'estabelecimentos', icon: 'storefront-outline' },
   { id: '3', name: 'Serviços', slug: 'servicos', icon: 'briefcase-outline' },
-  { id: '4', name: 'Abertos', slug: 'abertos', icon: 'clock-outline' },
+  { id: '4', name: 'Passeios', slug: 'passeios', icon: 'compass-outline' },
+  { id: '5', name: 'Veículos', slug: 'veiculos', icon: 'car-outline' },
+  { id: '6', name: 'Casas', slug: 'casas', icon: 'home-city-outline' },
+  { id: '7', name: 'Pets', slug: 'pets', icon: 'paw-outline' },
+  { id: '8', name: 'Objetos', slug: 'objetos', icon: 'cube-outline' },
+  { id: '9', name: 'Abertos', slug: 'abertos', icon: 'clock-outline' },
 ];
+
+// Componente isolado para não reiniciar o TextInput a cada letra digitada
+function HeaderSection({
+  inputText,
+  setInputText,
+  handleSearchSubmit,
+  clearSearch,
+  categoriaAtiva,
+  setCategoriaAtiva,
+  carrinhoItens,
+  favoritosCount,
+  userFoto,
+  router
+}) {
+  return (
+    <View style={styles.headerComponentContainer}>
+      <View style={styles.topHeader}>
+        <View>
+          <Text style={styles.mainTitle}>Explorar</Text>
+          <Text style={styles.mainSubtitle}>Encontre viagens, serviços e experiências</Text>
+        </View>
+        
+        <View style={styles.headerIcons}>
+          <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/src/screens/TelaCarrinho')}>
+            <Feather name="shopping-cart" size={24} color={COLORS.secondary} />
+            {carrinhoItens > 0 && (
+              <View style={styles.badge}><Text style={styles.badgeText}>{carrinhoItens}</Text></View>
+            )}
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={styles.iconBtnCircleHeart} onPress={() => router.push('/src/screens/FavoritosDashboard')}>
+            <Ionicons name="heart-outline" size={20} color={COLORS.secondary} />
+            {favoritosCount > 0 && (
+              <View style={styles.badge}><Text style={styles.badgeText}>{favoritosCount}</Text></View>
+            )}
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.avatarContainer}
+            onPress={() => router.push('/src/screens/TelaPerfil')}
+          >
+            {userFoto ? (
+              <Image source={{ uri: userFoto }} style={styles.avatar} />
+            ) : (
+              <View style={styles.avatarPlaceholder}>
+                <Ionicons name="person" size={18} color={COLORS.gray} />
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <View style={styles.searchRow}>
+        <View style={styles.searchContainer}>
+          <Feather name="search" size={20} color={COLORS.gray} />
+          <TextInput 
+            style={styles.searchInput} 
+            placeholder="Buscar destinos, voos, serviços, passeios..." 
+            placeholderTextColor={COLORS.gray}
+            value={inputText} 
+            onChangeText={setInputText} 
+            onSubmitEditing={handleSearchSubmit}
+            returnKeyType="search"
+            autoCapitalize="none"
+          />
+          {inputText.length > 0 ? (
+            <TouchableOpacity onPress={clearSearch} style={{ padding: 4, justifyContent: 'center', alignItems: 'center' }}>
+              <Ionicons name="close-circle" size={20} color={COLORS.gray} />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity style={{ justifyContent: 'center', alignItems: 'center' }}>
+              <MaterialCommunityIcons name="tune" size={20} color={COLORS.secondary} />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryGridContainer}>
+        {CATEGORIAS.map((item) => {
+          const isActive = categoriaAtiva === item.slug;
+          return (
+            <TouchableOpacity 
+              key={item.id} 
+              style={styles.categoryGridItem} 
+              onPress={() => setCategoriaAtiva(item.slug)}
+            >
+              <View style={[styles.categoryGridIconCircle, isActive && styles.categoryGridIconCircleActive]}>
+                <MaterialCommunityIcons name={item.icon} size={26} color={isActive ? COLORS.primary : COLORS.gray} />
+              </View>
+              <Text style={[styles.categoryGridText, isActive && styles.categoryGridTextActive]}>{item.name}</Text>
+            </TouchableOpacity>
+          )
+        })}
+      </ScrollView>
+
+      <View style={styles.bannerContainer}>
+        <Image 
+          source={{ uri: 'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?q=80&w=800&auto=format&fit=crop' }} 
+          style={styles.bannerImage} 
+          resizeMode="cover" 
+        />
+        <View style={styles.bannerOverlay} />
+        <View style={styles.bannerContent}>
+          <View style={styles.bannerBadge}><Text style={styles.bannerBadgeText}>LOKYVA VIAGENS</Text></View>
+          <Text style={styles.bannerTitle}>Explore novos destinos e viva experiências incríveis</Text>
+          <Text style={styles.bannerSubtitle}>Rápido, prático e inesquecível!</Text>
+        </View>
+      </View>
+
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionTitle}>
+          {categoriaAtiva === 'servicos' ? 'Serviços encontrados' : 
+           categoriaAtiva === 'estabelecimentos' ? 'Locais e Destinos em destaque' : 
+           categoriaAtiva === 'passeios' ? 'Passeios e Experiências' :
+           categoriaAtiva === 'veiculos' ? 'Veículos e Transportes' :
+           categoriaAtiva === 'casas' ? 'Imóveis e Acomodações' :
+           categoriaAtiva === 'pets' ? 'Serviços e Produtos para Pets' :
+           categoriaAtiva === 'objetos' ? 'Objetos e Equipamentos' :
+           'Recomendados para você'}
+        </Text>
+      </View>
+    </View>
+  );
+}
 
 export default function TelaExplorar() {
   const router = useRouter();
@@ -93,6 +221,7 @@ export default function TelaExplorar() {
       if (categoriaAtiva === 'estabelecimentos') queryUrl += `tipo_busca=estabelecimentos&`;
       else if (categoriaAtiva === 'servicos') queryUrl += `tipo_busca=servicos&`;
       else if (categoriaAtiva === 'tudo') queryUrl += `tipo_busca=tudo&`;
+      else if (categoriaAtiva !== 'abertos') queryUrl += `categoria=${categoriaAtiva}&`;
 
       if (buscaAtiva.trim() !== '') queryUrl += `busca=${encodeURIComponent(buscaAtiva)}&`;
       
@@ -290,117 +419,22 @@ export default function TelaExplorar() {
     );
   };
 
-  const renderHeader = () => (
-    <View style={styles.headerComponentContainer}>
-      <View style={styles.topHeader}>
-        <View>
-          <Text style={styles.mainTitle}>Explorar</Text>
-          <Text style={styles.mainSubtitle}>Encontre viagens, serviços e experiências</Text>
-        </View>
-        
-        <View style={styles.headerIcons}>
-          <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/src/screens/TelaCarrinho')}>
-            <Feather name="shopping-cart" size={24} color={COLORS.secondary} />
-            {carrinhoItens > 0 && (
-              <View style={styles.badge}><Text style={styles.badgeText}>{carrinhoItens}</Text></View>
-            )}
-          </TouchableOpacity>
-          
-          <TouchableOpacity style={styles.iconBtnCircleHeart} onPress={() => router.push('/src/screens/FavoritosDashboard')}>
-            <Ionicons name="heart-outline" size={20} color={COLORS.secondary} />
-            {favoritos.length > 0 && (
-              <View style={styles.badge}><Text style={styles.badgeText}>{favoritos.length}</Text></View>
-            )}
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={styles.avatarContainer}
-            onPress={() => router.push('/src/screens/TelaPerfil')}
-          >
-            {userFoto ? (
-              <Image source={{ uri: userFoto }} style={styles.avatar} />
-            ) : (
-              <View style={styles.avatarPlaceholder}>
-                <Ionicons name="person" size={18} color={COLORS.gray} />
-              </View>
-            )}
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <View style={styles.searchRow}>
-        <View style={styles.searchContainer}>
-          <Feather name="search" size={20} color={COLORS.gray} />
-          <TextInput 
-            style={styles.searchInput} 
-            placeholder="Buscar destinos, voos, serviços, passeios..." 
-            placeholderTextColor={COLORS.gray}
-            value={inputText} 
-            onChangeText={setInputText} 
-            onSubmitEditing={handleSearchSubmit}
-            returnKeyType="search"
-            autoCapitalize="none"
-          />
-          {inputText.length > 0 ? (
-            <TouchableOpacity onPress={clearSearch} style={{ padding: 4 }}>
-              <Ionicons name="close-circle" size={20} color={COLORS.gray} />
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity>
-              <MaterialCommunityIcons name="tune" size={20} color={COLORS.secondary} />
-            </TouchableOpacity>
-          )}
-        </View>
-      </View>
-
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryGridContainer}>
-        {CATEGORIAS.map((item) => {
-          const isActive = categoriaAtiva === item.slug;
-          return (
-            <TouchableOpacity 
-              key={item.id} 
-              style={styles.categoryGridItem} 
-              onPress={() => setCategoriaAtiva(item.slug)}
-            >
-              <View style={[styles.categoryGridIconCircle, isActive && styles.categoryGridIconCircleActive]}>
-                <MaterialCommunityIcons name={item.icon} size={28} color={isActive ? COLORS.primary : COLORS.gray} />
-              </View>
-              <Text style={[styles.categoryGridText, isActive && styles.categoryGridTextActive]}>{item.name}</Text>
-            </TouchableOpacity>
-          )
-        })}
-      </ScrollView>
-
-      {/* Banner de Viagem/Lokyva */}
-      <View style={styles.bannerContainer}>
-        <Image 
-          source={{ uri: 'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?q=80&w=800&auto=format&fit=crop' }} 
-          style={styles.bannerImage} 
-          resizeMode="cover" 
-        />
-        <View style={styles.bannerOverlay} />
-        <View style={styles.bannerContent}>
-          <View style={styles.bannerBadge}><Text style={styles.bannerBadgeText}>LOKYVA VIAGENS</Text></View>
-          <Text style={styles.bannerTitle}>Explore novos destinos e viva experiências incríveis</Text>
-          <Text style={styles.bannerSubtitle}>Rápido, prático e inesquecível!</Text>
-        </View>
-      </View>
-
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>
-          {categoriaAtiva === 'servicos' ? 'Serviços encontrados' : 
-           categoriaAtiva === 'estabelecimentos' ? 'Locais e Destinos em destaque' : 
-           'Recomendados para você'}
-        </Text>
-      </View>
-    </View>
-  );
-
   return (
     <SafeAreaView style={styles.safeArea}>
       {loading && page === 1 ? (
         <View style={{ flex: 1, backgroundColor: COLORS.white }}>
-          {renderHeader()}
+          <HeaderSection 
+            inputText={inputText}
+            setInputText={setInputText}
+            handleSearchSubmit={handleSearchSubmit}
+            clearSearch={clearSearch}
+            categoriaAtiva={categoriaAtiva}
+            setCategoriaAtiva={setCategoriaAtiva}
+            carrinhoItens={carrinhoItens}
+            favoritosCount={favoritos.length}
+            userFoto={userFoto}
+            router={router}
+          />
           <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
             <ActivityIndicator size="large" color={COLORS.primary} />
           </View>
@@ -409,7 +443,20 @@ export default function TelaExplorar() {
         <FlatList
           data={lojas}
           keyExtractor={(i, index) => i.id.toString() + (i.tipo || '') + index}
-          ListHeaderComponent={renderHeader}
+          ListHeaderComponent={
+            <HeaderSection 
+              inputText={inputText}
+              setInputText={setInputText}
+              handleSearchSubmit={handleSearchSubmit}
+              clearSearch={clearSearch}
+              categoriaAtiva={categoriaAtiva}
+              setCategoriaAtiva={setCategoriaAtiva}
+              carrinhoItens={carrinhoItens}
+              favoritosCount={favoritos.length}
+              userFoto={userFoto}
+              router={router}
+            />
+          }
           renderItem={renderItem}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
@@ -432,40 +479,30 @@ export default function TelaExplorar() {
         />
       )}
 
-      {/* Menu Inferior exatamente conforme a imagem */}
+      {/* Menu Inferior com alinhamento centralizado perfeito */}
       <View style={styles.bottomNavContainer}>
-        <TouchableOpacity style={styles.bottomNavItem} onPress={() => router.push('/')}>
-          <Feather name="home" size={20} color={COLORS.gray} />
+        <TouchableOpacity style={styles.bottomNavItem} onPress={() => router.push('/src/screens/Home')}>
+          <Feather name="home" size={22} color={COLORS.gray} />
           <Text style={styles.bottomNavText}>Início</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.bottomNavItem}>
-          <Ionicons name="compass" size={22} color={COLORS.primary} />
+          <Ionicons name="compass" size={24} color={COLORS.primary} />
           <Text style={[styles.bottomNavText, styles.bottomNavTextActive]}>Explorar</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.bottomNavItem} onPress={() => router.push('/src/screens/Agendamentos')}>
-          <Ionicons name="calendar-outline" size={20} color={COLORS.gray} />
+        <TouchableOpacity style={styles.bottomNavItem} onPress={() => router.push('/src/screens/MeusAgendamentos')}>
+          <Ionicons name="calendar-outline" size={22} color={COLORS.gray} />
           <Text style={styles.bottomNavText} numberOfLines={1}>Agendamentos</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.bottomNavItem} onPress={() => router.push('/src/screens/Promocoes')}>
-          <Ionicons name="pricetag-outline" size={20} color={COLORS.gray} />
-          <Text style={styles.bottomNavText}>Promoções</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.bottomNavItem} onPress={() => router.push('/src/screens/TelaCarrinho')}>
-          <Feather name="shopping-cart" size={20} color={COLORS.gray} />
-          <Text style={styles.bottomNavText}>Carrinho</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.bottomNavItem} onPress={() => router.push('/src/screens/FavoritosDashboard')}>
-          <Ionicons name="heart-outline" size={20} color={COLORS.gray} />
-          <Text style={styles.bottomNavText}>Favoritos</Text>
+        <TouchableOpacity style={styles.bottomNavItem} onPress={() => router.push('/src/screens/TelaSuporte')}>
+          <Ionicons name="help-circle-outline" size={22} color={COLORS.gray} />
+          <Text style={styles.bottomNavText}>Suporte</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.bottomNavItem} onPress={() => router.push('/src/screens/TelaPerfil')}>
-          <Feather name="user" size={20} color={COLORS.gray} />
+          <Feather name="user" size={22} color={COLORS.gray} />
           <Text style={styles.bottomNavText}>Perfil</Text>
         </TouchableOpacity>
       </View>
@@ -485,7 +522,7 @@ const styles = StyleSheet.create({
   },
   topHeader: { 
     flexDirection: 'row', 
-    justifyContent: 'space-between', 
+    justify: 'space-between', 
     alignItems: 'center', 
     paddingHorizontal: 16, 
     paddingTop: 10,
@@ -509,7 +546,9 @@ const styles = StyleSheet.create({
   },
   iconBtn: { 
     position: 'relative', 
-    padding: 2 
+    padding: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   iconBtnCircleHeart: {
     width: 36,
@@ -546,6 +585,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden', 
     borderWidth: 2,
     borderColor: COLORS.border,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   avatar: { 
     width: '100%', 
@@ -553,6 +594,8 @@ const styles = StyleSheet.create({
   },
   avatarPlaceholder: {
     flex: 1,
+    width: '100%',
+    height: '100%',
     backgroundColor: COLORS.lightGray,
     alignItems: 'center',
     justifyContent: 'center',
@@ -591,18 +634,19 @@ const styles = StyleSheet.create({
   },
   categoryGridItem: {
     alignItems: 'center',
-    marginRight: 20,
-    width: 70,
+    justifyContent: 'center',
+    marginRight: 18,
+    width: 68,
   },
   categoryGridIconCircle: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 58,
+    height: 58,
+    borderRadius: 29,
     borderWidth: 2,
     borderColor: COLORS.border,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 10,
+    marginBottom: 8,
     backgroundColor: COLORS.white,
   },
   categoryGridIconCircleActive: {
@@ -620,7 +664,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  /* Banner de Viagem */
   bannerContainer: {
     width: width - 32,
     height: 180,
@@ -673,7 +716,7 @@ const styles = StyleSheet.create({
   
   sectionHeader: { 
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justify: 'space-between',
     alignItems: 'center',
     marginHorizontal: 16, 
     marginBottom: 16 
@@ -716,7 +759,7 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: '#E5E7EB',
     alignItems: 'center',
-    justifyContent: 'center'
+    justify: 'center'
   },
   placeholderText: {
     color: COLORS.gray,
@@ -731,7 +774,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(16, 185, 129, 0.9)', 
     paddingHorizontal: 12, 
     paddingVertical: 6, 
-    borderRadius: 8
+    borderRadius: 8,
+    alignItems: 'center',
+    justify: 'center'
   },
   badgeAbertoText: { 
     fontSize: 10, 
@@ -746,7 +791,9 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary, 
     paddingHorizontal: 12, 
     paddingVertical: 6, 
-    borderRadius: 8 
+    borderRadius: 8,
+    alignItems: 'center',
+    justify: 'center'
   },
   badgeServicoText: { 
     fontSize: 10, 
@@ -763,7 +810,7 @@ const styles = StyleSheet.create({
     borderRadius: 18, 
     backgroundColor: 'rgba(0,0,0,0.3)', 
     alignItems: 'center', 
-    justifyContent: 'center', 
+    justify: 'center', 
   },
   
   info: { 
@@ -771,7 +818,7 @@ const styles = StyleSheet.create({
   },
   cardHeaderRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justify: 'space-between',
     alignItems: 'center',
     marginBottom: 6,
   },
@@ -820,7 +867,7 @@ const styles = StyleSheet.create({
   
   bottomCardRow: { 
     flexDirection: 'row', 
-    justifyContent: 'space-between', 
+    justify: 'space-between', 
     alignItems: 'flex-end',
     gap: 16,
   },
@@ -885,16 +932,15 @@ const styles = StyleSheet.create({
     fontWeight: '500' 
   },
 
-  /* Menu Inferior Estilizado conforme a imagem */
   bottomNavContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    justify: 'space-around',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
-    paddingVertical: 8,
-    paddingBottom: Platform.OS === 'ios' ? 20 : 8,
+    paddingTop: 10,
+    paddingBottom: Platform.OS === 'android' ? 24 : 34,
     elevation: 8,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -2 },
@@ -904,10 +950,10 @@ const styles = StyleSheet.create({
   bottomNavItem: {
     flex: 1,
     alignItems: 'center',
-    justifyContent: 'center',
+    justify: 'center',
   },
   bottomNavText: {
-    fontSize: 9,
+    fontSize: 10,
     color: COLORS.gray,
     marginTop: 4,
     fontWeight: '500',

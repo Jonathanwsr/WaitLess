@@ -18,7 +18,7 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrend
 
 // Cores baseadas no design
 const COLORS = {
-  primary: '#F05627', // Laranja do design
+  primary: '#F05627',
   background: '#F8F9FA',
   white: '#FFFFFF',
   textDark: '#1F2937',
@@ -114,12 +114,11 @@ export default function TelaPerfil() {
     );
   }
 
-  // Dados mockados para preencher o visual caso não venham da API
   const nomeExibicao = usuario?.name || 'Lucas Ferreira';
   const emailExibicao = usuario?.email || 'lucas.ferreira@email.com';
   const tipoExibicao = usuario?.plano_atual || 'Profissional';
 
-  // Componente de Item da Lista (Reutilizável)
+  // Componente de Item da Lista (JavaScript puro)
   const ListItem = ({ icon, title, value, subValue, valueColor, titleColor, isLast, onPress }) => (
     <TouchableOpacity 
       style={[styles.listItem, !isLast && styles.listItemBorder]} 
@@ -200,6 +199,15 @@ export default function TelaPerfil() {
           <ListItem icon="card-outline" title="Método de pagamento" value="**** 4242 (Visa)" />
           <ListItem icon="chatbubble-outline" title="Meus comentários" />
           <ListItem icon="time-outline" title="Histórico de reservas" />
+          
+          {/* BOTÃO PARA ENTRAR NA TELA DE PLANEJAR VIAGEM */}
+          <ListItem 
+            icon="airplane-outline" 
+            title="Planejar Viagem" 
+            subValue="Organize seus roteiros e orçamento"
+            onPress={() => router.push('/src/screens/PlanTripScreen')} 
+          />
+          
           <ListItem icon="headset-outline" title="Suporte" isLast />
         </View>
 
@@ -243,8 +251,6 @@ const styles = StyleSheet.create({
     color: COLORS.textGray, 
     fontWeight: '500' 
   },
-  
-  // Header Top Bar
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -256,10 +262,7 @@ const styles = StyleSheet.create({
   },
   headerButton: { padding: 4 },
   headerTitle: { fontSize: 16, fontWeight: '700', color: COLORS.textDark },
-  
   scrollContent: { paddingHorizontal: 20, paddingBottom: 40 },
-
-  // Profile Summary (Top)
   profileSummary: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -320,8 +323,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600'
   },
-
-  // Sections
   sectionTitle: {
     fontSize: 16,
     fontWeight: '700',
@@ -337,8 +338,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border
   },
-
-  // List Items
   listItem: {
     flexDirection: 'row',
     alignItems: 'center',

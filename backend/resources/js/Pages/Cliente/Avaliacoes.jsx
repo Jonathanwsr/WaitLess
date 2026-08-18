@@ -3,13 +3,12 @@ import { Head, Link } from '@inertiajs/react';
 import { useState } from 'react';
 import { 
     Star, ChevronRight, CheckCircle2, ChevronDown, Filter, 
-    MoreHorizontal, Edit3, ImageOff
+    MoreHorizontal, Edit3, ImageOff, MapPin // <-- MapPin adicionado aqui!
 } from 'lucide-react';
 
 export default function Avaliacoes({ auth, item, avaliacoes, estatisticas, itemNaoEncontrado }) {
     const [filtroEstrela, setFiltroEstrela] = useState('Todas');
 
-    // 🚀 TELA AMIGÁVEL SE O ITEM NÃO EXISTIR NO BANCO OU NÃO TIVER ID
     if (itemNaoEncontrado || !item) {
         return (
             <AuthenticatedLayout user={auth?.user}>
@@ -71,7 +70,6 @@ export default function Avaliacoes({ auth, item, avaliacoes, estatisticas, itemN
             <Head title={`Avaliações de ${item.nome}`} />
 
             <div className="bg-[#FBF9F9] min-h-screen pb-24 font-sans">
-                {/* --- BREADCRUMBS --- */}
                 <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-4">
                     <div className="flex items-center text-sm text-gray-500 font-medium">
                         <Link href={route('dashboard')} className="hover:underline">Início</Link>
@@ -88,13 +86,11 @@ export default function Avaliacoes({ auth, item, avaliacoes, estatisticas, itemN
 
                 <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8">
                     
-                    {/* CABEÇALHO */}
                     <div className="mb-8">
                         <h1 className="text-3xl font-black text-gray-900 mb-2">Avaliações: {item.nome}</h1>
                         <p className="text-gray-500 font-medium">Veja o que os clientes que já utilizaram têm a dizer.</p>
                     </div>
 
-                    {/* BOX SUPERIOR DE RESUMO */}
                     <div className="bg-white rounded-3xl p-8 border border-gray-200 shadow-sm flex flex-col md:flex-row items-center gap-12 mb-8">
                         <div className="flex flex-col items-center justify-center shrink-0">
                             <span className="text-6xl font-black text-gray-900 tracking-tighter mb-2">
@@ -132,7 +128,6 @@ export default function Avaliacoes({ auth, item, avaliacoes, estatisticas, itemN
 
                     <div className="flex flex-col lg:flex-row gap-10">
                         <div className="lg:w-[70%]">
-                            
                             <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
                                 <div className="flex flex-wrap gap-2">
                                     {['Todas', '5 estrelas', '4 estrelas'].map(filtro => (
@@ -185,11 +180,16 @@ export default function Avaliacoes({ auth, item, avaliacoes, estatisticas, itemN
 
                                                 <p className="text-gray-700 leading-relaxed mb-4">{aval.comentario}</p>
 
+                                                {/* GALERIA DE FOTOS DA AVALIAÇÃO */}
                                                 {fotosArray.length > 0 && (
                                                     <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
                                                         {fotosArray.map((fotoUrl, idx) => (
                                                             <div key={idx} className="w-32 h-24 shrink-0 rounded-lg overflow-hidden border border-gray-200">
-                                                                <img src={fotoUrl} alt="Foto da avaliação" className="w-full h-full object-cover hover:scale-105 transition-transform cursor-pointer" />
+                                                                <img 
+                                                                    src={fotoUrl} 
+                                                                    alt="Foto da avaliação" 
+                                                                    className="w-full h-full object-cover hover:scale-105 transition-transform cursor-pointer" 
+                                                                />
                                                             </div>
                                                         ))}
                                                     </div>

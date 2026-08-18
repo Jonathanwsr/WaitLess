@@ -7,6 +7,7 @@ use App\Models\Agendamento;
 use App\Models\Aluguel;
 use App\Models\ItemAluguel;
 use App\Models\Servico;
+use App\Models\User;
 use App\Models\Estabelecimento;
 use App\Models\Pagamento;
 use App\Services\PagamentoService;
@@ -327,257 +328,71 @@ class MobileAgendamentoController extends Controller
     }
 
     /**
-     * 👉 HORÁRIOS DISPONÍVEIS (PUXANDO DO BANCO DE DADOS)
+     * 👉 HORÁRIOS DISPONÍVEIS (PUXANDO DO BANCO DE DADOS E LENDO JSON CORRETAMENTE)
      */
     public function obtenerHorariosDisponiveis(Request $request, $id)
     {
         $data = $request->query('data');
+        $tipo = $request->query('tipo', 'servico');
+
         if (!$data) return response()->json([]);
 
-        $servico = Servico::findOrFail($id);
-
-        $horariosFuncionamento = is_array($servico->horarios_disponiveis) && count($servico->horarios_disponiveis) > 0
-            ? $servico->horarios_disponiveis
-            : ['08:00', '09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00', '17:00'];
-
-        $horariosOcupados = DB::table('agendamentos')
-            ->where('data_agendamento', $data)
-            ->where('servico_id', $id)
-            ->where('status', '!=', 'cancelado')
-            ->pluck('hora_agendamento')
-            ->map(function($hora) {
-                return substr($hora, 0, 5);
-            })
-            ->toArray();
-
-        $horariosLivres = array_values(array_filter($horariosFuncionamento, function($hora) use ($horariosOcupados) {
-            return !in_array($hora, $horariosOcupados);
-        }));
-
-        return response()->json($horariosLivres);
-    }
-
-
-    /**
-     * 👉 CHECKOUT MISTO (CARRINHO) COM DESCONTO DE PONTOS
-     * Junta serviços, aluguéis e produtos em um único pedido e aplica desconto com pontos.
-     */
-    public function checkoutMisto(Request $request)
-    {
-        $validated = $request->validate([
-            'estabelecimento_id'          => 'required|exists:estabelecimentos,id',
-            'forma_pagamento'             => 'required|in:online,presencial',
-            
-            // Dados de uso de pontos
-            'usar_pontos'                 => 'boolean',
-            'pontos_a_usar'               => 'nullable|integer|min:1',
-            
-            // Array contendo os itens do carrinho (podem ser misturados)
-            'itens'                       => 'required|array|min:1',
-            'itens.*.tipo'                => 'required|in:servico,aluguel,produto',
-            'itens.*.id'                  => 'required|integer',
-            'itens.*.quantidade'          => 'required|integer|min:1',
-            
-            // Campos específicos se for Serviço
-            'itens.*.data_agendamento'    => 'nullable|date',
-            'itens.*.hora_agendamento'    => 'nullable|string',
-            
-            // Campos específicos se for Aluguel (Carros, Espaços)
-            'itens.*.data_inicio'         => 'nullable|date',
-            'itens.*.data_fim'            => 'nullable|date',
-            'itens.*.tipo_periodo'        => 'nullable|string|in:diaria,semanal,mensal',
-            'itens.*.quantidade_periodos' => 'nullable|integer',
-        ]);
-
-        $user = Auth::user();
-        $estabelecimentoId = $validated['estabelecimento_id'];
+        $horariosFuncionamento = [];
+        $horariosOcupados = [];
 
         try {
-            DB::beginTransaction();
-
-            $valorTotalBruto = 0;
-            $agendamentosCriados = [];
-            $alugueisCriados = [];
-            
-            // Cria um código de grupo para amarrar todos os itens deste "Pedido"
-            $codigoReservaGrupo = 'PED-' . strtoupper(Str::random(8));
-
-            // =========================================================
-            // 1. PROCESSAR OS ITENS DO CARRINHO
-            // =========================================================
-            foreach ($validated['itens'] as $itemReq) {
+            if ($tipo === 'aluguel') {
+                $item = ItemAluguel::findOrFail($id);
+                $horariosStr = $item->horarios_disponiveis ?? '[]';
                 
-                // 👉 SE FOR UM SERVIÇO
-                if ($itemReq['tipo'] === 'servico') {
-                    $servico = Servico::findOrFail($itemReq['id']);
-                    $valorItem = $servico->valor * $itemReq['quantidade'];
-                    $valorTotalBruto += $valorItem;
-
-                    for ($i = 0; $i < $itemReq['quantidade']; $i++) {
-                        $agendamentosCriados[] = Agendamento::create([
-                            'estabelecimento_id' => $estabelecimentoId,
-                            'usuario_id'         => $user->id,
-                            'servico_id'         => $servico->id,
-                            'data_agendamento'   => $itemReq['data_agendamento'],
-                            'hora_agendamento'   => $itemReq['hora_agendamento'],
-                            'status'             => 'aguardando_pagamento',
-                            'status_pagamento'   => 'pendente',
-                            'valor_final'        => $servico->valor,
-                            'codigo_verificacao' => $codigoReservaGrupo, // Vincula ao pedido
-                        ]);
-                    }
-                } 
-                
-                // 👉 SE FOR UM ALUGUEL / RESERVA DE VEÍCULO OU ESPAÇO
-                elseif ($itemReq['tipo'] === 'aluguel') {
-                    $itemAluguel = ItemAluguel::findOrFail($itemReq['id']);
-                    $tipoPeriodo = $itemReq['tipo_periodo'] ?? 'diaria';
-                    
-                    $valorUnitario = match($tipoPeriodo) {
-                        'diaria'  => $itemAluguel->valor_diaria,
-                        'semanal' => $itemAluguel->valor_semanal,
-                        'mensal'  => $itemAluguel->valor_mensal,
-                        default   => $itemAluguel->valor_diaria,
-                    };
-
-                    $qtdPeriodos = $itemReq['quantidade_periodos'] ?? 1;
-                    $valorItemTotal = ($valorUnitario * $qtdPeriodos) * $itemReq['quantidade'];
-                    $valorItemTotal += ($itemAluguel->valor_caucao ?? 0); // Soma caução se houver
-                    
-                    $valorTotalBruto += $valorItemTotal;
-
-                    $alugueisCriados[] = Aluguel::create([
-                        'codigo_reserva'      => $codigoReservaGrupo, // Vincula ao pedido
-                        'item_aluguel_id'     => $itemAluguel->id,
-                        'estabelecimento_id'  => $estabelecimentoId,
-                        'proprietario_id'     => $itemAluguel->estabelecimento_id,
-                        'locatario_id'        => $user->id,
-                        'tipo_periodo'        => $tipoPeriodo,
-                        'quantidade_periodos' => $qtdPeriodos,
-                        'data_inicio'         => $itemReq['data_inicio'],
-                        'data_fim'            => $itemReq['data_fim'] ?? Carbon::parse($itemReq['data_inicio'])->addDays($qtdPeriodos),
-                        'quantidade'          => $itemReq['quantidade'],
-                        'valor_unitario'      => $valorUnitario,
-                        'valor_caucao'        => $itemAluguel->valor_caucao ?? 0,
-                        'valor_total'         => $valorItemTotal,
-                        'taxa_plataforma'     => $valorItemTotal * $this->taxaApp,
-                        'forma_pagamento'     => $validated['forma_pagamento'],
-                        'status'              => 'pendente',
-                    ]);
+                if (is_string($horariosStr)) {
+                    $horariosFuncionamento = json_decode($horariosStr, true) ?? [];
+                } elseif (is_array($horariosStr)) {
+                    $horariosFuncionamento = $horariosStr;
                 }
+
+                // OTIMIZAÇÃO: Consulta mais simples e rápida para evitar timeout
+                $horariosOcupados = DB::table('alugueis')
+                    ->where('item_aluguel_id', $id)
+                    ->where('data_inicio', $data)
+                    ->whereNotIn('status', ['cancelado', 'estornado'])
+                    ->pluck('hora_inicio')
+                    ->map(fn($hora) => substr($hora, 0, 5))
+                    ->toArray();
+                    
+            } else {
+                $servico = Servico::findOrFail($id);
+                $horariosStr = $servico->horarios_disponiveis ?? '[]';
+                
+                if (is_string($horariosStr)) {
+                    $horariosFuncionamento = json_decode($horariosStr, true) ?? [];
+                } elseif (is_array($horariosStr)) {
+                    $horariosFuncionamento = $horariosStr;
+                }
+
+                $horariosOcupados = DB::table('agendamentos')
+                    ->where('data_agendamento', $data)
+                    ->where('servico_id', $id)
+                    ->whereNotIn('status', ['cancelado', 'finalizado'])
+                    ->pluck('hora_agendamento')
+                    ->map(fn($hora) => substr($hora, 0, 5))
+                    ->toArray();
             }
 
-            // =========================================================
-            // 2. APLICAR DESCONTO COM PONTOS DE FIDELIDADE
-            // =========================================================
-            $valorDesconto = 0;
-            $pontosUtilizados = 0;
-
-            if (($validated['usar_pontos'] ?? false) && !empty($validated['pontos_a_usar'])) {
-                
-                $saldoPontos = DB::table('pontos_usuario_estabelecimento')
-                    ->where('usuario_id', $user->id)
-                    ->where('estabelecimento_id', $estabelecimentoId)
-                    ->value('total_pontos') ?? 0;
-
-                $pontosSolicitados = $validated['pontos_a_usar'];
-
-                if ($saldoPontos >= $pontosSolicitados) {
-                    // EXEMPLO DE CONVERSÃO: 100 pontos = R$ 1,00
-                    $taxaConversao = 0.01; 
-                    $descontoCalculado = $pontosSolicitados * $taxaConversao;
-
-                    // O desconto não pode ser maior que o valor total do carrinho
-                    if ($descontoCalculado > $valorTotalBruto) {
-                        $descontoCalculado = $valorTotalBruto;
-                        $pontosUtilizados = $valorTotalBruto / $taxaConversao;
-                    } else {
-                        $valorDesconto = $descontoCalculado;
-                        $pontosUtilizados = $pontosSolicitados;
-                    }
-
-                    // Deduzir os pontos da carteira do usuário
-                    DB::table('pontos_usuario_estabelecimento')
-                        ->where('usuario_id', $user->id)
-                        ->where('estabelecimento_id', $estabelecimentoId)
-                        ->decrement('total_pontos', $pontosUtilizados);
-
-                    // Registrar o extrato no Histórico de Pontos
-                    DB::table('historico_pontos')->insert([
-                        'usuario_id'         => $user->id,
-                        'estabelecimento_id' => $estabelecimentoId,
-                        'agendamento_id'     => !empty($agendamentosCriados) ? $agendamentosCriados[0]->id : null,
-                        'tipo'               => 'uso',
-                        'descricao'          => "Desconto de R$ " . number_format($valorDesconto, 2, ',', '.') . " aplicado no pedido {$codigoReservaGrupo}.",
-                        'quantidade'         => $pontosUtilizados,
-                        'created_at'         => now()
-                    ]);
-                } else {
-                    return response()->json(['error' => 'Saldo de pontos insuficiente para o resgate.'], 400);
-                }
+            if (empty($horariosFuncionamento)) {
+                $horariosFuncionamento = ['08:00', '09:00', '10:00', '11:00', '13:00', '14:00', '15:00', '16:00', '17:00'];
             }
 
-            // =========================================================
-            // 3. FINALIZAR CÁLCULOS E GERAR PAGAMENTO
-            // =========================================================
-            $valorFinalLiquido = max(0, $valorTotalBruto - $valorDesconto);
+            $horariosLivres = array_values(array_filter($horariosFuncionamento, function($hora) use ($horariosOcupados) {
+                return !in_array(substr($hora, 0, 5), $horariosOcupados);
+            }));
 
-            // Cria um registro de pagamento mestre para este Pedido/Grupo
-            $pagamentoPedido = Pagamento::create([
-                'usuario_id'         => $user->id,
-                'estabelecimento_id' => $estabelecimentoId,
-                // Associa o ID do primeiro item apenas para referência caso sua tabela exija a FK
-                'agendamento_id'     => !empty($agendamentosCriados) ? $agendamentosCriados[0]->id : null,
-                'aluguel_id'         => !empty($alugueisCriados) ? $alugueisCriados[0]->id : null,
-                'valor'              => $valorFinalLiquido,
-                'taxa'               => round($valorFinalLiquido * $this->taxaApp, 2),
-                'valor_liquido'      => $valorFinalLiquido - round($valorFinalLiquido * $this->taxaApp, 2),
-                'status'             => 'pendente',
-                'metodo_pagamento'   => $validated['forma_pagamento'] === 'presencial' ? 'presencial' : 'pendente_online',
-            ]);
+            return response()->json($horariosLivres);
 
-            DB::commit();
-
-            // Retorna o objeto unificado que será lido pela sua "Tela de Pagamento"
-            return response()->json([
-                'message'           => 'Pedido montado com sucesso!',
-                'codigo_pedido'     => $codigoReservaGrupo,
-                'resumo_financeiro' => [
-                    'valor_bruto'     => $valorTotalBruto,
-                    'desconto_pontos' => $valorDesconto,
-                    'pontos_usados'   => $pontosUtilizados,
-                    'valor_total'     => $valorFinalLiquido,
-                ],
-                'pagamento_id'      => $pagamentoPedido->id,
-                'itens_criados'     => [
-                    'agendamentos' => collect($agendamentosCriados)->pluck('id'),
-                    'alugueis'     => collect($alugueisCriados)->pluck('id'),
-                ]
-            ], 201);
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            \Log::error("Erro no Checkout Misto: " . $e->getMessage());
-            return response()->json(['error' => 'Erro ao processar o pedido: ' . $e->getMessage()], 500);
+        } catch (Exception $e) {
+            Log::error('Erro na busca de horários: ' . $e->getMessage());
+            return response()->json(['08:00', '09:00', '10:00', '11:00', '14:00', '15:00', '16:00', '17:00']); // Fallback de segurança para não travar o app
         }
-    }
-
-
-    public function listarServicosCatalogo(Request $request)
-    {
-        $estId = $request->query('estabelecimento_id');
-        $servicos = Servico::where('estabelecimento_id', $estId)->where('ativo', true)->get();
-        return response()->json(['data' => $servicos], 200);
-    }
-
-    public function listarItensAluguelCatalogo(Request $request)
-    {
-        $estId = $request->query('estabelecimento_id');
-        $itens = ItemAluguel::where('estabelecimento_id', $estId)
-            ->where('ativo', true)
-            ->where('disponivel', true)
-            ->get();
-        return response()->json(['data' => $itens], 200);
     }
 
     public function salvarNotaTriagem(Request $request, $id)
@@ -661,12 +476,13 @@ class MobileAgendamentoController extends Controller
             'diaria' => $item->valor_diaria,
             'semanal' => $item->valor_semanal,
             'mensal' => $item->valor_mensal,
+            default => $item->valor_diaria
         };
 
         $valorBruto = ($valorUnitario * $validated['quantidade_periodos']) * $validated['quantidade'];
         $valorTotalComCaucao = $valorBruto + ($item->valor_caucao ?? 0);
 
-        $taxaMarketplace = $valorBruto * 0.12;
+        $taxaMarketplace = $valorBruto * $this->taxaApp;
 
         if ($validated['forma_pagamento'] === 'presencial') {
             $estabelecimento = Estabelecimento::find($item->estabelecimento_id);
@@ -730,13 +546,9 @@ class MobileAgendamentoController extends Controller
     }
 
     /* =========================================================================
-       👉 MÉTODOS MOBILE - CLIENTE (APP): DETALHES DE ESTABELECIMENTOS E SERVIÇOS
+       👉 MÉTODOS MOBILE - CLIENTE (APP): DETALHES RÍCOS DE CATÁLOGO
        ========================================================================= */
 
-    /**
-     * BUSCA OS DETALHES COMPLETOS DE UM SERVIÇO (AGENDAMENTO)
-     * Corrigido para a coluna "duracao_minutos" e conversão das fotos do Cloudinary
-     */
     public function detalhesServicoApp($id)
     {
         $servico = Servico::with('estabelecimento')->findOrFail($id);
@@ -756,8 +568,10 @@ class MobileAgendamentoController extends Controller
             $fotosArray = $servico->fotos;
         }
         if (empty($fotosArray)) {
-            $fotosArray = ['https://via.placeholder.com/400'];
+            $fotosArray = ['https://images.unsplash.com/photo-1521590832167-7bcbfaa6381f?q=80&w=1000&auto=format&fit=crop'];
         }
+
+        $config = is_string($servico->configuracoes) ? json_decode($servico->configuracoes, true) : $servico->configuracoes;
 
         return response()->json([
             'id' => $servico->id,
@@ -768,12 +582,22 @@ class MobileAgendamentoController extends Controller
             'fotos' => $fotosArray,
             'avaliacao_media' => $servico->avaliacao_media ?? 0,
             'total_avaliacoes' => $servico->total_avaliacoes ?? 0,
-            'configuracoes' => $servico->configuracoes,
-            'horarios_disponiveis' => is_array($servico->horarios_disponiveis) ? $servico->horarios_disponiveis : [],
+            
+            // Regras de Desconto
+            'tem_promocao' => $config['tem_cupom'] ?? false,
+            'tipo_desconto' => $config['tipo_desconto_cupom'] ?? 'percentual',
+            'valor_desconto' => $config['valor_cupom'] ?? 0,
+            'aceita_pontos' => true, 
+            'maximo_pontos_permitidos' => 10000,
+            
             'estabelecimento' => [
-                'id' => $servico->estabelecimento->id,
-                'nome' => $servico->estabelecimento->nome,
-                'foto_perfil' => $servico->estabelecimento->foto_perfil,
+                'id' => $servico->estabelecimento->id ?? null,
+                'nome' => $servico->estabelecimento->nome ?? $servico->estabelecimento->nome_fantasia ?? 'Estabelecimento',
+                'foto_perfil' => $servico->estabelecimento->foto_perfil ?? 'https://via.placeholder.com/150',
+                'rua' => $servico->estabelecimento->rua ?? '',
+                'numero' => $servico->estabelecimento->numero ?? '',
+                'cidade' => $servico->estabelecimento->cidade ?? '',
+                'estado' => $servico->estabelecimento->estado ?? '',
             ],
             'avaliacoes' => $avaliacoes
         ], 200);
@@ -801,27 +625,78 @@ class MobileAgendamentoController extends Controller
             $fotosArray = $item->fotos;
         }
         if (empty($fotosArray)) {
-            $fotosArray = [$item->foto_principal ?? 'https://via.placeholder.com/400'];
+            $fotosArray = [$item->foto_principal ?? 'https://images.unsplash.com/photo-1521590832167-7bcbfaa6381f?q=80&w=1000&auto=format&fit=crop'];
         }
+
+        $provedor = $item->estabelecimento;
+        $nomeProvedor = $provedor->name ?? $provedor->nome ?? 'Proprietário';
+        $fotoProvedor = $provedor->foto_url ?? $provedor->foto_perfil ?? 'https://via.placeholder.com/150';
+
+        $recursos = is_string($item->recursos_oferecidos) ? json_decode($item->recursos_oferecidos, true) : $item->recursos_oferecidos;
+        $acessorios = is_string($item->acessorios) ? json_decode($item->acessorios, true) : $item->acessorios;
 
         return response()->json([
             'id' => $item->id,
             'nome' => $item->nome,
+            'categoria' => $item->categoria ?? 'locacao',
             'descricao' => $item->descricao,
+            
+            // Preços
             'valor_diaria' => $item->valor_diaria,
             'valor_semanal' => $item->valor_semanal,
             'valor_mensal' => $item->valor_mensal,
+            'valor_caucao' => $item->valor_caucao,
+            
+            // Promoções e Descontos
+            'tem_promocao' => (bool) $item->tem_promocao,
+            'tipo_desconto' => $item->tipo_desconto ?? 'percentual',
+            'valor_desconto' => $item->valor_desconto ?? 0,
+            
+            // Fidelidade
+            'aceita_pontos' => (bool) $item->aceita_pontos,
+            'maximo_pontos_permitidos' => $item->maximo_pontos_permitidos ?? 0,
+            
+            // Atributos Especiais
+            'capacidade_pessoas' => $item->capacidade_pessoas ?? 0,
+            'numero_quartos' => $item->numero_quartos ?? 0,
+            'mobiliado' => (bool) $item->mobiliado,
+            'aceita_pet' => (bool) $item->aceita_pet,
+            'possui_wifi' => (bool) $item->possui_wifi,
+            'possui_ar_condicionado' => (bool) $item->possui_ar_condicionado,
+            'piscina' => (bool) $item->piscina,
+            'churrasqueira' => (bool) $item->churrasqueira,
+            'possui_seguro' => (bool) $item->possui_seguro,
+
+            // Listas
+            'recursos_oferecidos' => is_array($recursos) ? $recursos : [],
+            'acessorios' => is_array($acessorios) ? $acessorios : [],
             'fotos' => $fotosArray,
-            'sempre_disponivel' => $item->sempre_disponivel,
-            'dias_semana_disponiveis' => is_array($item->dias_semana_disponiveis) ? $item->dias_semana_disponiveis : [],
-            'datas_permitidas' => is_array($item->datas_permitidas) ? $item->datas_permitidas : [],
-            'datas_bloqueadas' => is_array($item->datas_bloqueadas) ? $item->datas_bloqueadas : [],
-            'recursos_oferecidos' => is_array($item->recursos_oferecidos) ? $item->recursos_oferecidos : [],
-            'acessorios' => is_array($item->acessorios) ? $item->acessorios : [],
+            
+            // Retirada Específica do Bem
+            'cep_retirada' => $item->cep_retirada,
+            'rua_retirada' => $item->rua_retirada,
+            'numero_retirada' => $item->numero_retirada,
+            'bairro_retirada' => $item->bairro_retirada,
+            'cidade_retirada' => $item->cidade_retirada,
+            'estado_retirada' => $item->estado_retirada,
+
+            // Entrega Específica do Bem
+            'cep_entrega' => $item->cep_entrega,
+            'rua_entrega' => $item->rua_entrega,
+            'numero_entrega' => $item->numero_entrega,
+            'bairro_entrega' => $item->bairro_entrega,
+            'cidade_entrega' => $item->cidade_entrega,
+            'estado_entrega' => $item->estado_entrega,
+            
+            // Perfil do Anunciante
             'estabelecimento' => [
-                'id' => $item->estabelecimento->id,
-                'nome' => $item->estabelecimento->nome,
-                'foto_perfil' => $item->estabelecimento->foto_perfil,
+                'id' => $provedor->id ?? null,
+                'nome' => $nomeProvedor,
+                'foto_perfil' => $fotoProvedor,
+                'rua' => $provedor->rua ?? $provedor->address ?? '',
+                'numero' => $provedor->numero ?? $provedor->address_number ?? '',
+                'cidade' => $provedor->cidade ?? $provedor->city ?? '',
+                'estado' => $provedor->estado ?? $provedor->province ?? '',
             ],
             'avaliacoes' => $avaliacoes
         ], 200);
@@ -855,335 +730,207 @@ class MobileAgendamentoController extends Controller
         ]);
     }
 
-    public function agendarServico(Request $request, $id)
-    {
-        $estabelecimento = Estabelecimento::findOrFail($id);
+    /* =========================================================================
+       👉 CHECKOUT MISTO (CARRINHO E PONTOS) TOTALMENTE OTIMIZADO PARA VELOCIDADE
+       ========================================================================= */
 
+    public function checkoutMisto(Request $request)
+    {
         $validated = $request->validate([
-            'servico_id'       => 'required|exists:servicos,id',
-            'data_agendamento' => 'required|date|after_or_equal:today',
-            'hora_agendamento' => 'required|string',
-            'forma_pagamento'  => 'required|in:online_agora,online_depois,presencial',
-            'desconto_id'      => 'nullable|exists:descontos,id'
+            'estabelecimento_id'          => 'required',
+            'forma_pagamento'             => 'required|in:online,presencial',
+            'usar_pontos'                 => 'boolean',
+            'pontos_a_usar'               => 'nullable|integer|min:1',
+            'itens'                       => 'required|array|min:1',
+            'itens.*.tipo'                => 'required|in:servico,aluguel,produto',
+            'itens.*.id'                  => 'required|integer',
+            'itens.*.quantidade'          => 'required|integer|min:1',
+            'itens.*.data_agendamento'    => 'nullable|date',
+            'itens.*.hora_agendamento'    => 'nullable|string',
+            'itens.*.data_inicio'         => 'nullable|date',
+            'itens.*.data_fim'            => 'nullable|date',
+            'itens.*.tipo_periodo'        => 'nullable|string|in:diaria,semanal,mensal',
+            'itens.*.quantidade_periodos' => 'nullable|integer',
+            'tipo_entrega'                => 'nullable|in:estabelecimento,endereco',
+            'cep_entrega'                 => 'nullable|string',
+            'rua_entrega'                 => 'nullable|string',
+            'numero_entrega'              => 'nullable|string',
+            'bairro_entrega'              => 'nullable|string',
+            'cidade_entrega'              => 'nullable|string',
         ]);
 
-        $dataHora = Carbon::parse($validated['data_agendamento'].' '.$validated['hora_agendamento']);
-
-        if ($dataHora->isPast()) {
-            return response()->json(['error' => 'Data ou horário inválido.'], 422);
-        }
-
-        $servico = $estabelecimento->servicos()->findOrFail($validated['servico_id']);
+        $user = Auth::user();
+        $estabelecimentoId = $validated['estabelecimento_id'];
 
         try {
             DB::beginTransaction();
 
-            $isPresencial = $validated['forma_pagamento'] === 'presencial';
-            $valorTotal = $servico->valor;
-            $pontosNecessarios = 0;
+            $valorTotalBruto = 0;
+            $agendamentosCriados = [];
+            $alugueisCriados = [];
+            $codigoReservaGrupo = 'PED-' . strtoupper(Str::random(8));
 
-            if ($request->filled('desconto_id')) {
-                $desconto = DB::table('descontos')
-                    ->where('id', $request->desconto_id)
-                    ->where('estabelecimento_id', $estabelecimento->id)
-                    ->where('ativo', true)
-                    ->first();
+            // OTIMIZAÇÃO: Consulta de uma vez só todos os itens para evitar Timeout (N+1 Problem)
+            $idsServicos = [];
+            $idsLocacoes = [];
+            foreach ($validated['itens'] as $item) {
+                if ($item['tipo'] === 'servico') $idsServicos[] = $item['id'];
+                if ($item['tipo'] === 'aluguel') $idsLocacoes[] = $item['id'];
+            }
 
-                if ($desconto && $desconto->tipo === 'pontos') {
-                    $pontosNecessarios = $desconto->pontos_necessarios ?? 1000;
+            $servicosNoBanco = Servico::whereIn('id', $idsServicos)->get()->keyBy('id');
+            $locacoesNoBanco = ItemAluguel::whereIn('id', $idsLocacoes)->get()->keyBy('id');
 
-                    $saldoPontosLocal = DB::table('pontos_usuario_estabelecimento')
-                        ->where('usuario_id', Auth::id())
-                        ->where('estabelecimento_id', $estabelecimento->id)
-                        ->value('total_pontos') ?? 0;
+            foreach ($validated['itens'] as $itemReq) {
+                
+                if ($itemReq['tipo'] === 'servico') {
+                    $servico = $servicosNoBanco->get($itemReq['id']);
+                    if (!$servico) continue;
 
-                    if ($saldoPontosLocal < $pontosNecessarios) {
-                        return response()->json(['error' => 'Saldo de pontos insuficiente.'], 400);
+                    $valorItem = $servico->valor * $itemReq['quantidade'];
+                    $valorTotalBruto += $valorItem;
+
+                    for ($i = 0; $i < $itemReq['quantidade']; $i++) {
+                        $agendamentosCriados[] = Agendamento::create([
+                            'estabelecimento_id' => $estabelecimentoId,
+                            'usuario_id'         => $user->id,
+                            'servico_id'         => $servico->id,
+                            'data_agendamento'   => $itemReq['data_agendamento'] ?? now()->toDateString(),
+                            'hora_agendamento'   => $itemReq['hora_agendamento'] ?? '00:00:00',
+                            'status'             => 'aguardando_pagamento',
+                            'status_pagamento'   => 'pendente',
+                            'valor_final'        => $servico->valor,
+                            'codigo_verificacao' => $codigoReservaGrupo,
+                        ]);
+                    }
+                } 
+                elseif ($itemReq['tipo'] === 'aluguel') {
+                    $itemAluguel = $locacoesNoBanco->get($itemReq['id']);
+                    if (!$itemAluguel) continue;
+
+                    $tipoPeriodo = $itemReq['tipo_periodo'] ?? 'diaria';
+                    
+                    $valorUnitario = match($tipoPeriodo) {
+                        'semanal' => $itemAluguel->valor_semanal,
+                        'mensal'  => $itemAluguel->valor_mensal,
+                        default   => $itemAluguel->valor_diaria,
+                    } ?? 0;
+
+                    $qtdPeriodos = $itemReq['quantidade_periodos'] ?? 1;
+                    $valorItemTotal = ($valorUnitario * $qtdPeriodos) * $itemReq['quantidade'];
+                    $valorItemTotal += ($itemAluguel->valor_caucao ?? 0); 
+                    
+                    $valorTotalBruto += $valorItemTotal;
+
+                    $isDelivery = ($validated['tipo_entrega'] ?? '') === 'endereco';
+
+                    $alugueisCriados[] = Aluguel::create([
+                        'codigo_reserva'      => $codigoReservaGrupo,
+                        'item_aluguel_id'     => $itemAluguel->id,
+                        'estabelecimento_id'  => $estabelecimentoId,
+                        'proprietario_id'     => $itemAluguel->estabelecimento_id,
+                        'locatario_id'        => $user->id,
+                        'tipo_periodo'        => $tipoPeriodo,
+                        'quantidade_periodos' => $qtdPeriodos,
+                        'data_inicio'         => $itemReq['data_inicio'] ?? now()->toDateString(),
+                        'data_fim'            => $itemReq['data_fim'] ?? Carbon::parse($itemReq['data_inicio'])->addDays($qtdPeriodos),
+                        'quantidade'          => $itemReq['quantidade'],
+                        'valor_unitario'      => $valorUnitario,
+                        'valor_caucao'        => $itemAluguel->valor_caucao ?? 0,
+                        'valor_total'         => $valorItemTotal,
+                        'taxa_plataforma'     => $valorItemTotal * $this->taxaApp,
+                        'forma_pagamento'     => $validated['forma_pagamento'],
+                        'status'              => 'pendente',
+                        
+                        'cep_entrega'         => $isDelivery ? $validated['cep_entrega'] : null,
+                        'rua_entrega'         => $isDelivery ? $validated['rua_entrega'] : null,
+                        'numero_entrega'      => $isDelivery ? $validated['numero_entrega'] : null,
+                        'bairro_entrega'      => $isDelivery ? $validated['bairro_entrega'] : null,
+                        'cidade_entrega'      => $isDelivery ? $validated['cidade_entrega'] : null,
+                    ]);
+                }
+            }
+
+            $valorDesconto = 0;
+            $pontosUtilizados = 0;
+
+            if (($validated['usar_pontos'] ?? false) && !empty($validated['pontos_a_usar'])) {
+                $saldoPontos = DB::table('pontos_usuario_estabelecimento')
+                    ->where('usuario_id', $user->id)
+                    ->where('estabelecimento_id', $estabelecimentoId)
+                    ->value('total_pontos') ?? 0;
+
+                $pontosSolicitados = $validated['pontos_a_usar'];
+
+                if ($saldoPontos >= $pontosSolicitados) {
+                    $taxaConversao = 0.01; 
+                    $descontoCalculado = $pontosSolicitados * $taxaConversao;
+
+                    if ($descontoCalculado > $valorTotalBruto) {
+                        $descontoCalculado = $valorTotalBruto;
+                        $pontosUtilizados = $valorTotalBruto / $taxaConversao;
+                    } else {
+                        $valorDesconto = $descontoCalculado;
+                        $pontosUtilizados = $pontosSolicitados;
                     }
 
                     DB::table('pontos_usuario_estabelecimento')
-                        ->where('usuario_id', Auth::id())
-                        ->where('estabelecimento_id', $estabelecimento->id)
-                        ->decrement('total_pontos', $pontosNecessarios);
+                        ->where('usuario_id', $user->id)
+                        ->where('estabelecimento_id', $estabelecimentoId)
+                        ->decrement('total_pontos', $pontosUtilizados);
 
-                    $valorTotal = max(0, $valorTotal - $desconto->valor);
+                    DB::table('historico_pontos')->insert([
+                        'usuario_id'         => $user->id,
+                        'estabelecimento_id' => $estabelecimentoId,
+                        'agendamento_id'     => !empty($agendamentosCriados) ? $agendamentosCriados[0]->id : null,
+                        'tipo'               => 'uso',
+                        'descricao'          => "Desconto de R$ " . number_format($valorDesconto, 2, ',', '.') . " aplicado no pedido {$codigoReservaGrupo}.",
+                        'quantidade'         => $pontosUtilizados,
+                        'created_at'         => now()
+                    ]);
+                } else {
+                    return response()->json(['error' => 'Saldo de pontos insuficiente para o resgate.'], 400);
                 }
             }
 
-            $pin = $isPresencial ? (string) mt_rand(1000, 9999) : null;
+            $valorFinalLiquido = max(0, $valorTotalBruto - $valorDesconto);
 
-            $agendamento = Agendamento::create([
-                'estabelecimento_id' => $estabelecimento->id,
-                'usuario_id'         => Auth::id(),
-                'servico_id'         => $servico->id,
-                'data_agendamento'   => $validated['data_agendamento'],
-                'hora_agendamento'   => $validated['hora_agendamento'],
-                'status'             => $isPresencial ? 'pendente' : 'aguardando_pagamento',
-                'status_pagamento'   => $isPresencial ? 'presencial' : 'pendente',
-                'valor_final'        => $valorTotal,
-                'codigo_verificacao' => $pin,
+            $pagamentoPedido = Pagamento::create([
+                'usuario_id'         => $user->id,
+                'estabelecimento_id' => $estabelecimentoId,
+                'agendamento_id'     => !empty($agendamentosCriados) ? $agendamentosCriados[0]->id : null,
+                'aluguel_id'         => !empty($alugueisCriados) ? $alugueisCriados[0]->id : null,
+                'valor'              => $valorFinalLiquido,
+                'taxa'               => round($valorFinalLiquido * $this->taxaApp, 2),
+                'valor_liquido'      => $valorFinalLiquido - round($valorFinalLiquido * $this->taxaApp, 2),
+                'status'             => 'pendente',
+                'metodo_pagamento'   => $validated['forma_pagamento'] === 'presencial' ? 'presencial' : 'pendente_online',
             ]);
-
-            if ($pontosNecessarios > 0) {
-                DB::table('historico_pontos')->insert([
-                    'usuario_id'         => Auth::id(),
-                    'estabelecimento_id' => $estabelecimento->id,
-                    'agendamento_id'     => $agendamento->id,
-                    'tipo'               => 'uso',
-                    'descricao'          => "Resgate de pontos gerou R$ " . number_format($desconto->valor, 2, ',', '.') . " de desconto",
-                    'quantidade'         => $pontosNecessarios,
-                    'created_at'         => now()
-                ]);
-            }
-
-            if ($isPresencial) {
-                Pagamento::create([
-                    'usuario_id'         => Auth::id(),
-                    'estabelecimento_id' => $estabelecimento->id,
-                    'agendamento_id'     => $agendamento->id,
-                    'valor'              => $valorTotal,
-                    'taxa'               => round($valorTotal * $this->taxaApp, 2),
-                    'valor_liquido'      => $valorTotal - round($valorTotal * $this->taxaApp, 2),
-                    'status'             => 'pendente',
-                    'metodo_pagamento'   => 'presencial',
-                ]);
-            }
 
             DB::commit();
-            event(new FilaAtualizada($estabelecimento->id));
 
             return response()->json([
-                'message'      => 'Reserva salva com sucesso',
-                'agendamento'  => $agendamento,
-                'pagar_online' => !$isPresencial
+                'message'           => 'Pedido montado com sucesso!',
+                'codigo_pedido'     => $codigoReservaGrupo,
+                'resumo_financeiro' => [
+                    'valor_bruto'     => $valorTotalBruto,
+                    'desconto_pontos' => $valorDesconto,
+                    'pontos_usados'   => $pontosUtilizados,
+                    'valor_total'     => $valorFinalLiquido,
+                ],
+                'pagamento_id'      => $pagamentoPedido->id
             ], 201);
 
-        } catch (Exception $e) {
-            DB::rollBack();
-            Log::error("Erro agendar mobile: " . $e->getMessage());
-            return response()->json(['error' => 'Erro interno ao criar reserva.'], 500);
-        }
-    }
-
-    public function cancelarCliente($id)
-    {
-        try {
-            $agendamento = Agendamento::with('estabelecimento')->find($id);
-
-            if (!$agendamento) return response()->json(['error' => 'Agendamento não encontrado'], 404);
-            if ($agendamento->usuario_id !== Auth::id()) return response()->json(['error' => 'Acesso negado'], 403);
-            if ($agendamento->status === 'cancelado') return response()->json(['error' => 'Já foi cancelado.'], 400);
-
-            $pagamento = Pagamento::where('agendamento_id', $agendamento->id)->first();
-            $mensagemAlerta = 'Cancelado com sucesso. Sua vaga foi libertada.';
-
-            if (in_array($agendamento->status_pagamento, ['pago', 'pago_online']) && $pagamento && $pagamento->id_transacao_gateway) {
-                $dataHoraServico = Carbon::parse($agendamento->data_agendamento . ' ' . $agendamento->hora_agendamento);
-                $limiteGratis = $dataHoraServico->copy()->subMinutes(30);
-
-                $isCancelamentoGratis = Carbon::now()->lessThanOrEqualTo($limiteGratis);
-
-                $valorEstorno = $pagamento->valor;
-
-                if (!$isCancelamentoGratis) {
-                    $taxaCancelamento = round($pagamento->valor * 0.02, 2);
-                    $valorEstorno = $pagamento->valor - $taxaCancelamento;
-                    $mensagemAlerta = "Cancelamento efetuado. Retenção de 2% aplicada por cancelamento tardio. Estorno de R$ {$valorEstorno} em processamento.";
-                }
-
-                try {
-                    DB::beginTransaction();
-
-                    $this->pagamentoService->estornarPagamento($pagamento->id_transacao_gateway, $valorEstorno);
-                    $this->reverterPontosDeFidelidade($agendamento);
-
-                    $pagamento->update(['status' => 'estornado', 'valor_liquido' => 0]);
-
-                    $providerId = DB::table('providers')
-                        ->join('estabelecimento_usuario', 'providers.user_id', '=', 'estabelecimento_usuario.usuario_id')
-                        ->where('estabelecimento_usuario.estabelecimento_id', $agendamento->estabelecimento_id)
-                        ->value('providers.id');
-
-                    if ($providerId) {
-                        DB::table('extrato_providers')->insert([
-                            'provider_id'      => $providerId,
-                            'usuario_id'       => Auth::id(),
-                            'origem_type'      => 'App\Models\Agendamento',
-                            'origem_id'        => $agendamento->id,
-                            'tipo'             => 'estorno',
-                            'valor_bruto'      => $valorEstorno,
-                            'taxa_plataforma'  => 0,
-                            'valor_liquido'    => $valorEstorno * -1,
-                            'descricao'        => $isCancelamentoGratis ? 'Estorno integral (Mobile)' : 'Estorno parcial (Mobile)',
-                            'status'           => 'estornado',
-                            'codigo_transacao' => $pagamento->id_transacao_gateway,
-                            'metodo_pagamento' => $pagamento->metodo_pagamento,
-                            'created_at'       => now()
-                        ]);
-                    }
-
-                    DB::commit();
-                } catch (Exception $e) {
-                    DB::rollBack();
-                    return response()->json(['error' => 'Falha ao comunicar estorno com o banco.'], 500);
-                }
-            }
-
-            $agendamento->update(['status' => 'cancelado', 'status_pagamento' => ($pagamento && $pagamento->status === 'estornado') ? 'estornado' : 'cancelado']);
-            if ($pagamento && $pagamento->status !== 'estornado') $pagamento->update(['status' => 'cancelado']);
-
-            event(new FilaAtualizada($agendamento->estabelecimento_id));
-
-            return response()->json(['message' => $mensagemAlerta], 200);
-
-        } catch (Exception $e) {
-            Log::error("Erro cancelamento mobile: " . $e->getMessage());
-            return response()->json(['error' => 'Erro interno ao cancelar.'], 500);
-        }
-    }
-
-    public function destroyAluguel($id)
-    {
-        try {
-            $aluguel = Aluguel::find($id);
-
-            if (!$aluguel) return response()->json(['error' => 'Locação não encontrada'], 404);
-            if ($aluguel->locatario_id !== Auth::id()) return response()->json(['error' => 'Sem permissão'], 403);
-            if ($aluguel->status === 'cancelado') return response()->json(['error' => 'Já cancelada'], 400);
-
-            $pagamento = Pagamento::where('aluguel_id', $aluguel->id)->first();
-            $mensagemAlerta = 'Reserva de aluguel cancelada com sucesso.';
-
-            if (in_array($aluguel->status, ['pago', 'confirmado']) && $pagamento && $pagamento->id_transacao_gateway) {
-
-                $dataHoraInicio = Carbon::parse($aluguel->data_inicio . ' ' . $aluguel->hora_inicio);
-                $isCancelamentoGratis = Carbon::now()->lessThanOrEqualTo($dataHoraInicio->copy()->subDay());
-
-                $valorEstorno = $pagamento->valor;
-
-                if (!$isCancelamentoGratis) {
-                    $taxaCancelamento = round($pagamento->valor * 0.02, 2);
-                    $valorEstorno -= $taxaCancelamento;
-                    $mensagemAlerta = "Locação cancelada! Retenção de 2% por cancelamento tardio (< 24h).";
-                }
-
-                try {
-                    DB::beginTransaction();
-
-                    $this->pagamentoService->estornarPagamento($pagamento->id_transacao_gateway, $valorEstorno);
-                    $this->reverterPontosDeFidelidade($aluguel, true);
-
-                    $pagamento->update(['status' => 'estornado', 'valor_liquido' => 0]);
-                    DB::commit();
-
-                } catch (Exception $e) {
-                    DB::rollBack();
-                    return response()->json(['error' => 'Falha no estorno do Aluguel pelo gateway.'], 500);
-                }
-            }
-
-            $aluguel->update(['status' => 'cancelado']);
-            if ($pagamento && $pagamento->status !== 'estornado') $pagamento->update(['status' => 'cancelado']);
-
-            return response()->json(['message' => $mensagemAlerta], 200);
-
-        } catch (Exception $e) {
-            Log::error("Erro cancelamento aluguel mobile: " . $e->getMessage());
-            return response()->json(['error' => 'Erro interno ao cancelar.'], 500);
-        }
-    }
-
-    public function meusAgendamentos()
-    {
-        try {
-            $userId = Auth::id();
-
-            $agendamentos = Agendamento::with(['servico', 'estabelecimento'])
-                ->where('usuario_id', $userId)
-                ->get()
-                ->map(function ($item) {
-                    return [
-                        'id'                 => $item->id,
-                        'tipo'               => 'servico',
-                        'status'             => $item->status,
-                        'status_pagamento'   => $item->status_pagamento,
-                        'data_agendamento'   => $item->data_agendamento,
-                        'hora_agendamento'   => $item->hora_agendamento,
-                        'valor_final'        => $item->valor_final,
-                        'codigo_verificacao' => $item->codigo_verificacao,
-                        'servico' => [
-                            'nome' => $item->servico->nome ?? 'Serviço Excluído'
-                        ],
-                        'estabelecimento' => [
-                            'nome' => $item->estabelecimento->nome ?? 'Estabelecimento'
-                        ],
-                    ];
-                });
-
-            $alugueis = Aluguel::with(['item', 'estabelecimento'])
-                ->where('locatario_id', $userId)
-                ->get()
-                ->map(function ($item) {
-                    return [
-                        'id'                 => $item->id,
-                        'aluguel_id'         => $item->id,
-                        'tipo'               => 'aluguel',
-                        'status'             => $item->status,
-                        'status_pagamento'   => in_array($item->status, ['pago', 'confirmado']) ? 'pago_online' : $item->forma_pagamento,
-                        'data_agendamento'   => $item->data_inicio,
-                        'hora_agendamento'   => $item->hora_inicio ?? '00:00:00',
-                        'valor_final'        => $item->valor_total,
-                        'codigo_verificacao' => $item->codigo_reserva,
-                        'servico' => [
-                            'nome' => $item->item->nome ?? 'Locação de Ativo'
-                        ],
-                        'estabelecimento' => [
-                            'nome' => $item->estabelecimento->nome ?? 'Estabelecimento'
-                        ],
-                    ];
-                });
-
-            $historicoCompleto = $agendamentos->concat($alugueis)
-                ->sortByDesc(function ($item) {
-                    return $item['data_agendamento'] . ' ' . $item['hora_agendamento'];
-                })
-                ->values();
-
-            return response()->json($historicoCompleto, 200);
-
         } catch (\Exception $e) {
-            Log::error("Erro ao listar Meus Agendamentos: " . $e->getMessage());
-            return response()->json(['error' => 'Erro interno ao buscar o histórico.'], 500);
+            DB::rollBack();
+            Log::error("Erro no Checkout Misto: " . $e->getMessage());
+            return response()->json(['error' => 'Erro ao processar o pedido: ' . $e->getMessage()], 500);
         }
     }
 
-    private function reverterPontosDeFidelidade($entidade, $isAluguel = false)
-    {
-        $colunaFiltro = $isAluguel ? 'aluguel_id' : 'agendamento_id';
-        $userId = $isAluguel ? $entidade->locatario_id : $entidade->usuario_id;
-
-        $pontosGanhosNessaTransacao = DB::table('historico_pontos')
-            ->where($colunaFiltro, $entidade->id)
-            ->where('tipo', 'ganho')
-            ->sum('quantidade');
-
-        if ($pontosGanhosNessaTransacao > 0) {
-            DB::table('pontos_usuario_estabelecimento')
-                ->where('usuario_id', $userId)
-                ->where('estabelecimento_id', $entidade->estabelecimento_id)
-                ->decrement('total_pontos', $pontosGanhosNessaTransacao);
-
-            DB::table('historico_pontos')->insert([
-                'usuario_id'         => $userId,
-                'estabelecimento_id' => $entidade->estabelecimento_id,
-                $colunaFiltro        => $entidade->id,
-                'tipo'               => 'perda',
-                'descricao'          => 'Estorno de pontos por cancelamento no aplicativo',
-                'quantidade'         => $pontosGanhosNessaTransacao,
-                'created_at'         => now()
-            ]);
-        }
-    }
+    /* =========================================================================
+       👉 ESTORNOS E STATUS GERAIS
+       ========================================================================= */
 
     public function show($id)
     {
@@ -1220,43 +967,6 @@ class MobileAgendamentoController extends Controller
 
         } catch (\Exception $e) {
             return response()->json(['error' => 'Erro interno ao buscar detalhes.'], 500);
-        }
-    }
-
-    public function showAluguelMobile($id)
-    {
-        try {
-            $aluguel = Aluguel::with(['item', 'estabelecimento'])->find($id);
-
-            if (!$aluguel) {
-                return response()->json(['error' => 'Locação não encontrada.'], 404);
-            }
-
-            if ($aluguel->locatario_id !== Auth::id()) {
-                return response()->json(['error' => 'Acesso negado.'], 403);
-            }
-
-            $dadosFormatados = [
-                'id'                 => $aluguel->id,
-                'status'             => $aluguel->status,
-                'status_pagamento'   => in_array($aluguel->status, ['pago', 'confirmado']) ? 'pago_online' : $aluguel->forma_pagamento,
-                'codigo_verificacao' => clone $aluguel->codigo_reserva,
-                'data_agendamento'   => clone $aluguel->data_inicio,
-                'hora_agendamento'   => clone $aluguel->hora_inicio ?? '00:00:00',
-                'valor_final'        => clone $aluguel->valor_total,
-                'posicao_fila'       => null,
-                'servico' => [
-                    'nome'            => clone $aluguel->item->nome ?? 'Item de Locação',
-                    'descricao'       => 'Locação por ' . $aluguel->quantidade_periodos . ' ' . $aluguel->tipo_periodo . '(s)',
-                    'duracao_minutos' => clone $aluguel->quantidade_periodos . ' ' . $aluguel->tipo_periodo
-                ],
-                'estabelecimento' => clone $aluguel->estabelecimento
-            ];
-
-            return response()->json($dadosFormatados, 200);
-
-        } catch (\Exception $e) {
-            return response()->json(['error' => 'Erro interno ao buscar detalhes do aluguel.'], 500);
         }
     }
 

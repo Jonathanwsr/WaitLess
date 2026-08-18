@@ -1,15 +1,19 @@
 import React, { useState } from 'react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { Head } from '@inertiajs/react';
+import { Head, router } from '@inertiajs/react';
 import { 
   ArrowLeft, Calendar, Wallet, MapPin, 
   ShieldCheck, Download, Navigation, XCircle, 
   Megaphone, Briefcase, Building2, User, CheckCircle2,
-  MessageSquare, Car, AlertTriangle, ExternalLink
+  MessageSquare, Car, AlertTriangle, ExternalLink,
+  Heart, FileText, FileSignature, CheckSquare, List
 } from 'lucide-react';
 
 export default function DetalheAgendamento({ auth, dados }) {
   const [loadingAcao, setLoadingAcao] = useState(false);
+  
+  // Estado local para o botão de favoritar (Inicia com o valor vindo do BD)
+  const [isFavorito, setIsFavorito] = useState(dados?.is_favorito || false);
 
   if (!dados) {
     return (
@@ -27,17 +31,18 @@ export default function DetalheAgendamento({ auth, dados }) {
   }
 
   const isConcluido = dados.status_geral?.toUpperCase() === 'CONCLUÍDO' || dados.status_geral?.toUpperCase() === 'CONCLUIDO';
-  const isPendente = dados.status_geral?.toUpperCase() === 'PENDENTE';
+  const isPendente = dados.status_geral?.toUpperCase() === 'PENDENTE' || dados.status_geral?.toUpperCase() === 'AGUARDANDO_PAGAMENTO';
   const isCancelado = dados.status_geral?.toUpperCase() === 'CANCELADO';
 
   const statusStyles = {
     CONCLUÍDO: "bg-emerald-50 text-emerald-700 border-emerald-200",
     CONCLUIDO: "bg-emerald-50 text-emerald-700 border-emerald-200",
     PENDENTE: "bg-amber-50 text-amber-700 border-amber-200",
+    AGUARDANDO_PAGAMENTO: "bg-orange-50 text-orange-700 border-orange-200",
     CANCELADO: "bg-rose-50 text-rose-700 border-rose-200"
   };
 
-  // Tratamento dinâmico dos Links de GPS (Usa Coordenadas se houver, se não usa o Texto do Endereço)
+  // Tratamento dinâmico dos Links de GPS
   const enderecoTexto = dados.estabelecimento?.endereco_completo || '';
   const lat = dados.estabelecimento?.latitude;
   const lng = dados.estabelecimento?.longitude;
@@ -50,7 +55,17 @@ export default function DetalheAgendamento({ auth, dados }) {
     ? `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`
     : `https://waze.com/ul?q=${encodeURIComponent(enderecoTexto)}&navigate=yes`;
 
-  // Funções de Interação
+  // Lógica de Favoritar que salva no Banco de Dados
+  const handleToggleFavorito = () => {
+    setIsFavorito(!isFavorito);
+    // Dispara a requisição para a sua rota do Laravel
+    router.post(route('favoritos.toggle'), {
+      item_id: dados.id,
+      tipo: dados.tipo // 'aluguel' ou 'agendamento'
+    }, { preserveScroll: true });
+  };
+
+  // Funções de Interação Operacional
   const handleACaminho = () => {
     setLoadingAcao(true);
     alert('Notificação enviada ao estabelecimento! Eles sabem que você está a caminho.');
@@ -58,9 +73,12 @@ export default function DetalheAgendamento({ auth, dados }) {
   };
 
   const handleEnviarMensagem = () => {
-    const mensagem = encodeURIComponent(`Olá! Gostaria de falar sobre o meu agendamento de ${dados.titulo}.`);
+    const mensagem = encodeURIComponent(`Olá! Gostaria de falar sobre o meu pedido de ${dados.titulo} (ID: #${dados.id}).`);
     window.open(`https://api.whatsapp.com/send?text=${mensagem}`, '_blank');
   };
+
+  // Processamento seguro das comodidades (Para Reservas de Imóveis/Veículos)
+  const comodidades = Array.isArray(dados.comodidades) ? dados.comodidades : [];
 
   return (
     <AuthenticatedLayout
@@ -72,7 +90,7 @@ export default function DetalheAgendamento({ auth, dados }) {
       <div className="py-8 bg-slate-50/50 min-h-screen">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
           
-          {/* Topbar: Voltar */}
+          {/* Topbar: Voltar e Favoritar */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
             <button 
               onClick={() => window.history.back()}
@@ -83,13 +101,27 @@ export default function DetalheAgendamento({ auth, dados }) {
               </div>
               Voltar para Meus Pedidos
             </button>
-            <span className="text-xs font-bold text-gray-400 uppercase tracking-widest bg-white px-3 py-1.5 rounded-lg border border-gray-200/40 shadow-2xs">
-              ID do Pedido: #{dados.id}
-            </span>
+            
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={handleToggleFavorito}
+                className={`p-2 rounded-xl border transition-all shadow-sm flex items-center justify-center ${
+                  isFavorito 
+                    ? 'bg-rose-50 border-rose-200 text-rose-500' 
+                    : 'bg-white border-gray-200 text-gray-400 hover:text-rose-500 hover:bg-rose-50 hover:border-rose-200'
+                }`}
+                title={isFavorito ? "Remover dos Favoritos" : "Salvar nos Favoritos"}
+              >
+                <Heart className={`w-5 h-5 ${isFavorito ? 'fill-current' : ''}`} />
+              </button>
+              <span className="text-xs font-bold text-gray-400 uppercase tracking-widest bg-white px-3 py-2 rounded-xl border border-gray-200/40 shadow-sm flex items-center h-full">
+                ID: #{dados.codigo_reserva || dados.id}
+              </span>
+            </div>
           </div>
 
           {/* Banner Informativo Dinâmico */}
-          {isPendente && (
+          {isPendente && dados.tipo !== 'aluguel' && (
             <div className="bg-gradient-to-r from-teal-600 to-emerald-600 rounded-2xl p-6 flex flex-col sm:flex-row items-center justify-between gap-4 mb-8 shadow-md text-white border border-emerald-400/20">
               <div className="flex items-center gap-4 text-center sm:text-left flex-col sm:flex-row">
                 <div className="bg-white/20 p-3 rounded-xl backdrop-blur-md">
@@ -120,25 +152,25 @@ export default function DetalheAgendamento({ auth, dados }) {
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
             
-            {/* COLUNA ESQUERDA: Detalhes do Serviço */}
+            {/* COLUNA ESQUERDA: Detalhes do Serviço / Reserva */}
             <div className="lg:col-span-8 space-y-6">
               
               {/* Card Principal */}
               <div className="bg-white rounded-3xl border border-gray-200/70 p-6 sm:p-8 shadow-sm">
                 <div className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-6 pb-6 border-b border-gray-100">
                   <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 bg-gradient-to-br from-teal-500/10 to-emerald-500/10 rounded-2xl flex items-center justify-center text-teal-600 border border-teal-500/20">
-                      <Briefcase className="w-6 h-6" />
+                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border ${dados.tipo === 'aluguel' ? 'bg-indigo-50/50 text-indigo-600 border-indigo-100' : 'bg-gradient-to-br from-teal-500/10 to-emerald-500/10 text-teal-600 border-teal-500/20'}`}>
+                      {dados.tipo === 'aluguel' ? <Building2 className="w-6 h-6" /> : <Briefcase className="w-6 h-6" />}
                     </div>
                     <div>
                       <div className="flex flex-wrap items-center gap-2.5">
                         <h3 className="text-xl font-bold text-gray-900 tracking-tight">{dados.titulo}</h3>
-                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${statusStyles[dados.status_geral?.toUpperCase()] || 'bg-gray-50 text-gray-600'}`}>
-                          {dados.status_geral}
+                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${statusStyles[dados.status_geral?.toUpperCase()] || 'bg-gray-50 text-gray-600 border-gray-200'}`}>
+                          {dados.status_geral?.replace(/_/g, ' ')}
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5 text-gray-500 mt-1.5">
-                        <User className="w-4 h-4 text-gray-400" />
+                        {dados.tipo === 'aluguel' ? <MapPin className="w-4 h-4 text-gray-400" /> : <User className="w-4 h-4 text-gray-400" />}
                         <span className="text-sm font-medium">{dados.subtitulo}</span>
                       </div>
                     </div>
@@ -164,27 +196,84 @@ export default function DetalheAgendamento({ auth, dados }) {
                     <p className={`text-xs mt-1 font-semibold ${dados.pagamento_confirmado ? 'text-emerald-600' : 'text-amber-600'}`}>
                       {dados.pagamento_confirmado ? '✓ Pagamento Confirmado' : '• Aguardando Pagamento'}
                     </p>
+                    {dados.valor_caucao > 0 && (
+                      <p className="text-[10px] text-gray-500 mt-1">Caução: R$ {dados.valor_caucao}</p>
+                    )}
                   </div>
                 </div>
               </div>
 
-              {/* Card Estabelecimento */}
-              <div className="bg-white rounded-2xl border border-gray-200/70 p-5 shadow-sm flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-slate-50 border border-gray-200 rounded-xl flex items-center justify-center text-gray-500 shadow-2xs">
-                    <Building2 className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Local do Atendimento</p>
-                    <p className="font-bold text-gray-800 tracking-wide text-base">{dados.estabelecimento?.nome}</p>
+              {/* 📌 CARD DE COMODIDADES E DADOS DO ITEM (Apenas para Locação) */}
+              {dados.tipo === 'aluguel' && comodidades.length > 0 && (
+                <div className="bg-white rounded-3xl border border-gray-200/70 p-6 sm:p-8 shadow-sm">
+                  <h4 className="font-bold text-gray-900 mb-4 flex items-center gap-2 text-lg">
+                    <List className="w-5 h-5 text-indigo-500" />
+                    Comodidades e Especificações Inclusas
+                  </h4>
+                  <div className="flex flex-wrap gap-2">
+                    {comodidades.map((comodidade, index) => (
+                      <span key={index} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-lg border border-indigo-100">
+                        <CheckSquare className="w-3.5 h-3.5" />
+                        {comodidade}
+                      </span>
+                    ))}
                   </div>
                 </div>
-                <button className="text-teal-600 hover:text-teal-700 text-sm font-bold flex items-center gap-1 transition-colors group">
-                  Ver Perfil <span className="group-hover:translate-x-0.5 transition-transform">→</span>
-                </button>
-              </div>
+              )}
 
-              {/* Card Código de Verificação */}
+              {/* 📝 CARD DE CONTRATO DIGITAL (Apenas se o estabelecimento exigir) */}
+              {dados.exige_contrato && (
+                <div className="bg-white rounded-3xl border border-blue-200 p-6 sm:p-8 shadow-sm bg-gradient-to-br from-white to-blue-50/30">
+                  <div className="flex items-center justify-between mb-4">
+                    <h4 className="font-bold text-gray-900 flex items-center gap-2 text-lg">
+                      <FileSignature className="w-6 h-6 text-blue-600" />
+                      Documentação e Contrato
+                    </h4>
+                    {dados.status_contrato === 'assinado' ? (
+                      <span className="bg-green-100 text-green-700 text-[10px] font-black px-2.5 py-1 rounded-md uppercase tracking-wider flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3"/> Assinado
+                      </span>
+                    ) : (
+                      <span className="bg-amber-100 text-amber-700 text-[10px] font-black px-2.5 py-1 rounded-md uppercase tracking-wider flex items-center gap-1">
+                        <ClockIcon className="w-3 h-3"/> Pendente
+                      </span>
+                    )}
+                  </div>
+                  
+                  <p className="text-sm text-gray-600 mb-6">
+                    {dados.status_contrato === 'assinado' 
+                      ? 'O contrato de locação já foi assinado digitalmente e possui validade jurídica. Você pode baixar uma cópia do documento oficial em PDF no botão abaixo.' 
+                      : 'O proprietário enviou um contrato digital para esta reserva. Para liberar o seu atendimento/produto, você deve assinar o documento através do link seguro.'}
+                  </p>
+
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    {dados.status_contrato === 'assinado' ? (
+                      <a 
+                        href={`/contratos/baixar/${dados.contrato_id}`} 
+                        target="_blank" 
+                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 text-sm"
+                      >
+                        <Download className="w-4 h-4"/> Baixar PDF Assinado
+                      </a>
+                    ) : (
+                      <>
+                        <a 
+                          href={dados.url_assinatura} 
+                          target="_blank" 
+                          className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 text-sm flex-1"
+                        >
+                          <FileText className="w-4 h-4"/> Assinar Contrato Agora
+                        </a>
+                        <button className="bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 font-bold py-3 px-6 rounded-xl transition-all shadow-sm text-sm">
+                          Dúvidas sobre o texto?
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Card Código de Verificação (Check-in) */}
               {dados.codigo_verificacao && !isCancelado && (
                 <div className="bg-white rounded-3xl border border-gray-200/70 p-6 shadow-sm">
                   <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3 text-center sm:text-left">
@@ -215,7 +304,7 @@ export default function DetalheAgendamento({ auth, dados }) {
               <div className="bg-white rounded-3xl border border-gray-200/70 p-5 shadow-sm">
                 <div className="flex items-center gap-2 mb-4">
                   <MapPin className="w-4 h-4 text-teal-600" />
-                  <h4 className="font-bold text-gray-900 text-base">Localização</h4>
+                  <h4 className="font-bold text-gray-900 text-base">{dados.estabelecimento?.tipo_local_label || 'Localização'}</h4>
                 </div>
                 
                 <div className="w-full h-44 rounded-2xl mb-4 overflow-hidden relative shadow-inner border border-gray-100">
@@ -272,7 +361,6 @@ export default function DetalheAgendamento({ auth, dados }) {
 
               {/* Painel de Ações Operacionais */}
               <div className="space-y-3">
-                {/* DOWNLOAD DO PDF REALIZADO VIA ROUTE DO LARAVEL */}
                 <a 
                   href={`/agendamentos/${dados.id}/comprovante-pdf`} 
                   target="_blank"
@@ -280,10 +368,10 @@ export default function DetalheAgendamento({ auth, dados }) {
                   className="w-full flex items-center justify-center gap-2 py-3 bg-white hover:bg-slate-50 border border-gray-200 rounded-xl font-bold text-gray-700 transition-all text-sm shadow-2xs text-center"
                 >
                   <Download className="w-4 h-4 text-gray-500" />
-                  Baixar Comprovante (PDF)
+                  Baixar Comprovante
                 </a>
 
-                {isPendente && (
+                {isPendente && dados.tipo !== 'aluguel' && (
                   <button 
                     onClick={handleACaminho}
                     disabled={loadingAcao}

@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
     Search, MapPin, Calendar, Star, ArrowRight, ImageOff, Layers,
     Stethoscope, Scissors, Home, Car, Laptop, BookOpen, Smile, 
-    PartyPopper, Store, Briefcase, Tag, ChevronDown 
+    PartyPopper, Store, Briefcase, Tag, ChevronDown, ChevronLeft, ChevronRight 
 } from 'lucide-react';
 
 export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtros = {} }) {
@@ -43,6 +43,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
             categoria: novosFiltros.categoria ?? categoriaAtiva,
             ordem: novosFiltros.ordem ?? ordenarPor,
             apenas_promocoes: novosFiltros.apenas_promocoes ?? apenasPromocoes,
+            page: novosFiltros.page || 1, // Reseta para a página 1 em novas buscas, a menos que especificado
         };
 
         if (params.categoria === 'todas') delete params.categoria;
@@ -51,6 +52,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
         if (!params.data) delete params.data;
         if (params.ordem === 'relevancia') delete params.ordem;
         if (!params.apenas_promocoes) delete params.apenas_promocoes;
+        if (params.page === 1) delete params.page;
 
         router.get(route('cliente.explorar'), params, {
             preserveState: true,
@@ -62,23 +64,33 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
 
     const handleBuscaSubmit = (e) => {
         e?.preventDefault();
-        atualizarResultados();
+        atualizarResultados({ page: 1 });
     };
 
     const handleCategoriaClick = (catNome) => {
         setCategoriaAtiva(catNome);
-        atualizarResultados({ categoria: catNome });
+        atualizarResultados({ categoria: catNome, page: 1 });
     };
 
     const handleTipoBuscaClick = (tipo) => {
         setTipoBusca(tipo);
-        atualizarResultados({ tipo_busca: tipo });
+        atualizarResultados({ tipo_busca: tipo, page: 1 });
     };
 
     const handlePromocoesToggle = () => {
         const novoValor = !apenasPromocoes;
         setApenasPromocoes(novoValor);
-        atualizarResultados({ apenas_promocoes: novoValor });
+        atualizarResultados({ apenas_promocoes: novoValor, page: 1 });
+    };
+
+    const handleMudancaPagina = (url) => {
+        if (!url) return;
+        const urlParams = new URL(url);
+        const page = urlParams.searchParams.get('page');
+        if (page) {
+            atualizarResultados({ page: parseInt(page) });
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
     };
 
     const handleImageError = (id) => {
@@ -86,9 +98,9 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
     };
 
     const isEstabelecimentos = tipoBusca === 'estabelecimentos';
-    const listaResultados = isEstabelecimentos 
-        ? (estabelecimentos?.data || []) 
-        : (itens_aluguel?.data || []);
+    const dadosPaginados = isEstabelecimentos ? estabelecimentos : itens_aluguel;
+    const listaResultados = dadosPaginados?.data || [];
+    const linksPaginacao = dadosPaginados?.links || [];
 
     // Animações
     const containerVariants = {
@@ -149,13 +161,12 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                         onSubmit={handleBuscaSubmit}
                         className="bg-white dark:bg-zinc-900 rounded-3xl shadow-xl border border-zinc-200 dark:border-zinc-800 p-2 flex flex-col md:flex-row gap-2"
                     >
-                        {/* ... mesmos inputs ... */}
                         <div className="flex-1 flex items-center gap-3 bg-zinc-100 dark:bg-zinc-800 rounded-2xl px-5 py-3 focus-within:ring-2 focus-within:ring-[#FF5A00]/30 transition-all">
                             <Search className="w-5 h-5 text-zinc-400" />
                             <input
                                 type="text"
                                 placeholder="O que você está procurando?"
-                                className="flex-1 bg-transparent outline-none text-sm placeholder-zinc-500"
+                                className="flex-1 bg-transparent border-0 ring-0 focus:ring-0 outline-none text-sm placeholder-zinc-500"
                                 value={busca}
                                 onChange={(e) => setBusca(e.target.value)}
                             />
@@ -166,7 +177,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                             <input
                                 type="text"
                                 placeholder="Onde?"
-                                className="flex-1 bg-transparent outline-none text-sm placeholder-zinc-500"
+                                className="flex-1 bg-transparent border-0 ring-0 focus:ring-0 outline-none text-sm placeholder-zinc-500"
                                 value={enderecoManual}
                                 onChange={(e) => setEnderecoManual(e.target.value)}
                             />
@@ -176,7 +187,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                             <Calendar className="w-5 h-5 text-zinc-400" />
                             <input
                                 type="date"
-                                className="flex-1 bg-transparent outline-none text-sm"
+                                className="flex-1 bg-transparent border-0 ring-0 focus:ring-0 outline-none text-sm"
                                 value={dataDesejada}
                                 onChange={(e) => setDataDesejada(e.target.value)}
                             />
@@ -194,7 +205,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                     </motion.form>
                 </div>
 
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-12">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-12 pb-24">
                     {/* Filtros e Categorias */}
                     <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8">
                         {/* Tipo de Busca */}
@@ -246,7 +257,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                                     value={ordenarPor}
                                     onChange={(e) => {
                                         setOrdenarPor(e.target.value);
-                                        atualizarResultados({ ordem: e.target.value });
+                                        atualizarResultados({ ordem: e.target.value, page: 1 });
                                     }}
                                     className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-2xl py-2.5 pl-4 pr-10 text-sm font-medium focus:ring-2 focus:ring-[#FF5A00] appearance-none cursor-pointer"
                                 >
@@ -296,7 +307,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                         {carregando ? (
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                                 {[...Array(8)].map((_, i) => (
-                                    <div key={i} className="bg-white dark:bg-zinc-900 rounded-3xl h-96 animate-pulse" />
+                                    <div key={i} className="bg-white dark:bg-zinc-900 rounded-3xl h-96 animate-pulse border border-zinc-100 dark:border-zinc-800" />
                                 ))}
                             </div>
                         ) : (
@@ -311,15 +322,14 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                                     <motion.div 
                                         initial={{ opacity: 0, scale: 0.9 }}
                                         animate={{ opacity: 1, scale: 1 }}
-                                        className="col-span-full text-center py-24"
+                                        className="col-span-full text-center py-24 bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-100 dark:border-zinc-800"
                                     >
-                                        {/* Empty State */}
-                                        <div className="mx-auto w-20 h-20 bg-zinc-100 dark:bg-zinc-800 rounded-full flex items-center justify-center mb-6">
-                                            <ImageOff className="w-12 h-12 text-zinc-300" />
+                                        <div className="mx-auto w-20 h-20 bg-zinc-50 dark:bg-zinc-800 rounded-full flex items-center justify-center mb-6">
+                                            <ImageOff className="w-10 h-10 text-zinc-300 dark:text-zinc-600" />
                                         </div>
                                         <h3 className="text-2xl font-semibold mb-2">Nada encontrado</h3>
                                         <p className="text-zinc-500 mb-8 max-w-sm mx-auto">
-                                            Tente ajustar os filtros ou buscar por outros termos.
+                                            Tente ajustar os filtros ou buscar por outros termos na sua região.
                                         </p>
                                         <motion.button
                                             whileHover={{ scale: 1.05 }}
@@ -327,15 +337,15 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                                             onClick={() => {
                                                 setBusca(''); setEnderecoManual(''); setDataDesejada('');
                                                 setCategoriaAtiva('todas'); setApenasPromocoes(false);
-                                                atualizarResultados({ busca: '', endereco_manual: '', data: '', categoria: 'todas', apenas_promocoes: false });
+                                                atualizarResultados({ busca: '', endereco_manual: '', data: '', categoria: 'todas', apenas_promocoes: false, page: 1 });
                                             }}
-                                            className="px-8 py-3.5 bg-zinc-900 text-white rounded-2xl hover:bg-black transition-colors font-medium"
+                                            className="px-8 py-3.5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-2xl hover:bg-black dark:hover:bg-white transition-colors font-medium shadow-sm"
                                         >
                                             Limpar Filtros
                                         </motion.button>
                                     </motion.div>
                                 ) : (
-                                    listaResultados.map((item, idx) => {
+                                    listaResultados.map((item) => {
                                         const key = isEstabelecimentos ? `est-${item.id}` : `item-${item.id}`;
                                         const linkRoute = isEstabelecimentos 
                                             ? route('estabelecimentos.loja', item.id) 
@@ -356,9 +366,8 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                                             >
                                                 <Link
                                                     href={linkRoute}
-                                                    className="bg-white dark:bg-zinc-900 rounded-3xl overflow-hidden border border-zinc-100 dark:border-zinc-800 hover:border-zinc-200 dark:hover:border-zinc-700 block h-full"
+                                                    className="bg-white dark:bg-zinc-900 rounded-3xl overflow-hidden border border-zinc-100 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-600 block h-full shadow-sm hover:shadow-xl hover:shadow-zinc-200/40 dark:hover:shadow-black/40 transition-all"
                                                 >
-                                                    {/* Resto do card igual ao anterior */}
                                                     <div className="relative h-56 overflow-hidden">
                                                         {fotoUrl && !imageErrors[key] ? (
                                                             <img
@@ -369,35 +378,35 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                                                                 loading="lazy"
                                                             />
                                                         ) : (
-                                                            <div className="w-full h-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
-                                                                <ImageOff className="w-12 h-12 text-zinc-300" />
+                                                            <div className="w-full h-full bg-zinc-50 dark:bg-zinc-800 flex items-center justify-center">
+                                                                <ImageOff className="w-12 h-12 text-zinc-300 dark:text-zinc-600" />
                                                             </div>
                                                         )}
 
                                                         {(item.avaliacao_media || isEstabelecimentos) && (
-                                                            <div className="absolute top-4 left-4 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md px-3 py-1 rounded-2xl text-sm font-bold flex items-center gap-1 shadow">
+                                                            <div className="absolute top-4 left-4 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md px-3 py-1.5 rounded-2xl text-sm font-bold flex items-center gap-1.5 shadow-sm">
                                                                 <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
                                                                 {item.avaliacao_media ? Number(item.avaliacao_media).toFixed(1) : '4.9'}
                                                             </div>
                                                         )}
 
                                                         {temPromo && (
-                                                            <div className="absolute top-4 right-4 bg-emerald-600 text-white text-xs font-bold px-3 py-1 rounded-2xl tracking-wider">
+                                                            <div className="absolute top-4 right-4 bg-emerald-600 text-white text-xs font-bold px-3 py-1.5 rounded-2xl tracking-wider shadow-sm">
                                                                 PROMO
                                                             </div>
                                                         )}
                                                     </div>
 
                                                     <div className="p-6">
-                                                        <p className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-widest mb-1">
+                                                        <p className="text-xs font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-1.5">
                                                             {isEstabelecimentos ? item.ramo_atuacao : item.estabelecimento?.nome}
                                                         </p>
                                                         
-                                                        <h3 className="font-semibold text-lg leading-tight mb-3 line-clamp-2 group-hover:text-[#FF5A00] transition-colors">
+                                                        <h3 className="font-semibold text-lg text-zinc-900 dark:text-white leading-tight mb-3 line-clamp-2 group-hover:text-[#FF5A00] transition-colors">
                                                             {item.nome}
                                                         </h3>
 
-                                                        <div className="flex items-center gap-1 text-sm text-zinc-500 mb-5">
+                                                        <div className="flex items-center gap-1.5 text-sm text-zinc-500 mb-6">
                                                             <MapPin className="w-4 h-4" />
                                                             <span className="line-clamp-1">
                                                                 {isEstabelecimentos 
@@ -406,15 +415,16 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                                                             </span>
                                                         </div>
 
-                                                        <div className="flex items-end justify-between">
+                                                        <div className="flex items-end justify-between pt-4 border-t border-zinc-100 dark:border-zinc-800">
                                                             <div>
-                                                                <span className="text-xs text-zinc-500">A partir de</span>
-                                                                <div className="text-2xl font-bold">
-                                                                    R$ {Number(isEstabelecimentos ? item.preco_minimo : item.preco_final_cliente || item.valor_diaria).toFixed(2)}
+                                                                <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">A partir de</span>
+                                                                <div className="text-2xl font-black text-zinc-900 dark:text-white mt-0.5">
+                                                                    <span className="text-sm font-bold mr-1 text-zinc-400">R$</span>
+                                                                    {Number(isEstabelecimentos ? item.preco_minimo : item.preco_final_cliente || item.valor_diaria).toFixed(2).replace('.', ',')}
                                                                 </div>
                                                             </div>
                                                             
-                                                            <div className="w-10 h-10 rounded-2xl bg-orange-50 dark:bg-zinc-800 flex items-center justify-center text-[#FF5A00] group-hover:bg-[#FF5A00] group-hover:text-white transition-all">
+                                                            <div className="w-10 h-10 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700 flex items-center justify-center text-zinc-400 group-hover:bg-[#FF5A00] group-hover:border-[#FF5A00] group-hover:text-white transition-all shadow-sm">
                                                                 <ArrowRight className="w-5 h-5 group-hover:translate-x-0.5 transition" />
                                                             </div>
                                                         </div>
@@ -427,6 +437,39 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                             </motion.div>
                         )}
                     </AnimatePresence>
+
+                    {/* Controles de Paginação */}
+                    {linksPaginacao.length > 3 && !carregando && (
+                        <div className="mt-14 flex items-center justify-center flex-wrap gap-2">
+                            {linksPaginacao.map((link, idx) => {
+                                const isPrevious = link.label.includes('Previous');
+                                const isNext = link.label.includes('Next');
+                                const isAtivo = link.active;
+                                const isDesabilitado = !link.url;
+
+                                let labelContent = link.label;
+                                if (isPrevious) labelContent = <ChevronLeft className="w-5 h-5" />;
+                                if (isNext) labelContent = <ChevronRight className="w-5 h-5" />;
+
+                                return (
+                                    <button
+                                        key={idx}
+                                        onClick={() => handleMudancaPagina(link.url)}
+                                        disabled={isDesabilitado}
+                                        className={`min-w-[40px] h-10 px-3 flex items-center justify-center rounded-xl text-sm font-bold transition-all border ${
+                                            isAtivo 
+                                                ? 'bg-[#FF5A00] text-white border-[#FF5A00] shadow-md shadow-orange-500/20' 
+                                                : isDesabilitado
+                                                    ? 'bg-transparent text-zinc-300 dark:text-zinc-700 border-zinc-200 dark:border-zinc-800 cursor-not-allowed'
+                                                    : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:border-[#FF5A00] hover:text-[#FF5A00]'
+                                        }`}
+                                    >
+                                        {labelContent}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
                 </div>
             </div>
         </AuthenticatedLayout>

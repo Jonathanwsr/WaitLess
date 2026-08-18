@@ -6,25 +6,51 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api/mobile';
 
+interface CheckoutData {
+  pin: string;
+  estabelecimento_nome: string;
+  servico_nome: string;
+  funcionario_nome: string;
+  data_formatada: string;
+  hora_formatada: string;
+  valor_total: string;
+}
+
 export default function ConfirmacaoScreen() {
   const router = useRouter();
-  const { id } = useLocalSearchParams(); 
-  const [dados, setDados] = useState<any>(null);
+  const searchParams = useLocalSearchParams(); 
+  
+  // Pegando o id passado da tela de pagamento
+  const rawId = searchParams.id || searchParams.agendamento_id;
+  const id = Array.isArray(rawId) ? rawId[0] : rawId;
+  
+  const [dados, setDados] = useState<CheckoutData | null>(null);
 
   useEffect(() => {
     const buscarResumo = async () => {
       try {
         const token = await AsyncStorage.getItem('@waitless_token') || await AsyncStorage.getItem('@lokyva_token');
-        const res = await fetch(`${API_URL}/agendamentos/${id}/checkout`, { headers: { 'Authorization': `Bearer ${token}` }});
-        if (res.ok) setDados(await res.json());
-      } catch (error) {}
+        const res = await fetch(`${API_URL}/pagamentos/${id}/resumo`, { 
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Accept': 'application/json'
+          }
+        });
+        
+        if (res.ok) {
+          setDados(await res.json());
+        }
+      } catch (error) {
+        console.log("Erro ao buscar resumo", error);
+      }
     };
+    
     if (id) buscarResumo();
   }, [id]);
 
   if (!dados) return <View style={{flex:1, justifyContent:'center'}}><ActivityIndicator size="large" color="#FF5A00"/></View>;
 
-  const pinDigits = dados.pin.split('');
+  const pinDigits = dados.pin ? dados.pin.split('') : ['0','0','0','0'];
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -41,8 +67,8 @@ export default function ConfirmacaoScreen() {
         <View style={styles.successIconBox}>
           <Ionicons name="checkmark-circle" size={80} color="#10B981" />
         </View>
-        <Text style={styles.title}>Serviço Agendado!</Text>
-        <Text style={styles.subtitle}>Seu pagamento foi confirmado. Mostre o PIN abaixo ao profissional.</Text>
+        <Text style={styles.title}>Pedido Confirmado!</Text>
+        <Text style={styles.subtitle}>Sua reserva foi processada com sucesso. Mostre o PIN abaixo para iniciar/retirar.</Text>
 
         <View style={styles.pinCard}>
           <Text style={styles.pinLabel}>PIN de Segurança</Text>
@@ -53,7 +79,7 @@ export default function ConfirmacaoScreen() {
           </View>
           <View style={styles.securityWarning}>
             <Feather name="shield" size={14} color="#6B7280" />
-            <Text style={styles.securityText}>Apresente este código ao profissional apenas após o serviço ser finalizado.</Text>
+            <Text style={styles.securityText}>Apresente este código apenas após o serviço ser finalizado ou o bem ser retirado.</Text>
           </View>
         </View>
 
@@ -66,10 +92,12 @@ export default function ConfirmacaoScreen() {
             </View>
           </View>
           <View style={styles.divider} />
-          <View style={styles.summaryRow}>
-            <Text style={styles.summaryLabel}><Feather name="user" size={14}/> Profissional</Text>
-            <Text style={styles.summaryValue}>{dados.funcionario_nome}</Text>
-          </View>
+          {dados.funcionario_nome && (
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}><Feather name="user" size={14}/> Profissional</Text>
+              <Text style={styles.summaryValue}>{dados.funcionario_nome}</Text>
+            </View>
+          )}
           <View style={styles.summaryRow}>
             <Text style={styles.summaryLabel}><Feather name="clock" size={14}/> Horário</Text>
             <Text style={styles.summaryValue}>{dados.data_formatada} às {dados.hora_formatada}</Text>
@@ -81,18 +109,19 @@ export default function ConfirmacaoScreen() {
         </View>
 
         <TouchableOpacity style={styles.btnOutline}><Text style={styles.btnOutlineText}>Baixar Comprovante</Text></TouchableOpacity>
-        <TouchableOpacity style={styles.btnPrimary}><Text style={styles.btnPrimaryText}>Agendar Novamente</Text></TouchableOpacity>
-        <TouchableOpacity style={styles.btnDanger}><Text style={styles.btnDangerText}>CANCELAR SERVIÇO</Text></TouchableOpacity>
         
-        {/* ESSE É O BOTÃO QUE VAI PARA A TELA DA FILA! */}
-        <TouchableOpacity style={styles.btnOutline} onPress={() => router.push({ pathname: '/src/screens/AcompanhamentoFilaScreen', params: { id } })}>
-          <Text style={styles.btnOutlineText}>Ver Fila</Text>
+        {/* BOTÃO PARA VER A FILA EM TEMPO REAL */}
+        <TouchableOpacity style={styles.btnPrimary} onPress={() => router.push({ pathname: '/src/screens/AcompanhamentoFilaScreen', params: { id } })}>
+          <Text style={styles.btnPrimaryText}>Acompanhar Fila Ao Vivo</Text>
         </TouchableOpacity>
+        
+        <TouchableOpacity style={styles.btnDanger}><Text style={styles.btnDangerText}>CANCELAR RESERVA</Text></TouchableOpacity>
+        
       </ScrollView>
 
       <View style={styles.footer}>
         <TouchableOpacity style={styles.btnFinish} onPress={() => router.push('/src/screens/Home')}>
-          <Text style={styles.btnFinishText}>Finalizar</Text>
+          <Text style={styles.btnFinishText}>Concluir e Voltar</Text>
           <Feather name="arrow-right" size={18} color="#FFF" />
         </TouchableOpacity>
       </View>
@@ -130,12 +159,12 @@ const styles = StyleSheet.create({
 
   btnOutline: { width: '100%', padding: 14, borderRadius: 12, borderWidth: 1, borderColor: '#D1D5DB', marginBottom: 12, alignItems: 'center' },
   btnOutlineText: { fontSize: 14, fontWeight: 'bold', color: '#4B5563' },
-  btnPrimary: { width: '100%', padding: 14, borderRadius: 12, backgroundColor: '#10B981', marginBottom: 12, alignItems: 'center' },
+  btnPrimary: { width: '100%', padding: 14, borderRadius: 12, backgroundColor: '#FF5A00', marginBottom: 12, alignItems: 'center' },
   btnPrimaryText: { fontSize: 14, fontWeight: 'bold', color: '#FFF' },
   btnDanger: { width: '100%', padding: 14, borderRadius: 12, backgroundColor: '#EF4444', alignItems: 'center', marginBottom: 20 },
   btnDangerText: { fontSize: 14, fontWeight: 'bold', color: '#FFF' },
 
   footer: { padding: 20, backgroundColor: '#FFF', borderTopWidth: 1, borderTopColor: '#E5E7EB' },
-  btnFinish: { flexDirection: 'row', backgroundColor: '#FF5A00', padding: 16, borderRadius: 12, alignItems: 'center', justifyContent: 'center', gap: 8 },
+  btnFinish: { flexDirection: 'row', backgroundColor: '#10B981', padding: 16, borderRadius: 12, alignItems: 'center', justifyContent: 'center', gap: 8 },
   btnFinishText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' }
 });

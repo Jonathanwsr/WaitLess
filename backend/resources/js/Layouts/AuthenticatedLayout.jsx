@@ -25,19 +25,20 @@ export default function AuthenticatedLayout({ header, children }) {
     // Controle extra para mobile (onde ele esconde a tela inteira em vez de recolher)
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-    // Identificadores de Papéis
-    const isGestor = ['admin', 'socio', 'gerente'].includes(user?.papel);
-    const isAdminSupremo = user?.papel === 'admin';
-    const isFuncionario = ['funcionario', 'atendente'].includes(user?.papel);
+    // Identificadores de Papéis (Agora insensível a maiúsculas/minúsculas e acentos)
+    const papelUsuario = String(user?.papel || '').toLowerCase();
+    const isGestor = ['admin', 'socio', 'sócio', 'gerente', 'proprietario', 'proprietário'].includes(papelUsuario);
+    const isAdminSupremo = papelUsuario === 'admin';
+    const isFuncionario = ['funcionario', 'funcionário', 'atendente', 'profissional'].includes(papelUsuario);
 
     // Formata o nome do papel para ser exibido dinamicamente no Dropdown
     const getRoleLabel = (role) => {
         if (!role) return 'CLIENTE';
-        const roleLower = role.toLowerCase();
+        const roleLower = String(role).toLowerCase();
         if (roleLower === 'admin') return 'ADMINISTRADOR';
-        if (roleLower === 'funcionario' || roleLower === 'atendente') return 'FUNCIONÁRIO';
+        if (roleLower.includes('funcionar') || roleLower === 'atendente') return 'FUNCIONÁRIO';
         if (roleLower === 'gerente') return 'GERENTE';
-        if (roleLower === 'socio' || roleLower === 'proprietario') return 'PROPRIETÁRIO';
+        if (roleLower.includes('socio') || roleLower.includes('proprietar')) return 'PROPRIETÁRIO';
         if (roleLower === 'cliente') return 'CLIENTE';
         return role.toUpperCase();
     };
@@ -69,12 +70,13 @@ export default function AuthenticatedLayout({ header, children }) {
     const baseLinkClass = `group flex items-center ${isSidebarExpanded ? 'px-4 justify-start' : 'px-0 justify-center'} py-3 mx-2 rounded-xl font-semibold transition-all duration-300 ease-out relative cursor-pointer`;
     
     const activeLinkClass = "bg-white text-gray-900 shadow-lg scale-105";
-    const inactiveLinkClass = "text-gray-900 hover:bg-white/40 hover:scale-105";
+    // 👇 Adicionado hover:text-white e ajustado hover:bg-white/20
+    const inactiveLinkClass = "text-gray-900 hover:text-white hover:bg-white/20 hover:scale-105";
 
-    // 👉 COMPONENTE DO TÍTULO DE SEÇÃO
+    // COMPONENTE DO TÍTULO DE SEÇÃO
     const SectionTitle = ({ title }) => (
         <div className={`pt-6 pb-2 w-full text-center transition-all duration-300 ${isSidebarExpanded ? 'opacity-100 block' : 'opacity-0 h-0 hidden overflow-hidden'}`}>
-            <span className="text-xs font-extrabold uppercase text-black tracking-widest inline-block">
+            <span className="text-xs font-extrabold uppercase text-gray-900 tracking-widest inline-block">
                 {title}
             </span>
         </div>
@@ -91,22 +93,14 @@ export default function AuthenticatedLayout({ header, children }) {
 
             {/* === MENU LATERAL (SIDEBAR) === */}
             <aside
-                className={`fixed inset-y-0 left-0 z-50 bg-[#C9826A] shadow-2xl transition-all duration-300 ease-in-out flex flex-col ${sidebarWidthClass} ${isMobileMenuOpen ? 'translate-x-0 w-[280px]' : '-translate-x-full'} sm:translate-x-0`}
+                className={`fixed inset-y-0 left-0 z-50 bg-[#FF5A00] shadow-2xl transition-all duration-300 ease-in-out flex flex-col ${sidebarWidthClass} ${isMobileMenuOpen ? 'translate-x-0 w-[280px]' : '-translate-x-full'} sm:translate-x-0`}
             >
                 {/* CABEÇALHO DO MENU LATERAL */}
-                <div className={`flex items-center h-20 shrink-0 border-b border-[#B8735C] transition-all duration-300 ${isSidebarExpanded ? 'px-4 justify-between' : 'px-0 justify-center'}`}>
+                <div className={`flex items-center h-20 shrink-0 border-b border-orange-600 transition-all duration-300 ${isSidebarExpanded ? 'px-4 justify-between' : 'px-0 justify-center'}`}>
                     
                     <div className={`flex items-center gap-3 overflow-hidden transition-all duration-300 ${isSidebarExpanded ? 'w-auto opacity-100' : 'w-0 opacity-0 hidden'}`}>
-                        <div className="w-10 h-10 bg-gray-900 rounded-xl flex items-center justify-center text-white shadow-md shrink-0">
-                            <img 
-                                src="/images/logo.png" 
-                                alt="Logo" 
-                                className="w-6 h-6 object-contain" 
-                                onError={(e) => { e.target.style.display = 'none'; }}
-                            />
-                        </div>
-                        <span className="font-extrabold text-gray-900 tracking-tight text-2xl whitespace-nowrap">
-                            WaitLess
+                        <span className="font-extrabold text-white tracking-tight text-3xl whitespace-nowrap ml-2">
+                            Lokyva
                         </span>
                     </div>
 
@@ -118,7 +112,8 @@ export default function AuthenticatedLayout({ header, children }) {
                                 setIsSidebarExpanded(!isSidebarExpanded);
                             }
                         }}
-                        className="p-2 text-gray-900 hover:bg-white/20 rounded-lg transition focus:outline-none shrink-0"
+                        // 👇 Adicionado hover:text-white para o botão de fechar/abrir o menu
+                        className="p-2 text-gray-900 hover:text-white hover:bg-white/20 rounded-lg transition focus:outline-none shrink-0"
                     >
                         <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 6h16M4 12h16M4 18h16"></path>
@@ -129,7 +124,7 @@ export default function AuthenticatedLayout({ header, children }) {
                 {/* ÁREA DOS LINKS */}
                 <div className="flex flex-col flex-1 overflow-y-auto space-y-2 pb-10 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                     
-                    {/* 👉 LINKS DE GESTORES (Dono da Loja, Gerente) */}
+                    {/* LINKS DE GESTORES (Dono da Loja, Gerente) */}
                     {isGestor && (
                         <>
                             <SectionTitle title="Admin Marketplace" />
@@ -139,14 +134,12 @@ export default function AuthenticatedLayout({ header, children }) {
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Dashboard</span>
                             </Link>
 
-                            {/* 👇 AQUI ESTÁ O NOVO LINK DE ESTORNOS PARA O CLIENTE */}
                             <Link href={route('cliente.estornos')} title="Estornos" className={`${baseLinkClass} ${route().current('cliente.estornos') ? activeLinkClass : inactiveLinkClass}`}>
                                 <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path>
                                 </svg>
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Meus Estornos</span>
                             </Link>
-                            {/* 👆 FIM DO LINK DE ESTORNOS */}
 
                             <Link href={route('estabelecimentos.index')} title="Estabelecimentos" className={`${baseLinkClass} ${inactiveLinkClass}`}>
                                 <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V10l-9-4-9 4v11m18 0h-4v-5H9v5H5m14 0H5"></path></svg>
@@ -185,7 +178,6 @@ export default function AuthenticatedLayout({ header, children }) {
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Relatórios</span>
                             </Link>
 
-                            {/* Divisor Visual Igual à Imagem */}
                             <div className={`my-2 mx-4 border-t border-white/30 transition-all duration-300 ${isSidebarExpanded ? 'opacity-100 block' : 'opacity-0 hidden'}`}></div>
 
                             <Link href="#" title="Suporte" className={`${baseLinkClass} ${inactiveLinkClass}`}>
@@ -195,7 +187,7 @@ export default function AuthenticatedLayout({ header, children }) {
                         </>
                     )}
 
-                    {/* 👉 LINKS DE CLIENTES COMUNS */}
+                    {/* LINKS DE CLIENTES COMUNS */}
                     {!isGestor && !isFuncionario && (
                         <>
                             <SectionTitle title="Área do Cliente" />
@@ -220,30 +212,21 @@ export default function AuthenticatedLayout({ header, children }) {
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Agendamentos</span>
                             </Link>
 
-                            {/* NOVO LINK: Assistente de Viagens */}
-                           <Link 
-    href={route('travel-assistant.index')} 
-    title="Assistente de Viagens" 
-    className={`${baseLinkClass} ${route().current('travel-assistant.index') ? activeLinkClass : inactiveLinkClass}`}
->
-    <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path>
-    </svg>
-    <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>
-        Assistente de Viagens
-    </span>
-</Link>
+                            <Link href={route('travel-assistant.index')} title="Assistente de Viagens" className={`${baseLinkClass} ${route().current('travel-assistant.index') ? activeLinkClass : inactiveLinkClass}`}>
+                                <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path>
+                                </svg>
+                                <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>
+                                    Assistente de Viagens
+                                </span>
+                            </Link>
 
-
-
-{/* 👇 AQUI ESTÁ O NOVO LINK DE ESTORNOS PARA O CLIENTE */}
                             <Link href={route('cliente.estornos')} title="Estornos" className={`${baseLinkClass} ${route().current('cliente.estornos') ? activeLinkClass : inactiveLinkClass}`}>
                                 <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path>
                                 </svg>
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Meus Estornos</span>
                             </Link>
-                            {/* 👆 FIM DO LINK DE ESTORNOS */}
                             
                             <Link href={route('cliente.carteira')} title="Carteira" className={`${baseLinkClass} ${route().current('cliente.carteira') ? activeLinkClass : inactiveLinkClass}`}>
                                <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg>
@@ -257,7 +240,7 @@ export default function AuthenticatedLayout({ header, children }) {
                         </>
                     )}
 
-                    {/* 👉 LINKS DE FUNCIONÁRIOS */}
+                    {/* LINKS DE FUNCIONÁRIOS */}
                     {isFuncionario && (
                         <>
                             <SectionTitle title="Área do Profissional" />
@@ -284,7 +267,7 @@ export default function AuthenticatedLayout({ header, children }) {
                         </>
                     )}
 
-                    {/* 👉 LINKS EXCLUSIVOS DO ADMIN SUPREMO */}
+                    {/* LINKS EXCLUSIVOS DO ADMIN SUPREMO */}
                     {isAdminSupremo && (
                         <>
                             <SectionTitle title="Administração" />
@@ -318,7 +301,7 @@ export default function AuthenticatedLayout({ header, children }) {
                                 </button>
                                 
                                 <div className="sm:hidden font-extrabold text-gray-800 dark:text-gray-200 text-xl">
-                                    WaitLess
+                                    Lokyva
                                 </div>
                             </div>
 
@@ -349,7 +332,7 @@ export default function AuthenticatedLayout({ header, children }) {
                                 {/* Divisória Vertical (Só no PC) */}
                                 <div className="h-8 w-[1px] bg-gray-300 dark:bg-gray-600 hidden sm:block mx-1"></div>
 
-                                {/* Menu Dropdown do Usuário (AGORA MOSTRA NO MOBILE COMO TRÊS PONTINHOS) */}
+                                {/* Menu Dropdown do Usuário */}
                                 <div className="relative">
                                     <Dropdown>
                                         <Dropdown.Trigger>
@@ -383,7 +366,7 @@ export default function AuthenticatedLayout({ header, children }) {
                                         {/* Conteúdo do Dropdown */}
                                         <Dropdown.Content align="right" width="48" contentClasses="!bg-[#FCFAF8] !border !border-[#DCD5CF] shadow-xl rounded-xl mt-3 pb-1 pt-1 z-50">
                                             
-                                            {/* Info de Usuário no Mobile (Opcional, mas útil já que a foto sumiu) */}
+                                            {/* Info de Usuário no Mobile */}
                                             <div className="block sm:hidden px-4 py-3 border-b border-[#EAE3DE] mb-1">
                                                 <p className="text-sm font-bold text-[#202B36]">{user.name}</p>
                                                 <p className="text-xs font-semibold text-[#637381] uppercase mt-0.5">{getRoleLabel(user.papel)}</p>

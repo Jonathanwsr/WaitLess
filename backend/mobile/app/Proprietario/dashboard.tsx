@@ -8,7 +8,8 @@ import {
   TouchableOpacity, 
   ScrollView,
   Platform,
-  StatusBar
+  StatusBar,
+  Image
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context'; 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -48,6 +49,7 @@ export default function ProprietarioDashboard() {
   const [erroAPI, setErroAPI] = useState<string | null>(null);
   
   const [userName, setUserName] = useState('Usuário');
+  const [userPhoto, setUserPhoto] = useState<string | null>(null); // Estado para a foto
   const router = useRouter();
 
   useEffect(() => {
@@ -63,9 +65,12 @@ export default function ProprietarioDashboard() {
         if (usuario.nome) {
           setUserName(usuario.nome.split(' ')[0]);
         }
+        if (usuario.foto_perfil || usuario.foto) {
+          setUserPhoto(usuario.foto_perfil || usuario.foto);
+        }
       }
     } catch (error) {
-      console.log('Erro ao ler nome do usuário');
+      console.log('Erro ao ler dados do usuário');
     }
   };
 
@@ -106,20 +111,17 @@ export default function ProprietarioDashboard() {
       try {
         json = JSON.parse(textResponse);
       } catch (parseError) {
-        // Mensagem amigável para erro no servidor (500)
         setErroAPI('Desculpe, nossos servidores estão passando por uma instabilidade momentânea.');
         return;
       }
 
       if (!response.ok) {
-        // Mensagem amigável para requisição recusada
         setErroAPI('Não foi possível carregar suas informações neste momento.');
         return;
       }
 
       setData(json);
     } catch (error: any) {
-      // Mensagem amigável para erro de internet/rede
       setErroAPI('Parece que você está sem conexão ou o sinal está fraco.');
     } finally {
       setLoading(false);
@@ -130,7 +132,11 @@ export default function ProprietarioDashboard() {
     <View style={styles.estCard}>
       <View style={styles.estHeader}>
         <View style={styles.estAvatarPlaceholder}>
-          <Text style={styles.estAvatarText}>{item.nome.charAt(0).toUpperCase()}</Text>
+          {item.foto_perfil ? (
+            <Image source={{ uri: item.foto_perfil }} style={styles.estAvatarImage} />
+          ) : (
+            <Text style={styles.estAvatarText}>{item.nome.charAt(0).toUpperCase()}</Text>
+          )}
         </View>
         <View style={styles.estInfo}>
           <View style={styles.estTitleRow}>
@@ -138,7 +144,7 @@ export default function ProprietarioDashboard() {
             <View style={[styles.statusDot, { backgroundColor: item.ativo ? '#22C55E' : '#EF4444' }]} />
           </View>
           <Text style={styles.estSubtitle}>
-            ⭐ {item.avaliacao_media || '0.0'}  •  👥 {item.funcionarios_count} Equipe
+            Nota: {item.avaliacao_media || '0.0'}  •  Equipe: {item.funcionarios_count}
           </Text>
         </View>
         <TouchableOpacity style={styles.estMoreBtn}>
@@ -152,15 +158,29 @@ export default function ProprietarioDashboard() {
       </View>
 
       <View style={styles.estActionsRow}>
-        <TouchableOpacity style={styles.estActionBtn}>
+        {/* ROTA: Ver Fila - PASSANDO O ID */}
+        <TouchableOpacity 
+          style={styles.estActionBtn} 
+          onPress={() => router.push(`/src/screens/AcompanhamentoFilaScreen?id=${item.id}`)}
+        >
           <Feather name="users" size={18} color="#4B5563" />
           <Text style={styles.estActionText}>Ver Fila</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.estActionBtn}>
+        
+        {/* ROTA: Equipe - PASSANDO O ID DA LOJA PARA CARREGAR A EQUIPE CERTA */}
+        <TouchableOpacity 
+          style={styles.estActionBtn} 
+          onPress={() => router.push(`/Proprietario/FuncionariosScreen?id=${item.id}`)}
+        >
           <Feather name="user-check" size={18} color="#4B5563" />
           <Text style={styles.estActionText}>Equipe</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.estActionBtn}>
+        
+        {/* ROTA: Configurações - PASSANDO O ID E O NOME DA LOJA */}
+        <TouchableOpacity 
+          style={styles.estActionBtn} 
+          onPress={() => router.push(`/Proprietario/ConfiguracoesMobile?id=${item.id}&nome=${encodeURIComponent(item.nome)}`)}
+        >
           <Feather name="settings" size={18} color="#4B5563" />
           <Text style={styles.estActionText}>Configurações</Text>
         </TouchableOpacity>
@@ -206,7 +226,11 @@ export default function ProprietarioDashboard() {
       <View style={styles.topHeader}>
         <View style={styles.topHeaderLeft}>
           <View style={styles.avatarMini}>
-            <Text style={styles.avatarMiniText}>{userName.charAt(0).toUpperCase()}</Text>
+            {userPhoto ? (
+              <Image source={{ uri: userPhoto }} style={styles.avatarMiniImage} />
+            ) : (
+              <Text style={styles.avatarMiniText}>{userName.charAt(0).toUpperCase()}</Text>
+            )}
           </View>
           <Text style={styles.greetingText}>Olá, {userName}</Text>
         </View>
@@ -341,7 +365,8 @@ const styles = StyleSheet.create({
   // HEADER
   topHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 12, backgroundColor: '#FFF' },
   topHeaderLeft: { flexDirection: 'row', alignItems: 'center' },
-  avatarMini: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#D1FAE5', justifyContent: 'center', alignItems: 'center', marginRight: 10 },
+  avatarMini: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#D1FAE5', justifyContent: 'center', alignItems: 'center', marginRight: 10, overflow: 'hidden' },
+  avatarMiniImage: { width: '100%', height: '100%' },
   avatarMiniText: { color: '#10B981', fontWeight: 'bold', fontSize: 14 },
   greetingText: { fontSize: 16, fontWeight: 'bold', color: '#374151' },
   notificationBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#F3F4F6', justifyContent: 'center', alignItems: 'center' },
@@ -376,7 +401,8 @@ const styles = StyleSheet.create({
   lista: { paddingHorizontal: 20, paddingBottom: 40, gap: 16 },
   estCard: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#F3F4F6', borderRadius: 20, padding: 16, elevation: 2, shadowColor: '#000', shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.05, shadowRadius: 5 },
   estHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  estAvatarPlaceholder: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#F3F4F6', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  estAvatarPlaceholder: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#F3F4F6', justifyContent: 'center', alignItems: 'center', marginRight: 12, overflow: 'hidden' },
+  estAvatarImage: { width: '100%', height: '100%' },
   estAvatarText: { fontSize: 16, fontWeight: 'bold', color: '#374151' },
   estInfo: { flex: 1 },
   estTitleRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 2 },

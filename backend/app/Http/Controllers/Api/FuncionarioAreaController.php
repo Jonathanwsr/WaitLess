@@ -131,29 +131,40 @@ class FuncionarioAreaController extends Controller
     }
 
     /**
-     * 👉 FUNÇÃO AUXILIAR DE SEGURANÇA: Verifica se quem clicou tem poder para finalizar ou estornar
+     * 👉 FUNÇÃO AUXILIAR DE SEGURANÇA ATUALIZADA
+     * Verifica se quem clicou tem poder para finalizar ou estornar, lendo a tabela estabelecimento_usuario
      */
     private function temPermissaoDeCaixa($agendamento)
     {
         $user = Auth::user();
-        $papel = strtolower(trim($user->papel));
+        
+        // 1. Admin global do sistema
+        if (isset($user->papel) && strtolower(trim($user->papel)) === 'admin') {
+            return true;
+        }
 
-        if ($papel === 'admin') return true;
-
-        $isAtendente = Funcionario::where('usuario_id', $user->id)->where('id', $agendamento->funcionario_id)->exists();
-        if ($isAtendente) return true;
-
-        $isGerencia = in_array($papel, ['proprietario', 'socio', 'gerente']) &&
-            DB::table('estabelecimento_usuario')
-                ->where('usuario_id', $user->id)
-                ->where('estabelecimento_id', $agendamento->estabelecimento_id)
+        // 2. Se o agendamento tem um funcionário específico e é o usuário logado
+        if ($agendamento->funcionario_id) {
+            $isAtendente = Funcionario::where('usuario_id', $user->id)
+                ->where('id', $agendamento->funcionario_id)
                 ->exists();
+                
+            if ($isAtendente) return true;
+        }
 
-        return $isGerencia;
+        // 3. Se não houver funcionário (ex: reserva geral) OU se for o dono/gerente do local
+        // Verifica na tabela pivot estabelecimento_usuario
+        $permissaoLocal = DB::table('estabelecimento_usuario')
+            ->where('usuario_id', $user->id)
+            ->where('estabelecimento_id', $agendamento->estabelecimento_id)
+            ->whereIn('tipo', ['admin', 'socio', 'gerente']) // Somente cargos de chefia
+            ->exists();
+
+        return $permissaoLocal;
     }
 
     /**
-     * 👉 NOVO MÉTODO: Finalização por PIN (Libera a Custódia e dá Pontos)
+     * 👉 MÉTODO MANTIDO: Finalização por PIN (Libera a Custódia e dá Pontos)
      */
     public function finalizarComPin(Request $request, $id, PagamentoService $pagamentoService)
     {
@@ -212,7 +223,7 @@ class FuncionarioAreaController extends Controller
             $agendamento->update([
                 'status' => 'concluido',
                 'hora_finalizacao' => now()->format('H:i'),
-                'finalizado_por' => Auth::id()
+                'finalizado_por' => Auth::id() // Salva quem finalizou (o dono, gerente ou funcionario)
             ]);
 
             DB::commit();
@@ -236,12 +247,20 @@ class FuncionarioAreaController extends Controller
             abort(403, 'Você não tem permissão para estornar/cancelar este atendimento.');
         }
 
-        // Regra de negócios de tempo para Atendentes (Admins/Proprietários podem burlar se quiserem)
+        // Regra de negócios de tempo
         $horaMarcada = Carbon::parse($agendamento->data_agendamento . ' ' . $agendamento->hora_agendamento);
         $horaLimiteCancelamento = $horaMarcada->copy()->addMinutes(30);
-        $papel = strtolower(trim(Auth::user()->papel));
+        
+        // Verifica se é admin global ou gerente/socio/admin do local para burlar a regra de 30 minutos
+        $isGerenciaLocal = DB::table('estabelecimento_usuario')
+            ->where('usuario_id', Auth::id())
+            ->where('estabelecimento_id', $agendamento->estabelecimento_id)
+            ->whereIn('tipo', ['admin', 'socio', 'gerente'])
+            ->exists();
 
-        if ($papel !== 'admin' && $papel !== 'proprietario' && Carbon::now()->lessThan($horaLimiteCancelamento)) {
+        $isGlobalAdmin = isset(Auth::user()->papel) && strtolower(trim(Auth::user()->papel)) === 'admin';
+
+        if (!$isGlobalAdmin && !$isGerenciaLocal && Carbon::now()->lessThan($horaLimiteCancelamento)) {
             return back()->withErrors(['error' => '❌ Só é permitido cancelar por no-show após 30 minutos de atraso (A partir das ' . $horaLimiteCancelamento->format('H:i') . ').']);
         }
 

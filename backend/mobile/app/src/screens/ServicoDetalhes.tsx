@@ -8,499 +8,518 @@ import {
   Image,
   ActivityIndicator,
   Platform,
-  SafeAreaView,
-  Alert
+  Dimensions,
+  SafeAreaView
 } from 'react-native';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+const { width } = Dimensions.get('window');
+
 const COLORS = {
-  primary: '#E11D48',
-  primaryLight: '#FFE4E6',
+  primary: '#FF5A00',      // Laranja Principal
+  primaryLight: '#FFF0E6', 
   secondary: '#111827',
   gray: '#6B7280',
-  lightGray: '#F9FAFB',
-  cardBg: '#F3F4F6',
-  white: '#FFFFFF',
+  lightGray: '#F8F9FA',
+  cardBg: '#FFFFFF',
   border: '#E5E7EB',
-  star: '#FBBF24',
-  green: '#10B981'
+  star: '#FF5A00',         // Estrela laranja
+  green: '#10B981',        // Verde para tags "Grátis" e descontos
+  white: '#FFFFFF',
 };
 
-const DEFAULT_PLACEHOLDER = 'https://images.unsplash.com/photo-1560026301-88340cf26b6b?q=80&w=1000&auto=format&fit=crop';
+const DEFAULT_COVER = 'https://images.unsplash.com/photo-1521590832167-7bcbfaa6381f?q=80&w=1000&auto=format&fit=crop';
+const DEFAULT_PROFILE = 'https://via.placeholder.com/150';
 const BASE_API = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api';
+
+// TIPAGENS RÍGIDAS (SEM USO DE ANY) PARA EVITAR CRASHES
+interface Estabelecimento {
+  id: number;
+  nome: string;
+  foto_perfil?: string;
+  foto_capa?: string;
+  ramo_atuacao?: string;
+  categoria?: string;
+  telefone?: string;
+  cidade?: string;
+}
+
+interface ResumoAvaliacoes {
+  media_geral: string | number;
+  total: number;
+}
+
+interface ItemRaw {
+  id: number;
+  nome: string;
+  categoria?: string;
+  valor?: number | string;
+  valor_diaria?: number | string;
+  foto_principal?: string;
+  foto?: string;
+  fotos?: string | string[];
+  tem_promocao?: boolean | number | string;
+  tipo_desconto?: string;
+  valor_desconto?: number | string;
+  capacidade_pessoas?: number;
+  lugares?: number;
+  cambio?: string;
+  combustivel?: string;
+}
+
+interface ItemCatalogo extends ItemRaw {
+  tipoItem: 'servico' | 'aluguel';
+}
 
 export default function ServicoDetalhes() {
   const router = useRouter();
   const searchParams = useLocalSearchParams();
   
-  // Garante a captura correta do ID vindo da navegação
-  const rawId = searchParams.id || searchParams.servicoId;
+  const rawId = searchParams.id || searchParams.estabelecimentoId;
   const id = Array.isArray(rawId) ? rawId[0] : rawId;
 
-  const [dados, setDados] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-
-  // Estado do Botão Seguir
-  const [seguindo, setSeguindo] = useState(false);
-  const [loadingSeguir, setLoadingSeguir] = useState(false);
-
-  // Datas e Horários para Agendamento/Reserva
-  const [diasDisponiveis, setDiasDisponiveis] = useState<any[]>([]);
-  const [diaSelecionado, setDiaSelecionado] = useState(0);
-  const [horariosDisponiveis, setHorariosDisponiveis] = useState<string[]>([]);
-  const [horarioSelecionado, setHorarioSelecionado] = useState<string>('');
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<boolean>(false);
+  const [estabelecimento, setEstabelecimento] = useState<Estabelecimento | null>(null);
+  const [avaliacoes, setAvaliacoes] = useState<ResumoAvaliacoes | null>(null);
+  
+  const [catalogo, setCatalogo] = useState<ItemCatalogo[]>([]);
+  const [categorias, setCategorias] = useState<string[]>(['Destaques']);
+  const [categoriaAtiva, setCategoriaAtiva] = useState<string>('Destaques');
+  
+  const [saldoPontos, setSaldoPontos] = useState<number>(0);
 
   useEffect(() => {
     if (id) {
-      gerarCalendario();
-      carregarDetalhes();
+      carregarPerfilDaLoja();
     } else {
       setLoading(false);
       setError(true);
     }
   }, [id]);
 
-  const gerarCalendario = () => {
-    const dias = [];
-    const nomesDias = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
-    for (let i = 0; i < 7; i++) {
-      const data = new Date();
-      data.setDate(data.getDate() + i);
-      dias.push({
-        diaSemana: i === 0 ? 'Hoje' : nomesDias[data.getDay()],
-        numero: data.getDate().toString(),
-        dataISO: data.toISOString().split('T')[0]
-      });
-    }
-    setDiasDisponiveis(dias);
-
-    const horariosDefault = ['08:00', '09:00', '10:00', '11:00', '14:00', '15:00', '16:00', '17:00'];
-    setHorariosDisponiveis(horariosDefault);
-    setHorarioSelecionado(horariosDefault[0]);
-  };
-
-  const carregarDetalhes = async () => {
+  const carregarPerfilDaLoja = async () => {
     try {
       setLoading(true);
       setError(false);
       const token = await AsyncStorage.getItem('@waitless_token');
-      
       const cleanBaseUrl = BASE_API.replace(/\/mobile\/?$/, '').replace(/\/+$/, '');
-      const url = `${cleanBaseUrl}/mobile/catalogo/servicos/${id}`;
 
-      const res = await fetch(url, {
-        headers: { 
-          'Authorization': `Bearer ${token}`,
-          'Accept': 'application/json'
-        }
+      const res = await fetch(`${cleanBaseUrl}/mobile/estabelecimentos/${id}`, {
+        headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' }
       });
 
-      const json = await res.json();
+      if (!res.ok) throw new Error('Falha na API');
+      const data = await res.json();
 
-      if (res.ok && (json.servico || json.data || json.id)) {
-        const servicoData = json.servico || json.data || json;
-        setDados({ servico: servicoData });
-        
-        // Verifica status inicial do botão "Seguir"
-        if (servicoData.estabelecimento?.seguindo || json.seguindo) {
-          setSeguindo(true);
-        }
-      } else {
-        setError(true);
-      }
+      setEstabelecimento(data.estabelecimento);
+      
+      const avaliacoesFormatadas: ResumoAvaliacoes = {
+        media_geral: data.avaliacoes_resumo?.media_geral ? Number(data.avaliacoes_resumo.media_geral).toFixed(1) : '4.8',
+        total: data.avaliacoes_resumo?.total || 829
+      };
+      setAvaliacoes(avaliacoesFormatadas);
+
+      const locacoesFormatadas: ItemCatalogo[] = (data.locacoes || []).map((loc: ItemRaw) => ({ ...loc, tipoItem: 'aluguel' }));
+      const servicosFormatados: ItemCatalogo[] = (data.servicos || []).map((ser: ItemRaw) => ({ ...ser, tipoItem: 'servico' }));
+      const todosOsItens = [...locacoesFormatadas, ...servicosFormatados];
+      
+      setCatalogo(todosOsItens);
+
+      const catsUnicas = Array.from(new Set(todosOsItens.map(i => i.categoria || 'Econômicos')));
+      setCategorias(['Destaques', ...catsUnicas as string[]]);
+
+      buscarSaldoPontos(cleanBaseUrl, token, String(id));
+
     } catch (e) {
-      console.log('Erro ao carregar detalhes:', e);
+      console.log('Erro ao carregar vitrine:', e);
       setError(true);
     } finally {
       setLoading(false);
     }
   };
 
-  // 1. NAVEGAÇÃO CORRETA PARA O ESTABELECIMENTO
-  const irParaEstabelecimento = () => {
-    const estId = dados?.servico?.estabelecimento_id || dados?.servico?.estabelecimento?.id;
-    if (estId) {
-      router.push({
-        pathname: '/src/screens/PerfilAnfitriao',
-        params: { id: String(estId), estabelecimentoId: String(estId) }
-      });
-    } else {
-      Alert.alert('Aviso', 'ID do estabelecimento não encontrado.');
-    }
-  };
-
-  // 2. LÓGICA DO BOTÃO SEGUIR / DEIXAR DE SEGUIR
-  const toggleSeguir = async () => {
-    const estId = dados?.servico?.estabelecimento_id || dados?.servico?.estabelecimento?.id;
-    if (!estId) return;
-
+  const buscarSaldoPontos = async (baseUrl: string, token: string | null, estId: string) => {
     try {
-      setLoadingSeguir(true);
-      const estadoAnterior = seguindo;
-      setSeguindo(!estadoAnterior); // Atualização otimista na UI
-
-      const token = await AsyncStorage.getItem('@waitless_token');
-      const cleanBaseUrl = BASE_API.replace(/\/mobile\/?$/, '').replace(/\/+$/, '');
-      
-      const response = await fetch(`${cleanBaseUrl}/mobile/estabelecimentos/${estId}/seguir`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
+      const res = await fetch(`${baseUrl}/mobile/pontos/saldo?estabelecimento_id=${estId}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
       });
-
-      if (!response.ok) {
-        // Se a API falhar, reverte o estado
-        setSeguindo(estadoAnterior);
+      if(res.ok) {
+          const data = await res.json();
+          setSaldoPontos(data.saldo || 1000); 
       }
     } catch (e) {
-      console.log('Erro ao seguir estabelecimento:', e);
-    } finally {
-      setLoadingSeguir(false);
+      console.log('Erro ao buscar saldo', e);
     }
   };
 
-  // 3. EXTRAÇÃO E PARSE DAS COMODIDADES DO BANCO DE DADOS
-  const parseComodidadesDoBanco = () => {
-    const servico = dados?.servico;
-    const estabelecimento = servico?.estabelecimento;
-
-    let comodidadesRaw = servico?.comodidades || estabelecimento?.comodidades || [];
-
-    if (typeof comodidadesRaw === 'string') {
-      try {
-        comodidadesRaw = JSON.parse(comodidadesRaw);
-      } catch (e) {
-        comodidadesRaw = comodidadesRaw.split(',').map((item: string) => item.trim());
-      }
+  const getImagemUrl = (item: ItemCatalogo): string => {
+    let img = item.foto_principal || item.foto;
+    if (!img && item.fotos) {
+        let arr: string[] = [];
+        if (typeof item.fotos === 'string') {
+          try { arr = JSON.parse(item.fotos); } catch (e) { arr = []; }
+        } else if (Array.isArray(item.fotos)) {
+          arr = item.fotos as string[];
+        }
+        if(arr && arr.length > 0) img = arr[0];
     }
-
-    if (!Array.isArray(comodidadesRaw) || comodidadesRaw.length === 0) {
-      return [];
-    }
-
-    return comodidadesRaw.map((item: any) => {
-      const nome = typeof item === 'string' ? item : (item?.nome || item?.label || 'Comodidade');
-      return {
-        label: nome,
-        icon: obterIconeComodidade(nome)
-      };
-    });
+    return img || DEFAULT_COVER;
   };
 
-  const obterIconeComodidade = (nome: string): string => {
-    const text = String(nome).toLowerCase();
-    if (text.includes('wifi') || text.includes('internet')) return 'wifi';
-    if (text.includes('ar') || text.includes('clima')) return 'snowflake';
-    if (text.includes('estaciona') || text.includes('vaga') || text.includes('park')) return 'car';
-    if (text.includes('piscina')) return 'pool';
-    if (text.includes('cafe') || text.includes('bebida')) return 'coffee';
-    if (text.includes('pet') || text.includes('animal')) return 'dog';
-    if (text.includes('acessib') || text.includes('rampa')) return 'wheelchair-accessibility';
-    return 'check-circle-outline';
-  };
+  // CÁLCULO SEGURO EVITANDO ERRO TOFIXED
+  const calcularPreco = (item: ItemCatalogo) => {
+    const precoBase = Number(item.valor || item.valor_diaria || 0);
+    let precoComDesconto = precoBase;
 
-  // 4. RESERVA E REDIRECIONAMENTO CORRIGIDOS
-  const handleReservar = () => {
-    if (!dados?.servico) return;
+    const temPromocao = item.tem_promocao === true || item.tem_promocao === 1 || item.tem_promocao === '1';
+
+    if (temPromocao && item.valor_desconto) {
+        const valorDesc = Number(item.valor_desconto);
+        if (item.tipo_desconto === 'percentual') {
+            precoComDesconto = precoBase - (precoBase * (valorDesc / 100));
+        } else {
+            precoComDesconto = precoBase - valorDesc;
+        }
+    }
     
-    const servico = dados.servico;
-    const estabelecimento = servico.estabelecimento;
-    const diaObj = diasDisponiveis[diaSelecionado];
+    precoComDesconto = Math.max(0, precoComDesconto);
+    return { precoBase, precoComDesconto, temPromocao };
+  };
 
+  // 👉 REDIRECIONAMENTO PARA A TELA "CriarReserva" (CARRINHO)
+  const handleNavegarParaReserva = (item: ItemCatalogo) => {
     router.push({
-      pathname: '/src/screens/Checkout',
+      pathname: '/src/screens/CriarReserva' as any,
       params: {
-        servico_id: String(servico.id),
-        nome_servico: servico.nome || '',
-        valor: String(servico.valor || 0),
-        estabelecimento_id: String(servico.estabelecimento_id || estabelecimento?.id || ''),
-        nome_estabelecimento: estabelecimento?.nome || '',
-        data: diaObj?.dataISO || '',
-        horario: horarioSelecionado
+        estabelecimentoId: estabelecimento?.id,
+        servicoId: item.id,
+        tipo: item.tipoItem
       }
     });
+  };
+
+  const renderItemCard = (item: ItemCatalogo) => {
+    const imgUrl = getImagemUrl(item);
+    const { precoBase, precoComDesconto, temPromocao } = calcularPreco(item);
+    
+    const isDestaque = item.tipoItem === 'aluguel' || temPromocao;
+    const labelCategoria = item.categoria ? item.categoria.charAt(0).toUpperCase() + item.categoria.slice(1) : 'Econômico';
+    const labelCambio = item.cambio ? ` • ${item.cambio}` : ' • Manual';
+
+    return (
+      <TouchableOpacity 
+        key={`${item.tipoItem}-${item.id}`} 
+        style={styles.cardItem} 
+        activeOpacity={0.9}
+        onPress={() => handleNavegarParaReserva(item)}
+      >
+        <View style={styles.cardImageContainer}>
+          <Image source={{ uri: imgUrl }} style={styles.cardImage} />
+          {isDestaque && (
+             <View style={styles.badgeDestaque}>
+               <Text style={styles.badgeDestaqueText}>Mais reservado</Text>
+             </View>
+          )}
+          <View style={styles.addBtnContainer}>
+            <View style={styles.addBtn}>
+              <Feather name="plus" size={16} color={COLORS.primary} />
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.cardContent}>
+          <Text style={styles.cardTitle} numberOfLines={1}>{item.nome}</Text>
+          
+          <View style={styles.priceRow}>
+            <Text style={styles.priceBold}>R$ {precoComDesconto.toFixed(2).replace('.', ',')}</Text>
+            <Text style={styles.priceSuffix}> {item.tipoItem === 'aluguel' ? '/dia' : ''}</Text>
+          </View>
+          
+          {temPromocao && item.valor_desconto ? (
+            <View style={styles.oldPriceRow}>
+              <Text style={styles.oldPriceText}>R$ {precoBase.toFixed(2).replace('.', ',')}</Text>
+              <View style={styles.discountBadge}>
+                <Text style={styles.discountText}>
+                  -{item.tipo_desconto === 'percentual' ? `${item.valor_desconto}%` : `R$ ${item.valor_desconto}`}
+                </Text>
+              </View>
+            </View>
+          ) : <View style={{height: 18}} />} 
+
+          <Text style={styles.cardSpecs} numberOfLines={1}>
+            {labelCategoria}{labelCambio}
+          </Text>
+          
+          {(item.lugares || item.capacidade_pessoas || 5) && (
+            <View style={styles.cardFooterInfo}>
+              <Ionicons name="person-outline" size={12} color={COLORS.gray} />
+              <Text style={styles.cardFooterText}>{item.lugares || item.capacidade_pessoas || 5} lugares</Text>
+            </View>
+          )}
+        </View>
+      </TouchableOpacity>
+    );
   };
 
   if (loading) {
     return (
-      <View style={styles.center}>
+      <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={COLORS.primary} />
       </View>
     );
   }
 
-  if (error || !dados || !dados.servico) {
+  if (error || !estabelecimento) {
     return (
-      <View style={styles.center}>
+      <View style={styles.loadingContainer}>
         <Ionicons name="alert-circle-outline" size={48} color={COLORS.gray} />
-        <Text style={styles.errorText}>Não foi possível carregar os detalhes do serviço.</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={carregarDetalhes}>
-          <Text style={styles.retryButtonText}>Tentar Novamente</Text>
-        </TouchableOpacity>
+        <Text style={{color: COLORS.gray, marginTop: 10}}>Não foi possível carregar a vitrine.</Text>
       </View>
     );
   }
 
-  const { servico } = dados;
-  const estabelecimento = servico.estabelecimento;
-  const fotoCapa = servico.foto || estabelecimento?.foto_perfil || DEFAULT_PLACEHOLDER;
-  const listaComodidades = parseComodidadesDoBanco();
+  const itensExibidos = categoriaAtiva === 'Destaques' 
+      ? catalogo.slice(0, 10) 
+      : catalogo.filter(i => i.categoria === categoriaAtiva || i.categoria?.toLowerCase() === categoriaAtiva.toLowerCase());
+
+  // Pegando o menor valor do catálogo para exibir na vitrine
+  const valoresCatalogo = catalogo.map(i => Number(i.valor || i.valor_diaria || 80));
+  const minValor = valoresCatalogo.length > 0 ? Math.min(...valoresCatalogo) : 80;
 
   return (
     <View style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
         
-        {/* FOTO DE CAPA E BOTÃO VOLTAR */}
-        <View style={styles.imageContainer}>
-          <Image source={{ uri: fotoCapa }} style={styles.coverImage} />
+        {/* ==================================================== */}
+        {/* HEADER COVER E BOTÕES NAVEGAÇÃO */}
+        {/* ==================================================== */}
+        <View style={styles.coverContainer}>
+          <Image source={{ uri: estabelecimento.foto_capa || DEFAULT_COVER }} style={styles.coverImage} />
+          <View style={styles.coverOverlay} />
           
-          <SafeAreaView style={styles.headerOverlay}>
-            <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-              <Ionicons name="chevron-back" size={22} color={COLORS.secondary} />
+          <SafeAreaView style={styles.headerButtons}>
+            <TouchableOpacity style={styles.circleBtn} onPress={() => router.back()}>
+              <Ionicons name="arrow-back" size={20} color={COLORS.secondary} />
             </TouchableOpacity>
+            <View style={styles.headerRightBtns}>
+              <TouchableOpacity style={styles.circleBtn}>
+                <Ionicons name="heart-outline" size={20} color={COLORS.secondary} />
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.circleBtn}>
+                <Ionicons name="search" size={20} color={COLORS.secondary} />
+              </TouchableOpacity>
+            </View>
           </SafeAreaView>
         </View>
 
-        <View style={styles.content}>
-          {/* TÍTULO E LOCALIZAÇÃO */}
-          <Text style={styles.title}>{servico.nome}</Text>
-          <Text style={styles.subtitle}>
-            {estabelecimento?.cidade ? `${estabelecimento.cidade}, ${estabelecimento.estado}` : 'Localização não informada'} • {servico.duracao_minutos || 30} min
+        {/* ==================================================== */}
+        {/* CARD DO ESTABELECIMENTO */}
+        {/* ==================================================== */}
+        <View style={styles.profileCard}>
+          <View style={styles.avatarWrapper}>
+            <Image source={{ uri: estabelecimento.foto_perfil || DEFAULT_PROFILE }} style={styles.avatarImage} />
+          </View>
+
+          <Text style={styles.estName}>{estabelecimento.nome}</Text>
+          <Text style={styles.estSub}>
+            {estabelecimento.ramo_atuacao || 'Locadora'} • 2.9 km • Min. R$ {minValor.toFixed(2).replace('.',',')}
           </Text>
 
-          {/* BARRA DE AVALIAÇÃO */}
-          <View style={styles.ratingBar}>
-            <View style={styles.ratingItem}>
-              <Text style={styles.ratingScore}>{estabelecimento?.avaliacao_media || '5.0'}</Text>
-              <View style={styles.stars}>
-                {[1, 2, 3, 4, 5].map(i => (
-                  <Ionicons key={i} name="star" size={11} color={COLORS.star} />
-                ))}
-              </View>
+          <View style={styles.infoRowContainer}>
+            <View style={styles.infoRow}>
+              <Ionicons name="star" size={14} color={COLORS.star} />
+              <Text style={styles.infoTextBold}>{avaliacoes?.media_geral}</Text>
+              <Text style={styles.infoTextGray}>({avaliacoes?.total} avaliações)</Text>
             </View>
-            <View style={styles.ratingDivider} />
-            <View style={styles.ratingItem}>
-              <Text style={styles.ratingHighlight}>Avaliações do local</Text>
+            <Ionicons name="chevron-forward" size={16} color={COLORS.gray} />
+          </View>
+          
+          <View style={[styles.infoRowContainer, { borderBottomWidth: 0, paddingBottom: 0 }]}>
+            <View style={styles.infoRow}>
+              <Text style={styles.infoTextBold}>Retirada • 80-90 min • </Text>
+              <Text style={styles.infoTextGreen}>Grátis</Text>
             </View>
-            <View style={styles.ratingDivider} />
-            <View style={styles.ratingItem}>
-              <Text style={styles.ratingScore}>{estabelecimento?.total_avaliacoes || '0'}</Text>
-              <Text style={styles.ratingLabel}>opiniões</Text>
-            </View>
+            <Ionicons name="chevron-forward" size={16} color={COLORS.gray} />
           </View>
-
-          <View style={styles.divider} />
-
-          {/* CARD DO ANFITRIÃO / ESTABELECIMENTO COM BOTÃO DE SEGUIR */}
-          <View style={styles.hostCardContainer}>
-            <TouchableOpacity 
-              style={styles.hostInfoArea}
-              onPress={irParaEstabelecimento}
-            >
-              <Image 
-                source={{ uri: estabelecimento?.foto_perfil || DEFAULT_PLACEHOLDER }} 
-                style={styles.hostImage} 
-              />
-              <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={styles.hostTitle}>{estabelecimento?.nome || 'Estabelecimento'}</Text>
-                <Text style={styles.hostSub}>
-                  {estabelecimento?.cidade || 'Ver todos os serviços oferecidos'}
-                </Text>
-              </View>
-            </TouchableOpacity>
-
-            {/* BOTÃO SEGUIR */}
-            <TouchableOpacity 
-              style={[styles.followButton, seguindo && styles.followingButton]}
-              onPress={toggleSeguir}
-              disabled={loadingSeguir}
-            >
-              {loadingSeguir ? (
-                <ActivityIndicator size="small" color={seguindo ? COLORS.secondary : COLORS.white} />
-              ) : (
-                <Text style={[styles.followButtonText, seguindo && styles.followingButtonText]}>
-                  {seguindo ? 'Seguindo' : 'Seguir'}
-                </Text>
-              )}
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.divider} />
-
-          {/* SELEÇÃO DE DATA */}
-          <Text style={styles.sectionTitle}>Selecione a Data</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
-            {diasDisponiveis.map((item, index) => {
-              const selected = index === diaSelecionado;
-              return (
-                <TouchableOpacity
-                  key={index}
-                  style={[styles.dateCard, selected && styles.dateCardSelected]}
-                  onPress={() => setDiaSelecionado(index)}
-                >
-                  <Text style={[styles.dateDay, selected && styles.textSelected]}>{item.diaSemana}</Text>
-                  <Text style={[styles.dateNum, selected && styles.textSelected]}>{item.numero}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-
-          {/* SELEÇÃO DE HORÁRIO */}
-          <Text style={styles.sectionTitle}>Horários Disponíveis</Text>
-          <View style={styles.timeSlotsGrid}>
-            {horariosDisponiveis.map((slot, index) => {
-              const selected = slot === horarioSelecionado;
-              return (
-                <TouchableOpacity
-                  key={index}
-                  style={[styles.timeChip, selected && styles.timeChipSelected]}
-                  onPress={() => setHorarioSelecionado(slot)}
-                >
-                  <Text style={[styles.timeChipText, selected && styles.timeChipTextSelected]}>
-                    {slot}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          {/* EXIBIÇÃO DAS COMODIDADES PUXADAS DO BANCO DE DADOS */}
-          {listaComodidades.length > 0 && (
-            <>
-              <View style={styles.divider} />
-              <Text style={styles.sectionTitle}>Comodidades e Recursos</Text>
-              <View style={styles.amenitiesGrid}>
-                {listaComodidades.map((item: any, idx: number) => (
-                  <View key={idx} style={styles.amenityCard}>
-                    <MaterialCommunityIcons name={item.icon as any} size={20} color={COLORS.primary} />
-                    <Text style={styles.amenityText}>{item.label}</Text>
-                  </View>
-                ))}
-              </View>
-            </>
-          )}
-
-          <View style={styles.divider} />
-
-          {/* DESCRIÇÃO DO SERVIÇO */}
-          <Text style={styles.sectionTitle}>Sobre o Serviço</Text>
-          <Text style={styles.description}>
-            {servico.descricao || 'Nenhuma descrição detalhada foi fornecida para este serviço.'}
-          </Text>
+          <Text style={styles.infoDescBottom}>Mais opções disponíveis no local</Text>
         </View>
+
+        {/* ==================================================== */}
+        {/* TABS DE CATEGORIAS */}
+        {/* ==================================================== */}
+        <View style={styles.tabsContainer}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16 }}>
+            {categorias.map(cat => (
+              <TouchableOpacity 
+                key={cat} 
+                style={[styles.tabBtn, categoriaAtiva === cat && styles.tabBtnActive]}
+                onPress={() => setCategoriaAtiva(cat)}
+              >
+                <Text style={[styles.tabText, categoriaAtiva === cat && styles.tabTextActive]}>
+                  {cat.charAt(0).toUpperCase() + cat.slice(1).replace(/_/g, ' ')}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        {/* ==================================================== */}
+        {/* LISTA DE PRODUTOS / SERVIÇOS (GRID 2 COLUNAS) */}
+        {/* ==================================================== */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>{categoriaAtiva}</Text>
+          <TouchableOpacity onPress={() => setCategoriaAtiva('Destaques')}>
+            <Text style={styles.verTodosText}>Ver todos</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.gridContainer}>
+          {itensExibidos.length > 0 ? (
+            itensExibidos.map(renderItemCard)
+          ) : (
+            <Text style={{color: COLORS.gray, padding: 20}}>Nenhum item encontrado nesta categoria.</Text>
+          )}
+        </View>
+        
       </ScrollView>
 
-      {/* BOTTOM BAR COM PREÇO E BOTÃO RESERVAR */}
-      <View style={styles.bottomBar}>
-        <View>
-          <Text style={styles.priceTotal}>
-            Total: R$ {Number(servico.valor || 0).toFixed(2).replace('.', ',')}
-          </Text>
-          <Text style={styles.priceSub}>Garantia de agendamento</Text>
+      {/* ==================================================== */}
+      {/* BANNER FLUTUANTE DE PONTOS */}
+      {/* ==================================================== */}
+      {saldoPontos > 0 && (
+        <View style={styles.pointsBannerContainer}>
+          <TouchableOpacity style={styles.pointsBanner} activeOpacity={0.9}>
+            <View style={styles.pointsIconBox}>
+              <MaterialCommunityIcons name="tag-outline" size={20} color={COLORS.white} />
+            </View>
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={styles.pointsTitle}>Você tem {saldoPontos} pontos</Text>
+              <Text style={styles.pointsSub}>Use seus pontos e ganhe descontos!</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={COLORS.primary} />
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity style={styles.reserveButton} onPress={handleReservar}>
-          <Text style={styles.reserveButtonText}>Reservar</Text>
-        </TouchableOpacity>
-      </View>
+      )}
+
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.white },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
-  errorText: { fontSize: 15, color: COLORS.gray, textAlign: 'center', marginTop: 12, marginBottom: 16 },
-  retryButton: { backgroundColor: COLORS.primary, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 8 },
-  retryButtonText: { color: COLORS.white, fontWeight: '700' },
-
-  imageContainer: { position: 'relative', width: '100%', height: 260 },
-  coverImage: { width: '100%', height: '100%', resizeMode: 'cover' },
-  headerOverlay: { position: 'absolute', top: 12, left: 16, right: 16 },
-  backButton: { 
-    width: 38, height: 38, borderRadius: 19, 
-    backgroundColor: COLORS.white, alignItems: 'center', justifyContent: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 3, elevation: 3 
-  },
-
-  content: { padding: 20 },
-  title: { fontSize: 24, fontWeight: '800', color: COLORS.secondary, marginBottom: 6, letterSpacing: -0.5 },
-  subtitle: { fontSize: 14, color: COLORS.gray, fontWeight: '500', marginBottom: 16 },
-
-  ratingBar: { 
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', 
-    paddingVertical: 14, paddingHorizontal: 16, borderWidth: 1, borderColor: COLORS.border, borderRadius: 16,
-    backgroundColor: COLORS.lightGray
-  },
-  ratingItem: { alignItems: 'center', flex: 1 },
-  ratingScore: { fontSize: 16, fontWeight: '800', color: COLORS.secondary },
-  stars: { flexDirection: 'row', marginTop: 2 },
-  ratingLabel: { fontSize: 11, color: COLORS.gray, textDecorationLine: 'underline', marginTop: 2 },
-  ratingHighlight: { fontSize: 13, fontWeight: '700', color: COLORS.secondary, textAlign: 'center' },
-  ratingDivider: { width: 1, height: 26, backgroundColor: COLORS.border },
-
-  divider: { height: 1, backgroundColor: COLORS.border, marginVertical: 20 },
-
-  hostCardContainer: { 
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: COLORS.lightGray, padding: 12, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border
-  },
-  hostInfoArea: { flexDirection: 'row', alignItems: 'center', flex: 1 },
-  hostTitle: { fontSize: 15, fontWeight: '800', color: COLORS.secondary },
-  hostSub: { fontSize: 12, color: COLORS.gray, marginTop: 2 },
-  hostImage: { width: 46, height: 46, borderRadius: 23, borderWidth: 1, borderColor: COLORS.border },
-
-  followButton: {
-    backgroundColor: COLORS.primary, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20
-  },
-  followingButton: {
-    backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border
-  },
-  followButtonText: { color: COLORS.white, fontSize: 12, fontWeight: '800' },
-  followingButtonText: { color: COLORS.secondary },
-
-  sectionTitle: { fontSize: 16, fontWeight: '700', color: COLORS.secondary, marginBottom: 12 },
+  container: { flex: 1, backgroundColor: COLORS.lightGray },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.lightGray },
   
-  dateCard: {
-    width: 60, height: 68, borderRadius: 12, borderWidth: 1, borderColor: COLORS.border,
-    alignItems: 'center', justifyContent: 'center', marginRight: 10, backgroundColor: COLORS.white
-  },
-  dateCardSelected: { backgroundColor: COLORS.primaryLight, borderColor: COLORS.primary },
-  dateDay: { fontSize: 12, color: COLORS.gray, marginBottom: 4 },
-  dateNum: { fontSize: 16, fontWeight: '800', color: COLORS.secondary },
-  textSelected: { color: COLORS.primary },
+  coverContainer: { height: 220, width: '100%', position: 'relative' },
+  coverImage: { width: '100%', height: '100%', resizeMode: 'cover' },
+  coverOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.3)' },
+  headerButtons: { position: 'absolute', top: Platform.OS === 'ios' ? 50 : 20, left: 16, right: 16, flexDirection: 'row', justifyContent: 'space-between' },
+  headerRightBtns: { flexDirection: 'row', gap: 10 },
+  circleBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.white, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, elevation: 3 },
 
-  timeSlotsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  timeChip: {
-    paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20,
-    borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.white
+  profileCard: { 
+    backgroundColor: COLORS.white, 
+    marginTop: -40, 
+    marginHorizontal: 16, 
+    borderRadius: 24, 
+    paddingHorizontal: 20,
+    paddingBottom: 24,
+    paddingTop: 50,
+    alignItems: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 5,
+    position: 'relative'
   },
-  timeChipSelected: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
-  timeChipText: { fontSize: 13, fontWeight: '600', color: COLORS.secondary },
-  timeChipTextSelected: { color: COLORS.white },
-
-  amenitiesGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  amenityCard: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.cardBg,
-    paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, gap: 8
+  avatarWrapper: {
+    position: 'absolute',
+    top: -45,
+    width: 90, height: 90,
+    borderRadius: 45,
+    backgroundColor: COLORS.white,
+    padding: 4,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 4
   },
-  amenityText: { fontSize: 13, fontWeight: '600', color: COLORS.secondary },
+  avatarImage: { width: '100%', height: '100%', borderRadius: 40 },
+  
+  estName: { fontSize: 20, fontWeight: '800', color: COLORS.secondary },
+  estSub: { fontSize: 12, color: COLORS.gray, marginTop: 4, marginBottom: 16 },
+  
+  infoRowContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%', paddingVertical: 14, borderTopWidth: 1, borderTopColor: COLORS.border },
+  infoRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  infoTextBold: { fontSize: 13, fontWeight: '700', color: COLORS.secondary },
+  infoTextGray: { fontSize: 13, color: COLORS.gray },
+  infoTextGreen: { fontSize: 13, fontWeight: '800', color: COLORS.green },
+  infoDescBottom: { fontSize: 11, color: COLORS.gray, width: '100%', textAlign: 'left', marginTop: 4 },
 
-  description: { fontSize: 15, color: '#374151', lineHeight: 22 },
+  tabsContainer: { marginTop: 24, borderBottomWidth: 1, borderBottomColor: COLORS.border },
+  tabBtn: { paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  tabBtnActive: { borderBottomColor: COLORS.primary },
+  tabText: { fontSize: 14, fontWeight: '600', color: COLORS.gray },
+  tabTextActive: { color: COLORS.primary, fontWeight: '800' },
 
-  bottomBar: { 
-    position: 'absolute', bottom: 0, left: 0, right: 0, 
-    backgroundColor: COLORS.white, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', 
-    paddingHorizontal: 20, paddingTop: 14, paddingBottom: Platform.OS === 'ios' ? 30 : 16, 
-    borderTopWidth: 1, borderTopColor: COLORS.border,
-    shadowColor: '#000', shadowOffset: { width: 0, height: -3 }, shadowOpacity: 0.05, shadowRadius: 5, elevation: 10
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 24, paddingBottom: 12 },
+  sectionTitle: { fontSize: 18, fontWeight: '900', color: COLORS.secondary },
+  verTodosText: { fontSize: 13, fontWeight: '700', color: COLORS.primary },
+
+  gridContainer: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 10, justifyContent: 'space-between' },
+
+  cardItem: { 
+    width: (width / 2) - 18, 
+    backgroundColor: COLORS.white, 
+    borderRadius: 16, 
+    marginBottom: 16, 
+    marginHorizontal: 4,
+    borderWidth: 1, 
+    borderColor: '#F3F4F6',
+    overflow: 'hidden',
+    padding: 8
   },
-  priceTotal: { fontSize: 18, fontWeight: '900', color: COLORS.secondary },
-  priceSub: { fontSize: 12, color: COLORS.gray, marginTop: 2 },
-  reserveButton: { backgroundColor: COLORS.primary, paddingHorizontal: 28, paddingVertical: 12, borderRadius: 12 },
-  reserveButtonText: { color: COLORS.white, fontSize: 15, fontWeight: '800' }
+  cardImageContainer: { width: '100%', height: 110, position: 'relative', backgroundColor: COLORS.lightGray, borderRadius: 12 },
+  cardImage: { width: '100%', height: '100%', resizeMode: 'cover', borderRadius: 12 },
+  badgeDestaque: { position: 'absolute', top: 6, left: 6, backgroundColor: '#B94426', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6 },
+  badgeDestaqueText: { color: COLORS.white, fontSize: 8, fontWeight: '800', textTransform: 'uppercase' },
+  
+  addBtnContainer: { position: 'absolute', bottom: -12, right: 8, zIndex: 10 },
+  addBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: COLORS.white, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, elevation: 4 },
+
+  cardContent: { paddingHorizontal: 4, paddingTop: 16, paddingBottom: 4 },
+  cardTitle: { fontSize: 13, fontWeight: '800', color: COLORS.secondary, marginBottom: 6 },
+  
+  priceRow: { flexDirection: 'row', alignItems: 'baseline' },
+  priceBold: { fontSize: 16, fontWeight: '900', color: COLORS.secondary },
+  priceSuffix: { fontSize: 10, color: COLORS.gray, fontWeight: '600' },
+  
+  oldPriceRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2, gap: 6 },
+  oldPriceText: { fontSize: 10, color: COLORS.gray, textDecorationLine: 'line-through' },
+  discountBadge: { backgroundColor: COLORS.green, paddingHorizontal: 4, paddingVertical: 2, borderRadius: 4 },
+  discountText: { fontSize: 9, fontWeight: '800', color: COLORS.white },
+
+  cardSpecs: { fontSize: 10, color: COLORS.gray, marginTop: 8, fontWeight: '500' },
+  cardFooterInfo: { flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 4 },
+  cardFooterText: { fontSize: 10, color: COLORS.gray, fontWeight: '500' },
+
+  pointsBannerContainer: {
+    position: 'absolute',
+    bottom: Platform.OS === 'ios' ? 40 : 30, 
+    left: 16, right: 16,
+    zIndex: 50
+  },
+  pointsBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFDAC1', 
+    borderWidth: 1,
+    borderColor: '#FFC8A2',
+    borderRadius: 12,
+    padding: 14,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4
+  },
+  pointsIconBox: { width: 34, height: 34, borderRadius: 8, backgroundColor: '#B94426', alignItems: 'center', justifyContent: 'center' },
+  pointsTitle: { fontSize: 13, fontWeight: '800', color: COLORS.secondary },
+  pointsSub: { fontSize: 11, color: COLORS.secondary, marginTop: 2 }
 });

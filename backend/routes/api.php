@@ -24,6 +24,7 @@ use App\Http\Controllers\Api\ItemAluguelController;
 
 
 // Importações - Mobile
+use App\Http\Controllers\Api\Mobile\TravelAssistantController;
 use App\Http\Controllers\Api\Mobile\CarteiraMobileController;
 use App\Http\Controllers\Api\Proprietario\ProviderMobileController;
 use App\Http\Controllers\Api\Mobile\Proprietario\CriarServicosReservasController;
@@ -80,6 +81,41 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/meus-pontos', [MobileHomeController::class, 'getHistoricoPontos']);
     Route::get('/servicos', [MobileHomeController::class, 'getServicos']);
     Route::get('/minhas-reservas', [MobileHomeController::class, 'getReservas']);
+
+
+    Route::middleware('auth:sanctum')->prefix('v1/mobile')->group(function () {
+
+    // Dashboard e Dados Gerais
+    Route::get('/configuracoes', [ConfiguracoesMobileController::class, 'index']);
+
+    // 1. Estabelecimentos
+    Route::post('/estabelecimentos', [ConfiguracoesMobileController::class, 'storeEstabelecimento']);
+    Route::post('/estabelecimentos/{estabelecimento}', [ConfiguracoesMobileController::class, 'updateEstabelecimento']);
+    Route::patch('/estabelecimentos/{estabelecimento}/toggle-status', [ConfiguracoesMobileController::class, 'toggleStatusEstabelecimento']);
+
+    // 2. Funcionários
+    Route::post('/estabelecimentos/{estabelecimento}/funcionarios', [ConfiguracoesMobileController::class, 'storeFuncionario']);
+    Route::put('/funcionarios/{funcionario}', [ConfiguracoesMobileController::class, 'updateFuncionario']);
+    Route::delete('/funcionarios/{funcionario}', [ConfiguracoesMobileController::class, 'destroyFuncionario']);
+
+    // 3. Serviços
+    Route::post('/servicos', [ConfiguracoesMobileController::class, 'storeServico']);
+    Route::put('/servicos/{servico}', [ConfiguracoesMobileController::class, 'updateServico']);
+    Route::delete('/servicos/{servico}', [ConfiguracoesMobileController::class, 'destroyServico']);
+
+    // 4. Itens de Aluguel
+    Route::get('/itens-aluguel', [ConfiguracoesMobileController::class, 'indexItensAluguel']);
+    Route::post('/itens-aluguel', [ConfiguracoesMobileController::class, 'storeItemAluguel']);
+    Route::post('/itens-aluguel/{item}', [ConfiguracoesMobileController::class, 'updateItemAluguel']); // POST utilizado devido ao envio de imagens no multipart/form-data
+    Route::delete('/itens-aluguel/{item}', [ConfiguracoesMobileController::class, 'destroyItemAluguel']);
+
+    // 5. Aluguéis e Reservas
+    Route::get('/alugueis', [ConfiguracoesMobileController::class, 'indexAlugueis']);
+    Route::post('/alugueis', [ConfiguracoesMobileController::class, 'storeAluguel']);
+    Route::get('/alugueis/{aluguel}', [ConfiguracoesMobileController::class, 'showAluguel']);
+    Route::put('/alugueis/{aluguel}', [ConfiguracoesMobileController::class, 'updateAluguel']);
+    Route::delete('/alugueis/{aluguel}', [ConfiguracoesMobileController::class, 'destroyAluguel']);
+});
 
     // --- AGENDAMENTOS MOBILE ---
     Route::get('/agendamentos', [MobileAgendamentoController::class, 'index']);
@@ -292,6 +328,21 @@ Route::get('/assinaturas/status', [AssinaturaMobileController::class, 'status'])
         Route::post('/{id}/update', [ServicoController::class, 'updateItem']);
         Route::delete('/{id}', [ServicoController::class, 'destroyItem']);
     });
+
+    Route::middleware(['auth:sanctum'])->prefix('mobile/travel-assistant')->group(function () {
+    
+    // Busca e renderização Inertia da tela
+    Route::get('/search', [TravelAssistantController::class, 'searchDestination'])->name('mobile.travel.search');
+    
+    // Detalhes de um local/ponto turístico específico
+    Route::get('/place-details', [TravelAssistantController::class, 'getPlaceDetails'])->name('mobile.travel.place-details');
+    
+    // Gerenciamento de Viagens
+    Route::get('/viagens', [TravelAssistantController::class, 'listarMinhasViagens'])->name('mobile.travel.viagens.index');
+    Route::post('/viagens', [TravelAssistantController::class, 'criarViagem'])->name('mobile.travel.viagens.store');
+    Route::post('/viagens/{viagemId}/membros', [TravelAssistantController::class, 'adicionarMembroPorEmail'])->name('mobile.travel.viagens.membros.store');
+
+});
 
     // --- MÓDULO DE LOCAÇÕES / RESERVAS SAAS ---
     Route::prefix('locacoes')->group(function () {

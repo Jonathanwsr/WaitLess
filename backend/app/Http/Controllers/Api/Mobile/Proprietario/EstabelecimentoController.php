@@ -24,20 +24,20 @@ class EstabelecimentoController extends Controller
         $validated = $request->validate([
             'nome'         => 'required|string|max:255',
             'razao_social' => 'nullable|string|max:255',
-            'cnpj'         => 'nullable|string|max:14',
-            'site'         => 'nullable|url|max:255',
+            'cnpj'         => 'required|string|max:14', // Obrigatório conforme o app
+            'site'         => 'nullable|string|max:255', // Deixado como string para não dar erro se faltar http://
             'ramo_atuacao' => 'nullable|string|max:255',
             'telefone'     => 'nullable|string|max:15',
             'cep'          => 'nullable|string|max:8',
             'rua'          => 'nullable|string|max:255',
-            'numero'       => 'nullable|string|max:50',
+            'numero'       => 'required|string|max:50', // Obrigatório conforme o app
             'complemento'  => 'nullable|string|max:255',
             'bairro'       => 'nullable|string|max:255',
             'cidade'       => 'nullable|string|max:255',
             'estado'       => 'nullable|string|size:2',
             
-            // 1 Imagem de Logo (Máx 2MB = 2048 KB)
-            'logo'         => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048',
+            // Alterado de 'logo' para 'foto_perfil' para bater com o FormData do app React Native
+            'foto_perfil'  => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048',
             
             // 3 a 4 Imagens do Estabelecimento (Máx 2MB por foto)
             'fotos'        => 'nullable|array|min:3|max:4',
@@ -48,17 +48,17 @@ class EstabelecimentoController extends Controller
             // ==========================================
             // 1. VERIFICAÇÃO HIVE AI E UPLOAD (Cloudflare R2)
             // ==========================================
-            if ($request->hasFile('logo')) {
-                $fileLogo = $request->file('logo');
+            if ($request->hasFile('foto_perfil')) {
+                $fileLogo = $request->file('foto_perfil');
                 
                 // Verifica no Hive AI se a imagem é segura (SFW)
                 if (!HiveAiService::isSafe($fileLogo)) {
-                    return response()->json(['error' => 'A logo foi bloqueada pelo sistema de segurança (conteúdo impróprio).'], 422);
+                    return response()->json(['error' => 'A foto de perfil foi bloqueada pelo sistema de segurança (conteúdo impróprio).'], 422);
                 }
 
-                // Upload para o Cloudflare R2 (disco 'r2' configurado no filesystems.php)
-                $path = $fileLogo->store('waitless/estabelecimentos/logos', 'r2');
-                $validated['logo'] = Storage::disk('r2')->url($path);
+                // Upload para o Cloudflare R2
+                $path = $fileLogo->store('waitless/estabelecimentos/perfil', 'r2');
+                $validated['foto_perfil'] = Storage::disk('r2')->url($path);
             }
 
             if ($request->hasFile('fotos')) {
@@ -107,33 +107,36 @@ class EstabelecimentoController extends Controller
 
         $validated = $request->validate([
             'nome'              => 'required|string|max:255',
-            'cnpj'              => 'nullable|string|max:18',
+            'cnpj'              => 'required|string|max:14',
             'razao_social'      => 'nullable|string|max:255',
+            'site'              => 'nullable|string|max:255',
+            'ramo_atuacao'      => 'nullable|string|max:255',
             'telefone'          => 'nullable|string|max:20',
-            'cep'               => 'nullable|string|max:10',
+            'cep'               => 'nullable|string|max:8',
             'rua'               => 'nullable|string|max:255',
-            'numero'            => 'nullable|string|max:20',
+            'numero'            => 'required|string|max:20',
+            'complemento'       => 'nullable|string|max:255',
             'bairro'            => 'nullable|string|max:255',
             'cidade'            => 'nullable|string|max:255',
             'estado'            => 'nullable|string|size:2',
             'token_mercadopago' => 'nullable|string', 
             
-            // Regras de imagens na edição (2MB máximo)
-            'logo'              => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048',
+            // Alterado de 'logo' para 'foto_perfil' também no update
+            'foto_perfil'       => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048',
             'fotos'             => 'nullable|array|min:3|max:4',
             'fotos.*'           => 'image|mimes:jpeg,png,jpg,webp|max:2048',
         ]);
 
         try {
-            // UPLOAD E VERIFICAÇÃO DA LOGO
-            if ($request->hasFile('logo')) {
-                if (!HiveAiService::isSafe($request->file('logo'))) {
-                    return response()->json(['error' => 'A logo foi bloqueada pelo sistema (conteúdo impróprio).'], 422);
+            // UPLOAD E VERIFICAÇÃO DA FOTO DE PERFIL
+            if ($request->hasFile('foto_perfil')) {
+                if (!HiveAiService::isSafe($request->file('foto_perfil'))) {
+                    return response()->json(['error' => 'A foto de perfil foi bloqueada pelo sistema (conteúdo impróprio).'], 422);
                 }
-                $path = $request->file('logo')->store('waitless/estabelecimentos/logos', 'r2');
-                $validated['logo'] = Storage::disk('r2')->url($path);
+                $path = $request->file('foto_perfil')->store('waitless/estabelecimentos/perfil', 'r2');
+                $validated['foto_perfil'] = Storage::disk('r2')->url($path);
             } else {
-                unset($validated['logo']); // Mantém a antiga se não enviar
+                unset($validated['foto_perfil']); // Mantém a antiga se não enviar
             }
 
             // UPLOAD E VERIFICAÇÃO DAS FOTOS DA GALERIA
