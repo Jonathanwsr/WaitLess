@@ -62,50 +62,51 @@ export default function Register() {
     ];
 
     return (
-        <div className="min-h-screen bg-[#f3f4f6] flex items-center justify-center p-4 sm:p-6 lg:p-8 font-sans antialiased">
-            <Head title="Crie sua conta - Waitless" />
+        <div className="min-h-screen flex items-center justify-center bg-gray-50/50 lg:p-4 xl:p-8 font-sans selection:bg-[#F26522] selection:text-white">
+            <Head title="Crie sua conta - Lokyva" />
 
-            <div className="w-full max-w-6xl bg-white rounded-[24px] md:rounded-[32px] shadow-2xl flex flex-col lg:flex-row overflow-hidden min-h-[750px] max-h-[95vh]">
+            {/* Container Principal - Responsividade corrigida para mobile e desktop */}
+            <div className="w-full h-full min-h-screen lg:min-h-0 lg:h-[90vh] lg:max-h-[900px] max-w-6xl bg-white lg:rounded-[2rem] lg:shadow-[0_20px_50px_-12px_rgba(0,0,0,0.1)] flex flex-col lg:flex-row overflow-hidden lg:border lg:border-gray-100 relative">
                 
                 {/* --- PAINEL ESQUERDO: IMAGEM --- */}
-                <div className="hidden lg:flex lg:w-5/12 relative overflow-hidden bg-gray-100 border-r border-gray-100">
+                <div className="hidden lg:flex lg:w-5/12 relative overflow-hidden bg-[#FFF9F5] border-r border-gray-100">
                     <img 
                         src="/images/cadastro.png" 
-                        alt="Fundo de Cadastro Waitless" 
+                        alt="Fundo de Cadastro Lokyva" 
                         className="absolute inset-0 w-full h-full object-cover object-center"
                     />
                 </div>
 
                 {/* --- PAINEL DIREITO: FORMULÁRIO --- */}
-                <div className="w-full lg:w-7/12 flex flex-col px-6 py-8 sm:px-10 md:px-12 bg-white overflow-y-auto">
-                    <div className="max-w-2xl w-full mx-auto space-y-6">
+                <div className="w-full h-full lg:w-7/12 flex flex-col px-6 py-8 sm:px-10 md:px-12 bg-white overflow-y-auto">
+                    <div className="max-w-2xl w-full mx-auto space-y-6 my-auto lg:my-0">
                         
                         {/* Cabeçalho */}
                         <div className="text-center space-y-2">
-                            <div className="inline-flex items-center justify-center w-12 h-12 bg-slate-900 rounded-xl shadow-sm text-white font-black text-xl">
-                                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M4 6h16M4 12h16M4 18h16" />
-                                </svg>
+                            <div className="flex justify-center mb-4">
+                                <Link href="/">
+                                    <img src="/images/logo_lokyva.png" alt="Logo Lokyva" className="h-14 w-auto object-contain" />
+                                </Link>
                             </div>
                             <div className="space-y-0.5">
-                                <h2 className="text-lg font-black tracking-tight text-slate-900">Waitless</h2>
-                                <p className="text-[10px] font-bold text-gray-400 tracking-wider uppercase">Simplifique. Agende. Conquiste.</p>
+                                <h2 className="text-xl font-black tracking-tight text-gray-900">Lokyva</h2>
+                                <p className="text-[10px] font-bold text-[#F26522] tracking-wider uppercase">Você viaja, a gente conecta o resto.</p>
                             </div>
-                            <h3 className="text-xl font-extrabold text-slate-900 tracking-tight mt-4">Crie sua conta</h3>
+                            <h3 className="text-2xl font-extrabold text-gray-900 tracking-tight mt-6">Crie sua conta</h3>
                         </div>
 
                         <form onSubmit={submit} className="space-y-6">
                             
                             {/* SEÇÃO 1: ACESSO */}
                             <div>
-                                <h4 className="text-sm font-bold text-slate-900 border-b pb-2 mb-4">Dados de Acesso</h4>
+                                <h4 className="text-sm font-bold text-gray-900 border-b border-gray-100 pb-2 mb-4">Dados de Acesso</h4>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div className="space-y-1">
                                         <label className="text-[10px] font-bold text-gray-500 uppercase">E-mail</label>
                                         <input
                                             type="email"
                                             value={data.email}
-                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all"
+                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-1 focus:ring-[#F26522] focus:border-[#F26522] transition-colors"
                                             placeholder="seu@email.com"
                                             onChange={(e) => setData('email', e.target.value)}
                                             required
@@ -116,7 +117,7 @@ export default function Register() {
                                         <label className="text-[10px] font-bold text-gray-500 uppercase">Tipo de Usuário</label>
                                         <select
                                             value={data.papel}
-                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all"
+                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-1 focus:ring-[#F26522] focus:border-[#F26522] transition-colors"
                                             onChange={(e) => setData('papel', e.target.value)}
                                             required
                                         >
@@ -132,7 +133,7 @@ export default function Register() {
                                         <input
                                             type="password"
                                             value={data.password}
-                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all"
+                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-1 focus:ring-[#F26522] focus:border-[#F26522] transition-colors"
                                             placeholder="••••••••"
                                             minLength={8}
                                             onChange={(e) => setData('password', e.target.value)}
@@ -145,7 +146,7 @@ export default function Register() {
                                         <input
                                             type="password"
                                             value={data.password_confirmation}
-                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all"
+                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-1 focus:ring-[#F26522] focus:border-[#F26522] transition-colors"
                                             placeholder="••••••••"
                                             onChange={(e) => setData('password_confirmation', e.target.value)}
                                             required
@@ -157,14 +158,14 @@ export default function Register() {
 
                             {/* SEÇÃO 2: DADOS PESSOAIS/EMPRESA */}
                             <div>
-                                <h4 className="text-sm font-bold text-slate-900 border-b pb-2 mb-4">Dados Cadastrais</h4>
+                                <h4 className="text-sm font-bold text-gray-900 border-b border-gray-100 pb-2 mb-4">Dados Cadastrais</h4>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div className="space-y-1 sm:col-span-2">
                                         <label className="text-[10px] font-bold text-gray-500 uppercase">Nome Completo / Razão Social</label>
                                         <input
                                             type="text"
                                             value={data.name}
-                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all"
+                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-1 focus:ring-[#F26522] focus:border-[#F26522] transition-colors"
                                             placeholder="Seu nome"
                                             onChange={(e) => setData('name', e.target.value)}
                                             required
@@ -176,7 +177,7 @@ export default function Register() {
                                         <label className="text-[10px] font-bold text-gray-500 uppercase">Tipo de Pessoa</label>
                                         <select
                                             value={data.person_type}
-                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all"
+                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-1 focus:ring-[#F26522] focus:border-[#F26522] transition-colors"
                                             onChange={(e) => setData('person_type', e.target.value)}
                                         >
                                             <option value="FISICA">Pessoa Física</option>
@@ -190,7 +191,7 @@ export default function Register() {
                                         <input
                                             type="text"
                                             value={data.cpf_cnpj}
-                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all"
+                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-1 focus:ring-[#F26522] focus:border-[#F26522] transition-colors"
                                             placeholder="Apenas números"
                                             maxLength={18}
                                             onChange={(e) => setData('cpf_cnpj', e.target.value.replace(/\D/g, ''))}
@@ -204,7 +205,7 @@ export default function Register() {
                                         <input
                                             type="text"
                                             value={data.mobile_phone}
-                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all"
+                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-1 focus:ring-[#F26522] focus:border-[#F26522] transition-colors"
                                             placeholder="Ex: 81999999999"
                                             maxLength={11}
                                             onChange={(e) => setData('mobile_phone', e.target.value.replace(/\D/g, ''))}
@@ -218,7 +219,7 @@ export default function Register() {
                                         <input
                                             type="text"
                                             value={data.phone}
-                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all"
+                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-1 focus:ring-[#F26522] focus:border-[#F26522] transition-colors"
                                             placeholder="Ex: 8133333333"
                                             maxLength={11}
                                             onChange={(e) => setData('phone', e.target.value.replace(/\D/g, ''))}
@@ -230,14 +231,14 @@ export default function Register() {
 
                             {/* SEÇÃO 3: ENDEREÇO */}
                             <div>
-                                <h4 className="text-sm font-bold text-slate-900 border-b pb-2 mb-4">Endereço</h4>
+                                <h4 className="text-sm font-bold text-gray-900 border-b border-gray-100 pb-2 mb-4">Endereço</h4>
                                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                     <div className="space-y-1 sm:col-span-1">
                                         <label className="text-[10px] font-bold text-gray-500 uppercase">CEP</label>
                                         <input
                                             type="text"
                                             value={data.postal_code}
-                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all"
+                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-1 focus:ring-[#F26522] focus:border-[#F26522] transition-colors"
                                             placeholder="Apenas números"
                                             maxLength={8}
                                             onChange={handleCepChange}
@@ -251,7 +252,7 @@ export default function Register() {
                                         <input
                                             type="text"
                                             value={data.address}
-                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all"
+                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-1 focus:ring-[#F26522] focus:border-[#F26522] transition-colors"
                                             onChange={(e) => setData('address', e.target.value)}
                                             required
                                         />
@@ -263,7 +264,7 @@ export default function Register() {
                                         <input
                                             type="text"
                                             value={data.address_number}
-                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all"
+                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-1 focus:ring-[#F26522] focus:border-[#F26522] transition-colors"
                                             onChange={(e) => setData('address_number', e.target.value)}
                                             required
                                         />
@@ -275,7 +276,7 @@ export default function Register() {
                                         <input
                                             type="text"
                                             value={data.complement}
-                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all"
+                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-1 focus:ring-[#F26522] focus:border-[#F26522] transition-colors"
                                             onChange={(e) => setData('complement', e.target.value)}
                                         />
                                         <InputError message={errors.complement} className="text-xs" />
@@ -286,7 +287,7 @@ export default function Register() {
                                         <input
                                             type="text"
                                             value={data.province}
-                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all"
+                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-1 focus:ring-[#F26522] focus:border-[#F26522] transition-colors"
                                             onChange={(e) => setData('province', e.target.value)}
                                             required
                                         />
@@ -298,7 +299,7 @@ export default function Register() {
                                         <input
                                             type="text"
                                             value={data.city}
-                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all"
+                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-1 focus:ring-[#F26522] focus:border-[#F26522] transition-colors"
                                             onChange={(e) => setData('city', e.target.value)}
                                             required
                                         />
@@ -309,7 +310,7 @@ export default function Register() {
                                         <label className="text-[10px] font-bold text-gray-500 uppercase">UF</label>
                                         <select
                                             value={data.state}
-                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-slate-900/5 focus:border-slate-900 transition-all"
+                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-1 focus:ring-[#F26522] focus:border-[#F26522] transition-colors"
                                             onChange={(e) => setData('state', e.target.value)}
                                             required
                                         >
@@ -327,7 +328,7 @@ export default function Register() {
                             <div className="pt-4">
                                 <button
                                     type="submit"
-                                    className="w-full py-3.5 px-4 bg-black hover:bg-slate-900 active:scale-[0.99] text-white font-bold text-sm rounded-xl shadow-md transition-all duration-150 disabled:opacity-50"
+                                    className="w-full flex justify-center py-4 px-4 border border-transparent rounded-xl shadow-sm text-base font-bold text-white bg-[#111111] hover:bg-[#222222] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-900 transition-colors disabled:opacity-70"
                                     disabled={processing}
                                 >
                                     {processing ? 'Processando cadastro...' : 'Criar minha conta agora'}
@@ -335,12 +336,12 @@ export default function Register() {
                             </div>
                         </form>
 
-                        <div className="pt-4 pb-8 text-center">
-                            <p className="text-xs font-medium text-gray-500">
+                        <div className="pt-6 pb-8 text-center">
+                            <p className="text-sm font-medium text-gray-600">
                                 Já tem uma conta?{' '}
                                 <Link
                                     href={route('login')}
-                                    className="font-bold text-[#10B981] hover:text-emerald-600 transition inline-flex items-center gap-0.5"
+                                    className="font-bold text-[#F26522] hover:text-[#d95a1e] transition inline-flex items-center gap-0.5"
                                 >
                                     Faça login <span className="text-sm font-normal">→</span>
                                 </Link>

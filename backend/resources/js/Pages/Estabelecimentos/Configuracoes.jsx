@@ -43,11 +43,11 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
     // 1. RECUPERA A ABA ATIVA DO LOCALSTORAGE
     // ==========================================
     const [activeTab, setActiveTab] = useState(() => {
-        return localStorage.getItem('waitless_active_tab') || 'detalhes';
+        return localStorage.getItem('lokyva_active_tab') || 'detalhes';
     });
 
     useEffect(() => {
-        localStorage.setItem('waitless_active_tab', activeTab);
+        localStorage.setItem('lokyva_active_tab', activeTab);
     }, [activeTab]);
 
     const getNomeAba = () => {
@@ -356,6 +356,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         horarios_disponiveis: [], 
         estabelecimentos_ids: [estabelecimento?.id],
         fotos: [], 
+        fotos_existentes: [], // Novo array para proteger as fotos já enviadas
         tem_cupom: false,
         tipo_desconto_cupom: 'percentual',
         valor_cupom: '',
@@ -364,7 +365,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
 
     useEffect(() => {
         if (!isEditingServico && !visualizandoServico) {
-            const rascunho = localStorage.getItem('waitless_servico_draft');
+            const rascunho = localStorage.getItem('lokyva_servico_draft');
             if (rascunho) {
                 try {
                     const dadosSalvos = JSON.parse(rascunho);
@@ -404,7 +405,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                 valor_cupom: formServico.data.valor_cupom,
                 codigo_cupom: formServico.data.codigo_cupom,
             };
-            localStorage.setItem('waitless_servico_draft', JSON.stringify(dadosParaSalvar));
+            localStorage.setItem('lokyva_servico_draft', JSON.stringify(dadosParaSalvar));
         }
     }, [formServico.data.nome, formServico.data.descricao, formServico.data.valor, formServico.data.tem_cupom, formServico.data.valor_cupom, formServico.data.horarios_disponiveis, formServico.data.dias_disponiveis, isEditingServico, visualizandoServico]); 
 
@@ -414,14 +415,12 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         const novaListaQuadrados = [...quadradosFotos];
         novaListaQuadrados[index] = arquivoSelecionado;
         setQuadradosFotos(novaListaQuadrados);
-        formServico.setData('fotos', novaListaQuadrados.filter(f => f !== null));
     };
 
     const removerFotoQuadrado = (index) => {
         const novaListaQuadrados = [...quadradosFotos];
         novaListaQuadrados[index] = null;
         setQuadradosFotos(novaListaQuadrados);
-        formServico.setData('fotos', novaListaQuadrados.filter(f => f !== null));
     };
 
     const adicionarHorario = () => {
@@ -452,35 +451,27 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
 
     const submitServico = (withEvent) => {
         withEvent.preventDefault();
-        if (isEditingServico) {
-            formServico.post(route('servicos.update', formServico.data.id), {
-                _method: 'put',
-                preserveScroll: true,
-                onSuccess: () => {
-                    cancelarEdicaoServico();
-                    mostrarMensagem('Serviço editado com sucesso!');
-                    localStorage.removeItem('waitless_servico_draft');
-                }
-            });
-        } else {
-            formServico.post(route('servicos.store'), {
-                preserveScroll: true,
-                onSuccess: () => {
-                    formServico.reset();
-                    formServico.setData('estabelecimentos_ids', [estabelecimento.id]);
-                    setNovoHorario('');
-                    setQuadradosFotos([null, null, null, null, null]);
-                    mostrarMensagem('Serviço cadastrado com sucesso!');
-                    localStorage.removeItem('waitless_servico_draft');
-                }
-            });
-        }
+        
+        // Aplica o spoofing do PUT e filtra as imagens diretamente via transform antes de submeter
+        formServico.transform((data) => ({
+            ...data,
+            fotos_existentes: quadradosFotos.filter(f => typeof f === 'string' && f !== null),
+            fotos: quadradosFotos.filter(f => f instanceof File),
+            _method: isEditingServico ? 'put' : 'post'
+        })).post(isEditingServico ? route('servicos.update', formServico.data.id) : route('servicos.store'), {
+            preserveScroll: true,
+            onSuccess: () => {
+                cancelarEdicaoServico();
+                mostrarMensagem(isEditingServico ? 'Serviço editado com sucesso!' : 'Serviço cadastrado com sucesso!');
+                localStorage.removeItem('lokyva_servico_draft');
+            }
+        });
     };
 
     const editarServico = (servico) => {
         setIsEditingServico(true);
         setVisualizandoServico(null); 
-        localStorage.removeItem('waitless_servico_draft'); 
+        localStorage.removeItem('lokyva_servico_draft'); 
         
         let config = { dias_disponiveis: [], tipo_pagamento: 'hibrido', funcionario_padrao: '', tem_cupom: false, tipo_desconto_cupom: 'percentual', valor_cupom: '', codigo_cupom: '' };
         let horarios = [];
@@ -488,6 +479,11 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
             config = typeof servico.configuracoes === 'string' ? JSON.parse(servico.configuracoes) : (servico.configuracoes || config);
             horarios = typeof servico.horarios_disponiveis === 'string' ? JSON.parse(servico.horarios_disponiveis) : (servico.horarios_disponiveis || []);
         } catch (error) {}
+
+        const existingPhotos = parseArraySeguro(servico.fotos);
+        const newQuadrados = [null, null, null, null, null];
+        existingPhotos.forEach((url, i) => { if(i < 5) newQuadrados[i] = url; });
+        setQuadradosFotos(newQuadrados); 
 
         formServico.setData({
             id: servico.id,
@@ -502,13 +498,13 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
             horarios_disponiveis: horarios,
             estabelecimentos_ids: [estabelecimento.id], 
             fotos: [], 
+            fotos_existentes: existingPhotos,
             tem_cupom: config.tem_cupom || false,
             tipo_desconto_cupom: config.tipo_desconto_cupom || 'percentual',
             valor_cupom: config.valor_cupom || '',
             codigo_cupom: config.codigo_cupom || '',
         });
         
-        setQuadradosFotos([null, null, null, null, null]); 
         window.scrollTo({ top: 0, behavior: 'smooth' }); 
     };
 
@@ -597,6 +593,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         valor_mensal: '',
         valor_caucao: '',
         fotos: [],
+        fotos_existentes: [], // Novo array para proteger as fotos já enviadas
         
         recursos_oferecidos: [], 
         acessorios: [], 
@@ -681,7 +678,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         const regexEmoji = /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/u;
         
         for (let chave in dados) {
-            if (typeof dados[chave] === 'string' && chave !== 'fotos') {
+            if (typeof dados[chave] === 'string' && chave !== 'fotos' && chave !== 'fotos_existentes') {
                 if (regexInseguro.test(dados[chave]) || regexEmoji.test(dados[chave])) {
                     return false;
                 }
@@ -696,14 +693,12 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         const novaLista = [...quadradosFotosItem];
         novaLista[index] = arquivo;
         setQuadradosFotosItem(novaLista);
-        formItem.setData('fotos', novaLista.filter(f => f !== null));
     };
 
     const removerFotoItemQuadrado = (index) => {
         const novaLista = [...quadradosFotosItem];
         novaLista[index] = null;
         setQuadradosFotosItem(novaLista);
-        formItem.setData('fotos', novaLista.filter(f => f !== null));
     };
 
     const toggleComodidade = (recurso) => {
@@ -796,12 +791,12 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         }
         
         const valorClienteFinal = Math.max(0, val - descontoPromocao - descontoPontos);
-        const taxaWaitless = valorClienteFinal * 0.12; 
-        const valorLiquido = valorClienteFinal - taxaWaitless;
+        const taxaLokyva = valorClienteFinal * 0.12; 
+        const valorLiquido = valorClienteFinal - taxaLokyva;
         
         return {
             cliente: valorClienteFinal.toFixed(2),
-            taxa: taxaWaitless.toFixed(2),
+            taxa: taxaLokyva.toFixed(2),
             liquido: valorLiquido.toFixed(2),
             descPromocao: descontoPromocao.toFixed(2),
             descPontos: descontoPontos.toFixed(2)
@@ -826,7 +821,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                <div className="mt-auto border-t border-dashed border-gray-300 pt-3 space-y-2">
                    {parseFloat(sim.descPromocao) > 0 && <p className="text-[11px] font-bold text-green-600 flex justify-between"><span>Promoção Ativa</span> <span>- R$ {sim.descPromocao}</span></p>}
                    {parseFloat(sim.descPontos) > 0 && <p className="text-[11px] font-bold text-blue-600 flex justify-between"><span>Desconto em Pontos</span> <span>- R$ {sim.descPontos}</span></p>}
-                   <p className="text-[11px] font-bold text-red-500 flex justify-between"><span>Taxa WAITLESS (12%)</span> <span>- R$ {sim.taxa}</span></p>
+                   <p className="text-[11px] font-bold text-red-500 flex justify-between"><span>Taxa LOKYVA (12%)</span> <span>- R$ {sim.taxa}</span></p>
                    <p className="text-sm text-green-700 font-black flex justify-between bg-green-100 px-3 py-2 rounded-xl mt-2 border border-green-200"><span>Líquido a Receber</span> <span>R$ {sim.liquido}</span></p>
                </div>
             </div>
@@ -836,45 +831,44 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
     const submitItemLocacao = (e) => {
         e.preventDefault();
 
-        if (diasMesInput) {
-            const arr = diasMesInput.split(',').map(s => s.trim()).filter(s => !isNaN(s) && s !== '');
-            formItem.setData('dias_mes_disponiveis', arr);
-        }
-
         if (!higienizarEntrada(formItem.data)) {
             alert('Aviso de Segurança: Caracteres especiais ou códigos não são permitidos nos formulários.');
             return;
         }
 
-        if (isEditingItem) {
-            formItem.post(route('catalogo.itens.update', formItem.data.id), {
-                preserveScroll: true,
-                onSuccess: () => {
-                    cancelarEdicaoItem();
-                    mostrarMensagem('Sua reserva foi salva com sucesso!');
-                    atualizarListaLocacoes();
-                    router.reload({ only: ['itensAluguel', 'itens_aluguel', 'meusEstabelecimentos', 'estabelecimentos'] });
-                }
-            });
-        } else {
-            formItem.post(route('catalogo.itens.store'), {
-                preserveScroll: true,
-                onSuccess: () => {
-                    formItem.reset();
-                    setQuadradosFotosItem([null, null, null, null, null]);
-                    setDiasMesInput('');
-                    setSimulacaoPontos('');
-                    mostrarMensagem('Sua reserva foi salva com sucesso!');
-                    atualizarListaLocacoes();
-                    router.reload({ only: ['itensAluguel', 'itens_aluguel', 'meusEstabelecimentos', 'estabelecimentos'] });
-                }
-            });
-        }
+        formItem.transform((data) => {
+            let diasMes = [];
+            if (diasMesInput) {
+                diasMes = diasMesInput.split(',').map(s => s.trim()).filter(s => !isNaN(s) && s !== '');
+            }
+
+            return {
+                ...data,
+                dias_mes_disponiveis: diasMes,
+                fotos_existentes: quadradosFotosItem.filter(f => typeof f === 'string' && f !== null),
+                fotos: quadradosFotosItem.filter(f => f instanceof File),
+                _method: isEditingItem ? 'put' : 'post'
+            };
+        }).post(isEditingItem ? route('catalogo.itens.update', formItem.data.id) : route('catalogo.itens.store'), {
+            preserveScroll: true,
+            onSuccess: () => {
+                cancelarEdicaoItem();
+                mostrarMensagem('Sua locação foi salva com sucesso!');
+                atualizarListaLocacoes();
+                router.reload({ only: ['itensAluguel', 'itens_aluguel', 'meusEstabelecimentos', 'estabelecimentos'] });
+            }
+        });
     };
 
     const editarItem = (item) => {
         setIsEditingItem(true);
         setVisualizandoItem(null);
+
+        const existingPhotos = parseArraySeguro(item.fotos);
+        const newQuadrados = [null, null, null, null, null];
+        existingPhotos.forEach((url, i) => { if(i < 5) newQuadrados[i] = url; });
+        setQuadradosFotosItem(newQuadrados);
+
         formItem.setData({ 
             ...item,
             recursos_oferecidos: parseArraySeguro(item.recursos_oferecidos),
@@ -891,7 +885,6 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
             exige_contrato: item.exige_contrato === 1 || item.exige_contrato === true,
         });
         setDiasMesInput(parseArraySeguro(item.dias_mes_disponiveis).join(', '));
-        setQuadradosFotosItem([null, null, null, null, null]);
         setSimulacaoPontos('');
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
@@ -1302,7 +1295,6 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                             {isEditingFuncionario && (
                                                 <button type="button" onClick={cancelarEdicaoFuncionario} className="px-6 py-3 text-gray-600 font-bold hover:text-gray-900 transition">Cancelar</button>
                                             )}
-                                            {/* 👉 BOTAO VERDE NO FUNCIONARIO COMO PEDIDO */}
                                             <PrimaryButton className="px-8 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl shadow-lg" disabled={formFuncionario.processing}>
                                                 {isEditingFuncionario ? 'Salvar Alterações' : 'Cadastrar Profissional'}
                                             </PrimaryButton>
@@ -1388,13 +1380,19 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                         <option value="">Selecione...</option>
                                                         <option value="Beleza e Estética">Beleza e Estética</option>
                                                         <option value="Saúde e Bem-Estar">Saúde e Bem-Estar</option>
-                                                        <option value="Serviços Automotivos">Serviços Automotivos</option>
-                                                        <option value="Assistência Técnica e Manutenção">Assistência Técnica e Manutenção</option>
+                                                         <option value="Automotivo">Automotivo</option>
+                                                         <option value="Turismo e Viagens">Turismo e Viagens</option>
+                                                        <option value="Casa e Construção">Casa e Construção</option>
+                                                        <option value="Tecnologia">Tecnologia</option>
+                                                        <option value="Educação e Cursos">Educação e Cursos</option>
+                                                        <option value="Eventos e Entretenimento">Eventos e Entretenimento</option>
+                                                        <option value="Serviços Profissionais">Serviços Profissionais</option>
+                                                        <option value="Pets e Animais">Pets e Animais</option>
                                                     </select>
                                                 </div>
-                                                <div><InputLabel value="Nome do Serviço *" /><TextInput className="w-full mt-1" value={formServico.data.nome} onChange={e => formServico.setData('nome', e.target.value)} required /></div>
-                                                <div><InputLabel value="Valor (R$) *" /><TextInput type="number" step="0.01" className="w-full mt-1" value={formServico.data.valor} onChange={e => formServico.setData('valor', e.target.value)} required /></div>
-                                                <div><InputLabel value="Duração (Minutos) *" /><TextInput type="number" className="w-full mt-1" value={formServico.data.duracao_minutos} onChange={e => formServico.setData('duracao_minutos', e.target.value)} required /></div>
+                                                <div><InputLabel value="Nome do Serviço *" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formServico.data.nome} onChange={e => formServico.setData('nome', e.target.value)} required /></div>
+                                                <div><InputLabel value="Valor (R$) *" /><TextInput type="number" step="0.01" className="w-full mt-1 focus:border-[#FF5A00]" value={formServico.data.valor} onChange={e => formServico.setData('valor', e.target.value)} required /></div>
+                                                <div><InputLabel value="Duração (Minutos) *" /><TextInput type="number" className="w-full mt-1 focus:border-[#FF5A00]" value={formServico.data.duracao_minutos} onChange={e => formServico.setData('duracao_minutos', e.target.value)} required /></div>
                                                 
                                                 <div className="md:col-span-2">
                                                     <InputLabel value="Descrição Pública" />
@@ -1408,7 +1406,6 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                     </select>
                                                 </div>
 
-                                                {/* 👉 FOTOS DO SERVIÇO DE VOLTA AQUI */}
                                                 <div className="md:col-span-2 border-t border-gray-100 pt-6">
                                                     <InputLabel value="Fotos de Demonstração do Serviço" />
                                                     <p className="text-xs text-gray-500 mb-4 mt-1">
@@ -1417,7 +1414,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                     <div className="flex flex-wrap gap-4">
                                                         {[0, 1, 2, 3, 4].map((index) => {
                                                             const arquivo = quadradosFotos[index];
-                                                            const previewUrl = arquivo ? URL.createObjectURL(arquivo) : null;
+                                                            const previewUrl = arquivo instanceof File ? URL.createObjectURL(arquivo) : arquivo;
                                                             const isCapa = index === 0;
                                                             return (
                                                                 <div key={index} className="relative w-24 h-24 sm:w-28 sm:h-28 flex-shrink-0">
@@ -1452,7 +1449,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                 <div className="md:col-span-2 p-5 bg-gray-50 rounded-xl border">
                                                     <InputLabel value="Horários Operacionais *" className="mb-2" />
                                                     <div className="flex gap-3 mb-4">
-                                                        <TextInput type="time" value={novoHorario} onChange={e => setNovoHorario(e.target.value)} className="w-32 text-center" />
+                                                        <TextInput type="time" value={novoHorario} onChange={e => setNovoHorario(e.target.value)} className="w-32 text-center focus:border-[#FF5A00]" />
                                                         <button type="button" onClick={adicionarHorario} className="px-4 py-2 bg-gray-200 text-sm font-bold rounded-lg hover:bg-gray-300">Incluir Horário</button>
                                                     </div>
                                                     <div className="flex flex-wrap gap-2">
@@ -1466,7 +1463,6 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                             </div>
                                             <div className="flex justify-end pt-4 gap-2">
                                                 {isEditingServico && <button type="button" onClick={cancelarEdicaoServico} className="px-4 py-2 text-gray-500 font-bold">Cancelar</button>}
-                                                {/* 👉 BOTAO VERDE NOS SERVICOS COMO PEDIDO */}
                                                 <PrimaryButton className="px-8 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl shadow-lg" disabled={formServico.processing}>
                                                     {isEditingServico ? 'Salvar Alterações' : 'Salvar Serviço'}
                                                 </PrimaryButton>
@@ -1557,21 +1553,21 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                     {isEditingItem ? <><DocumentTextIcon className="w-5 h-5 text-gray-400"/> Editar Item de Locação</> : <><PlusIcon className="w-5 h-5 text-gray-400"/> Adicionar Novo Item de Locação</>}
                                                 </h3>
                                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
-                                                    <div><InputLabel value="Nome do Item *" /><TextInput className="mt-1 w-full" value={formItem.data.nome} onChange={e => formItem.setData('nome', e.target.value)} required /></div>
+                                                    <div><InputLabel value="Nome do Item *" /><TextInput className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.nome} onChange={e => formItem.setData('nome', e.target.value)} required /></div>
                                                     <div>
                                                         <InputLabel value="Categoria *" />
-                                                        <select className="mt-1 w-full py-3 border-gray-300 rounded-xl text-sm" value={formItem.data.categoria} onChange={e => formItem.setData('categoria', e.target.value)} required>
+                                                        <select className="mt-1 w-full py-3 border-gray-300 rounded-xl text-sm focus:border-[#FF5A00]" value={formItem.data.categoria} onChange={e => formItem.setData('categoria', e.target.value)} required>
                                                             <option value="casa">Casa / Espaço</option>
                                                             <option value="carro">Carro / Frota</option>
                                                             <option value="equipamento">Equipamento / Máquina</option>
                                                         </select>
                                                     </div>
-                                                    <div><InputLabel value="Quantidade Estoque *" /><TextInput type="number" className="mt-1 w-full" value={formItem.data.quantidade} onChange={e => formItem.setData('quantidade', e.target.value)} required /></div>
+                                                    <div><InputLabel value="Quantidade Estoque *" /><TextInput type="number" className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.quantidade} onChange={e => formItem.setData('quantidade', e.target.value)} required /></div>
                                                 </div>
                                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4">
-                                                    <div><InputLabel value="Marca / Fabricante" /><TextInput className="mt-1 w-full" value={formItem.data.marca} onChange={e => formItem.setData('marca', e.target.value)} /></div>
-                                                    <div><InputLabel value="Modelo" /><TextInput className="mt-1 w-full" value={formItem.data.modelo} onChange={e => formItem.setData('modelo', e.target.value)} /></div>
-                                                    <div><InputLabel value="Tipo / Subtipo" /><TextInput className="mt-1 w-full" value={formItem.data.tipo} onChange={e => formItem.setData('tipo', e.target.value)} /></div>
+                                                    <div><InputLabel value="Marca / Fabricante" /><TextInput className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.marca} onChange={e => formItem.setData('marca', e.target.value)} /></div>
+                                                    <div><InputLabel value="Modelo" /><TextInput className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.modelo} onChange={e => formItem.setData('modelo', e.target.value)} /></div>
+                                                    <div><InputLabel value="Tipo / Subtipo" /><TextInput className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.tipo} onChange={e => formItem.setData('tipo', e.target.value)} /></div>
                                                 </div>
                                             </div>
 
@@ -1586,7 +1582,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                 <div className="flex flex-wrap gap-4 mt-4">
                                                     {[0, 1, 2, 3, 4].map((index) => {
                                                         const arquivo = quadradosFotosItem[index];
-                                                        const previewUrl = arquivo ? URL.createObjectURL(arquivo) : null;
+                                                        const previewUrl = arquivo instanceof File ? URL.createObjectURL(arquivo) : arquivo;
                                                         const isCapa = index === 0;
                                                         return (
                                                             <div key={index} className="relative w-24 h-24 sm:w-28 sm:h-28 flex-shrink-0">
@@ -1616,16 +1612,16 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                             <div>
                                                 <h4 className="text-sm font-black text-gray-800 uppercase tracking-wider mb-4 flex items-center gap-2"><CurrencyDollarIcon className="w-5 h-5 text-[#FF5A00]"/> Matriz Financeira Base</h4>
                                                 <div className="p-6 bg-gray-50 rounded-2xl border grid grid-cols-1 md:grid-cols-4 gap-4">
-                                                    <div><InputLabel value="Valor Diária (R$)" /><TextInput type="number" step="0.01" onBlur={(e) => formatarDecimaisItemOnBlur('valor_diaria', e.target.value)} className="mt-1 w-full" value={formItem.data.valor_diaria} onChange={e => formItem.setData('valor_diaria', e.target.value)} /></div>
-                                                    <div><InputLabel value="Valor Semanal (R$)" /><TextInput type="number" step="0.01" onBlur={(e) => formatarDecimaisItemOnBlur('valor_semanal', e.target.value)} className="mt-1 w-full" value={formItem.data.valor_semanal} onChange={e => formItem.setData('valor_semanal', e.target.value)} /></div>
-                                                    <div><InputLabel value="Valor Mensal (R$)" /><TextInput type="number" step="0.01" onBlur={(e) => formatarDecimaisItemOnBlur('valor_mensal', e.target.value)} className="mt-1 w-full" value={formItem.data.valor_mensal} onChange={e => formItem.setData('valor_mensal', e.target.value)} /></div>
-                                                    <div><InputLabel value="Valor Caução (R$)" /><TextInput type="number" step="0.01" onBlur={(e) => formatarDecimaisItemOnBlur('valor_caucao', e.target.value)} className="mt-1 w-full" value={formItem.data.valor_caucao} onChange={e => formItem.setData('valor_caucao', e.target.value)} /></div>
+                                                    <div><InputLabel value="Valor Diária (R$)" /><TextInput type="number" step="0.01" onBlur={(e) => formatarDecimaisItemOnBlur('valor_diaria', e.target.value)} className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.valor_diaria} onChange={e => formItem.setData('valor_diaria', e.target.value)} /></div>
+                                                    <div><InputLabel value="Valor Semanal (R$)" /><TextInput type="number" step="0.01" onBlur={(e) => formatarDecimaisItemOnBlur('valor_semanal', e.target.value)} className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.valor_semanal} onChange={e => formItem.setData('valor_semanal', e.target.value)} /></div>
+                                                    <div><InputLabel value="Valor Mensal (R$)" /><TextInput type="number" step="0.01" onBlur={(e) => formatarDecimaisItemOnBlur('valor_mensal', e.target.value)} className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.valor_mensal} onChange={e => formItem.setData('valor_mensal', e.target.value)} /></div>
+                                                    <div><InputLabel value="Valor Caução (R$)" /><TextInput type="number" step="0.01" onBlur={(e) => formatarDecimaisItemOnBlur('valor_caucao', e.target.value)} className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.valor_caucao} onChange={e => formItem.setData('valor_caucao', e.target.value)} /></div>
                                                 </div>
 
                                                 <div className="p-6 bg-white border rounded-2xl grid grid-cols-1 md:grid-cols-2 gap-6 mt-4 shadow-sm">
                                                     <div>
                                                         <InputLabel value="Período Escolhido para Cobrança Padrão *" />
-                                                        <select className="mt-1 w-full py-3 border-gray-300 rounded-xl font-medium text-sm" value={formItem.data.periodo_faturamento_padrao} onChange={e => formItem.setData('periodo_faturamento_padrao', e.target.value)} required>
+                                                        <select className="mt-1 w-full py-3 border-gray-300 rounded-xl font-medium text-sm focus:border-[#FF5A00]" value={formItem.data.periodo_faturamento_padrao} onChange={e => formItem.setData('periodo_faturamento_padrao', e.target.value)} required>
                                                             <option value="diaria">Cobrar por Diária</option>
                                                             <option value="semanal">Cobrar por Semana</option>
                                                             <option value="mensal">Cobrar por Mês</option>
@@ -1633,7 +1629,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                     </div>
                                                     <div>
                                                         <InputLabel value="Forma de Liquidação / Pagamento *" />
-                                                        <select className="mt-1 w-full py-3 border-gray-300 rounded-xl font-medium text-sm" value={formItem.data.permitir_pagamento} onChange={e => formItem.setData('permitir_pagamento', e.target.value)} required>
+                                                        <select className="mt-1 w-full py-3 border-gray-300 rounded-xl font-medium text-sm focus:border-[#FF5A00]" value={formItem.data.permitir_pagamento} onChange={e => formItem.setData('permitir_pagamento', e.target.value)} required>
                                                             <option value="online">Pagamento Online (Via App com Split Direto)</option>
                                                             <option value="presencial">Pagamento Presencial (Direto ao Estabelecimento)</option>
                                                         </select>
@@ -1662,14 +1658,14 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                                 <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2 pt-4 border-t border-gray-100">
                                                                     <div>
                                                                         <InputLabel value="Tipo de Desconto" />
-                                                                        <select className="mt-1 w-full border-gray-300 rounded-lg text-sm" value={formItem.data.tipo_desconto} onChange={e => formItem.setData('tipo_desconto', e.target.value)}>
+                                                                        <select className="mt-1 w-full border-gray-300 rounded-lg text-sm focus:border-[#FF5A00]" value={formItem.data.tipo_desconto} onChange={e => formItem.setData('tipo_desconto', e.target.value)}>
                                                                             <option value="percentual">Porcentagem (%)</option>
                                                                             <option value="fixo">Fixo (R$)</option>
                                                                         </select>
                                                                     </div>
                                                                     <div>
                                                                         <InputLabel value="Valor do Desconto" />
-                                                                        <TextInput type="number" min="0" step="0.01" className="mt-1 w-full" value={formItem.data.valor_desconto} onChange={e => formItem.setData('valor_desconto', e.target.value)} placeholder="Ex: 20" required={formItem.data.tem_promocao} />
+                                                                        <TextInput type="number" min="0" step="0.01" className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.valor_desconto} onChange={e => formItem.setData('valor_desconto', e.target.value)} placeholder="Ex: 20" required={formItem.data.tem_promocao} />
                                                                     </div>
                                                                 </div>
                                                             )}
@@ -1679,7 +1675,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                         <div className="bg-white p-5 rounded-2xl shadow-sm border border-orange-100">
                                                             <label className="flex items-center justify-between cursor-pointer mb-4">
                                                                 <div>
-                                                                    <span className="font-bold text-sm text-gray-900 block">Aceitar Pontos WAITLESS?</span>
+                                                                    <span className="font-bold text-sm text-gray-900 block">Aceitar Pontos LOKYVA?</span>
                                                                     <span className="text-xs text-gray-500">Permitir desconto usando a carteira do app.</span>
                                                                 </div>
                                                                 <div className="relative inline-flex items-center">
@@ -1691,7 +1687,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                             {formItem.data.aceita_pontos && (
                                                                 <div className="animate-in fade-in slide-in-from-top-2 pt-4 border-t border-gray-100">
                                                                     <InputLabel value="Máximo de Pontos Permitidos por Reserva" />
-                                                                    <TextInput type="number" min="1" className="mt-1 w-full" value={formItem.data.maximo_pontos_permitidos} onChange={e => formItem.setData('maximo_pontos_permitidos', e.target.value)} placeholder="Ex: 100 pontos" required={formItem.data.aceita_pontos} />
+                                                                    <TextInput type="number" min="1" className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.maximo_pontos_permitidos} onChange={e => formItem.setData('maximo_pontos_permitidos', e.target.value)} placeholder="Ex: 100 pontos" required={formItem.data.aceita_pontos} />
                                                                     <p className="text-[10px] text-gray-400 mt-1">Lembre-se: 100 pontos = R$ 1,00 de desconto.</p>
                                                                 </div>
                                                             )}
@@ -1727,7 +1723,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                                     <CurrencyDollarIcon className="w-5 h-5 text-[#FF5A00]"/> 📊 Simulador de Repasse Financeiro
                                                                 </h4>
                                                                 <p className="text-[11px] text-gray-500 mb-6 leading-relaxed max-w-2xl">
-                                                                    Veja quanto o cliente vai pagar e o valor líquido exato que vai entrar na sua conta após aplicar a taxa da WAITLESS (12%) e os seus descontos e pontos.
+                                                                    Veja quanto o cliente vai pagar e o valor líquido exato que vai entrar na sua conta após aplicar a taxa da LOKYVA (12%) e os seus descontos e pontos.
                                                                 </p>
                                                                 
                                                                 {formItem.data.aceita_pontos && (
@@ -1794,7 +1790,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
 
                                                         <div>
                                                             <InputLabel value="Tipo de Disponibilidade do Item" />
-                                                            <select className="mt-1 w-full border-gray-300 rounded-lg shadow-sm" value={formItem.data.tipo_disponibilidade} onChange={e => formItem.setData('tipo_disponibilidade', e.target.value)}>
+                                                            <select className="mt-1 w-full border-gray-300 rounded-lg shadow-sm focus:border-[#FF5A00]" value={formItem.data.tipo_disponibilidade} onChange={e => formItem.setData('tipo_disponibilidade', e.target.value)}>
                                                                 <option value="todos">Todos os dias</option>
                                                                 <option value="dias_semana">Apenas Dias da Semana Específicos</option>
                                                                 <option value="dias_mes">Apenas Dias do Mês Específicos</option>
@@ -1804,8 +1800,8 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
 
                                                         {!formItem.data.sempre_disponivel && (
                                                             <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2">
-                                                                <div><InputLabel value="Início da Temporada" /><TextInput type="date" className="w-full mt-1" value={formItem.data.data_inicio_disponibilidade} onChange={e => formItem.setData('data_inicio_disponibilidade', e.target.value)} /></div>
-                                                                <div><InputLabel value="Fim da Temporada" /><TextInput type="date" className="w-full mt-1" value={formItem.data.data_fim_disponibilidade} onChange={e => formItem.setData('data_fim_disponibilidade', e.target.value)} /></div>
+                                                                <div><InputLabel value="Início da Temporada" /><TextInput type="date" className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.data_inicio_disponibilidade} onChange={e => formItem.setData('data_inicio_disponibilidade', e.target.value)} /></div>
+                                                                <div><InputLabel value="Fim da Temporada" /><TextInput type="date" className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.data_fim_disponibilidade} onChange={e => formItem.setData('data_fim_disponibilidade', e.target.value)} /></div>
                                                             </div>
                                                         )}
                                                     </div>
@@ -1832,7 +1828,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                         {formItem.data.tipo_disponibilidade === 'dias_mes' && (
                                                             <div className="animate-in fade-in">
                                                                 <InputLabel value="Dias do mês permitidos" />
-                                                                <TextInput className="w-full mt-1" value={diasMesInput} onChange={e => setDiasMesInput(e.target.value)} placeholder="Ex: 1, 5, 10, 15, 20" />
+                                                                <TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={diasMesInput} onChange={e => setDiasMesInput(e.target.value)} placeholder="Ex: 1, 5, 10, 15, 20" />
                                                             </div>
                                                         )}
 
@@ -1840,7 +1836,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                             <div className="animate-in fade-in bg-white p-4 rounded-xl border">
                                                                 <InputLabel value="Datas Especificas Permitidas" />
                                                                 <div className="flex items-center gap-2 mt-1 mb-3">
-                                                                    <TextInput type="date" value={novaDataPermitida} onChange={e => setNovaDataPermitida(e.target.value)} className="flex-1" />
+                                                                    <TextInput type="date" value={novaDataPermitida} onChange={e => setNovaDataPermitida(e.target.value)} className="flex-1 focus:border-[#FF5A00]" />
                                                                     <button type="button" onClick={addDataPermitida} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 font-bold rounded-lg">+</button>
                                                                 </div>
                                                                 <div className="flex flex-wrap gap-2">
@@ -1863,15 +1859,15 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-white p-5 rounded-2xl border shadow-sm">
                                                         <div>
                                                             <InputLabel value="Horário Início (Retirada / Check-in)" />
-                                                            <TextInput type="time" className="w-full mt-1 bg-gray-50" value={formItem.data.horario_inicio} onChange={e => formItem.setData('horario_inicio', e.target.value)} />
+                                                            <TextInput type="time" className="w-full mt-1 bg-gray-50 focus:border-[#FF5A00]" value={formItem.data.horario_inicio} onChange={e => formItem.setData('horario_inicio', e.target.value)} />
                                                         </div>
                                                         <div>
                                                             <InputLabel value="Horário Fim (Devolução Padrão)" />
-                                                            <TextInput type="time" className="w-full mt-1 bg-gray-50" value={formItem.data.horario_fim} onChange={e => formItem.setData('horario_fim', e.target.value)} />
+                                                            <TextInput type="time" className="w-full mt-1 bg-gray-50 focus:border-[#FF5A00]" value={formItem.data.horario_fim} onChange={e => formItem.setData('horario_fim', e.target.value)} />
                                                         </div>
                                                         <div>
                                                             <InputLabel value="Horário Limite para Devolução" />
-                                                            <TextInput type="time" className="w-full mt-1 bg-red-50 text-red-700 border-red-200" value={formItem.data.horario_limite_devolucao} onChange={e => formItem.setData('horario_limite_devolucao', e.target.value)} />
+                                                            <TextInput type="time" className="w-full mt-1 bg-red-50 text-red-700 border-red-200 focus:border-red-400" value={formItem.data.horario_limite_devolucao} onChange={e => formItem.setData('horario_limite_devolucao', e.target.value)} />
                                                         </div>
                                                     </div>
                                                 </div>
@@ -1882,19 +1878,19 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                                         <div className="bg-white p-4 rounded-xl border text-center">
                                                             <span className="text-xs font-bold text-gray-400 uppercase block mb-2">Antecedência Min</span>
-                                                            <TextInput type="number" min="0" className="w-20 text-center font-bold" value={formItem.data.antecedencia_reserva_horas} onChange={e => formItem.setData('antecedencia_reserva_horas', e.target.value)} />
+                                                            <TextInput type="number" min="0" className="w-20 text-center font-bold focus:border-[#FF5A00]" value={formItem.data.antecedencia_reserva_horas} onChange={e => formItem.setData('antecedencia_reserva_horas', e.target.value)} />
                                                         </div>
                                                         <div className="bg-white p-4 rounded-xl border text-center">
                                                             <span className="text-xs font-bold text-gray-400 uppercase block mb-2">Duração Mínima</span>
-                                                            <TextInput type="number" min="1" className="w-20 text-center font-bold" value={formItem.data.duracao_minima_horas} onChange={e => formItem.setData('duracao_minima_horas', e.target.value)} />
+                                                            <TextInput type="number" min="1" className="w-20 text-center font-bold focus:border-[#FF5A00]" value={formItem.data.duracao_minima_horas} onChange={e => formItem.setData('duracao_minima_horas', e.target.value)} />
                                                         </div>
                                                         <div className="bg-white p-4 rounded-xl border text-center">
                                                             <span className="text-xs font-bold text-gray-400 uppercase block mb-2">Duração Máxima</span>
-                                                            <TextInput type="number" min="1" className="w-20 text-center font-bold" value={formItem.data.duracao_maxima_horas} onChange={e => formItem.setData('duracao_maxima_horas', e.target.value)} />
+                                                            <TextInput type="number" min="1" className="w-20 text-center font-bold focus:border-[#FF5A00]" value={formItem.data.duracao_maxima_horas} onChange={e => formItem.setData('duracao_maxima_horas', e.target.value)} />
                                                         </div>
                                                         <div className="bg-white p-4 rounded-xl border text-center">
                                                             <span className="text-xs font-bold text-gray-400 uppercase block mb-2">Intervalo (Min)</span>
-                                                            <TextInput type="number" min="0" className="w-20 text-center font-bold" value={formItem.data.intervalo_entre_reservas_minutos} onChange={e => formItem.setData('intervalo_entre_reservas_minutos', e.target.value)} />
+                                                            <TextInput type="number" min="0" className="w-20 text-center font-bold focus:border-[#FF5A00]" value={formItem.data.intervalo_entre_reservas_minutos} onChange={e => formItem.setData('intervalo_entre_reservas_minutos', e.target.value)} />
                                                         </div>
                                                     </div>
                                                 </div>
@@ -1908,7 +1904,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                         <div className="bg-white p-5 rounded-2xl border shadow-sm">
                                                             <InputLabel value="Bloquear Datas Inteiras (Dias Fechados)" />
                                                             <div className="flex items-center gap-2 mt-2 mb-4">
-                                                                <TextInput type="date" value={novaDataBloqueada} onChange={e => setNovaDataBloqueada(e.target.value)} className="flex-1 border-red-200" />
+                                                                <TextInput type="date" value={novaDataBloqueada} onChange={e => setNovaDataBloqueada(e.target.value)} className="flex-1 border-red-200 focus:border-red-400" />
                                                                 <button type="button" onClick={addDataBloqueada} className="px-4 py-2 bg-red-100 text-red-700 font-bold rounded-lg">+</button>
                                                             </div>
                                                             <div className="flex flex-wrap gap-2">
@@ -1923,9 +1919,9 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                         <div className="bg-white p-5 rounded-2xl border shadow-sm">
                                                             <InputLabel value="Bloquear Horários Específicos" />
                                                             <div className="flex items-center gap-2 mt-2 mb-4">
-                                                                <TextInput type="date" className="w-1/3 text-xs" value={novoHorarioBloqueado.data} onChange={e => setNovoHorarioBloqueado({...novoHorarioBloqueado, data: e.target.value})} />
-                                                                <TextInput type="time" className="w-1/4 text-xs text-center" value={novoHorarioBloqueado.inicio} onChange={e => setNovoHorarioBloqueado({...novoHorarioBloqueado, inicio: e.target.value})} />
-                                                                <TextInput type="time" className="w-1/4 text-xs text-center" value={novoHorarioBloqueado.fim} onChange={e => setNovoHorarioBloqueado({...novoHorarioBloqueado, fim: e.target.value})} />
+                                                                <TextInput type="date" className="w-1/3 text-xs focus:border-[#FF5A00]" value={novoHorarioBloqueado.data} onChange={e => setNovoHorarioBloqueado({...novoHorarioBloqueado, data: e.target.value})} />
+                                                                <TextInput type="time" className="w-1/4 text-xs text-center focus:border-[#FF5A00]" value={novoHorarioBloqueado.inicio} onChange={e => setNovoHorarioBloqueado({...novoHorarioBloqueado, inicio: e.target.value})} />
+                                                                <TextInput type="time" className="w-1/4 text-xs text-center focus:border-[#FF5A00]" value={novoHorarioBloqueado.fim} onChange={e => setNovoHorarioBloqueado({...novoHorarioBloqueado, fim: e.target.value})} />
                                                                 <button type="button" onClick={addHorarioBloqueado} className="px-3 py-2 bg-red-100 text-red-700 font-bold rounded-lg">+</button>
                                                             </div>
                                                             <div className="space-y-2">
@@ -1974,11 +1970,11 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                         <div><InputLabel value="Longitude (Auto)" /><TextInput type="text" readOnly className="w-full mt-1 bg-gray-100 text-gray-500 cursor-not-allowed select-all" value={formItem.data.longitude} /></div>
                                                     </div>
                                                     <div className="grid grid-cols-2 md:grid-cols-5 gap-4 pt-4 border-t border-orange-200">
-                                                        <div><InputLabel value="Quartos" /><TextInput type="number" className="w-full mt-1" value={formItem.data.numero_quartos} onChange={e => formItem.setData('numero_quartos', e.target.value)} /></div>
-                                                        <div><InputLabel value="Banheiros" /><TextInput type="number" className="w-full mt-1" value={formItem.data.numero_banheiros} onChange={e => formItem.setData('numero_banheiros', e.target.value)} /></div>
-                                                        <div><InputLabel value="Suítes" /><TextInput type="number" className="w-full mt-1" value={formItem.data.numero_suites} onChange={e => formItem.setData('numero_suites', e.target.value)} /></div>
-                                                        <div><InputLabel value="Garagem" /><TextInput type="number" className="w-full mt-1" value={formItem.data.numero_vagas} onChange={e => formItem.setData('numero_vagas', e.target.value)} /></div>
-                                                        <div><InputLabel value="Cômodos" /><TextInput type="number" className="w-full mt-1" value={formItem.data.numero_comodos} onChange={e => formItem.setData('numero_comodos', e.target.value)} /></div>
+                                                        <div><InputLabel value="Quartos" /><TextInput type="number" className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.numero_quartos} onChange={e => formItem.setData('numero_quartos', e.target.value)} /></div>
+                                                        <div><InputLabel value="Banheiros" /><TextInput type="number" className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.numero_banheiros} onChange={e => formItem.setData('numero_banheiros', e.target.value)} /></div>
+                                                        <div><InputLabel value="Suítes" /><TextInput type="number" className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.numero_suites} onChange={e => formItem.setData('numero_suites', e.target.value)} /></div>
+                                                        <div><InputLabel value="Garagem" /><TextInput type="number" className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.numero_vagas} onChange={e => formItem.setData('numero_vagas', e.target.value)} /></div>
+                                                        <div><InputLabel value="Cômodos" /><TextInput type="number" className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.numero_comodos} onChange={e => formItem.setData('numero_comodos', e.target.value)} /></div>
                                                     </div>
                                                 </div>
                                             )}
@@ -1990,19 +1986,19 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                         <div><InputLabel value="Placa *" /><TextInput maxLength="7" className="w-full mt-1 uppercase focus:border-[#FF5A00]" value={formItem.data.placa} onChange={e => formItem.setData('placa', e.target.value.toUpperCase())} /></div>
                                                         <div><InputLabel value="Renavam" /><TextInput maxLength="11" className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.renavam} onChange={e => formItem.setData('renavam', e.target.value.replace(/\D/g, ''))} /></div>
                                                         <div><InputLabel value="Chassis" /><TextInput maxLength="17" className="w-full mt-1 uppercase focus:border-[#FF5A00]" value={formItem.data.chassis} onChange={e => formItem.setData('chassis', e.target.value.toUpperCase())} /></div>
-                                                        <div><InputLabel value="Quilometragem (KM)" /><TextInput type="number" className="w-full mt-1" value={formItem.data.quilometragem} onChange={e => formItem.setData('quilometragem', e.target.value)} /></div>
+                                                        <div><InputLabel value="Quilometragem (KM)" /><TextInput type="number" className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.quilometragem} onChange={e => formItem.setData('quilometragem', e.target.value)} /></div>
                                                     </div>
                                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                                         <div>
                                                             <InputLabel value="Ano de Fabricação" />
-                                                            <select className="mt-1 w-full py-3 border-gray-300 rounded-xl font-medium text-sm text-gray-700" value={formItem.data.ano} onChange={e => formItem.setData('ano', e.target.value)}>
+                                                            <select className="mt-1 w-full py-3 border-gray-300 rounded-xl font-medium text-sm text-gray-700 focus:border-[#FF5A00]" value={formItem.data.ano} onChange={e => formItem.setData('ano', e.target.value)}>
                                                                 <option value="">Selecione o ano...</option>
                                                                 {anosDisponiveis.map(ano => <option key={ano} value={ano}>{ano}</option>)}
                                                             </select>
                                                         </div>
                                                         <div>
                                                             <InputLabel value="Combustível" />
-                                                            <select className="mt-1 w-full py-3 border-gray-300 rounded-xl font-medium text-sm text-gray-700" value={formItem.data.combustivel} onChange={e => formItem.setData('combustivel', e.target.value)}>
+                                                            <select className="mt-1 w-full py-3 border-gray-300 rounded-xl font-medium text-sm text-gray-700 focus:border-[#FF5A00]" value={formItem.data.combustivel} onChange={e => formItem.setData('combustivel', e.target.value)}>
                                                                 <option value="Flex">Flex</option>
                                                                 <option value="Gasolina">Gasolina</option>
                                                                 <option value="Álcool">Álcool</option>
@@ -2013,7 +2009,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                         </div>
                                                         <div>
                                                             <InputLabel value="Câmbio" />
-                                                            <select className="mt-1 w-full py-3 border-gray-300 rounded-xl font-medium text-sm text-gray-700" value={formItem.data.cambio} onChange={e => formItem.setData('cambio', e.target.value)}>
+                                                            <select className="mt-1 w-full py-3 border-gray-300 rounded-xl font-medium text-sm text-gray-700 focus:border-[#FF5A00]" value={formItem.data.cambio} onChange={e => formItem.setData('cambio', e.target.value)}>
                                                                 <option value="Manual">Manual</option>
                                                                 <option value="Automático">Automático</option>
                                                             </select>
@@ -2027,15 +2023,15 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                     <div className="p-6 bg-gray-50 border rounded-3xl space-y-4">
                                                         <h4 className="text-sm font-black text-gray-800 uppercase tracking-wider flex items-center gap-2"><ArrowDownTrayIcon className="w-4 h-4 text-gray-400" /> Endereço de Retirada Completo</h4>
                                                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                                            <div className="sm:col-span-1"><InputLabel value="CEP" /><TextInput className="w-full mt-1" value={formItem.data.cep_retirada} onChange={e => formItem.setData('cep_retirada', e.target.value)} onBlur={(e) => buscarEnderecoAutomatizado(e.target.value, formItem.setData, '_retirada')} /></div>
-                                                            <div className="sm:col-span-2"><InputLabel value="Rua de Retirada" /><TextInput className="w-full mt-1" value={formItem.data.rua_retirada} onChange={e => formItem.setData('rua_retirada', e.target.value)} /></div>
+                                                            <div className="sm:col-span-1"><InputLabel value="CEP" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.cep_retirada} onChange={e => formItem.setData('cep_retirada', e.target.value)} onBlur={(e) => buscarEnderecoAutomatizado(e.target.value, formItem.setData, '_retirada')} /></div>
+                                                            <div className="sm:col-span-2"><InputLabel value="Rua de Retirada" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.rua_retirada} onChange={e => formItem.setData('rua_retirada', e.target.value)} /></div>
                                                         </div>
                                                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                                            <div><InputLabel value="Bairro" /><TextInput className="w-full mt-1" value={formItem.data.bairro_retirada} onChange={e => formItem.setData('bairro_retirada', e.target.value)} /></div>
-                                                            <div><InputLabel value="Cidade" /><TextInput className="w-full mt-1" value={formItem.data.cidade_retirada} onChange={e => formItem.setData('cidade_retirada', e.target.value)} /></div>
+                                                            <div><InputLabel value="Bairro" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.bairro_retirada} onChange={e => formItem.setData('bairro_retirada', e.target.value)} /></div>
+                                                            <div><InputLabel value="Cidade" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.cidade_retirada} onChange={e => formItem.setData('cidade_retirada', e.target.value)} /></div>
                                                             <div>
                                                                 <InputLabel value="UF" />
-                                                                <select className="mt-1 w-full border-gray-300 rounded-lg shadow-sm" value={formItem.data.estado_retirada} onChange={e => formItem.setData('estado_retirada', e.target.value)}>
+                                                                <select className="mt-1 w-full border-gray-300 rounded-lg shadow-sm focus:border-[#FF5A00]" value={formItem.data.estado_retirada} onChange={e => formItem.setData('estado_retirada', e.target.value)}>
                                                                     <option value="">UF</option>
                                                                     {ufsBrasil.map(uf => <option key={uf} value={uf}>{uf}</option>)}
                                                                 </select>
@@ -2050,15 +2046,15 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                     <div className="p-6 bg-gray-50 border rounded-3xl space-y-4">
                                                         <h4 className="text-sm font-black text-gray-800 uppercase tracking-wider flex items-center gap-2"><TruckIcon className="w-4 h-4 text-gray-400" /> Endereço de Entrega Completo</h4>
                                                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                                            <div className="sm:col-span-1"><InputLabel value="CEP" /><TextInput className="w-full mt-1" value={formItem.data.cep_entrega} onChange={e => formItem.setData('cep_entrega', e.target.value)} onBlur={(e) => buscarEnderecoAutomatizado(e.target.value, formItem.setData, '_entrega')} /></div>
-                                                            <div className="sm:col-span-2"><InputLabel value="Rua de Entrega" /><TextInput className="w-full mt-1" value={formItem.data.rua_entrega} onChange={e => formItem.setData('rua_entrega', e.target.value)} /></div>
+                                                            <div className="sm:col-span-1"><InputLabel value="CEP" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.cep_entrega} onChange={e => formItem.setData('cep_entrega', e.target.value)} onBlur={(e) => buscarEnderecoAutomatizado(e.target.value, formItem.setData, '_entrega')} /></div>
+                                                            <div className="sm:col-span-2"><InputLabel value="Rua de Entrega" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.rua_entrega} onChange={e => formItem.setData('rua_entrega', e.target.value)} /></div>
                                                         </div>
                                                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                                            <div><InputLabel value="Bairro" /><TextInput className="w-full mt-1" value={formItem.data.bairro_entrega} onChange={e => formItem.setData('bairro_entrega', e.target.value)} /></div>
-                                                            <div><InputLabel value="Cidade" /><TextInput className="w-full mt-1" value={formItem.data.cidade_entrega} onChange={e => formItem.setData('cidade_entrega', e.target.value)} /></div>
+                                                            <div><InputLabel value="Bairro" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.bairro_entrega} onChange={e => formItem.setData('bairro_entrega', e.target.value)} /></div>
+                                                            <div><InputLabel value="Cidade" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.cidade_entrega} onChange={e => formItem.setData('cidade_entrega', e.target.value)} /></div>
                                                             <div>
                                                                 <InputLabel value="UF" />
-                                                                <select className="mt-1 w-full border-gray-300 rounded-lg shadow-sm" value={formItem.data.estado_entrega} onChange={e => formItem.setData('estado_entrega', e.target.value)}>
+                                                                <select className="mt-1 w-full border-gray-300 rounded-lg shadow-sm focus:border-[#FF5A00]" value={formItem.data.estado_entrega} onChange={e => formItem.setData('estado_entrega', e.target.value)}>
                                                                     <option value="">UF</option>
                                                                     {ufsBrasil.map(uf => <option key={uf} value={uf}>{uf}</option>)}
                                                                 </select>
@@ -2111,9 +2107,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                     </div>
                                                     <div className="flex items-center gap-2 mt-4 sm:mt-0">
                                                         <button onClick={() => visualizarItem(item)} className="text-xs font-bold text-gray-700 bg-gray-100 border border-gray-200 px-4 py-2 rounded-lg transition">Ver Detalhes</button>
-                                                        {/* 👉 BOTÃO EDITAR LARANJA QUASE AMARELO COMO PEDIDO */}
                                                         <button onClick={() => editarItem(item)} className="text-xs font-bold text-white bg-orange-500 hover:bg-orange-600 border border-orange-600 px-4 py-2 rounded-lg transition">Editar</button>
-                                                        {/* 👉 BOTÃO APAGAR VERMELHO COM TEXTO BRANCO COMO PEDIDO */}
                                                         <button onClick={() => deletarItem(item.id)} className="text-xs font-bold text-white bg-red-600 hover:bg-red-700 border border-red-700 px-4 py-2 rounded-lg transition">Apagar</button>
                                                     </div>
                                                 </div>
@@ -2139,23 +2133,23 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                 <div className="bg-white p-6 sm:p-10 rounded-[2.5rem] shadow-sm border border-gray-100">
                                     <form onSubmit={submitFinanceiro} className="space-y-8">
                                         <div className="space-y-6">
-                                            <div><InputLabel value="Nome Completo / Razão Social" /><TextInput className="w-full" value={formFinanceiro.data.nome_razao_social} onChange={e => formFinanceiro.setData('nome_razao_social', e.target.value)} required /></div>
-                                            <div><InputLabel value="E-mail Financeiro" /><TextInput type="email" className="w-full" value={formFinanceiro.data.email_financeiro} onChange={e => formFinanceiro.setData('email_financeiro', e.target.value)} required /></div>
-                                            <div><InputLabel value="CPF ou CNPJ" /><TextInput className="w-full" value={formFinanceiro.data.cpf_cnpj} onChange={e => formFinanceiro.setData('cpf_cnpj', e.target.value)} required /></div>
-                                            <div><InputLabel value="Código do Banco" /><TextInput className="w-full" value={formFinanceiro.data.banco_codigo} onChange={e => formFinanceiro.setData('banco_codigo', e.target.value)} required /></div>
+                                            <div><InputLabel value="Nome Completo / Razão Social" /><TextInput className="w-full focus:border-[#FF5A00]" value={formFinanceiro.data.nome_razao_social} onChange={e => formFinanceiro.setData('nome_razao_social', e.target.value)} required /></div>
+                                            <div><InputLabel value="E-mail Financeiro" /><TextInput type="email" className="w-full focus:border-[#FF5A00]" value={formFinanceiro.data.email_financeiro} onChange={e => formFinanceiro.setData('email_financeiro', e.target.value)} required /></div>
+                                            <div><InputLabel value="CPF ou CNPJ" /><TextInput className="w-full focus:border-[#FF5A00]" value={formFinanceiro.data.cpf_cnpj} onChange={e => formFinanceiro.setData('cpf_cnpj', e.target.value)} required /></div>
+                                            <div><InputLabel value="Código do Banco" /><TextInput className="w-full focus:border-[#FF5A00]" value={formFinanceiro.data.banco_codigo} onChange={e => formFinanceiro.setData('banco_codigo', e.target.value)} required /></div>
                                             <div className="grid grid-cols-2 gap-4">
-                                                <div><InputLabel value="Agência" /><TextInput className="w-full" value={formFinanceiro.data.agencia} onChange={e => formFinanceiro.setData('agencia', e.target.value)} required /></div>
+                                                <div><InputLabel value="Agência" /><TextInput className="w-full focus:border-[#FF5A00]" value={formFinanceiro.data.agencia} onChange={e => formFinanceiro.setData('agencia', e.target.value)} required /></div>
                                                 <div>
                                                     <InputLabel value="Conta e Dígito" />
                                                     <div className="flex gap-2">
-                                                        <TextInput className="w-full" value={formFinanceiro.data.conta_numero} onChange={e => formFinanceiro.setData('conta_numero', e.target.value)} required />
-                                                        <TextInput className="w-16 text-center" value={formFinanceiro.data.conta_digito} onChange={e => formFinanceiro.setData('conta_digito', e.target.value)} required />
+                                                        <TextInput className="w-full focus:border-[#FF5A00]" value={formFinanceiro.data.conta_numero} onChange={e => formFinanceiro.setData('conta_numero', e.target.value)} required />
+                                                        <TextInput className="w-16 text-center focus:border-[#FF5A00]" value={formFinanceiro.data.conta_digito} onChange={e => formFinanceiro.setData('conta_digito', e.target.value)} required />
                                                     </div>
                                                 </div>
                                             </div>
                                             <div>
                                                 <InputLabel value="Token Mercado Pago (Opcional - Para Recebimento Automático)" />
-                                                <TextInput type="password" className="w-full font-mono text-sm" value={formFinanceiro.data.token_mercadopago} onChange={e => formFinanceiro.setData('token_mercadopago', e.target.value)} />
+                                                <TextInput type="password" className="w-full font-mono text-sm focus:border-[#FF5A00]" value={formFinanceiro.data.token_mercadopago} onChange={e => formFinanceiro.setData('token_mercadopago', e.target.value)} />
                                             </div>
                                         </div>
                                         <div className="pt-6">

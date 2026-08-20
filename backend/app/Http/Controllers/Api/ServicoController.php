@@ -115,6 +115,9 @@ class ServicoController extends Controller
             'horarios_disponiveis' => 'nullable|array',
             'tipo_pagamento'       => 'required|in:hibrido,online,presencial', 
             
+            // Campos de imagem ajustados para a edição
+            'fotos_existentes'     => 'nullable|array',
+            'fotos_existentes.*'   => 'string',
             'fotos'                => 'nullable|array|max:5',
             'fotos.*'              => 'image|mimes:jpeg,png,jpg,webp|max:2048',
         ]);
@@ -136,20 +139,36 @@ class ServicoController extends Controller
             ])
         ];
 
+        // --- LÓGICA DE IMAGENS ---
+        // 1. Pega as imagens antigas que o front-end decidiu manter
+        $urlsFotos = $request->input('fotos_existentes', []);
+
+        // Se o frontend não enviar o array 'fotos_existentes', garantimos que as imagens antigas não sumam por acidente
+        if (!$request->has('fotos_existentes') && $servico->fotos) {
+            $urlsFotos = json_decode($servico->fotos, true) ?? [];
+        }
+
+        // 2. Faz o upload das novas fotos (se houver) e adiciona na lista
         if ($request->hasFile('fotos')) {
-            $urlsFotos = [];
             foreach ($request->file('fotos') as $foto) {
-                $urlsFotos[] = ImageKitService::upload($foto, '/waitless/servicos');
+                // Limite de 5 fotos no total
+                if (count($urlsFotos) < 5) {
+                    $urlsFotos[] = ImageKitService::upload($foto, '/waitless/servicos');
+                }
             }
-            $dadosParaAtualizar['fotos'] = json_encode($urlsFotos);
+        }
+
+        // 3. Atualiza o banco com a junção das que ficaram + as novas
+        if ($request->has('fotos_existentes') || $request->hasFile('fotos')) {
+            $dadosParaAtualizar['fotos'] = json_encode(array_values($urlsFotos));
         }
 
         $servico->update($dadosParaAtualizar);
 
-        return redirect()->back()->with('success', 'Serviço updated com sucesso!');
+        return redirect()->back()->with('success', 'Serviço atualizado com sucesso!');
     }
 
-    public function destroy($id, MercadoPagoService $mpService)
+    public function destroy($id, PagamentoService $mpService) // Ajustado nome da classe do serviço conforme os imports
     {
         $this->verificarPermissao();
 
@@ -205,9 +224,6 @@ class ServicoController extends Controller
        👉 GESTÃO DO CATÁLOGO DE LOCAÇÕES (ItemAluguel) - COMPLETO COM ACESSÓRIOS
        ========================================================================= */
 
-    /**
-     * Lista os itens de locação de um estabelecimento
-     */
     public function indexItens(Request $request)
     {
         $estabelecimentosIds = Auth::user()->estabelecimentos()->pluck('id');
@@ -223,15 +239,11 @@ class ServicoController extends Controller
         return response()->json($itens);
     }
 
-    /**
-     * Cria um novo item para locação com opcionais, equipe e acessórios
-     */
     public function storeItem(Request $request)
     {
         $this->verificarPermissao();
 
         $validated = $request->validate([
-            // Dados Gerais Base
             'estabelecimento_id' => 'required|exists:estabelecimentos,id',
             'servico_id'         => 'nullable|exists:servicos,id',
             'nome'               => 'required|string|max:255',
@@ -244,17 +256,14 @@ class ServicoController extends Controller
             'quantidade'         => 'required|integer|min:1',
             'capacidade_pessoas' => 'nullable|integer|min:1',
 
-            // Matriz de Precificação
             'valor_diaria'       => 'nullable|numeric|min:0',
             'valor_semanal'      => 'nullable|numeric|min:0',
             'valor_mensal'       => 'nullable|numeric|min:0',
             'valor_caucao'       => 'nullable|numeric|min:0',
 
-            // Mídias Vitrine
             'fotos'              => 'nullable|array|max:5',
             'fotos.*'            => 'image|mimes:jpeg,png,jpg,webp|max:2048',
 
-            // Arrays Operacionais Estruturados JSON
             'recursos_oferecidos'       => 'nullable|array',
             'acessorios'                => 'nullable|array',
             'acessorios.*.nome'         => 'required_with:acessorios|string|max:255',
@@ -262,7 +271,6 @@ class ServicoController extends Controller
             'funcionarios_responsaveis' => 'nullable|array',
             'funcionarios_responsaveis.*' => 'exists:funcionarios,id',
 
-            // Estrutura Territorial / Imóvel
             'endereco'           => 'nullable|string|max:255',
             'numero'             => 'nullable|string|max:20',
             'complemento'        => 'nullable|string|max:255',
@@ -286,7 +294,6 @@ class ServicoController extends Controller
             'piscina'            => 'nullable|boolean',
             'churrasqueira'      => 'nullable|boolean',
 
-            // Estrutura Frota / Veículos
             'placa'              => 'nullable|string|max:20',
             'renavam'            => 'nullable|string|max:20',
             'chassis'            => 'nullable|string|max:30',
@@ -303,7 +310,6 @@ class ServicoController extends Controller
             'lugares'            => 'nullable|integer|min:0',
             'possui_seguro'      => 'nullable|boolean',
 
-            // Estrutura Logística / Equipamentos
             'fabricante'         => 'nullable|string|max:255',
             'numero_serie'       => 'nullable|string|max:255',
             'patrimonio'         => 'nullable|string|max:255',
@@ -327,7 +333,6 @@ class ServicoController extends Controller
             }
         }
 
-        // Conversão dos arrays estruturados para armazenamento seguro como JSON string no banco
         $item = ItemAluguel::create(array_merge($validated, [
             'fotos'                     => json_encode($urlsFotos),
             'recursos_oferecidos'       => json_encode($validated['recursos_oferecidos'] ?? []),
@@ -340,9 +345,6 @@ class ServicoController extends Controller
         return response()->json(['success' => 'Sua reserva foi salva com sucesso!', 'item' => $item], 201);
     }
 
-    /**
-     * Mostra detalhes de um item do catálogo de locação
-     */
     public function showItem($id)
     {
         $item = ItemAluguel::with('estabelecimento')->findOrFail($id);
@@ -354,9 +356,6 @@ class ServicoController extends Controller
         return response()->json($item);
     }
 
-    /**
-     * Atualiza um item de locação existente com auditoria de imagens
-     */
     public function updateItem(Request $request, $id)
     {
         $this->verificarPermissao();
@@ -385,6 +384,9 @@ class ServicoController extends Controller
             'valor_mensal'       => 'nullable|numeric|min:0',
             'valor_caucao'       => 'nullable|numeric|min:0',
 
+            // Campos de imagem ajustados para edição
+            'fotos_existentes'   => 'nullable|array',
+            'fotos_existentes.*' => 'string',
             'fotos'              => 'nullable|array|max:5',
             'fotos.*'            => 'image|mimes:jpeg,png,jpg,webp|max:2048',
 
@@ -426,22 +428,30 @@ class ServicoController extends Controller
             'funcionarios_responsaveis' => json_encode($validated['funcionarios_responsaveis'] ?? []),
         ]);
 
+        // --- LÓGICA DE IMAGENS (Item Aluguel) ---
+        $urlsFotos = $request->input('fotos_existentes', []);
+
+        if (!$request->has('fotos_existentes') && $item->fotos) {
+            $urlsFotos = json_decode($item->fotos, true) ?? [];
+        }
+
         if ($request->hasFile('fotos')) {
-            $urlsFotos = [];
             foreach ($request->file('fotos') as $foto) {
-                $urlsFotos[] = ImageKitService::upload($foto, '/waitless/itens');
+                if (count($urlsFotos) < 5) {
+                    $urlsFotos[] = ImageKitService::upload($foto, '/waitless/itens');
+                }
             }
-            $dadosParaAtualizar['fotos'] = json_encode($urlsFotos);
+        }
+
+        if ($request->has('fotos_existentes') || $request->hasFile('fotos')) {
+            $dadosParaAtualizar['fotos'] = json_encode(array_values($urlsFotos));
         }
 
         $item->update($dadosParaAtualizar);
 
-        return response()->json(['success' => 'Sua reserva foi salva com sucesso!', 'item' => $item]);
+        return response()->json(['success' => 'Item atualizado com sucesso!', 'item' => $item]);
     }
 
-    /**
-     * Remove fisicamente/logicamente o item de locação
-     */
     public function destroyItem($id)
     {
         $this->verificarPermissao();
