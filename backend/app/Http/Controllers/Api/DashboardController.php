@@ -11,7 +11,7 @@ use Inertia\Inertia;
 
 class DashboardController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
         $user = Auth::user();
 
@@ -48,19 +48,14 @@ class DashboardController extends Controller
                 'servico:id,nome,valor,duracao_minutos'
             ])
             ->where('usuario_id', $user->id)
-            // 👉 A MÁGICA AQUI: Agora o banco de dados puxa os novos status!
             ->whereIn('status', ['pendente', 'confirmado', 'aguardando_pagamento', 'cancelado'])
             ->orderBy('data_agendamento', 'asc')
             ->orderBy('hora_agendamento', 'asc')
             ->get();
 
-       
         foreach ($meusAgendamentos as $agendamento) {
-            
-        
             $pessoasNaFrente = Agendamento::where('estabelecimento_id', $agendamento->estabelecimento_id)
                 ->whereDate('data_agendamento', $agendamento->data_agendamento)
-               
                 ->whereIn('status', ['pendente', 'confirmado', 'aguardando_pagamento'])
                 ->where('hora_agendamento', '<', $agendamento->hora_agendamento)
                 ->count();
@@ -68,15 +63,34 @@ class DashboardController extends Controller
             $agendamento->pessoas_na_frente = $pessoasNaFrente;
         }
 
+        // ----------------------------------------------------
+        // LÓGICA DE GEOLOCALIZAÇÃO: Estabelecimentos Próximos
+        // ----------------------------------------------------
+        // Verifica se as coordenadas foram enviadas na requisição inicial
+        $userLat = $request->input('lat');
+        $userLng = $request->input('lng');
+        $radius = $request->input('radius', 10); // Padrão 10km
+        
+        $estabelecimentosProximos = [];
+
+        // Se o frontend enviou as coordenadas, faz o cálculo via Haversine (Scope do Model)
+        if ($userLat && $userLng) {
+            $estabelecimentosProximos = Estabelecimento::withinDistance($userLat, $userLng, $radius)
+                ->with(['servicos:id,estabelecimento_id,nome,valor'])
+                ->get();
+        }
+
         return Inertia::render('Cliente/Dashboard', [
             'agendamentos' => $meusAgendamentos,
-            'usuario' => $user
+            'usuario' => $user,
+            'estabelecimentos_proximos' => $estabelecimentosProximos // Envia pro Vue/React
         ]);
     }
 
-
-
-      public function getNearby(Request $request)
+    // ====================================================
+    // ROTA PARA A BUSCA A CADA 5 MINUTOS (AJAX/AXIOS)
+    // ====================================================
+    public function getNearby(Request $request)
     {
         // Validação dos dados de entrada
         $request->validate([
@@ -94,15 +108,28 @@ class DashboardController extends Controller
             ->with(['servicos:id,estabelecimento_id,nome,valor']) 
             ->get();
 
-        // Retorna os dados em formato JSON para o cliente
+        // Retorna os dados em formato JSON para o frontend (para a atualização de 5 em 5 min)
         return response()->json($nearbyEstabelecimentos);
     }
 
-
     public function showHome()
-{
-    
-    return Inertia::render('Cliente/Home');
-}
+    {
+        return Inertia::render('Cliente/Home');
+    }
 
+    
+    public function showEstabelecimento($id)
+    {
+        // 1. Busca o estabelecimento pelo ID ou retorna erro 404 se não achar
+        $estabelecimento = Estabelecimento::with([
+            'servicos' // Traz os serviços vinculados para mostrar na tela da loja
+            // Você pode adicionar outros relacionamentos aqui, como 'avaliacoes', 'profissionais', etc.
+        ])->findOrFail($id);
+
+        // 2. Renderiza a tela do Inertia passando os dados
+        // (Você precisará criar esse arquivo JSX: resources/js/Pages/Cliente/EstabelecimentoShow.jsx)
+        return Inertia::render('Cliente/EstabelecimentoShow', [
+            'estabelecimento' => $estabelecimento
+        ]);
+    }
 }

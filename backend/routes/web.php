@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\FilaController;
 use App\Http\Controllers\Api\FuncionarioAreaController;
 use App\Http\Controllers\Api\AdminFinanceiroController;
 use App\Services\MercadoPagoService; 
+use App\Http\Controllers\Api\FavoritoController;
 use App\Http\Controllers\Api\MensagemController; 
 use App\Http\Controllers\Api\ExtratoProviderController;
 use App\Http\Controllers\Api\AssinaturaController;
@@ -120,8 +121,9 @@ Route::get('/api/provider', [ProviderController::class, 'show'])->name('provider
         ->name('estabelecimentos.index');
 
         Route::middleware('auth:sanctum')->get('/estabelecimentos/proximos', [DashboardController::class, 'getNearby']);
-        // routes/web.php
+       
        Route::get('/home', [DashboardController::class, 'showHome'])->name('home'); // 👈 name('home') minúsculo
+       Route::get('/api/nearby', [DashboardController::class, 'getNearby'])->name('api.nearby');
 
 
        
@@ -270,6 +272,15 @@ Route::get('/estabelecimentos/{estabelecimento}/fila', [AgendamentoController::c
         Route::post('/viagens/{viagemId}/adicionar-amigo', [TravelAssistantController::class, 'adicionarMembroPorEmail'])->name('api.viagens.add-membro');
     });
      });
+
+     // Agrupando as rotas que precisam de autenticação
+Route::post('/favoritos/toggle', [FavoritoController::class, 'toggleFavorito'])->name('api.favoritos.toggle');
+    
+    // Rota para listar favoritos e reservas
+    Route::get('/favoritos', [FavoritoController::class, 'index']);
+    
+    // Rota para favoritar/desfavoritar
+    Route::post('/favoritos/toggle', [FavoritoController::class, 'toggleFavorito']);
 
 
     //Detalhes cliente 

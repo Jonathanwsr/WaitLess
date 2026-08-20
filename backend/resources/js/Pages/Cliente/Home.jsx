@@ -2,7 +2,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import styled, { createGlobalStyle, css } from 'styled-components';
-import { useForm } from '@inertiajs/react';
+import { useForm, router } from '@inertiajs/react';
 
 import { IoCutOutline } from 'react-icons/io5';
 import { 
@@ -193,6 +193,11 @@ const SearchButton = styled.button`
 
   &:hover { opacity: 0.9; }
   ${media.tablet`width: 100%; justify-content: center;`}
+  
+  &:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
 `;
 
 const SearchSuggestions = styled.div`
@@ -523,6 +528,149 @@ const LocationFormFields = styled.form`
   }
 `;
 
+// --- ESTILOS DOS CARDS DE ESTABELECIMENTOS ---
+const StoresGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1.5rem;
+  margin-top: 1rem;
+`;
+
+const StoreCard = styled.div`
+  background-color: ${colors.white};
+  border: 1px solid ${colors.border};
+  border-radius: 12px;
+  overflow: hidden;
+  transition: all 0.2s ease-in-out;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+
+  &:hover {
+    border-color: ${colors.primary};
+    box-shadow: 0 4px 12px rgba(224, 79, 54, 0.1);
+    transform: translateY(-3px);
+  }
+`;
+
+const StoreImage = styled.div`
+  height: 160px;
+  background-color: ${colors.lightGray};
+  width: 100%;
+  
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+`;
+
+const StoreInfo = styled.div`
+  padding: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+
+  .title-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    
+    h3 {
+      margin: 0;
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: ${colors.secondary};
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .rating {
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: ${colors.secondary};
+      background-color: #FEF3C7;
+      padding: 0.2rem 0.5rem;
+      border-radius: 6px;
+      
+      svg { color: #F59E0B; }
+    }
+  }
+
+  /* NOVA CLASSE DE ENDEREÇO */
+  .address {
+    font-size: 0.8rem;
+    color: ${colors.gray};
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+
+    svg { flex-shrink: 0; color: #9CA3AF; }
+  }
+
+  .meta-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.85rem;
+    color: ${colors.gray};
+    margin-top: 0.3rem;
+
+    .category {
+      background-color: ${colors.lightGray};
+      padding: 0.2rem 0.6rem;
+      border-radius: 4px;
+      font-weight: 500;
+    }
+
+    .distance {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      color: ${colors.primary};
+      font-weight: 600;
+    }
+  }
+`;
+
+const EmptyState = styled.div`
+  text-align: center;
+  padding: 3rem 1rem;
+  background-color: ${colors.white};
+  border: 1px dashed ${colors.border};
+  border-radius: 12px;
+  color: ${colors.gray};
+
+  svg {
+    font-size: 2.5rem;
+    color: #9CA3AF;
+    margin-bottom: 1rem;
+  }
+  
+  h4 {
+    margin: 0 0 0.5rem 0;
+    color: ${colors.secondary};
+    font-size: 1.1rem;
+  }
+`;
+
+const LoadingState = styled(EmptyState)`
+  svg {
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin {
+    100% { transform: rotate(360deg); }
+  }
+`;
+
 // --- DADOS ESTÁTICOS ---
 const staticCategories = [
   { icon: <IoCutOutline />, name: 'Barbeiro' },
@@ -538,7 +686,6 @@ const staticCategories = [
 ];
 
 // --- DADOS: CARDS DE SERVIÇOS E ALUGUÉIS ---
-// Adicionando as imagens exatas que você passou
 const serviceCardsData = [
   { id: 1, title: 'Saúde & Clínicas', desc: 'Agende consultas médicas, exames e procedimentos.', icon: <FaBriefcaseMedical />, category: 'saude', image: '/images/saude.png' },
   { id: 2, title: 'Beleza & Estética', desc: 'Marque horários em salões de beleza, barbearias e clínicas.', icon: <IoCutOutline />, category: 'beleza', image: '/images/Beleza.png' },
@@ -577,7 +724,7 @@ const LOCAL_STORAGE_KEYS = {
 export default function Home() {
   const [stores, setStores] = useState([]); 
   const [isLoading, setIsLoading] = useState(false); 
-  const [statusMessage, setStatusMessage] = useState('Buscando localização...'); 
+  const [statusMessage, setStatusMessage] = useState('Autorize sua localização no navegador para buscar os melhores locais...'); 
   
   const [isEditingLocation, setIsEditingLocation] = useState(false);
   const [addressData, setAddressData] = useState({
@@ -599,7 +746,7 @@ export default function Home() {
   const fetchNearbyStores = async (params) => {
     setIsLoading(true);
     try {
-      const response = await axios.get('/estabelecimentos/proximos', { params: { ...params, radius: 15 } });
+      const response = await axios.get('/api/nearby', { params: { ...params, radius: 15 } });
       setStores(response.data);
     } catch (error) {
       console.error("Erro ao buscar estabelecimentos:", error);
@@ -669,7 +816,7 @@ export default function Home() {
           
           await fetchNearbyStores({ lat: latitude, lng: longitude });
           
-          const displayAddress = "São Paulo, SP (Obtido via GPS)";
+          const displayAddress = "Localização obtida via GPS";
           setStatusMessage(displayAddress);
           localStorage.setItem(LOCAL_STORAGE_KEYS.FORMATTED_ADDRESS, displayAddress);
           localStorage.setItem(LOCAL_STORAGE_KEYS.COORDS, JSON.stringify({ lat: latitude, lng: longitude }));
@@ -677,12 +824,12 @@ export default function Home() {
         },
         (error) => {
           console.error("Geolocalização negada ou falhou:", error);
-          setStatusMessage("Não foi possível obter sua localização. Clique para informar endereço.");
+          setStatusMessage("Não foi possível obter sua localização. Clique aqui para informar seu endereço.");
           setIsLoading(false);
         }
       );
     } else {
-      setStatusMessage("GPS não suportado. Clique para informar endereço.");
+      setStatusMessage("GPS não suportado. Clique aqui para informar seu endereço.");
       setIsLoading(false);
     }
   };
@@ -693,6 +840,7 @@ export default function Home() {
     localStorage.removeItem(LOCAL_STORAGE_KEYS.COORDS);
     setAddressData({ logradouro: '', numero: '', bairro: '', cidadeUf: '' }); 
     setStores([]); 
+    setStatusMessage('Autorize sua localização no navegador...');
     obterLocalizacaoEBuscarDados(); 
   };
 
@@ -820,17 +968,17 @@ export default function Home() {
         <HeroSection>
           <HeroText>
             <HeroBadge>✨ O seu tempo é precioso</HeroBadge>
-            <h1>Encontre atendimento <br/><span>sem filas e sem complicação</span></h1>
+            <h1>Encontre o que procura <br/><span>mais rápido e fácil</span></h1>
             <p>
-              Esqueça as horas perdidas em salas de espera. Entre na fila virtual ou agende 
-              seu horário com praticidade para diversos serviços, e acompanhe tudo em tempo 
-              real de onde estiver.
+              Descubra os melhores estabelecimentos e serviços ao seu redor. Agende 
+              seu horário com praticidade, encontre o que precisa em segundos e 
+              aproveite mais o seu dia de onde estiver.
             </p>
             
             <HeroBenefits>
-              <li><FiClock /> Otimize seu dia e evite aglomerações</li>
-              <li><FiBell /> Receba alertas quando chegar a sua vez</li>
               <li><FiMapPin /> Descubra os melhores profissionais perto de você</li>
+              <li><FiClock /> Otimize seu dia e agende com rapidez</li>
+              <li><FiBell /> Receba alertas sobre suas reservas e serviços</li>
             </HeroBenefits>
             
             <SearchBarForm onSubmit={handleMainSearch}>
@@ -865,9 +1013,9 @@ export default function Home() {
               alt="Propaganda Waitless" 
             />
             <FloatingWidget style={{ top: '30px', right: '-20px' }}>
-              <FiClock className="icon" style={{color: colors.primary}} />
+              <FiMapPin className="icon" style={{color: colors.primary}} />
               <div className="text">
-                <strong>12 min</strong> <br /> TEMPO MÉDIO DE ESPERA
+                <strong>Perto de você</strong> <br /> BUSCA INTELIGENTE
               </div>
             </FloatingWidget>
             <FloatingWidget style={{ bottom: '30px', left: '-20px' }}>
@@ -994,8 +1142,77 @@ export default function Home() {
                   />
                   {validationErrors.numero && <div className="error-message">{validationErrors.numero}</div>}
                 </label>
+                
+                <div style={{gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', marginTop: '1rem'}}>
+                    <SearchButton type="submit" disabled={isSavingLocation}>
+                        {isSavingLocation ? 'Buscando...' : 'Salvar e Buscar'}
+                    </SearchButton>
+                </div>
               </LocationFormFields>
             </LocationBlockContainer>
+          )}
+
+          {!isEditingLocation && (
+            <>
+              {isLoading ? (
+                <LoadingState>
+                  <FiLoader />
+                  <h4>Buscando as melhores opções...</h4>
+                  <p>Calculando distâncias na sua região.</p>
+                </LoadingState>
+              ) : stores.length > 0 ? (
+                <StoresGrid>
+                  {stores.map((store) => (
+                    <StoreCard 
+                       key={store.id} 
+                       onClick={() => router.visit(`/estabelecimentos/${store.id}/loja`)}
+                    >
+                      <StoreImage>
+                        <img 
+                          src={store.foto_perfil ? `/storage/${store.foto_perfil}` : '/images/default-store.png'} 
+                          alt={store.nome} 
+                          onError={(e) => {e.target.src = '/images/default-store.png'}}
+                        />
+                      </StoreImage>
+                      
+                      <StoreInfo>
+                        <div className="title-row">
+                          <h3>{store.nome}</h3>
+                          <span className="rating">
+                            <FiStar fill="#FBBF24" color="#FBBF24"/> 
+                            {store.avaliacao_media > 0 ? store.avaliacao_media : 'Novo'}
+                          </span>
+                        </div>
+                        
+                        <div 
+                          className="address" 
+                          title={`${store.rua || ''}, ${store.numero || 'S/N'} ${store.complemento ? '('+store.complemento+')' : ''} - ${store.bairro || ''} | CEP: ${store.cep || ''}`}
+                        >
+                          <FiMapPin /> 
+                          {store.rua 
+                            ? `${store.rua}, ${store.numero || 'S/N'} ${store.complemento ? '- ' + store.complemento : ''}` 
+                            : 'Endereço não informado'
+                          }
+                        </div>
+                        
+                        <div className="meta-row">
+                          <span className="category">{store.ramo_atuacao || 'Serviços'}</span>
+                          <span className="distance">
+                            {parseFloat(store.distancia).toFixed(1)} km
+                          </span>
+                        </div>
+                      </StoreInfo>
+                    </StoreCard>
+                  ))}
+                </StoresGrid>
+              ) : (
+                <EmptyState>
+                  <FiMap />
+                  <h4>Poxa, não encontramos nada tão perto.</h4>
+                  <p>Não há estabelecimentos cadastrados num raio de 15km da sua localização atual.</p>
+                </EmptyState>
+              )}
+            </>
           )}
         </EstablishmentsSection>
 

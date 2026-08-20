@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { 
     Search, MapPin, Calendar, Star, ArrowRight, ImageOff, Layers,
     Stethoscope, Scissors, Home, Car, Laptop, BookOpen, Smile, 
-    PartyPopper, Store, Briefcase, Tag, ChevronDown, ChevronLeft, ChevronRight 
+    PartyPopper, Store, Briefcase, Tag, ChevronDown, ChevronLeft, ChevronRight, Heart 
 } from 'lucide-react';
 
 export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtros = {} }) {
@@ -19,6 +19,9 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
     const [apenasPromocoes, setApenasPromocoes] = useState(!!filtros.apenas_promocoes);
     const [carregando, setCarregando] = useState(false);
     const [imageErrors, setImageErrors] = useState({});
+    
+    // Estado local para otimizar a interface ao favoritar (antes mesmo do backend responder)
+    const [favoritosLocais, setFavoritosLocais] = useState({});
 
     const categorias = [
         { nome: 'todas', label: 'Todos', icon: Layers },
@@ -43,7 +46,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
             categoria: novosFiltros.categoria ?? categoriaAtiva,
             ordem: novosFiltros.ordem ?? ordenarPor,
             apenas_promocoes: novosFiltros.apenas_promocoes ?? apenasPromocoes,
-            page: novosFiltros.page || 1, // Reseta para a página 1 em novas buscas, a menos que especificado
+            page: novosFiltros.page || 1, 
         };
 
         if (params.categoria === 'todas') delete params.categoria;
@@ -95,6 +98,26 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
 
     const handleImageError = (id) => {
         setImageErrors(prev => ({ ...prev, [id]: true }));
+    };
+
+    // Função para favoritar/desfavoritar
+    const handleToggleFavorito = (e, id, tipo) => {
+        e.preventDefault(); // Impede o Link de redirecionar
+        e.stopPropagation();
+
+        const chave = `${tipo}-${id}`;
+        
+        // Atualiza interface instantaneamente (Optimistic UI)
+        setFavoritosLocais(prev => ({
+            ...prev,
+            [chave]: !prev[chave]
+        }));
+
+        // Dispara para o backend
+        router.post('/api/favoritos/toggle', { tipo, id }, {
+            preserveScroll: true,
+            preserveState: true,
+        });
     };
 
     const isEstabelecimentos = tipoBusca === 'estabelecimentos';
@@ -346,7 +369,8 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                                     </motion.div>
                                 ) : (
                                     listaResultados.map((item) => {
-                                        const key = isEstabelecimentos ? `est-${item.id}` : `item-${item.id}`;
+                                        const tipoItem = isEstabelecimentos ? 'estabelecimento' : 'servico';
+                                        const key = `${tipoItem}-${item.id}`;
                                         const linkRoute = isEstabelecimentos 
                                             ? route('estabelecimentos.loja', item.id) 
                                             : route('itens.detalhes', item.id);
@@ -356,13 +380,16 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                                             : (item.fotos?.[0] || item.estabelecimento?.foto_perfil);
 
                                         const temPromo = !isEstabelecimentos && item.tem_promocao && Number(item.valor_desconto) > 0;
+                                        
+                                        // Verifica se está favoritado (baseado na propriedade do backend OU no estado local)
+                                        const isFavoritado = favoritosLocais[key] !== undefined ? favoritosLocais[key] : !!item.is_favorito;
 
                                         return (
                                             <motion.div
                                                 key={key}
                                                 variants={cardVariants}
                                                 whileHover={{ y: -8, transition: { duration: 0.2 } }}
-                                                className="group"
+                                                className="group relative"
                                             >
                                                 <Link
                                                     href={linkRoute}
@@ -383,6 +410,18 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                                                             </div>
                                                         )}
 
+                                                        {/* Botão de Favoritar */}
+                                                        <button
+                                                            onClick={(e) => handleToggleFavorito(e, item.id, tipoItem)}
+                                                            className="absolute top-4 right-4 z-20 w-9 h-9 flex items-center justify-center bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md rounded-full shadow-sm hover:scale-110 transition-all"
+                                                        >
+                                                            <Heart className={`w-4 h-4 transition-colors ${
+                                                                isFavoritado 
+                                                                    ? 'fill-red-500 text-red-500' 
+                                                                    : 'text-zinc-400 dark:text-zinc-500 hover:text-red-500'
+                                                            }`} />
+                                                        </button>
+
                                                         {(item.avaliacao_media || isEstabelecimentos) && (
                                                             <div className="absolute top-4 left-4 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md px-3 py-1.5 rounded-2xl text-sm font-bold flex items-center gap-1.5 shadow-sm">
                                                                 <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
@@ -391,7 +430,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                                                         )}
 
                                                         {temPromo && (
-                                                            <div className="absolute top-4 right-4 bg-emerald-600 text-white text-xs font-bold px-3 py-1.5 rounded-2xl tracking-wider shadow-sm">
+                                                            <div className="absolute bottom-4 left-4 bg-emerald-600 text-white text-xs font-bold px-3 py-1.5 rounded-2xl tracking-wider shadow-sm z-10">
                                                                 PROMO
                                                             </div>
                                                         )}

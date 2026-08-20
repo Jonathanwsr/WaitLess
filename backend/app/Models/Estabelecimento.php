@@ -56,20 +56,21 @@ class Estabelecimento extends Model
     }
 
 
-    public function scopeWithinDistance($query, $latitude, $longitude, $radius = 10)
+    public function scopeWithinDistance($query, $lat, $lng, $radius)
     {
-        // Raio da Terra em km
-        $earthRadius = 6371;
+        // A fórmula matemática pura
+        $haversine = "(6371 * acos(cos(radians(?)) 
+                        * cos(radians(latitude)) 
+                        * cos(radians(longitude) - radians(?)) 
+                        + sin(radians(?)) 
+                        * sin(radians(latitude))))";
 
-        return $query->selectRaw(
-            "*, ( $earthRadius * acos( cos( radians(?) ) * cos( radians( latitude ) ) * cos( radians( longitude ) - radians(?) ) + sin( radians(?) ) * sin( radians( latitude ) ) ) ) AS distance",
-            [$latitude, $longitude, $latitude]
-        )
-        ->having('distance', '<', $radius)
-        ->orderBy('distance', 'asc');
+        return $query->select('*')
+            // O selectRaw precisa de 3 parâmetros ($lat, $lng, $lat) para calcular e exibir a distância
+            ->selectRaw("{$haversine} AS distancia", [$lat, $lng, $lat])
+            ->where('ativo', true)
+            // O whereRaw substitui o having. Precisamos passar os 3 parâmetros do cálculo + 1 do raio
+            ->whereRaw("{$haversine} <= ?", [$lat, $lng, $lat, $radius])
+            ->orderBy('distancia', 'asc');
     }
-
-    public function favoritadoPor() {
-    return $this->hasMany(Favorito::class);
-}
 }
