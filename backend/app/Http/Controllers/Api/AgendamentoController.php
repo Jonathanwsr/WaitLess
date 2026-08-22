@@ -1046,4 +1046,67 @@ class AgendamentoController extends Controller
 
         return redirect()->route('cliente.reservas.show', $aluguel->id)->with('success', 'Reserva criada com sucesso!');
     }
+
+    public function rastrearLocalizacao(Request $request)
+    {
+        // 1. Valida se vieram as coordenadas
+        $request->validate([
+            'agendamento_id' => 'required|exists:agendamentos,id',
+            'lat'            => 'required|numeric',
+            'lng'            => 'required|numeric',
+        ]);
+
+        $agendamento = Agendamento::findOrFail($request->agendamento_id);
+
+        // Segurança Opcional: Garantir que só o cliente dono do agendamento pode mandar o próprio GPS
+        // if ($agendamento->usuario_id !== Auth::id()) {
+        //     return response()->json(['error' => 'Não autorizado'], 403);
+        // }
+
+        // 2. Dispara a localização para o Laravel Reverb (WebSockets)
+        // Isso vai para a tela do proprietário quase que instantaneamente
+        broadcast(new LocationUpdated(
+            $agendamento->id, 
+            $request->lat, 
+            $request->lng
+        ));
+
+        // 3. Retorna sucesso para não travar o celular do cliente
+        return response()->json([
+            'status' => 'sucesso',
+            'message' => 'Coordenadas transmitidas ao estabelecimento.'
+        ], 200);
+    }
+
+    /**
+     * Exibe o mapa em tempo real para o Proprietário acompanhar a chegada do cliente.
+     */
+/**
+     * Exibe o mapa em tempo real para o Proprietário acompanhar a chegada do cliente.
+     */
+public function rastreamentoMapaUnificado()
+    {
+        $user = \Illuminate\Support\Facades\Auth::user();
+
+        // VALIDAÇÃO DE GESTOR
+        if (!in_array($user->papel, ['admin', 'socio', 'gerente'])) {
+            abort(403, 'Acesso Negado.');
+        }
+
+        // 1. Busca os IDs das lojas que o usuário dono/gerente tem
+        $meusEstabelecimentosIds = $user->estabelecimentos()->pluck('estabelecimentos.id');
+
+        // 2. Traz todos os agendamentos "Ativos" de HOJE que pertencem às lojas dele
+        $agendamentosDeHoje = \App\Models\Agendamento::with(['usuario', 'estabelecimento'])
+            ->whereIn('estabelecimento_id', $meusEstabelecimentosIds)
+            ->whereDate('data_agendamento', now()->toDateString())
+            ->whereIn('status', ['pendente', 'confirmado', 'aguardando_pagamento']) 
+            ->orderBy('hora_agendamento', 'asc')
+            ->get();
+
+        // 3. Envia a lista completa para o React
+        return inertia('Estabelecimentos/MapaRastreamento', [
+            'agendamentosAtivos' => $agendamentosDeHoje
+        ]);
+    }
 }

@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, router } from '@inertiajs/react';
+import axios from 'axios';
 import { 
   ArrowLeft, Calendar, Wallet, MapPin, 
   ShieldCheck, Download, Navigation, XCircle, 
   Megaphone, Briefcase, Building2, User, CheckCircle2,
   MessageSquare, Car, AlertTriangle, ExternalLink,
-  Heart, FileText, FileSignature, CheckSquare, List
+  Heart, FileText, FileSignature, CheckSquare, List, Loader
 } from 'lucide-react';
 
 export default function DetalheAgendamento({ auth, dados }) {
@@ -14,6 +15,19 @@ export default function DetalheAgendamento({ auth, dados }) {
   
   // Estado local para o botão de favoritar (Inicia com o valor vindo do BD)
   const [isFavorito, setIsFavorito] = useState(dados?.is_favorito || false);
+
+  // === ESTADOS PARA O RASTREAMENTO EM TEMPO REAL ===
+  const [isRastreando, setIsRastreando] = useState(false);
+  const watchIdRef = useRef(null); // Guarda o ID do GPS para poder cancelar depois
+
+  // Limpa o rastreamento do GPS se o componente for desmontado (cliente fechar a tela)
+  useEffect(() => {
+    return () => {
+      if (watchIdRef.current !== null && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+      }
+    };
+  }, []);
 
   if (!dados) {
     return (
@@ -58,18 +72,72 @@ export default function DetalheAgendamento({ auth, dados }) {
   // Lógica de Favoritar que salva no Banco de Dados
   const handleToggleFavorito = () => {
     setIsFavorito(!isFavorito);
-    // Dispara a requisição para a sua rota do Laravel
     router.post(route('favoritos.toggle'), {
       item_id: dados.id,
-      tipo: dados.tipo // 'aluguel' ou 'agendamento'
+      tipo: dados.tipo
     }, { preserveScroll: true });
   };
 
-  // Funções de Interação Operacional
+  // ==========================================================
+  // FUNÇÃO: INICIAR / PARAR RASTREAMENTO GPS (ESTOU A CAMINHO)
+  // ==========================================================
   const handleACaminho = () => {
+    // SE JÁ ESTÁ RASTREANDO, O BOTÃO SERVE PARA PARAR
+    if (isRastreando) {
+      if (watchIdRef.current !== null && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+      setIsRastreando(false);
+      alert('Rastreamento de rota interrompido.');
+      return;
+    }
+
+    // SE NÃO ESTÁ RASTREANDO, INICIA A TRANSMISSÃO
     setLoadingAcao(true);
-    alert('Notificação enviada ao estabelecimento! Eles sabem que você está a caminho.');
-    setTimeout(() => setLoadingAcao(false), 1000);
+
+    if (!("geolocation" in navigator)) {
+      alert("Seu navegador ou dispositivo não suporta GPS.");
+      setLoadingAcao(false);
+      return;
+    }
+
+    // Pede permissão e começa a "escutar" o movimento do cliente
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      async (position) => {
+        const latitude = position.coords.latitude;
+        const longitude = position.coords.longitude;
+
+        try {
+          // Envia as coordenadas a cada atualização para o Backend (que jogará no Websocket)
+          await axios.post('/api/rastreamento/update', {
+            agendamento_id: dados.id,
+            lat: latitude,
+            lng: longitude
+          });
+
+          // Se for a primeira vez que bate aqui, tira o loading e marca como ativo
+          if (!isRastreando) {
+             setIsRastreando(true);
+             setLoadingAcao(false);
+             alert('A transmissão começou! O estabelecimento está vendo você no mapa.');
+          }
+        } catch (error) {
+          console.error("Erro ao enviar coordenadas:", error);
+        }
+      },
+      (error) => {
+        console.error("Erro no GPS:", error);
+        alert("Não foi possível acessar seu GPS. Verifique se a localização está ativada no celular.");
+        setIsRastreando(false);
+        setLoadingAcao(false);
+      },
+      { 
+        enableHighAccuracy: true, // Força uso do chip de GPS real
+        maximumAge: 0, 
+        timeout: 10000 
+      }
+    );
   };
 
   const handleEnviarMensagem = () => {
@@ -371,14 +439,24 @@ export default function DetalheAgendamento({ auth, dados }) {
                   Baixar Comprovante
                 </a>
 
+                {/* BOTÃO ESTOU A CAMINHO - MODIFICADO COM ESTADO */}
                 {isPendente && dados.tipo !== 'aluguel' && (
                   <button 
                     onClick={handleACaminho}
                     disabled={loadingAcao}
-                    className="w-full flex items-center justify-center gap-2 py-3 bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white rounded-xl font-bold transition-all text-sm shadow-sm disabled:opacity-50"
+                    className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl font-bold transition-all text-sm shadow-sm disabled:opacity-50
+                      ${isRastreando 
+                        ? 'bg-rose-100 hover:bg-rose-200 text-rose-700 border border-rose-200' 
+                        : 'bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white'
+                      }`}
                   >
-                    <Car className="w-4 h-4 text-emerald-200" />
-                    {loadingAcao ? 'Notificando...' : 'Estou a Caminho'}
+                    {loadingAcao ? (
+                      <><Loader className="w-4 h-4 animate-spin" /> Conectando GPS...</>
+                    ) : isRastreando ? (
+                      <><XCircle className="w-4 h-4" /> Parar Transmissão GPS</>
+                    ) : (
+                      <><Car className="w-4 h-4" /> Estou a Caminho</>
+                    )}
                   </button>
                 )}
 

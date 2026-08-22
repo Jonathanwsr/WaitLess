@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import Dropdown from '@/Components/Dropdown';
 import { Link, usePage, router } from '@inertiajs/react';
-import { ShieldCheckIcon, UsersIcon, UserGroupIcon } from '@heroicons/react/24/solid';
+import { ShieldCheckIcon, UsersIcon, UserGroupIcon, MapIcon } from '@heroicons/react/24/solid';
 
 export default function AuthenticatedLayout({ header, children }) {
     const user = usePage().props.auth.user;
@@ -69,8 +69,8 @@ export default function AuthenticatedLayout({ header, children }) {
 
     const baseLinkClass = `group flex items-center ${isSidebarExpanded ? 'px-4 justify-start' : 'px-0 justify-center'} py-3 mx-2 rounded-xl font-semibold transition-all duration-300 ease-out relative cursor-pointer`;
     
+    // 👇 ESTA É A CLASSE QUE DEIXA BRANCO COM LETRA PRETA QUANDO ATIVO
     const activeLinkClass = "bg-white text-gray-900 shadow-lg scale-105";
-    // 👇 Adicionado hover:text-white e ajustado hover:bg-white/20
     const inactiveLinkClass = "text-gray-900 hover:text-white hover:bg-white/20 hover:scale-105";
 
     // COMPONENTE DO TÍTULO DE SEÇÃO
@@ -112,7 +112,6 @@ export default function AuthenticatedLayout({ header, children }) {
                                 setIsSidebarExpanded(!isSidebarExpanded);
                             }
                         }}
-                        // 👇 Adicionado hover:text-white para o botão de fechar/abrir o menu
                         className="p-2 text-gray-900 hover:text-white hover:bg-white/20 rounded-lg transition focus:outline-none shrink-0"
                     >
                         <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -141,14 +140,25 @@ export default function AuthenticatedLayout({ header, children }) {
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Meus Estornos</span>
                             </Link>
 
-                            <Link href={route('estabelecimentos.index')} title="Estabelecimentos" className={`${baseLinkClass} ${inactiveLinkClass}`}>
+                            <Link href={route('estabelecimentos.index')} title="Estabelecimentos" className={`${baseLinkClass} ${route().current('estabelecimentos.index') ? activeLinkClass : inactiveLinkClass}`}>
                                 <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V10l-9-4-9 4v11m18 0h-4v-5H9v5H5m14 0H5"></path></svg>
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Estabelecimentos</span>
                             </Link>
 
-                            <Link href={route('mensagens.index')}  title="Agendamentos" className={`${baseLinkClass} ${inactiveLinkClass}`}>
+                            <Link href={route('mensagens.index')}  title="Agendamentos" className={`${baseLinkClass} ${route().current('mensagens.index') ? activeLinkClass : inactiveLinkClass}`}>
                                 <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                                <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Agendamentos</span>
+                                <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Agendamentos | Histórico</span>
+                            </Link>
+{/* 👇 LINK DE RASTREAMENTO CORRIGIDO 👇 */}
+                            <Link 
+                                href={route('proprietario.rastreamento')} 
+                                title="Rastreamento" 
+                                className={`${baseLinkClass} ${route().current('proprietario.rastreamento') ? activeLinkClass : inactiveLinkClass}`}
+                            >
+                                <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path>
+                                </svg>
+                                <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Ver deslocamento</span>
                             </Link>
 
                             <Link href="#" title="Clientes" className={`${baseLinkClass} ${inactiveLinkClass}`}>

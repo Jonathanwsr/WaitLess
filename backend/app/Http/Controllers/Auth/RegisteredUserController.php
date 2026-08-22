@@ -52,6 +52,13 @@ class RegisteredUserController extends Controller
             'person_type' => 'required|in:FISICA,JURIDICA',
             'birth_date' => 'nullable|date',
             'notification_disabled' => 'nullable|boolean',
+
+            // Novos campos de Perfil adicionados
+            'onde_estudei' => 'nullable|string|max:255',
+            'onde_moro' => 'nullable|string|max:255',
+            'idiomas' => 'nullable|string|max:255',
+            'profissao' => 'nullable|string|max:255',
+            'sobre_mim' => 'nullable|string|max:1000',
         ]);
 
         // Limpa os dados para enviar apenas números para a API do Asaas
@@ -112,6 +119,13 @@ class RegisteredUserController extends Controller
                 'person_type' => $request->person_type,
                 'birth_date' => $request->birth_date,
                 'asaas_customer_id' => $asaasCustomerId, // 👉 SALVA O CUS AQUI!
+                
+                // Novos campos salvos no banco de dados
+                'onde_estudei' => $request->onde_estudei,
+                'onde_moro' => $request->onde_moro,
+                'idiomas' => $request->idiomas,
+                'profissao' => $request->profissao,
+                'sobre_mim' => $request->sobre_mim,
             ]);
 
             event(new Registered($user));
@@ -122,7 +136,7 @@ class RegisteredUserController extends Controller
 
         } catch (\Exception $e) {
             // Em caso de API fora do ar ou sem internet
-            return back()->withErrors(['error' => 'Falha de comunicação com o gateway financeiro: ' . $e->getMessage()])->withInput();
+            return back()->withErrors(['error' => 'Falha de comunicação: ' . $e->getMessage()])->withInput();
         }
     }
 }

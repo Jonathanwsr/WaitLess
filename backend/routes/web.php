@@ -275,7 +275,13 @@ Route::get('/estabelecimentos/{estabelecimento}/fila', [AgendamentoController::c
 
      // Agrupando as rotas que precisam de autenticação
 Route::post('/favoritos/toggle', [FavoritoController::class, 'toggleFavorito'])->name('api.favoritos.toggle');
-    
+
+Route::post('/rastreamento/update', [AgendamentoController::class, 'rastrearLocalizacao']);
+
+// Rota que alimenta o Mapa do Proprietário no App Mobile
+   // Rota geral, sem {id} na URL
+Route::get('/proprietario/rastreamento', [AgendamentoController::class, 'rastreamentoMapaUnificado'])
+    ->name('proprietario.rastreamento');
     // Rota para listar favoritos e reservas
     Route::get('/favoritos', [FavoritoController::class, 'index']);
     
