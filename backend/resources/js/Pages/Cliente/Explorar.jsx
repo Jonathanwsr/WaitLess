@@ -2,11 +2,13 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link, router } from '@inertiajs/react';
 import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import axios from 'axios';
 
 import { 
     Search, MapPin, Calendar, Star, ArrowRight, ImageOff, Layers,
-    Stethoscope, Scissors, Home, Car, Laptop, BookOpen, Smile, 
-    PartyPopper, Store, Briefcase, Tag, ChevronDown, ChevronLeft, ChevronRight, Heart 
+    Scissors, Home, Car, Laptop, PartyPopper, Store, Briefcase, 
+    Tag, ChevronDown, ChevronLeft, ChevronRight, Heart,
+    HeartPulse, Plane, GraduationCap, Dog, Wrench
 } from 'lucide-react';
 
 export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtros = {} }) {
@@ -20,19 +22,31 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
     const [carregando, setCarregando] = useState(false);
     const [imageErrors, setImageErrors] = useState({});
     
-    // Estado local para otimizar a interface ao favoritar (antes mesmo do backend responder)
+    // Estado local para otimizar a interface ao favoritar
     const [favoritosLocais, setFavoritosLocais] = useState({});
+    
+    // Estado para exibir a mensagem na tela (Toast)
+    const [toast, setToast] = useState({ show: false, message: '' });
 
+    // Mapeamento EXATO com o banco de dados para os filtros funcionarem
     const categorias = [
         { nome: 'todas', label: 'Todos', icon: Layers },
-        { nome: 'saude', label: 'Saúde', icon: Stethoscope },
-        { nome: 'beleza', label: 'Beleza', icon: Scissors },
-        { nome: 'casa', label: 'Casa', icon: Home },
-        { nome: 'automotivo', label: 'Automotivo', icon: Car },
-        { nome: 'tecnologia', label: 'Tecnologia', icon: Laptop },
-        { nome: 'cursos', label: 'Cursos', icon: BookOpen },
-        { nome: 'bem-estar', label: 'Bem-estar', icon: Smile },
-        { nome: 'eventos', label: 'Eventos', icon: PartyPopper },
+        
+        // --- Categorias de Locações / Aluguéis ---
+        { nome: 'casa', label: 'Imóveis & Espaços', icon: Home },
+        { nome: 'carro', label: 'Aluguel de Veículos', icon: Car },
+        { nome: 'equipamento', label: 'Equipamentos', icon: Wrench },
+
+        // --- Categorias de Serviços / Estabelecimentos ---
+        { nome: 'Saúde e Bem-Estar', label: 'Saúde & Bem-Estar', icon: HeartPulse },
+        { nome: 'Beleza e Estética', label: 'Beleza', icon: Scissors },
+        { nome: 'Turismo e Viagens', label: 'Turismo', icon: Plane },
+        { nome: 'Tecnologia', label: 'Tecnologia', icon: Laptop },
+        { nome: 'Educação e Cursos', label: 'Educação', icon: GraduationCap },
+        { nome: 'Eventos e Entretenimento', label: 'Eventos', icon: PartyPopper },
+        { nome: 'Pets e Animais', label: 'Pets', icon: Dog },
+        { nome: 'Serviços Profissionais', label: 'Profissionais', icon: Briefcase },
+        { nome: 'Automotivo', label: 'Oficinas', icon: Car },
     ];
 
     const atualizarResultados = useCallback((novosFiltros = {}) => {
@@ -100,24 +114,43 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
         setImageErrors(prev => ({ ...prev, [id]: true }));
     };
 
-    // Função para favoritar/desfavoritar
-    const handleToggleFavorito = (e, id, tipo) => {
-        e.preventDefault(); // Impede o Link de redirecionar
+    // Função para mostrar a mensagem na tela
+    const showToast = (mensagem) => {
+        setToast({ show: true, message: mensagem });
+        setTimeout(() => setToast({ show: false, message: '' }), 3000); // Esconde depois de 3 segundos
+    };
+
+    // Função para favoritar/desfavoritar via API (Axios)
+    const handleToggleFavorito = async (e, id, tipo) => {
+        e.preventDefault(); 
         e.stopPropagation();
 
         const chave = `${tipo}-${id}`;
         
-        // Atualiza interface instantaneamente (Optimistic UI)
+        // 1. Atualiza interface instantaneamente (Optimistic UI) para não haver delay
         setFavoritosLocais(prev => ({
             ...prev,
             [chave]: !prev[chave]
         }));
 
-        // Dispara para o backend
-        router.post('/api/favoritos/toggle', { tipo, id }, {
-            preserveScroll: true,
-            preserveState: true,
-        });
+        try {
+            // 2. Dispara para o backend via axios
+            const response = await axios.post('/favoritos/toggle', { tipo, id });
+            
+            // 3. Mostra a mensagem de sucesso que veio do seu Controller
+            showToast(response.data.message);
+            
+        } catch (error) {
+            console.error("Erro ao alterar favoritos:", error);
+            
+            // Se der erro, desfaz a alteração visual
+            setFavoritosLocais(prev => ({
+                ...prev,
+                [chave]: !prev[chave]
+            }));
+            
+            showToast("Ocorreu um erro ao atualizar.");
+        }
     };
 
     const isEstabelecimentos = tipoBusca === 'estabelecimentos';
@@ -149,9 +182,25 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
 
     return (
         <AuthenticatedLayout user={auth.user}>
-            <Head title="Explorar - WaitLess" />
+            <Head title="Explorar - Lokyva" />
 
-            <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
+            <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 relative">
+                
+                {/* TOAST NOTIFICATION FLUTUANTE */}
+                <AnimatePresence>
+                    {toast.show && (
+                        <motion.div
+                            initial={{ opacity: 0, y: 50, x: '-50%' }}
+                            animate={{ opacity: 1, y: 0, x: '-50%' }}
+                            exit={{ opacity: 0, y: 50, x: '-50%' }}
+                            className="fixed bottom-10 left-1/2 z-50 flex items-center gap-2 px-6 py-3 rounded-full shadow-lg bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 font-medium text-sm"
+                        >
+                            <Heart className={`w-4 h-4 ${toast.message.includes('Adicionado') ? 'fill-red-500 text-red-500' : ''}`} />
+                            {toast.message}
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
                 {/* HERO */}
                 <motion.div 
                     initial={{ opacity: 0 }}
@@ -369,7 +418,9 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                                     </motion.div>
                                 ) : (
                                     listaResultados.map((item) => {
-                                        const tipoItem = isEstabelecimentos ? 'estabelecimento' : 'servico';
+                                        const tipoItem = isEstabelecimentos 
+    ? 'estabelecimento' 
+    : (item.valor_diaria !== undefined ? 'item_aluguel' : 'servico');
                                         const key = `${tipoItem}-${item.id}`;
                                         const linkRoute = isEstabelecimentos 
                                             ? route('estabelecimentos.loja', item.id) 

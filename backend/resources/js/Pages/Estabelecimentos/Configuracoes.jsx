@@ -3,18 +3,15 @@ import InputError from '@/Components/InputError';
 import InputLabel from '@/Components/InputLabel';
 import PrimaryButton from '@/Components/PrimaryButton';
 import TextInput from '@/Components/TextInput';
+
 import { Head, useForm, Link, router, usePage } from '@inertiajs/react';
 import { useState, useEffect } from 'react';
 import { 
-    StarIcon, 
     CheckBadgeIcon, 
-    ShieldCheckIcon, 
     DocumentTextIcon, 
-    CurrencyDollarIcon, 
     PlusIcon, 
     XMarkIcon, 
     MapPinIcon, 
-    ClockIcon, 
     CalendarIcon, 
     ArchiveBoxIcon, 
     TicketIcon, 
@@ -26,16 +23,14 @@ import {
     ArrowLeftIcon,
     BuildingOfficeIcon,
     ChevronRightIcon,
-    InformationCircleIcon,
-    CheckCircleIcon,
     TrashIcon,
     TruckIcon,
     ArrowDownTrayIcon,
-    ClipboardDocumentListIcon,
     GiftIcon,
     ArrowTopRightOnSquareIcon,
     LockClosedIcon,
-    DocumentCheckIcon
+    DocumentCheckIcon,
+    CurrencyDollarIcon
 } from '@heroicons/react/24/solid';
 
 export default function Configuracoes({ auth, estabelecimento, meusEstabelecimentos, funcionarios, servicos, itensAluguel = [], itens_aluguel = [] }) {
@@ -43,7 +38,9 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
     // 1. RECUPERA A ABA ATIVA DO LOCALSTORAGE
     // ==========================================
     const [activeTab, setActiveTab] = useState(() => {
-        return localStorage.getItem('lokyva_active_tab') || 'detalhes';
+        let tab = localStorage.getItem('lokyva_active_tab') || 'detalhes';
+        if (tab === 'financeiro') tab = 'detalhes'; // Fallback se tinha ficado no cache
+        return tab;
     });
 
     useEffect(() => {
@@ -56,7 +53,6 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
             case 'equipe': return 'Equipe / Profissionais';
             case 'servicos': return 'Catálogo de Serviços';
             case 'reservas_alugueis': return 'Reservas / Locações';
-            case 'financeiro': return 'Financeiro / Integração';
             default: return '';
         }
     };
@@ -88,12 +84,6 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         return Array.isArray(resultado) ? resultado : [];
     };
 
-    const blockInvalidNumberChars = (e) => {
-        if (['e', 'E', '+', '-'].includes(e.key)) {
-            e.preventDefault();
-        }
-    };
-
     // Gerador de anos dinâmicos
     const anosDisponiveis = (() => {
         const anoAtual = new Date().getFullYear();
@@ -113,18 +103,10 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
     const ramosAtuacao = [
         'Academia e Crossfit', 'Açougue e Casa de Carnes', 'Advocacia e Escritórios', 'Agência de Turismo', 'Aluguel de Equipamentos',
         'Aluguel de Imóveis', 'Aluguel de Roupas e Fantasias', 'Aluguel de Veículos', 'Artesanato e Costura', 'Assistência Técnica',
-        'Auditoria e Consultoria', 'Auto Escola', 'Bar e Pub', 'Barbearia', 'Bicicletaria',
-        'Borracharia', 'Cafeteria e Casa de Chá', 'Centro Automotivo', 'Chaveiro', 'Clínica de Estética',
-        'Clínica Médica', 'Clínica Odontológica', 'Clínica Veterinária', 'Confeitaria e Doceria', 'Construção e Reformas',
-        'Contabilidade', 'Coworking', 'Cursos e Treinamentos', 'Decoração de Eventos', 'Despachante',
-        'Distribuidora de Bebidas', 'E-commerce e Loja Virtual', 'Eletricista', 'Encanador e Bombeiro Hidráulico', 'Espaço de Eventos',
-        'Estacionamento', 'Estética Automotiva', 'Estúdio de Fotografia', 'Estúdio de Gravação', 'Estúdio de Tatuagem',
-        'Farmácia e Drogaria', 'Fisioterapia e Pilates', 'Floricultura', 'Gráfica e Copiadora', 'Hospedagem e Hotelaria',
-        'Imobiliária', 'Informática e TI', 'Jardinagem e Paisagismo', 'Lavanderia', 'Logística e Fretes',
-        'Loja de Conveniência', 'Marcenaria e Móveis Planejados', 'Mercado e Mercearia', 'Oficina Mecânica', 'Padaria',
-        'Papelaria', 'Pest Control (Dedetização)', 'Pet Shop', 'Pizzaria', 'Podologia',
-        'Posto de Combustível', 'Psicologia e Terapia', 'Restaurante', 'Salão de Beleza', 'Serviços de Limpeza',
-        'Serviços Gerais', 'Sorveteria', 'Transporte de Passageiros', 'Vidraçaria', 'Outros'
+        'Auto Escola', 'Bar e Pub', 'Barbearia', 'Cafeteria e Casa de Chá', 'Centro Automotivo', 'Clínica de Estética',
+        'Clínica Médica', 'Clínica Odontológica', 'Clínica Veterinária', 'Coworking', 'E-commerce e Loja Virtual', 
+        'Espaço de Eventos', 'Estúdio de Fotografia', 'Farmácia e Drogaria', 'Hospedagem e Hotelaria',
+        'Imobiliária', 'Logística e Fretes', 'Oficina Mecânica', 'Pet Shop', 'Restaurante', 'Salão de Beleza', 'Outros'
     ].sort();
 
     // ==========================================
@@ -339,7 +321,6 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
     const [novoHorario, setNovoHorario] = useState(''); 
     const [visualizandoServico, setVisualizandoServico] = useState(null);
     
-    // GALERIA DE 5 QUADRADOS PARA SERVIÇOS
     const [quadradosFotos, setQuadradosFotos] = useState([null, null, null, null, null]);
     const [fotoDetalheIndexServico, setFotoDetalheIndexServico] = useState(0);
 
@@ -356,7 +337,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         horarios_disponiveis: [], 
         estabelecimentos_ids: [estabelecimento?.id],
         fotos: [], 
-        fotos_existentes: [], // Novo array para proteger as fotos já enviadas
+        fotos_existentes: [], 
         tem_cupom: false,
         tipo_desconto_cupom: 'percentual',
         valor_cupom: '',
@@ -372,17 +353,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                     if (dadosSalvos) {
                         formServico.setData(data => ({
                             ...data,
-                            nome: dadosSalvos.nome || '',
-                            tipo_servico: dadosSalvos.tipo_servico || '',
-                            descricao: dadosSalvos.descricao || '',
-                            valor: dadosSalvos.valor || '',
-                            duracao_minutos: dadosSalvos.duracao_minutos || '30',
-                            horarios_disponiveis: dadosSalvos.horarios_disponiveis || [],
-                            dias_disponiveis: dadosSalvos.dias_disponiveis || [],
-                            tem_cupom: dadosSalvos.tem_cupom || false,
-                            tipo_desconto_cupom: dadosSalvos.tipo_desconto_cupom || 'percentual',
-                            valor_cupom: dadosSalvos.valor_cupom || '',
-                            codigo_cupom: dadosSalvos.codigo_cupom || '',
+                            ...dadosSalvos
                         }));
                     }
                 } catch (e) {}
@@ -407,9 +378,8 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
             };
             localStorage.setItem('lokyva_servico_draft', JSON.stringify(dadosParaSalvar));
         }
-    }, [formServico.data.nome, formServico.data.descricao, formServico.data.valor, formServico.data.tem_cupom, formServico.data.valor_cupom, formServico.data.horarios_disponiveis, formServico.data.dias_disponiveis, isEditingServico, visualizandoServico]); 
+    }, [formServico.data, isEditingServico, visualizandoServico]); 
 
-    // Lógica da Galeria de Fotos - SERVIÇOS
     const handleFotoQuadrado = (index, arquivoSelecionado) => {
         if (!arquivoSelecionado) return;
         const novaListaQuadrados = [...quadradosFotos];
@@ -441,24 +411,17 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         return `${prefixo}${aleatorio}`;
     };
 
-    const handleToggleCupom = (checked) => {
-        formServico.setData(data => ({
-            ...data,
-            tem_cupom: checked,
-            codigo_cupom: checked && !data.codigo_cupom ? gerarCodigoCupom() : data.codigo_cupom
-        }));
-    };
-
     const submitServico = (withEvent) => {
         withEvent.preventDefault();
         
-        // Aplica o spoofing do PUT e filtra as imagens diretamente via transform antes de submeter
         formServico.transform((data) => ({
             ...data,
             fotos_existentes: quadradosFotos.filter(f => typeof f === 'string' && f !== null),
             fotos: quadradosFotos.filter(f => f instanceof File),
             _method: isEditingServico ? 'put' : 'post'
-        })).post(isEditingServico ? route('servicos.update', formServico.data.id) : route('servicos.store'), {
+        }));
+
+        formServico.post(isEditingServico ? route('servicos.update', formServico.data.id) : route('servicos.store'), {
             preserveScroll: true,
             onSuccess: () => {
                 cancelarEdicaoServico();
@@ -556,29 +519,27 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
     const [visualizandoItem, setVisualizandoItem] = useState(null);
     const [fotoDetalheIndexItem, setFotoDetalheIndexItem] = useState(0);
 
-    // GALERIA DE 5 QUADRADOS PARA LOCAÇÕES
-    const [quadradosFotosItem, setQuadradosFotosItem] = useState([null, null, null, null, null]);
+    const [quadradosFotosItem, setQuadradosFotosItem] = useState(Array(24).fill(null));
 
     const [novaDataPermitida, setNovaDataPermitida] = useState('');
     const [novaDataBloqueada, setNovaDataBloqueada] = useState('');
     const [novoHorarioBloqueado, setNovoHorarioBloqueado] = useState({ data: '', inicio: '', fim: '' });
     const [diasMesInput, setDiasMesInput] = useState('');
     
-    // Novo estado local para testar desconto via pontos no Simulador Financeiro e botão de toggle
     const [mostrarSimulador, setMostrarSimulador] = useState(false);
     const [simulacaoPontos, setSimulacaoPontos] = useState('');
 
-    const comodidadesPreDefinidas = [
-        'Ar-condicionado', 'Piscina', 'Wi-Fi', 'Churrasqueira', 'Varanda Gourmet',
-        'Aceita Pets', 'Direção Hidráulica', 'Câmbio Automático', 'Câmera de Ré', 
-        'Bluetooth', 'Sensor de Estacionamento', 'Cadeira de Bebê', 'Som Premium',
-        'Cozinha Completa', 'TV a Cabo', 'Roupas de Cama', 'Vaga Coberta'
-    ];
+    // Estados para controle dinâmico avançado (vagas/quantidade)
+    const [novaDispData, setNovaDispData] = useState('');
+    const [novaDispQtd, setNovaDispQtd] = useState('');
+    const [novaHoraDispData, setNovaHoraDispData] = useState('');
+    const [novaHoraDispInicio, setNovaHoraDispInicio] = useState('');
+    const [novaHoraDispFim, setNovaHoraDispFim] = useState('');
+    const [novaHoraDispQtd, setNovaHoraDispQtd] = useState('');
 
     const formItem = useForm({
         id: null,
         estabelecimento_id: estabelecimento?.id,
-        servico_id: '',
         nome: '',
         categoria: 'casa', 
         modelo: '',
@@ -593,7 +554,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         valor_mensal: '',
         valor_caucao: '',
         fotos: [],
-        fotos_existentes: [], // Novo array para proteger as fotos já enviadas
+        fotos_existentes: [], 
         
         recursos_oferecidos: [], 
         acessorios: [], 
@@ -606,22 +567,19 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         mobiliado: false, aceita_pet: false, possui_wifi: false, possui_ar_condicionado: false, piscina: false, churrasqueira: false,
         
         // Veículos
-        placa: '', renavam: '', chassis: '', marca_veiculo: '', modelo_veiculo: '', ano: '', cor: '',
-        combustivel: '', cambio: '', quilometragem: '', cilindrada: '', potencia: '', portas: '', lugares: '', possui_seguro: false,
+        placa: '', renavam: '', chassis: '', ano: '', 
+        combustivel: '', cambio: '', quilometragem: '', cilindrada: '', potencia: '', possui_seguro: false,
         
         // Equipamentos
         fabricante: '', numero_serie: '', patrimonio: '', voltagem: '', potencia_equipamento: '', peso: '', dimensoes: '', garantia: '',
         
-        // Endereço de Retirada Completo
+        // Endereços de Retirada/Entrega
         cep_retirada: '', rua_retirada: '', numero_retirada: '', complemento_retirada: '', bairro_retirada: '', cidade_retirada: '', estado_retirada: '',
         latitude_retirada: '', longitude_retirada: '',
-
-        // Endereço de Entrega Completo
         cep_entrega: '', rua_entrega: '', numero_entrega: '', complemento_entrega: '', bairro_entrega: '', cidade_entrega: '', estado_entrega: '',
         latitude_entrega: '', longitude_entrega: '',
         
         observacoes: '',
-
         periodo_faturamento_padrao: 'diaria',
         permitir_pagamento: 'online',
 
@@ -644,7 +602,14 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         horarios_bloqueados: [],
         observacoes_disponibilidade: '',
         
-        // Novas Regras Adicionadas (Promoção, Fidelidade, Contrato)
+        // Regras Avançadas de Disponibilidade (Data e Horário específicos)
+        disponibilidade_por_data: false,
+        quantidade_padrao: '',
+        tipo_quantidade: '',
+        dias_disponiveis: [],
+        horarios_disponiveis: [],
+        
+        // Promoções, Fidelidade, Contrato
         tem_promocao: false,
         tipo_desconto: 'percentual',
         valor_desconto: '',
@@ -653,23 +618,59 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         exige_contrato: false,
     });
 
+    // Funções para adicionar vagas por Data e Horário
+    const handleAddDiaDisponivel = () => {
+        if (!novaDispData || !novaDispQtd) return;
+        const list = [...parseArraySeguro(formItem.data.dias_disponiveis)];
+        const filtered = list.filter(item => item.data !== novaDispData);
+        filtered.push({ data: novaDispData, quantidade: parseInt(novaDispQtd) });
+        filtered.sort((a,b) => a.data.localeCompare(b.data));
+        formItem.setData('dias_disponiveis', filtered);
+        setNovaDispData('');
+        setNovaDispQtd('');
+    };
+
+    const handleRemoveDiaDisponivel = (dataTarget) => {
+        const list = [...parseArraySeguro(formItem.data.dias_disponiveis)].filter(item => item.data !== dataTarget);
+        formItem.setData('dias_disponiveis', list);
+    };
+
+    const handleAddHorarioDisponivel = () => {
+        if (!novaHoraDispData || !novaHoraDispInicio || !novaHoraDispFim || !novaHoraDispQtd) return;
+        const list = [...parseArraySeguro(formItem.data.horarios_disponiveis)];
+        const dataIndex = list.findIndex(item => item.data === novaHoraDispData);
+        const newHorario = { inicio: novaHoraDispInicio, fim: novaHoraDispFim, quantidade: parseInt(novaHoraDispQtd) };
+
+        if (dataIndex >= 0) {
+            list[dataIndex].horarios.push(newHorario);
+            list[dataIndex].horarios.sort((a,b) => a.inicio.localeCompare(b.inicio));
+        } else {
+            list.push({ data: novaHoraDispData, horarios: [newHorario] });
+        }
+        list.sort((a,b) => a.data.localeCompare(b.data));
+        formItem.setData('horarios_disponiveis', list);
+        setNovaHoraDispInicio('');
+        setNovaHoraDispFim('');
+        setNovaHoraDispQtd('');
+    };
+
+    const handleRemoveHorarioDisponivel = (dataTarget, indexHorario) => {
+         const list = [...parseArraySeguro(formItem.data.horarios_disponiveis)];
+         const dataIndex = list.findIndex(item => item.data === dataTarget);
+         if(dataIndex >= 0) {
+             list[dataIndex].horarios.splice(indexHorario, 1);
+             if(list[dataIndex].horarios.length === 0) {
+                 list.splice(dataIndex, 1);
+             }
+             formItem.setData('horarios_disponiveis', list);
+         }
+    };
+
     const formatarDecimaisItemOnBlur = (campo, valor) => {
         if (!valor) return;
         const numerico = parseFloat(valor.toString().replace(',', '.'));
         if (!isNaN(numerico)) {
             formItem.setData(campo, numerico.toFixed(2));
-        }
-    };
-
-    const formatarDecimaisAcessorioOnBlur = (index, valor) => {
-        if (!valor) return;
-        const numerico = parseFloat(valor.toString().replace(',', '.'));
-        if (!isNaN(numerico)) {
-            const novaLista = [...parseArraySeguro(formItem.data.acessorios)];
-            if(novaLista[index]) {
-                novaLista[index]['valor'] = numerico.toFixed(2);
-                formItem.setData('acessorios', novaLista);
-            }
         }
     };
 
@@ -687,7 +688,6 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         return true;
     };
 
-    // Lógica da Galeria de Fotos - LOCAÇÕES
     const handleFotoItemQuadrado = (index, arquivo) => {
         if (!arquivo) return;
         const novaLista = [...quadradosFotosItem];
@@ -699,45 +699,6 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         const novaLista = [...quadradosFotosItem];
         novaLista[index] = null;
         setQuadradosFotosItem(novaLista);
-    };
-
-    const toggleComodidade = (recurso) => {
-        const atual = parseArraySeguro(formItem.data.recursos_oferecidos);
-        const novaLista = atual.includes(recurso) ? atual.filter(r => r !== recurso) : [...atual, recurso];
-        formItem.setData('recursos_oferecidos', novaLista);
-    };
-
-    const toggleFuncionarioResponsavel = (idFunc) => {
-        const atual = parseArraySeguro(formItem.data.funcionarios_responsaveis);
-        const novaLista = atual.includes(idFunc) ? atual.filter(id => id !== idFunc) : [...atual, idFunc];
-        formItem.setData('funcionarios_responsaveis', novaLista);
-    };
-
-    const adicionarAcessorio = () => {
-        const atual = parseArraySeguro(formItem.data.acessorios);
-        formItem.setData('acessorios', [...atual, { nome: '', valor: '' }]);
-    };
-    
-    const removerAcessorio = (indexToRemove) => {
-        const atual = parseArraySeguro(formItem.data.acessorios);
-        formItem.setData('acessorios', atual.filter((_, i) => i !== indexToRemove));
-    };
-
-    const atualizarAcessorioTexto = (index, valor) => {
-        const novaLista = [...parseArraySeguro(formItem.data.acessorios)];
-        if(novaLista[index]) {
-            const regexSanitize = /[^a-zA-Z0-9 áéíóúâêîôûãõçÇ]/g;
-            novaLista[index]['nome'] = valor.replace(regexSanitize, '');
-            formItem.setData('acessorios', novaLista);
-        }
-    };
-
-    const atualizarAcessorioValor = (index, valor) => {
-        const novaLista = [...parseArraySeguro(formItem.data.acessorios)];
-        if(novaLista[index]) {
-            novaLista[index]['valor'] = valor;
-            formItem.setData('acessorios', novaLista);
-        }
     };
 
     const handleDiaSemanaToggle = (dia) => {
@@ -767,7 +728,6 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         }
     };
 
-    // 👉 LÓGICA DO SIMULADOR FINANCEIRO (Limpo, Claro e Horizontal)
     const calcularSimulacao = (valorOriginal) => {
         const val = parseFloat(valorOriginal) || 0;
         if (val === 0) return { cliente: '0.00', taxa: '0.00', liquido: '0.00', descPromocao: '0.00', descPontos: '0.00' };
@@ -846,10 +806,11 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                 ...data,
                 dias_mes_disponiveis: diasMes,
                 fotos_existentes: quadradosFotosItem.filter(f => typeof f === 'string' && f !== null),
-                fotos: quadradosFotosItem.filter(f => f instanceof File),
-                _method: isEditingItem ? 'put' : 'post'
+                fotos: quadradosFotosItem.filter(f => f instanceof File)
             };
-        }).post(isEditingItem ? route('catalogo.itens.update', formItem.data.id) : route('catalogo.itens.store'), {
+        });
+        
+        formItem.post(isEditingItem ? route('catalogo.itens.update', formItem.data.id) : route('catalogo.itens.store'), {
             preserveScroll: true,
             onSuccess: () => {
                 cancelarEdicaoItem();
@@ -858,6 +819,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                 router.reload({ only: ['itensAluguel', 'itens_aluguel', 'meusEstabelecimentos', 'estabelecimentos'] });
             }
         });
+
     };
 
     const editarItem = (item) => {
@@ -865,8 +827,8 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         setVisualizandoItem(null);
 
         const existingPhotos = parseArraySeguro(item.fotos);
-        const newQuadrados = [null, null, null, null, null];
-        existingPhotos.forEach((url, i) => { if(i < 5) newQuadrados[i] = url; });
+        const newQuadrados = Array(24).fill(null);
+        existingPhotos.forEach((url, i) => { if(i < 24) newQuadrados[i] = url; });
         setQuadradosFotosItem(newQuadrados);
 
         formItem.setData({ 
@@ -879,7 +841,10 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
             dias_mes_disponiveis: parseArraySeguro(item.dias_mes_disponiveis),
             datas_bloqueadas: parseArraySeguro(item.datas_bloqueadas),
             horarios_bloqueados: parseArraySeguro(item.horarios_bloqueados),
+            dias_disponiveis: parseArraySeguro(item.dias_disponiveis),
+            horarios_disponiveis: parseArraySeguro(item.horarios_disponiveis),
             sempre_disponivel: item.sempre_disponivel === 1 || item.sempre_disponivel === true,
+            disponibilidade_por_data: item.disponibilidade_por_data === 1 || item.disponibilidade_por_data === true,
             tem_promocao: item.tem_promocao === 1 || item.tem_promocao === true,
             aceita_pontos: item.aceita_pontos === 1 || item.aceita_pontos === true,
             exige_contrato: item.exige_contrato === 1 || item.exige_contrato === true,
@@ -901,7 +866,9 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         formItem.reset();
         setDiasMesInput('');
         setSimulacaoPontos('');
-        setQuadradosFotosItem([null, null, null, null, null]);
+        setQuadradosFotosItem(Array(24).fill(null));
+        setNovaDispData(''); setNovaDispQtd('');
+        setNovaHoraDispData(''); setNovaHoraDispInicio(''); setNovaHoraDispFim(''); setNovaHoraDispQtd('');
     };
 
     const deletarItem = (id) => {
@@ -940,37 +907,6 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         'caixa_som', 'mesa_som', 'microfone', 'telão', 'painel_led', 'iluminacao', 'karaoke', 'palco', 'tenda', 
         'cadeira', 'mesa', 'decoracao', 'brinquedo_inflavel', 'roupa', 'terno', 'vestido', 'fantasia', 'cadeira_barbeiro'
     ].includes(cat);
-
-    // ==========================================
-    // FORM 5: FINANÇAS E FATURAMENTO (PROVIDER)
-    // ==========================================
-    const formFinanceiro = useForm({
-        nome_razao_social: estabelecimento.nome_razao_social || '',
-        email_financeiro: estabelecimento.email_financeiro || '',
-        cpf_cnpj: estabelecimento.cpf_cnpj || '',
-        banco_codigo: estabelecimento.banco_codigo || '',
-        agencia: estabelecimento.agencia || '',
-        conta_numero: estabelecimento.conta_numero || '',
-        conta_digito: estabelecimento.conta_digito || '',
-        token_mercadopago: estabelecimento.token_mercadopago || '',
-    });
-
-    const [sucessoFinanceiro, setSucessoFinanceiro] = useState(false);
-
-    const submitFinanceiro = (e) => {
-        e.preventDefault();
-        router.post(route('providers.store'), {
-            estabelecimento_id: estabelecimento.id,
-            ...formFinanceiro.data
-        }, {
-            preserveScroll: true,
-            onSuccess: () => {
-                setSucessoFinanceiro(true);
-                setTimeout(() => setSucessoFinanceiro(false), 5000);
-                mostrarMensagem('Dados bancários e de provedor salvos com sucesso!');
-            },
-        });
-    };
 
     return (
         <AuthenticatedLayout
@@ -1023,7 +959,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                         )}
                         {flash?.error && (
                             <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-xl shadow-sm flex items-center gap-2 animate-in fade-in">
-                                <ShieldCheckIcon className="w-5 h-5" /> <strong className="font-bold">Erro:</strong> {flash.error}
+                                <XMarkIcon className="w-5 h-5" /> <strong className="font-bold">Erro:</strong> {flash.error}
                             </div>
                         )}
                         {flash?.warning && (
@@ -1049,9 +985,6 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                             </button>
                             <button onClick={() => setActiveTab('reservas_alugueis')} className={`text-left px-4 py-3 rounded-xl text-sm font-bold transition whitespace-nowrap flex items-center gap-2 ${activeTab === 'reservas_alugueis' ? 'bg-[#FF5A00] text-white shadow-md' : 'text-gray-600 hover:bg-gray-100'}`}>
                                 <CalendarIcon className="w-5 h-5"/> 4. Reservas / Locações
-                            </button>
-                            <button onClick={() => setActiveTab('financeiro')} className={`text-left px-4 py-3 rounded-xl text-sm font-bold transition whitespace-nowrap flex items-center gap-2 ${activeTab === 'financeiro' ? 'bg-[#FF5A00] text-white shadow-md' : 'text-gray-600 hover:bg-gray-100'}`}>
-                                <CurrencyDollarIcon className="w-5 h-5"/> 5. Financeiro / Recebimentos
                             </button>
 
                             <Link href={route('estabelecimentos.contratos', estabelecimento.id)} className="text-left px-4 py-3 rounded-xl text-sm font-bold transition whitespace-nowrap flex items-center gap-2 text-gray-600 hover:bg-gray-100">
@@ -1148,14 +1081,14 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
                                             <div className="md:col-span-2">
                                                 <InputLabel value="Nome do Estabelecimento *" />
-                                                <TextInput className="mt-1 w-full focus:border-[#FF5A00]" value={formDetalhes.data.nome} onChange={e => formDetalhes.setData('nome', e.target.value)} required />
+                                                <TextInput className="mt-1 w-full focus:border-[#FF5A00]" value={formDetalhes.data.nome ?? ''} onChange={e => formDetalhes.setData('nome', e.target.value)} required />
                                                 <InputError message={formDetalhes.errors.nome} />
                                             </div>
                                             <div>
                                                 <InputLabel value="Ramo de Atuação" />
                                                 <select 
                                                     className="mt-1 w-full border-gray-300 rounded-lg shadow-sm focus:border-[#FF5A00]" 
-                                                    value={formDetalhes.data.ramo_atuacao} 
+                                                    value={formDetalhes.data.ramo_atuacao ?? ''} 
                                                     onChange={e => formDetalhes.setData('ramo_atuacao', e.target.value)}
                                                 >
                                                     <option value="">Selecione a categoria...</option>
@@ -1165,7 +1098,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                             </div>
                                             <div>
                                                 <InputLabel value="Telefone de Contato" />
-                                                <TextInput className="mt-1 w-full focus:border-[#FF5A00]" value={formDetalhes.data.telefone} onChange={e => formDetalhes.setData('telefone', e.target.value)} placeholder="(00) 00000-0000" />
+                                                <TextInput className="mt-1 w-full focus:border-[#FF5A00]" value={formDetalhes.data.telefone ?? ''} onChange={e => formDetalhes.setData('telefone', e.target.value)} placeholder="(00) 00000-0000" />
                                                 <InputError message={formDetalhes.errors.telefone} />
                                             </div>
                                         </div>
@@ -1176,19 +1109,19 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                 <InputLabel value="CEP" />
                                                 <TextInput 
                                                     className="mt-1 w-full focus:border-[#FF5A00]" 
-                                                    value={formDetalhes.data.cep} 
+                                                    value={formDetalhes.data.cep ?? ''} 
                                                     onChange={e => formDetalhes.setData('cep', e.target.value)} 
                                                     onBlur={(e) => buscarEnderecoAutomatizado(e.target.value, formDetalhes.setData, '')} 
                                                 />
                                             </div>
-                                            <div className="md:col-span-4"><InputLabel value="Rua / Avenida" /><TextInput className="mt-1 w-full focus:border-[#FF5A00]" value={formDetalhes.data.rua} onChange={e => formDetalhes.setData('rua', e.target.value)} /></div>
-                                            <div className="md:col-span-2"><InputLabel value="Número" /><TextInput className="mt-1 w-full focus:border-[#FF5A00]" value={formDetalhes.data.numero} onChange={e => formDetalhes.setData('numero', e.target.value)} /></div>
-                                            <div className="md:col-span-4"><InputLabel value="Complemento" /><TextInput className="mt-1 w-full focus:border-[#FF5A00]" value={formDetalhes.data.complemento} onChange={e => formDetalhes.setData('complemento', e.target.value)} placeholder="Sala, Loja, etc." /></div>
-                                            <div className="md:col-span-2"><InputLabel value="Bairro" /><TextInput className="mt-1 w-full focus:border-[#FF5A00]" value={formDetalhes.data.bairro} onChange={e => formDetalhes.setData('bairro', e.target.value)} /></div>
-                                            <div className="md:col-span-3"> <InputLabel value="Cidade" /><TextInput className="mt-1 w-full focus:border-[#FF5A00]" value={formDetalhes.data.cidade} onChange={e => formDetalhes.setData('cidade', e.target.value)} /></div>
+                                            <div className="md:col-span-4"><InputLabel value="Rua / Avenida" /><TextInput className="mt-1 w-full focus:border-[#FF5A00]" value={formDetalhes.data.rua ?? ''} onChange={e => formDetalhes.setData('rua', e.target.value)} /></div>
+                                            <div className="md:col-span-2"><InputLabel value="Número" /><TextInput className="mt-1 w-full focus:border-[#FF5A00]" value={formDetalhes.data.numero ?? ''} onChange={e => formDetalhes.setData('numero', e.target.value)} /></div>
+                                            <div className="md:col-span-4"><InputLabel value="Complemento" /><TextInput className="mt-1 w-full focus:border-[#FF5A00]" value={formDetalhes.data.complemento ?? ''} onChange={e => formDetalhes.setData('complemento', e.target.value)} placeholder="Sala, Loja, etc." /></div>
+                                            <div className="md:col-span-2"><InputLabel value="Bairro" /><TextInput className="mt-1 w-full focus:border-[#FF5A00]" value={formDetalhes.data.bairro ?? ''} onChange={e => formDetalhes.setData('bairro', e.target.value)} /></div>
+                                            <div className="md:col-span-3"> <InputLabel value="Cidade" /><TextInput className="mt-1 w-full focus:border-[#FF5A00]" value={formDetalhes.data.cidade ?? ''} onChange={e => formDetalhes.setData('cidade', e.target.value)} /></div>
                                             <div className="md:col-span-1">
                                                 <InputLabel value="UF" />
-                                                <select className="mt-1 w-full border-gray-300 rounded-lg shadow-sm focus:border-[#FF5A00]" value={formDetalhes.data.estado} onChange={e => formDetalhes.setData('estado', e.target.value)}>
+                                                <select className="mt-1 w-full border-gray-300 rounded-lg shadow-sm focus:border-[#FF5A00]" value={formDetalhes.data.estado ?? ''} onChange={e => formDetalhes.setData('estado', e.target.value)}>
                                                     <option value="">UF</option>
                                                     {ufsBrasil.map(uf => <option key={uf} value={uf}>{uf}</option>)}
                                                 </select>
@@ -1264,15 +1197,15 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                             <div className="md:col-span-1">
                                                 <InputLabel value="Nome Completo *" />
-                                                <TextInput className="mt-1 w-full focus:border-[#FF5A00]" value={formFuncionario.data.nome} onChange={e => formFuncionario.setData('nome', e.target.value)} required />
+                                                <TextInput className="mt-1 w-full focus:border-[#FF5A00]" value={formFuncionario.data.nome ?? ''} onChange={e => formFuncionario.setData('nome', e.target.value)} required />
                                             </div>
                                             <div className="md:col-span-1">
                                                 <InputLabel value="Telefone (Opcional)" />
-                                                <TextInput className="mt-1 w-full focus:border-[#FF5A00]" value={formFuncionario.data.telefone} onChange={e => formFuncionario.setData('telefone', e.target.value)} placeholder="(00) 00000-0000" />
+                                                <TextInput className="mt-1 w-full focus:border-[#FF5A00]" value={formFuncionario.data.telefone ?? ''} onChange={e => formFuncionario.setData('telefone', e.target.value)} placeholder="(00) 00000-0000" />
                                             </div>
                                             <div className="md:col-span-1">
                                                 <InputLabel value="Cargo / Papel no Sistema *" />
-                                                <select className="mt-1 w-full py-3 border-gray-300 rounded-lg shadow-sm focus:border-[#FF5A00]" value={formFuncionario.data.cargo} onChange={e => formFuncionario.setData('cargo', e.target.value)} required>
+                                                <select className="mt-1 w-full py-3 border-gray-300 rounded-lg shadow-sm focus:border-[#FF5A00]" value={formFuncionario.data.cargo ?? ''} onChange={e => formFuncionario.setData('cargo', e.target.value)} required>
                                                     <option value="Atendente">Atendente / Recepção</option>
                                                     <option value="Barbeiro">Barbeiro</option>
                                                     <option value="Médico">Médico(a) / Especialista</option>
@@ -1284,11 +1217,11 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                             </div>
                                             <div className="md:col-span-2 border-t border-gray-100 pt-6">
                                                 <InputLabel value="E-mail de Acesso *" />
-                                                <TextInput type="email" className="mt-1 w-full focus:border-[#FF5A00]" value={formFuncionario.data.email} onChange={e => formFuncionario.setData('email', e.target.value)} required={!isEditingFuncionario} placeholder="email@exemplo.com" />
+                                                <TextInput type="email" className="mt-1 w-full focus:border-[#FF5A00]" value={formFuncionario.data.email ?? ''} onChange={e => formFuncionario.setData('email', e.target.value)} required={!isEditingFuncionario} placeholder="email@exemplo.com" />
                                             </div>
                                             <div className="md:col-span-1 border-t border-gray-100 pt-6">
                                                 <InputLabel value="Senha de Acesso *" />
-                                                <TextInput type="password" className="mt-1 w-full focus:border-[#FF5A00]" value={formFuncionario.data.password} onChange={e => formFuncionario.setData('password', e.target.value)} required={!isEditingFuncionario} placeholder="Mínimo 8 caracteres" />
+                                                <TextInput type="password" className="mt-1 w-full focus:border-[#FF5A00]" value={formFuncionario.data.password ?? ''} onChange={e => formFuncionario.setData('password', e.target.value)} required={!isEditingFuncionario} placeholder="Mínimo 8 caracteres" />
                                             </div>
                                         </div>
                                         <div className="flex justify-end pt-4 gap-4">
@@ -1376,7 +1309,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                                 <div>
                                                     <InputLabel value="Categoria / Tipo de Serviço *" />
-                                                    <select className="mt-1 w-full border-gray-300 rounded-lg shadow-sm focus:border-[#FF5A00]" value={formServico.data.tipo_servico} onChange={e => formServico.setData('tipo_servico', e.target.value)} required>
+                                                    <select className="mt-1 w-full border-gray-300 rounded-lg shadow-sm focus:border-[#FF5A00]" value={formServico.data.tipo_servico ?? ''} onChange={e => formServico.setData('tipo_servico', e.target.value)} required>
                                                         <option value="">Selecione...</option>
                                                         <option value="Beleza e Estética">Beleza e Estética</option>
                                                         <option value="Saúde e Bem-Estar">Saúde e Bem-Estar</option>
@@ -1390,17 +1323,17 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                         <option value="Pets e Animais">Pets e Animais</option>
                                                     </select>
                                                 </div>
-                                                <div><InputLabel value="Nome do Serviço *" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formServico.data.nome} onChange={e => formServico.setData('nome', e.target.value)} required /></div>
-                                                <div><InputLabel value="Valor (R$) *" /><TextInput type="number" step="0.01" className="w-full mt-1 focus:border-[#FF5A00]" value={formServico.data.valor} onChange={e => formServico.setData('valor', e.target.value)} required /></div>
-                                                <div><InputLabel value="Duração (Minutos) *" /><TextInput type="number" className="w-full mt-1 focus:border-[#FF5A00]" value={formServico.data.duracao_minutos} onChange={e => formServico.setData('duracao_minutos', e.target.value)} required /></div>
+                                                <div><InputLabel value="Nome do Serviço *" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formServico.data.nome ?? ''} onChange={e => formServico.setData('nome', e.target.value)} required /></div>
+                                                <div><InputLabel value="Valor (R$) *" /><TextInput type="number" step="0.01" className="w-full mt-1 focus:border-[#FF5A00]" value={formServico.data.valor ?? ''} onChange={e => formServico.setData('valor', e.target.value)} required /></div>
+                                                <div><InputLabel value="Duração (Minutos) *" /><TextInput type="number" className="w-full mt-1 focus:border-[#FF5A00]" value={formServico.data.duracao_minutos ?? ''} onChange={e => formServico.setData('duracao_minutos', e.target.value)} required /></div>
                                                 
                                                 <div className="md:col-span-2">
                                                     <InputLabel value="Descrição Pública" />
-                                                    <textarea className="mt-1 w-full border-gray-300 rounded-xl focus:border-[#FF5A00]" rows="3" value={formServico.data.descricao} onChange={e => formServico.setData('descricao', e.target.value)}></textarea>
+                                                    <textarea className="mt-1 w-full border-gray-300 rounded-xl focus:border-[#FF5A00]" rows="3" value={formServico.data.descricao ?? ''} onChange={e => formServico.setData('descricao', e.target.value)}></textarea>
                                                 </div>
                                                 <div className="md:col-span-2">
                                                     <InputLabel value="Profissional Padrão Allocado (Opcional)" />
-                                                    <select className="mt-1 w-full border-gray-300 rounded-lg shadow-sm focus:border-[#FF5A00]" value={formServico.data.funcionario_id} onChange={e => formServico.setData('funcionario_id', e.target.value)}>
+                                                    <select className="mt-1 w-full border-gray-300 rounded-lg shadow-sm focus:border-[#FF5A00]" value={formServico.data.funcionario_id ?? ''} onChange={e => formServico.setData('funcionario_id', e.target.value)}>
                                                         <option value="">Qualquer profissional disponível</option>
                                                         {funcionarios.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
                                                     </select>
@@ -1449,7 +1382,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                 <div className="md:col-span-2 p-5 bg-gray-50 rounded-xl border">
                                                     <InputLabel value="Horários Operacionais *" className="mb-2" />
                                                     <div className="flex gap-3 mb-4">
-                                                        <TextInput type="time" value={novoHorario} onChange={e => setNovoHorario(e.target.value)} className="w-32 text-center focus:border-[#FF5A00]" />
+                                                        <TextInput type="time" value={novoHorario ?? ''} onChange={e => setNovoHorario(e.target.value)} className="w-32 text-center focus:border-[#FF5A00]" />
                                                         <button type="button" onClick={adicionarHorario} className="px-4 py-2 bg-gray-200 text-sm font-bold rounded-lg hover:bg-gray-300">Incluir Horário</button>
                                                     </div>
                                                     <div className="flex flex-wrap gap-2">
@@ -1527,8 +1460,8 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                 </div>
 
                                                 <div className="p-4 bg-gray-50 border rounded-xl font-medium text-sm text-gray-700 space-y-2">
-                                                    <p>📌 <strong>Cobrança Ativa por:</strong> <span className="capitalize">{visualizandoItem.periodo_faturamento_padrao}</span></p>
-                                                    <p>💳 <strong>Regra de Transação:</strong> {visualizandoItem.permitir_pagamento === 'online' ? 'Online (Taxa Retida de 12%)' : 'Presencial (Saldo Devedor de 12% Acumulado)'}</p>
+                                                    <p><strong>Cobrança Ativa por:</strong> <span className="capitalize">{visualizandoItem.periodo_faturamento_padrao}</span></p>
+                                                    <p><strong>Regra de Transação:</strong> {visualizandoItem.permitir_pagamento === 'online' ? 'Online (Taxa Retida de 12%)' : 'Presencial (Saldo Devedor de 12% Acumulado)'}</p>
                                                     {visualizandoItem.exige_contrato && <p className="text-orange-600 mt-2 flex items-center gap-1"><DocumentCheckIcon className="w-4 h-4"/> Este item exige assinatura de contrato.</p>}
                                                 </div>
 
@@ -1553,34 +1486,80 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                     {isEditingItem ? <><DocumentTextIcon className="w-5 h-5 text-gray-400"/> Editar Item de Locação</> : <><PlusIcon className="w-5 h-5 text-gray-400"/> Adicionar Novo Item de Locação</>}
                                                 </h3>
                                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
-                                                    <div><InputLabel value="Nome do Item *" /><TextInput className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.nome} onChange={e => formItem.setData('nome', e.target.value)} required /></div>
+                                                    <div>
+                                                        <InputLabel value="Nome do Item *" />
+                                                        <TextInput maxLength={100} className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.nome ?? ''} onChange={e => formItem.setData('nome', e.target.value)} required />
+                                                    </div>
                                                     <div>
                                                         <InputLabel value="Categoria *" />
-                                                        <select className="mt-1 w-full py-3 border-gray-300 rounded-xl text-sm focus:border-[#FF5A00]" value={formItem.data.categoria} onChange={e => formItem.setData('categoria', e.target.value)} required>
+                                                        <select className="mt-1 w-full py-3 border-gray-300 rounded-xl text-sm focus:border-[#FF5A00]" value={formItem.data.categoria ?? ''} onChange={e => formItem.setData('categoria', e.target.value)} required>
                                                             <option value="casa">Casa / Espaço</option>
                                                             <option value="carro">Carro / Frota</option>
+                                                            <option value="casa">Restaurante / Mesa</option>
+                                                            <option value="barco">Barco / Passeio Náutico</option>
+<option value="bicicleta">Bicicleta / Equipamento Esportivo</option>
+<option value="moto">Moto / Motocicleta</option>
+<option value="motorhome">Motorhome / Trailer</option>
+<option value="coworking">Coworking / Estação de Trabalho</option>
+<option value="sala_reuniao">Sala de Reunião</option>
+<option value="pesque_pague">Pesque-Pague / Área de Pesca</option>
+<option value="parque">Parque / Área Recreativa</option>
+<option value="area_camping">Camping / Área para Acampamento</option>
+<option value="turismo">Atrativo Turístico / Visitação</option>
                                                             <option value="equipamento">Equipamento / Máquina</option>
                                                         </select>
                                                     </div>
-                                                    <div><InputLabel value="Quantidade Estoque *" /><TextInput type="number" className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.quantidade} onChange={e => formItem.setData('quantidade', e.target.value)} required /></div>
+                                                    <div><InputLabel value="Quantidade Estoque *" /><TextInput type="number" className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.quantidade ?? ''} onChange={e => formItem.setData('quantidade', e.target.value)} required /></div>
                                                 </div>
                                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4">
-                                                    <div><InputLabel value="Marca / Fabricante" /><TextInput className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.marca} onChange={e => formItem.setData('marca', e.target.value)} /></div>
-                                                    <div><InputLabel value="Modelo" /><TextInput className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.modelo} onChange={e => formItem.setData('modelo', e.target.value)} /></div>
-                                                    <div><InputLabel value="Tipo / Subtipo" /><TextInput className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.tipo} onChange={e => formItem.setData('tipo', e.target.value)} /></div>
+                                                    <div><InputLabel value="Marca / Fabricante" /><TextInput className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.marca ?? ''} onChange={e => formItem.setData('marca', e.target.value)} /></div>
+                                                    
+                                                    {(esVeiculo || esEquipamento) && (
+                                                        <div>
+                                                            <InputLabel value="Modelo" />
+                                                            {esVeiculo ? (
+                                                                <select className="mt-1 w-full border-gray-300 rounded-lg shadow-sm focus:border-[#FF5A00]" value={formItem.data.modelo ?? ''} onChange={e => formItem.setData('modelo', e.target.value)}>
+                                                                    <option value="">Selecione...</option>
+                                                                    <option value="Hatches compactos">Hatches </option>
+                                                                    <option value="Sedãs">Sedãs</option>
+                                                                    <option value="SUVs">SUVs</option>
+                                                                    <option value="Picapes">Picapes</option>
+                                                                    <option value="Outros">Outros</option>
+                                                                </select>
+                                                            ) : (
+                                                                <TextInput className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.modelo ?? ''} onChange={e => formItem.setData('modelo', e.target.value)} />
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                    
+                                                    <div>
+                                                        <InputLabel value="Tipo / Subtipo" />
+                                                        <input 
+                                                            list="opcoes-tipo" 
+                                                            className="mt-1 w-full border-gray-300 rounded-lg shadow-sm focus:border-[#FF5A00] focus:ring-[#FF5A00]" 
+                                                            value={formItem.data.tipo ?? ''} 
+                                                            onChange={e => formItem.setData('tipo', e.target.value)} 
+                                                            placeholder="Escolha ou digite..."
+                                                        />
+                                                        <datalist id="opcoes-tipo">
+                                                            {esImovel && <><option value="Residencial"/><option value="Comercial"/><option value="Lazer"/></>}
+                                                            {esVeiculo && <><option value="Passeio"/><option value="Utilitário"/><option value="Luxo"/></>}
+                                                            {esEquipamento && <><option value="Construção"/><option value="Audiovisual"/><option value="Festa"/></>}
+                                                        </datalist>
+                                                    </div>
                                                 </div>
                                             </div>
 
                                             <hr className="border-gray-100" />
 
-                                            {/* 👉 FOTOS DA LOCAÇÃO DE VOLTA AQUI */}
+                                            {/* 👉 FOTOS DA LOCAÇÃO DE VOLTA AQUI COM 24 QUADRADOS */}
                                             <div className="border-t border-gray-100 pt-6">
                                                 <InputLabel value="Fotos da Vitrine de Locação" />
                                                 <p className="text-xs text-gray-500 mb-4 mt-1">
-                                                    Adicione até 5 fotos. <strong className="text-[#FF5A00]">A primeira foto será a capa.</strong> Formatos: JPG, PNG, WEBP (Max: 4MB).
+                                                    Adicione até 24 fotos. <strong className="text-[#FF5A00]">A primeira foto será a capa.</strong> Formatos: JPG, PNG, WEBP (Max: 4MB).
                                                 </p>
                                                 <div className="flex flex-wrap gap-4 mt-4">
-                                                    {[0, 1, 2, 3, 4].map((index) => {
+                                                    {Array.from({ length: 24 }).map((_, index) => {
                                                         const arquivo = quadradosFotosItem[index];
                                                         const previewUrl = arquivo instanceof File ? URL.createObjectURL(arquivo) : arquivo;
                                                         const isCapa = index === 0;
@@ -1612,16 +1591,16 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                             <div>
                                                 <h4 className="text-sm font-black text-gray-800 uppercase tracking-wider mb-4 flex items-center gap-2"><CurrencyDollarIcon className="w-5 h-5 text-[#FF5A00]"/> Matriz Financeira Base</h4>
                                                 <div className="p-6 bg-gray-50 rounded-2xl border grid grid-cols-1 md:grid-cols-4 gap-4">
-                                                    <div><InputLabel value="Valor Diária (R$)" /><TextInput type="number" step="0.01" onBlur={(e) => formatarDecimaisItemOnBlur('valor_diaria', e.target.value)} className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.valor_diaria} onChange={e => formItem.setData('valor_diaria', e.target.value)} /></div>
-                                                    <div><InputLabel value="Valor Semanal (R$)" /><TextInput type="number" step="0.01" onBlur={(e) => formatarDecimaisItemOnBlur('valor_semanal', e.target.value)} className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.valor_semanal} onChange={e => formItem.setData('valor_semanal', e.target.value)} /></div>
-                                                    <div><InputLabel value="Valor Mensal (R$)" /><TextInput type="number" step="0.01" onBlur={(e) => formatarDecimaisItemOnBlur('valor_mensal', e.target.value)} className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.valor_mensal} onChange={e => formItem.setData('valor_mensal', e.target.value)} /></div>
-                                                    <div><InputLabel value="Valor Caução (R$)" /><TextInput type="number" step="0.01" onBlur={(e) => formatarDecimaisItemOnBlur('valor_caucao', e.target.value)} className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.valor_caucao} onChange={e => formItem.setData('valor_caucao', e.target.value)} /></div>
+                                                    <div><InputLabel value="Valor Diária (R$)" /><TextInput type="number" step="0.01" onBlur={(e) => formatarDecimaisItemOnBlur('valor_diaria', e.target.value)} className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.valor_diaria ?? ''} onChange={e => formItem.setData('valor_diaria', e.target.value)} /></div>
+                                                    <div><InputLabel value="Valor Semanal (R$)" /><TextInput type="number" step="0.01" onBlur={(e) => formatarDecimaisItemOnBlur('valor_semanal', e.target.value)} className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.valor_semanal ?? ''} onChange={e => formItem.setData('valor_semanal', e.target.value)} /></div>
+                                                    <div><InputLabel value="Valor Mensal (R$)" /><TextInput type="number" step="0.01" onBlur={(e) => formatarDecimaisItemOnBlur('valor_mensal', e.target.value)} className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.valor_mensal ?? ''} onChange={e => formItem.setData('valor_mensal', e.target.value)} /></div>
+                                                    <div><InputLabel value="Valor Caução (R$)" /><TextInput type="number" step="0.01" onBlur={(e) => formatarDecimaisItemOnBlur('valor_caucao', e.target.value)} className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.valor_caucao ?? ''} onChange={e => formItem.setData('valor_caucao', e.target.value)} /></div>
                                                 </div>
 
                                                 <div className="p-6 bg-white border rounded-2xl grid grid-cols-1 md:grid-cols-2 gap-6 mt-4 shadow-sm">
                                                     <div>
                                                         <InputLabel value="Período Escolhido para Cobrança Padrão *" />
-                                                        <select className="mt-1 w-full py-3 border-gray-300 rounded-xl font-medium text-sm focus:border-[#FF5A00]" value={formItem.data.periodo_faturamento_padrao} onChange={e => formItem.setData('periodo_faturamento_padrao', e.target.value)} required>
+                                                        <select className="mt-1 w-full py-3 border-gray-300 rounded-xl font-medium text-sm focus:border-[#FF5A00]" value={formItem.data.periodo_faturamento_padrao ?? ''} onChange={e => formItem.setData('periodo_faturamento_padrao', e.target.value)} required>
                                                             <option value="diaria">Cobrar por Diária</option>
                                                             <option value="semanal">Cobrar por Semana</option>
                                                             <option value="mensal">Cobrar por Mês</option>
@@ -1629,7 +1608,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                     </div>
                                                     <div>
                                                         <InputLabel value="Forma de Liquidação / Pagamento *" />
-                                                        <select className="mt-1 w-full py-3 border-gray-300 rounded-xl font-medium text-sm focus:border-[#FF5A00]" value={formItem.data.permitir_pagamento} onChange={e => formItem.setData('permitir_pagamento', e.target.value)} required>
+                                                        <select className="mt-1 w-full py-3 border-gray-300 rounded-xl font-medium text-sm focus:border-[#FF5A00]" value={formItem.data.permitir_pagamento ?? ''} onChange={e => formItem.setData('permitir_pagamento', e.target.value)} required>
                                                             <option value="online">Pagamento Online (Via App com Split Direto)</option>
                                                             <option value="presencial">Pagamento Presencial (Direto ao Estabelecimento)</option>
                                                         </select>
@@ -1658,14 +1637,14 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                                 <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2 pt-4 border-t border-gray-100">
                                                                     <div>
                                                                         <InputLabel value="Tipo de Desconto" />
-                                                                        <select className="mt-1 w-full border-gray-300 rounded-lg text-sm focus:border-[#FF5A00]" value={formItem.data.tipo_desconto} onChange={e => formItem.setData('tipo_desconto', e.target.value)}>
+                                                                        <select className="mt-1 w-full border-gray-300 rounded-lg text-sm focus:border-[#FF5A00]" value={formItem.data.tipo_desconto ?? ''} onChange={e => formItem.setData('tipo_desconto', e.target.value)}>
                                                                             <option value="percentual">Porcentagem (%)</option>
                                                                             <option value="fixo">Fixo (R$)</option>
                                                                         </select>
                                                                     </div>
                                                                     <div>
                                                                         <InputLabel value="Valor do Desconto" />
-                                                                        <TextInput type="number" min="0" step="0.01" className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.valor_desconto} onChange={e => formItem.setData('valor_desconto', e.target.value)} placeholder="Ex: 20" required={formItem.data.tem_promocao} />
+                                                                        <TextInput type="number" min="0" step="0.01" className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.valor_desconto ?? ''} onChange={e => formItem.setData('valor_desconto', e.target.value)} placeholder="Ex: 20" required={formItem.data.tem_promocao} />
                                                                     </div>
                                                                 </div>
                                                             )}
@@ -1687,7 +1666,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                             {formItem.data.aceita_pontos && (
                                                                 <div className="animate-in fade-in slide-in-from-top-2 pt-4 border-t border-gray-100">
                                                                     <InputLabel value="Máximo de Pontos Permitidos por Reserva" />
-                                                                    <TextInput type="number" min="1" className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.maximo_pontos_permitidos} onChange={e => formItem.setData('maximo_pontos_permitidos', e.target.value)} placeholder="Ex: 100 pontos" required={formItem.data.aceita_pontos} />
+                                                                    <TextInput type="number" min="1" className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.maximo_pontos_permitidos ?? ''} onChange={e => formItem.setData('maximo_pontos_permitidos', e.target.value)} placeholder="Ex: 100 pontos" required={formItem.data.aceita_pontos} />
                                                                     <p className="text-[10px] text-gray-400 mt-1">Lembre-se: 100 pontos = R$ 1,00 de desconto.</p>
                                                                 </div>
                                                             )}
@@ -1720,7 +1699,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                                     <XMarkIcon className="w-5 h-5" />
                                                                 </button>
                                                                 <h4 className="text-sm font-black uppercase tracking-wider mb-2 flex items-center gap-2 text-gray-800">
-                                                                    <CurrencyDollarIcon className="w-5 h-5 text-[#FF5A00]"/> 📊 Simulador de Repasse Financeiro
+                                                                    <CurrencyDollarIcon className="w-5 h-5 text-[#FF5A00]"/> Simulador de Repasse Financeiro
                                                                 </h4>
                                                                 <p className="text-[11px] text-gray-500 mb-6 leading-relaxed max-w-2xl">
                                                                     Veja quanto o cliente vai pagar e o valor líquido exato que vai entrar na sua conta após aplicar a taxa da LOKYVA (12%) e os seus descontos e pontos.
@@ -1735,7 +1714,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                                                 min="0" 
                                                                                 max={formItem.data.maximo_pontos_permitidos || 0}
                                                                                 className="w-full text-sm font-bold bg-white text-gray-900 border-gray-300 focus:border-[#FF5A00]" 
-                                                                                value={simulacaoPontos} 
+                                                                                value={simulacaoPontos ?? ''} 
                                                                                 onChange={e => setSimulacaoPontos(e.target.value)} 
                                                                                 placeholder="Ex: 100"
                                                                             />
@@ -1790,7 +1769,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
 
                                                         <div>
                                                             <InputLabel value="Tipo de Disponibilidade do Item" />
-                                                            <select className="mt-1 w-full border-gray-300 rounded-lg shadow-sm focus:border-[#FF5A00]" value={formItem.data.tipo_disponibilidade} onChange={e => formItem.setData('tipo_disponibilidade', e.target.value)}>
+                                                            <select className="mt-1 w-full border-gray-300 rounded-lg shadow-sm focus:border-[#FF5A00]" value={formItem.data.tipo_disponibilidade ?? ''} onChange={e => formItem.setData('tipo_disponibilidade', e.target.value)}>
                                                                 <option value="todos">Todos os dias</option>
                                                                 <option value="dias_semana">Apenas Dias da Semana Específicos</option>
                                                                 <option value="dias_mes">Apenas Dias do Mês Específicos</option>
@@ -1800,8 +1779,8 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
 
                                                         {!formItem.data.sempre_disponivel && (
                                                             <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2">
-                                                                <div><InputLabel value="Início da Temporada" /><TextInput type="date" className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.data_inicio_disponibilidade} onChange={e => formItem.setData('data_inicio_disponibilidade', e.target.value)} /></div>
-                                                                <div><InputLabel value="Fim da Temporada" /><TextInput type="date" className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.data_fim_disponibilidade} onChange={e => formItem.setData('data_fim_disponibilidade', e.target.value)} /></div>
+                                                                <div><InputLabel value="Início da Temporada" /><TextInput type="date" className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.data_inicio_disponibilidade ?? ''} onChange={e => formItem.setData('data_inicio_disponibilidade', e.target.value)} /></div>
+                                                                <div><InputLabel value="Fim da Temporada" /><TextInput type="date" className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.data_fim_disponibilidade ?? ''} onChange={e => formItem.setData('data_fim_disponibilidade', e.target.value)} /></div>
                                                             </div>
                                                         )}
                                                     </div>
@@ -1828,7 +1807,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                         {formItem.data.tipo_disponibilidade === 'dias_mes' && (
                                                             <div className="animate-in fade-in">
                                                                 <InputLabel value="Dias do mês permitidos" />
-                                                                <TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={diasMesInput} onChange={e => setDiasMesInput(e.target.value)} placeholder="Ex: 1, 5, 10, 15, 20" />
+                                                                <TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={diasMesInput ?? ''} onChange={e => setDiasMesInput(e.target.value)} placeholder="Ex: 1, 5, 10, 15, 20" />
                                                             </div>
                                                         )}
 
@@ -1836,7 +1815,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                             <div className="animate-in fade-in bg-white p-4 rounded-xl border">
                                                                 <InputLabel value="Datas Especificas Permitidas" />
                                                                 <div className="flex items-center gap-2 mt-1 mb-3">
-                                                                    <TextInput type="date" value={novaDataPermitida} onChange={e => setNovaDataPermitida(e.target.value)} className="flex-1 focus:border-[#FF5A00]" />
+                                                                    <TextInput type="date" value={novaDataPermitida ?? ''} onChange={e => setNovaDataPermitida(e.target.value)} className="flex-1 focus:border-[#FF5A00]" />
                                                                     <button type="button" onClick={addDataPermitida} className="px-4 py-2 bg-gray-200 hover:bg-gray-300 font-bold rounded-lg">+</button>
                                                                 </div>
                                                                 <div className="flex flex-wrap gap-2">
@@ -1859,17 +1838,103 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 bg-white p-5 rounded-2xl border shadow-sm">
                                                         <div>
                                                             <InputLabel value="Horário Início (Retirada / Check-in)" />
-                                                            <TextInput type="time" className="w-full mt-1 bg-gray-50 focus:border-[#FF5A00]" value={formItem.data.horario_inicio} onChange={e => formItem.setData('horario_inicio', e.target.value)} />
+                                                            <TextInput type="time" className="w-full mt-1 bg-gray-50 focus:border-[#FF5A00]" value={formItem.data.horario_inicio ?? ''} onChange={e => formItem.setData('horario_inicio', e.target.value)} />
                                                         </div>
                                                         <div>
                                                             <InputLabel value="Horário Fim (Devolução Padrão)" />
-                                                            <TextInput type="time" className="w-full mt-1 bg-gray-50 focus:border-[#FF5A00]" value={formItem.data.horario_fim} onChange={e => formItem.setData('horario_fim', e.target.value)} />
+                                                            <TextInput type="time" className="w-full mt-1 bg-gray-50 focus:border-[#FF5A00]" value={formItem.data.horario_fim ?? ''} onChange={e => formItem.setData('horario_fim', e.target.value)} />
                                                         </div>
                                                         <div>
                                                             <InputLabel value="Horário Limite para Devolução" />
-                                                            <TextInput type="time" className="w-full mt-1 bg-red-50 text-red-700 border-red-200 focus:border-red-400" value={formItem.data.horario_limite_devolucao} onChange={e => formItem.setData('horario_limite_devolucao', e.target.value)} />
+                                                            <TextInput type="time" className="w-full mt-1 bg-red-50 text-red-700 border-red-200 focus:border-red-400" value={formItem.data.horario_limite_devolucao ?? ''} onChange={e => formItem.setData('horario_limite_devolucao', e.target.value)} />
                                                         </div>
                                                     </div>
+                                                </div>
+
+                                                {/* 👉 NOVO BLOCO DE DISPONIBILIDADE DINÂMICA (VAGAS E HORÁRIOS) */}
+                                                <div className="bg-white p-5 rounded-2xl border shadow-sm mt-4">
+                                                    <label className="flex items-center justify-between cursor-pointer mb-4">
+                                                        <div>
+                                                            <span className="font-bold text-sm text-gray-900 block flex items-center gap-2">Controlar Vagas por Data e Horário?</span>
+                                                            <span className="text-xs text-gray-500">Ex: 15 vagas hoje, 2 amanhã. Ou 5 vagas às 18h, 5 às 19h.</span>
+                                                        </div>
+                                                        <div className="relative inline-flex items-center">
+                                                            <input type="checkbox" className="sr-only peer" checked={formItem.data.disponibilidade_por_data} onChange={e => formItem.setData('disponibilidade_por_data', e.target.checked)} />
+                                                            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#FF5A00]"></div>
+                                                        </div>
+                                                    </label>
+
+                                                    {formItem.data.disponibilidade_por_data && (
+                                                        <div className="space-y-6 pt-6 border-t border-gray-100 animate-in fade-in">
+                                                            {/* Qtd Padrão */}
+                                                            <div className="grid grid-cols-2 gap-4">
+                                                                <div>
+                                                                    <InputLabel value="Qtd. Padrão Diária" />
+                                                                    <TextInput type="number" min="0" className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.quantidade_padrao ?? ''} onChange={e => formItem.setData('quantidade_padrao', e.target.value)} placeholder="Ex: 10" />
+                                                                </div>
+                                                                <div>
+                                                                    <InputLabel value="Tipo (vagas, pessoas, etc)" />
+                                                                    <TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.tipo_quantidade ?? ''} onChange={e => formItem.setData('tipo_quantidade', e.target.value)} placeholder="Ex: mesas" />
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 pt-4">
+                                                                {/* Dias Específicos */}
+                                                                <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                                                                    <InputLabel value="Quantidade por Dia Específico" className="mb-2 font-bold text-indigo-700" />
+                                                                    <div className="flex gap-2 mb-4">
+                                                                        <TextInput type="date" className="flex-1 text-sm focus:border-indigo-500" value={novaDispData} onChange={e => setNovaDispData(e.target.value)} />
+                                                                        <TextInput type="number" min="0" placeholder="Qtd" className="w-20 text-center text-sm focus:border-indigo-500" value={novaDispQtd} onChange={e => setNovaDispQtd(e.target.value)} />
+                                                                        <button type="button" onClick={handleAddDiaDisponivel} className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg font-bold">+</button>
+                                                                    </div>
+                                                                    <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
+                                                                        {parseArraySeguro(formItem.data.dias_disponiveis).map((item, idx) => (
+                                                                            <div key={idx} className="flex justify-between items-center bg-white p-2 rounded border border-gray-200 shadow-sm text-sm">
+                                                                                <span className="font-bold text-gray-700">{item.data}</span>
+                                                                                <span className="flex items-center gap-3">
+                                                                                    <span className="bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded font-bold text-xs">{item.quantidade} {formItem.data.tipo_quantidade || 'vagas'}</span>
+                                                                                    <button type="button" onClick={() => handleRemoveDiaDisponivel(item.data)} className="text-red-500 hover:text-red-700"><XMarkIcon className="w-4 h-4"/></button>
+                                                                                </span>
+                                                                            </div>
+                                                                        ))}
+                                                                        {parseArraySeguro(formItem.data.dias_disponiveis).length === 0 && <p className="text-xs text-gray-400 italic text-center py-2">Nenhum dia específico configurado.</p>}
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* Horários Específicos */}
+                                                                <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                                                                    <InputLabel value="Quantidade por Horário Específico" className="mb-2 font-bold text-emerald-700" />
+                                                                    <div className="flex flex-col gap-2 mb-4">
+                                                                        <TextInput type="date" className="w-full text-sm focus:border-emerald-500" value={novaHoraDispData} onChange={e => setNovaHoraDispData(e.target.value)} />
+                                                                        <div className="flex gap-2">
+                                                                            <TextInput type="time" className="flex-1 text-sm focus:border-emerald-500" value={novaHoraDispInicio} onChange={e => setNovaHoraDispInicio(e.target.value)} />
+                                                                            <span className="self-center text-gray-400 text-xs">às</span>
+                                                                            <TextInput type="time" className="flex-1 text-sm focus:border-emerald-500" value={novaHoraDispFim} onChange={e => setNovaHoraDispFim(e.target.value)} />
+                                                                            <TextInput type="number" min="0" placeholder="Qtd" className="w-16 text-center text-sm focus:border-emerald-500" value={novaHoraDispQtd} onChange={e => setNovaHoraDispQtd(e.target.value)} />
+                                                                            <button type="button" onClick={handleAddHorarioDisponivel} className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg font-bold">+</button>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="space-y-2 max-h-48 overflow-y-auto pr-2">
+                                                                        {parseArraySeguro(formItem.data.horarios_disponiveis).map((item, dIdx) => (
+                                                                            <div key={dIdx} className="bg-white p-2 rounded border border-gray-200 shadow-sm text-sm">
+                                                                                <div className="font-bold text-gray-800 border-b pb-1 mb-2">{item.data}</div>
+                                                                                {item.horarios.map((h, hIdx) => (
+                                                                                    <div key={hIdx} className="flex justify-between items-center py-1">
+                                                                                        <span className="text-gray-600 text-xs">{h.inicio} às {h.fim}</span>
+                                                                                        <span className="flex items-center gap-2">
+                                                                                            <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-bold text-[10px]">{h.quantidade} {formItem.data.tipo_quantidade || 'vagas'}</span>
+                                                                                            <button type="button" onClick={() => handleRemoveHorarioDisponivel(item.data, hIdx)} className="text-red-500 hover:text-red-700"><XMarkIcon className="w-3 h-3"/></button>
+                                                                                        </span>
+                                                                                    </div>
+                                                                                ))}
+                                                                            </div>
+                                                                        ))}
+                                                                        {parseArraySeguro(formItem.data.horarios_disponiveis).length === 0 && <p className="text-xs text-gray-400 italic text-center py-2">Nenhum horário configurado.</p>}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </div>
 
                                                 {/* BLOCO 4: REGRAS DE RESERVA */}
@@ -1878,19 +1943,19 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                                         <div className="bg-white p-4 rounded-xl border text-center">
                                                             <span className="text-xs font-bold text-gray-400 uppercase block mb-2">Antecedência Min</span>
-                                                            <TextInput type="number" min="0" className="w-20 text-center font-bold focus:border-[#FF5A00]" value={formItem.data.antecedencia_reserva_horas} onChange={e => formItem.setData('antecedencia_reserva_horas', e.target.value)} />
+                                                            <TextInput type="number" min="0" className="w-20 text-center font-bold focus:border-[#FF5A00]" value={formItem.data.antecedencia_reserva_horas ?? ''} onChange={e => formItem.setData('antecedencia_reserva_horas', e.target.value)} />
                                                         </div>
                                                         <div className="bg-white p-4 rounded-xl border text-center">
                                                             <span className="text-xs font-bold text-gray-400 uppercase block mb-2">Duração Mínima</span>
-                                                            <TextInput type="number" min="1" className="w-20 text-center font-bold focus:border-[#FF5A00]" value={formItem.data.duracao_minima_horas} onChange={e => formItem.setData('duracao_minima_horas', e.target.value)} />
+                                                            <TextInput type="number" min="1" className="w-20 text-center font-bold focus:border-[#FF5A00]" value={formItem.data.duracao_minima_horas ?? ''} onChange={e => formItem.setData('duracao_minima_horas', e.target.value)} />
                                                         </div>
                                                         <div className="bg-white p-4 rounded-xl border text-center">
                                                             <span className="text-xs font-bold text-gray-400 uppercase block mb-2">Duração Máxima</span>
-                                                            <TextInput type="number" min="1" className="w-20 text-center font-bold focus:border-[#FF5A00]" value={formItem.data.duracao_maxima_horas} onChange={e => formItem.setData('duracao_maxima_horas', e.target.value)} />
+                                                            <TextInput type="number" min="1" className="w-20 text-center font-bold focus:border-[#FF5A00]" value={formItem.data.duracao_maxima_horas ?? ''} onChange={e => formItem.setData('duracao_maxima_horas', e.target.value)} />
                                                         </div>
                                                         <div className="bg-white p-4 rounded-xl border text-center">
                                                             <span className="text-xs font-bold text-gray-400 uppercase block mb-2">Intervalo (Min)</span>
-                                                            <TextInput type="number" min="0" className="w-20 text-center font-bold focus:border-[#FF5A00]" value={formItem.data.intervalo_entre_reservas_minutos} onChange={e => formItem.setData('intervalo_entre_reservas_minutos', e.target.value)} />
+                                                            <TextInput type="number" min="0" className="w-20 text-center font-bold focus:border-[#FF5A00]" value={formItem.data.intervalo_entre_reservas_minutos ?? ''} onChange={e => formItem.setData('intervalo_entre_reservas_minutos', e.target.value)} />
                                                         </div>
                                                     </div>
                                                 </div>
@@ -1904,7 +1969,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                         <div className="bg-white p-5 rounded-2xl border shadow-sm">
                                                             <InputLabel value="Bloquear Datas Inteiras (Dias Fechados)" />
                                                             <div className="flex items-center gap-2 mt-2 mb-4">
-                                                                <TextInput type="date" value={novaDataBloqueada} onChange={e => setNovaDataBloqueada(e.target.value)} className="flex-1 border-red-200 focus:border-red-400" />
+                                                                <TextInput type="date" value={novaDataBloqueada ?? ''} onChange={e => setNovaDataBloqueada(e.target.value)} className="flex-1 border-red-200 focus:border-red-400" />
                                                                 <button type="button" onClick={addDataBloqueada} className="px-4 py-2 bg-red-100 text-red-700 font-bold rounded-lg">+</button>
                                                             </div>
                                                             <div className="flex flex-wrap gap-2">
@@ -1919,9 +1984,9 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                         <div className="bg-white p-5 rounded-2xl border shadow-sm">
                                                             <InputLabel value="Bloquear Horários Específicos" />
                                                             <div className="flex items-center gap-2 mt-2 mb-4">
-                                                                <TextInput type="date" className="w-1/3 text-xs focus:border-[#FF5A00]" value={novoHorarioBloqueado.data} onChange={e => setNovoHorarioBloqueado({...novoHorarioBloqueado, data: e.target.value})} />
-                                                                <TextInput type="time" className="w-1/4 text-xs text-center focus:border-[#FF5A00]" value={novoHorarioBloqueado.inicio} onChange={e => setNovoHorarioBloqueado({...novoHorarioBloqueado, inicio: e.target.value})} />
-                                                                <TextInput type="time" className="w-1/4 text-xs text-center focus:border-[#FF5A00]" value={novoHorarioBloqueado.fim} onChange={e => setNovoHorarioBloqueado({...novoHorarioBloqueado, fim: e.target.value})} />
+                                                                <TextInput type="date" className="w-1/3 text-xs focus:border-[#FF5A00]" value={novoHorarioBloqueado.data ?? ''} onChange={e => setNovoHorarioBloqueado({...novoHorarioBloqueado, data: e.target.value})} />
+                                                                <TextInput type="time" className="w-1/4 text-xs text-center focus:border-[#FF5A00]" value={novoHorarioBloqueado.inicio ?? ''} onChange={e => setNovoHorarioBloqueado({...novoHorarioBloqueado, inicio: e.target.value})} />
+                                                                <TextInput type="time" className="w-1/4 text-xs text-center focus:border-[#FF5A00]" value={novoHorarioBloqueado.fim ?? ''} onChange={e => setNovoHorarioBloqueado({...novoHorarioBloqueado, fim: e.target.value})} />
                                                                 <button type="button" onClick={addHorarioBloqueado} className="px-3 py-2 bg-red-100 text-red-700 font-bold rounded-lg">+</button>
                                                             </div>
                                                             <div className="space-y-2">
@@ -1938,7 +2003,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
 
                                                 <div className="pt-2">
                                                     <InputLabel value="6. Observações e Regras para o Cliente" />
-                                                    <textarea className="mt-1 w-full border-gray-300 rounded-xl focus:border-[#FF5A00] text-sm" rows="2" value={formItem.data.observacoes_disponibilidade} onChange={e => formItem.setData('observacoes_disponibilidade', e.target.value)} placeholder="Ex: Manutenção aos domingos, não garantimos entrega em feriados..."></textarea>
+                                                    <textarea className="mt-1 w-full border-gray-300 rounded-xl focus:border-[#FF5A00] text-sm" rows="2" value={formItem.data.observacoes_disponibilidade ?? ''} onChange={e => formItem.setData('observacoes_disponibilidade', e.target.value)} placeholder="Ex: Manutenção aos domingos, não garantimos entrega em feriados..."></textarea>
                                                 </div>
                                             </div>
 
@@ -1949,32 +2014,32 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                 <div className="p-6 bg-orange-50/40 border border-orange-100 rounded-3xl space-y-4">
                                                     <h4 className="text-sm font-black text-gray-800 uppercase tracking-wider flex items-center gap-2"><MapPinIcon className="w-4 h-4"/> Especificações do Imóvel</h4>
                                                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                                                        <div><InputLabel value="CEP" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.cep} onChange={e => formItem.setData('cep', e.target.value)} onBlur={(e) => buscarEnderecoAutomatizado(e.target.value, formItem.setData, '')} placeholder="Digite para auto-preencher" /></div>
-                                                        <div className="md:col-span-2"><InputLabel value="Rua" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.endereco} onChange={e => formItem.setData('endereco', e.target.value)} /></div>
-                                                        <div><InputLabel value="Número" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.numero} onChange={e => formItem.setData('numero', e.target.value)} /></div>
+                                                        <div><InputLabel value="CEP" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.cep ?? ''} onChange={e => formItem.setData('cep', e.target.value)} onBlur={(e) => buscarEnderecoAutomatizado(e.target.value, formItem.setData, '')} placeholder="Digite para auto-preencher" /></div>
+                                                        <div className="md:col-span-2"><InputLabel value="Rua" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.endereco ?? ''} onChange={e => formItem.setData('endereco', e.target.value)} /></div>
+                                                        <div><InputLabel value="Número" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.numero ?? ''} onChange={e => formItem.setData('numero', e.target.value)} /></div>
                                                     </div>
                                                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                                                        <div><InputLabel value="Bairro" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.bairro} onChange={e => formItem.setData('bairro', e.target.value)} /></div>
-                                                        <div><InputLabel value="Cidade" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.cidade} onChange={e => formItem.setData('cidade', e.target.value)} /></div>
+                                                        <div><InputLabel value="Bairro" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.bairro ?? ''} onChange={e => formItem.setData('bairro', e.target.value)} /></div>
+                                                        <div><InputLabel value="Cidade" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.cidade ?? ''} onChange={e => formItem.setData('cidade', e.target.value)} /></div>
                                                         <div>
                                                             <InputLabel value="Estado (UF)" />
-                                                            <select className="mt-1 w-full border-gray-300 rounded-lg shadow-sm focus:border-[#FF5A00]" value={formItem.data.estado} onChange={e => formItem.setData('estado', e.target.value)}>
+                                                            <select className="mt-1 w-full border-gray-300 rounded-lg shadow-sm focus:border-[#FF5A00]" value={formItem.data.estado ?? ''} onChange={e => formItem.setData('estado', e.target.value)}>
                                                                 <option value="">UF</option>
                                                                 {ufsBrasil.map(uf => <option key={uf} value={uf}>{uf}</option>)}
                                                             </select>
                                                         </div>
-                                                        <div><InputLabel value="Complemento" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.complemento} onChange={e => formItem.setData('complemento', e.target.value)} /></div>
+                                                        <div><InputLabel value="Complemento" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.complemento ?? ''} onChange={e => formItem.setData('complemento', e.target.value)} /></div>
                                                     </div>
                                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                                        <div><InputLabel value="Latitude (Auto)" /><TextInput type="text" readOnly className="w-full mt-1 bg-gray-100 text-gray-500 cursor-not-allowed select-all" value={formItem.data.latitude} /></div>
-                                                        <div><InputLabel value="Longitude (Auto)" /><TextInput type="text" readOnly className="w-full mt-1 bg-gray-100 text-gray-500 cursor-not-allowed select-all" value={formItem.data.longitude} /></div>
+                                                        <div><InputLabel value="Latitude (Auto)" /><TextInput type="text" readOnly className="w-full mt-1 bg-gray-100 text-gray-500 cursor-not-allowed select-all" value={formItem.data.latitude ?? ''} /></div>
+                                                        <div><InputLabel value="Longitude (Auto)" /><TextInput type="text" readOnly className="w-full mt-1 bg-gray-100 text-gray-500 cursor-not-allowed select-all" value={formItem.data.longitude ?? ''} /></div>
                                                     </div>
                                                     <div className="grid grid-cols-2 md:grid-cols-5 gap-4 pt-4 border-t border-orange-200">
-                                                        <div><InputLabel value="Quartos" /><TextInput type="number" className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.numero_quartos} onChange={e => formItem.setData('numero_quartos', e.target.value)} /></div>
-                                                        <div><InputLabel value="Banheiros" /><TextInput type="number" className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.numero_banheiros} onChange={e => formItem.setData('numero_banheiros', e.target.value)} /></div>
-                                                        <div><InputLabel value="Suítes" /><TextInput type="number" className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.numero_suites} onChange={e => formItem.setData('numero_suites', e.target.value)} /></div>
-                                                        <div><InputLabel value="Garagem" /><TextInput type="number" className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.numero_vagas} onChange={e => formItem.setData('numero_vagas', e.target.value)} /></div>
-                                                        <div><InputLabel value="Cômodos" /><TextInput type="number" className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.numero_comodos} onChange={e => formItem.setData('numero_comodos', e.target.value)} /></div>
+                                                        <div><InputLabel value="Quartos" /><TextInput type="number" className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.numero_quartos ?? ''} onChange={e => formItem.setData('numero_quartos', e.target.value)} /></div>
+                                                        <div><InputLabel value="Banheiros" /><TextInput type="number" className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.numero_banheiros ?? ''} onChange={e => formItem.setData('numero_banheiros', e.target.value)} /></div>
+                                                        <div><InputLabel value="Suítes" /><TextInput type="number" className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.numero_suites ?? ''} onChange={e => formItem.setData('numero_suites', e.target.value)} /></div>
+                                                        <div><InputLabel value="Garagem" /><TextInput type="number" className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.numero_vagas ?? ''} onChange={e => formItem.setData('numero_vagas', e.target.value)} /></div>
+                                                        <div><InputLabel value="Cômodos" /><TextInput type="number" className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.numero_comodos ?? ''} onChange={e => formItem.setData('numero_comodos', e.target.value)} /></div>
                                                     </div>
                                                 </div>
                                             )}
@@ -1983,22 +2048,22 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                 <div className="p-6 bg-blue-50/40 border border-blue-100 rounded-3xl space-y-4">
                                                     <h4 className="text-sm font-bold text-gray-800 uppercase tracking-wider">Especificações de Frota</h4>
                                                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                                                        <div><InputLabel value="Placa *" /><TextInput maxLength="7" className="w-full mt-1 uppercase focus:border-[#FF5A00]" value={formItem.data.placa} onChange={e => formItem.setData('placa', e.target.value.toUpperCase())} /></div>
-                                                        <div><InputLabel value="Renavam" /><TextInput maxLength="11" className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.renavam} onChange={e => formItem.setData('renavam', e.target.value.replace(/\D/g, ''))} /></div>
-                                                        <div><InputLabel value="Chassis" /><TextInput maxLength="17" className="w-full mt-1 uppercase focus:border-[#FF5A00]" value={formItem.data.chassis} onChange={e => formItem.setData('chassis', e.target.value.toUpperCase())} /></div>
-                                                        <div><InputLabel value="Quilometragem (KM)" /><TextInput type="number" className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.quilometragem} onChange={e => formItem.setData('quilometragem', e.target.value)} /></div>
+                                                        <div><InputLabel value="Placa *" /><TextInput maxLength="7" className="w-full mt-1 uppercase focus:border-[#FF5A00]" value={formItem.data.placa ?? ''} onChange={e => formItem.setData('placa', e.target.value.toUpperCase())} /></div>
+                                                        <div><InputLabel value="Renavam" /><TextInput maxLength="11" className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.renavam ?? ''} onChange={e => formItem.setData('renavam', e.target.value.replace(/\D/g, ''))} /></div>
+                                                        <div><InputLabel value="Chassis" /><TextInput maxLength="17" className="w-full mt-1 uppercase focus:border-[#FF5A00]" value={formItem.data.chassis ?? ''} onChange={e => formItem.setData('chassis', e.target.value.toUpperCase())} /></div>
+                                                        <div><InputLabel value="Quilometragem (KM)" /><TextInput type="number" className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.quilometragem ?? ''} onChange={e => formItem.setData('quilometragem', e.target.value)} /></div>
                                                     </div>
                                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                                         <div>
                                                             <InputLabel value="Ano de Fabricação" />
-                                                            <select className="mt-1 w-full py-3 border-gray-300 rounded-xl font-medium text-sm text-gray-700 focus:border-[#FF5A00]" value={formItem.data.ano} onChange={e => formItem.setData('ano', e.target.value)}>
+                                                            <select className="mt-1 w-full py-3 border-gray-300 rounded-xl font-medium text-sm text-gray-700 focus:border-[#FF5A00]" value={formItem.data.ano ?? ''} onChange={e => formItem.setData('ano', e.target.value)}>
                                                                 <option value="">Selecione o ano...</option>
                                                                 {anosDisponiveis.map(ano => <option key={ano} value={ano}>{ano}</option>)}
                                                             </select>
                                                         </div>
                                                         <div>
                                                             <InputLabel value="Combustível" />
-                                                            <select className="mt-1 w-full py-3 border-gray-300 rounded-xl font-medium text-sm text-gray-700 focus:border-[#FF5A00]" value={formItem.data.combustivel} onChange={e => formItem.setData('combustivel', e.target.value)}>
+                                                            <select className="mt-1 w-full py-3 border-gray-300 rounded-xl font-medium text-sm text-gray-700 focus:border-[#FF5A00]" value={formItem.data.combustivel ?? ''} onChange={e => formItem.setData('combustivel', e.target.value)}>
                                                                 <option value="Flex">Flex</option>
                                                                 <option value="Gasolina">Gasolina</option>
                                                                 <option value="Álcool">Álcool</option>
@@ -2009,7 +2074,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                         </div>
                                                         <div>
                                                             <InputLabel value="Câmbio" />
-                                                            <select className="mt-1 w-full py-3 border-gray-300 rounded-xl font-medium text-sm text-gray-700 focus:border-[#FF5A00]" value={formItem.data.cambio} onChange={e => formItem.setData('cambio', e.target.value)}>
+                                                            <select className="mt-1 w-full py-3 border-gray-300 rounded-xl font-medium text-sm text-gray-700 focus:border-[#FF5A00]" value={formItem.data.cambio ?? ''} onChange={e => formItem.setData('cambio', e.target.value)}>
                                                                 <option value="Manual">Manual</option>
                                                                 <option value="Automático">Automático</option>
                                                             </select>
@@ -2023,46 +2088,46 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                     <div className="p-6 bg-gray-50 border rounded-3xl space-y-4">
                                                         <h4 className="text-sm font-black text-gray-800 uppercase tracking-wider flex items-center gap-2"><ArrowDownTrayIcon className="w-4 h-4 text-gray-400" /> Endereço de Retirada Completo</h4>
                                                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                                            <div className="sm:col-span-1"><InputLabel value="CEP" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.cep_retirada} onChange={e => formItem.setData('cep_retirada', e.target.value)} onBlur={(e) => buscarEnderecoAutomatizado(e.target.value, formItem.setData, '_retirada')} /></div>
-                                                            <div className="sm:col-span-2"><InputLabel value="Rua de Retirada" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.rua_retirada} onChange={e => formItem.setData('rua_retirada', e.target.value)} /></div>
+                                                            <div className="sm:col-span-1"><InputLabel value="CEP" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.cep_retirada ?? ''} onChange={e => formItem.setData('cep_retirada', e.target.value)} onBlur={(e) => buscarEnderecoAutomatizado(e.target.value, formItem.setData, '_retirada')} /></div>
+                                                            <div className="sm:col-span-2"><InputLabel value="Rua de Retirada" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.rua_retirada ?? ''} onChange={e => formItem.setData('rua_retirada', e.target.value)} /></div>
                                                         </div>
                                                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                                            <div><InputLabel value="Bairro" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.bairro_retirada} onChange={e => formItem.setData('bairro_retirada', e.target.value)} /></div>
-                                                            <div><InputLabel value="Cidade" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.cidade_retirada} onChange={e => formItem.setData('cidade_retirada', e.target.value)} /></div>
+                                                            <div><InputLabel value="Bairro" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.bairro_retirada ?? ''} onChange={e => formItem.setData('bairro_retirada', e.target.value)} /></div>
+                                                            <div><InputLabel value="Cidade" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.cidade_retirada ?? ''} onChange={e => formItem.setData('cidade_retirada', e.target.value)} /></div>
                                                             <div>
                                                                 <InputLabel value="UF" />
-                                                                <select className="mt-1 w-full border-gray-300 rounded-lg shadow-sm focus:border-[#FF5A00]" value={formItem.data.estado_retirada} onChange={e => formItem.setData('estado_retirada', e.target.value)}>
+                                                                <select className="mt-1 w-full border-gray-300 rounded-lg shadow-sm focus:border-[#FF5A00]" value={formItem.data.estado_retirada ?? ''} onChange={e => formItem.setData('estado_retirada', e.target.value)}>
                                                                     <option value="">UF</option>
                                                                     {ufsBrasil.map(uf => <option key={uf} value={uf}>{uf}</option>)}
                                                                 </select>
                                                             </div>
                                                         </div>
                                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                                            <div><InputLabel value="Latitude" /><TextInput type="text" readOnly className="w-full mt-1 bg-gray-100 text-gray-500 font-mono text-xs" value={formItem.data.latitude_retirada} /></div>
-                                                            <div><InputLabel value="Longitude" /><TextInput type="text" readOnly className="w-full mt-1 bg-gray-100 text-gray-500 font-mono text-xs" value={formItem.data.longitude_retirada} /></div>
+                                                            <div><InputLabel value="Latitude" /><TextInput type="text" readOnly className="w-full mt-1 bg-gray-100 text-gray-500 font-mono text-xs" value={formItem.data.latitude_retirada ?? ''} /></div>
+                                                            <div><InputLabel value="Longitude" /><TextInput type="text" readOnly className="w-full mt-1 bg-gray-100 text-gray-500 font-mono text-xs" value={formItem.data.longitude_retirada ?? ''} /></div>
                                                         </div>
                                                     </div>
 
                                                     <div className="p-6 bg-gray-50 border rounded-3xl space-y-4">
                                                         <h4 className="text-sm font-black text-gray-800 uppercase tracking-wider flex items-center gap-2"><TruckIcon className="w-4 h-4 text-gray-400" /> Endereço de Entrega Completo</h4>
                                                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                                            <div className="sm:col-span-1"><InputLabel value="CEP" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.cep_entrega} onChange={e => formItem.setData('cep_entrega', e.target.value)} onBlur={(e) => buscarEnderecoAutomatizado(e.target.value, formItem.setData, '_entrega')} /></div>
-                                                            <div className="sm:col-span-2"><InputLabel value="Rua de Entrega" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.rua_entrega} onChange={e => formItem.setData('rua_entrega', e.target.value)} /></div>
+                                                            <div className="sm:col-span-1"><InputLabel value="CEP" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.cep_entrega ?? ''} onChange={e => formItem.setData('cep_entrega', e.target.value)} onBlur={(e) => buscarEnderecoAutomatizado(e.target.value, formItem.setData, '_entrega')} /></div>
+                                                            <div className="sm:col-span-2"><InputLabel value="Rua de Entrega" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.rua_entrega ?? ''} onChange={e => formItem.setData('rua_entrega', e.target.value)} /></div>
                                                         </div>
                                                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                                            <div><InputLabel value="Bairro" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.bairro_entrega} onChange={e => formItem.setData('bairro_entrega', e.target.value)} /></div>
-                                                            <div><InputLabel value="Cidade" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.cidade_entrega} onChange={e => formItem.setData('cidade_entrega', e.target.value)} /></div>
+                                                            <div><InputLabel value="Bairro" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.bairro_entrega ?? ''} onChange={e => formItem.setData('bairro_entrega', e.target.value)} /></div>
+                                                            <div><InputLabel value="Cidade" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formItem.data.cidade_entrega ?? ''} onChange={e => formItem.setData('cidade_entrega', e.target.value)} /></div>
                                                             <div>
                                                                 <InputLabel value="UF" />
-                                                                <select className="mt-1 w-full border-gray-300 rounded-lg shadow-sm focus:border-[#FF5A00]" value={formItem.data.estado_entrega} onChange={e => formItem.setData('estado_entrega', e.target.value)}>
+                                                                <select className="mt-1 w-full border-gray-300 rounded-lg shadow-sm focus:border-[#FF5A00]" value={formItem.data.estado_entrega ?? ''} onChange={e => formItem.setData('estado_entrega', e.target.value)}>
                                                                     <option value="">UF</option>
                                                                     {ufsBrasil.map(uf => <option key={uf} value={uf}>{uf}</option>)}
                                                                 </select>
                                                             </div>
                                                         </div>
                                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                                            <div><InputLabel value="Latitude" /><TextInput type="text" readOnly className="w-full mt-1 bg-gray-100 text-gray-500 font-mono text-xs" value={formItem.data.latitude_entrega} /></div>
-                                                            <div><InputLabel value="Longitude" /><TextInput type="text" readOnly className="w-full mt-1 bg-gray-100 text-gray-500 font-mono text-xs" value={formItem.data.longitude_entrega} /></div>
+                                                            <div><InputLabel value="Latitude" /><TextInput type="text" readOnly className="w-full mt-1 bg-gray-100 text-gray-500 font-mono text-xs" value={formItem.data.latitude_entrega ?? ''} /></div>
+                                                            <div><InputLabel value="Longitude" /><TextInput type="text" readOnly className="w-full mt-1 bg-gray-100 text-gray-500 font-mono text-xs" value={formItem.data.longitude_entrega ?? ''} /></div>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -2124,40 +2189,6 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                             </div>
                                         </div>
                                     )}
-                                </div>
-                            </div>
-                        )}
-                        {/* ABA 5: FINANCEIRO (PROVIDER) */}
-                        {activeTab === 'financeiro' && (
-                            <div className="space-y-8 animate-in fade-in duration-300">
-                                <div className="bg-white p-6 sm:p-10 rounded-[2.5rem] shadow-sm border border-gray-100">
-                                    <form onSubmit={submitFinanceiro} className="space-y-8">
-                                        <div className="space-y-6">
-                                            <div><InputLabel value="Nome Completo / Razão Social" /><TextInput className="w-full focus:border-[#FF5A00]" value={formFinanceiro.data.nome_razao_social} onChange={e => formFinanceiro.setData('nome_razao_social', e.target.value)} required /></div>
-                                            <div><InputLabel value="E-mail Financeiro" /><TextInput type="email" className="w-full focus:border-[#FF5A00]" value={formFinanceiro.data.email_financeiro} onChange={e => formFinanceiro.setData('email_financeiro', e.target.value)} required /></div>
-                                            <div><InputLabel value="CPF ou CNPJ" /><TextInput className="w-full focus:border-[#FF5A00]" value={formFinanceiro.data.cpf_cnpj} onChange={e => formFinanceiro.setData('cpf_cnpj', e.target.value)} required /></div>
-                                            <div><InputLabel value="Código do Banco" /><TextInput className="w-full focus:border-[#FF5A00]" value={formFinanceiro.data.banco_codigo} onChange={e => formFinanceiro.setData('banco_codigo', e.target.value)} required /></div>
-                                            <div className="grid grid-cols-2 gap-4">
-                                                <div><InputLabel value="Agência" /><TextInput className="w-full focus:border-[#FF5A00]" value={formFinanceiro.data.agencia} onChange={e => formFinanceiro.setData('agencia', e.target.value)} required /></div>
-                                                <div>
-                                                    <InputLabel value="Conta e Dígito" />
-                                                    <div className="flex gap-2">
-                                                        <TextInput className="w-full focus:border-[#FF5A00]" value={formFinanceiro.data.conta_numero} onChange={e => formFinanceiro.setData('conta_numero', e.target.value)} required />
-                                                        <TextInput className="w-16 text-center focus:border-[#FF5A00]" value={formFinanceiro.data.conta_digito} onChange={e => formFinanceiro.setData('conta_digito', e.target.value)} required />
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div>
-                                                <InputLabel value="Token Mercado Pago (Opcional - Para Recebimento Automático)" />
-                                                <TextInput type="password" className="w-full font-mono text-sm focus:border-[#FF5A00]" value={formFinanceiro.data.token_mercadopago} onChange={e => formFinanceiro.setData('token_mercadopago', e.target.value)} />
-                                            </div>
-                                        </div>
-                                        <div className="pt-6">
-                                            <button type="submit" disabled={formFinanceiro.processing} className="w-full py-4 bg-[#0F172A] hover:bg-black text-white font-bold text-lg rounded-xl transition disabled:opacity-50">
-                                                Salvar Dados do Provedor
-                                            </button>
-                                        </div>
-                                    </form>
                                 </div>
                             </div>
                         )}

@@ -7,21 +7,31 @@ use Illuminate\Http\Request;
 use App\Models\Favorito;
 use App\Models\Agendamento;
 use Illuminate\Support\Facades\Auth;
+use Inertia\Inertia; // <-- IMPORTANTE: Importar o Inertia
 
 class FavoritoController extends Controller
 {
     /**
      * Alterna o status de favorito (Adiciona se não existir, remove se existir)
      */
-    public function toggleFavorito(Request $request)
+   public function toggleFavorito(Request $request)
     {
+        // 1. Atualizamos a validação para aceitar o item_aluguel
         $request->validate([
-            'tipo' => 'required|in:estabelecimento,servico',
+            'tipo' => 'required|in:estabelecimento,servico,item_aluguel',
             'id'   => 'required|integer'
         ]);
 
         $userId = Auth::id();
-        $coluna = $request->tipo === 'estabelecimento' ? 'estabelecimento_id' : 'servico_id';
+        
+        // 2. Descobrimos qual coluna usar baseada no tipo
+        if ($request->tipo === 'estabelecimento') {
+            $coluna = 'estabelecimento_id';
+        } elseif ($request->tipo === 'item_aluguel') {
+            $coluna = 'item_aluguel_id';
+        } else {
+            $coluna = 'servico_id';
+        }
 
         $favorito = Favorito::where('usuario_id', $userId)->where($coluna, $request->id)->first();
 
@@ -38,7 +48,7 @@ class FavoritoController extends Controller
     }
 
     /**
-     * Retorna a lista completa (Favoritos + Reservas)
+     * Retorna a lista completa para a tela do React (Favoritos + Reservas)
      */
     public function index(Request $request)
     {
@@ -75,10 +85,11 @@ class FavoritoController extends Controller
             'canceladas'   => $agendamentos->whereIn('status', ['cancelado', 'estornado'])->values(),
         ];
 
-        return response()->json([
+        // MUDANÇA AQUI: Retorna a tela React (Favoritos.jsx) com os dados
+        return Inertia::render('Cliente/Favoritos', [
             'estabelecimentos' => $estabelecimentos,
             'servicos'         => $servicos,
             'reservas'         => $reservas
-        ], 200);
+        ]);
     }
 }

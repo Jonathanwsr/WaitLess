@@ -10,6 +10,10 @@ export default function Create() {
     const { flash } = usePage().props;
     const [friendlyError, setFriendlyError] = useState(null);
     const [loadingCep, setLoadingCep] = useState(false);
+    
+    // Estados para o preview das imagens
+    const [previewLogo, setPreviewLogo] = useState(null);
+    const [previewBanner, setPreviewBanner] = useState(null);
 
     const { data, setData, post, processing, errors } = useForm({
         nome: '',
@@ -25,7 +29,9 @@ export default function Create() {
         bairro: '',
         cidade: '',
         estado: '',
-        // Campos ocultos que serão preenchidos automaticamente
+        bio: '',
+        foto_perfil: null,
+        foto_banner: null,
         latitude: '',
         longitude: '',
     });
@@ -36,7 +42,6 @@ export default function Create() {
         }
     }, [flash]);
 
-    // Máscara e Busca de CEP
     const handleCepChange = async (e) => {
         const rawValue = e.target.value;
         const maskedValue = rawValue.replace(/\D/g, '').replace(/^(\d{5})(\d)/, '$1-$2').substring(0, 9);
@@ -74,7 +79,6 @@ export default function Create() {
         }
     };
 
-    // Máscara para CNPJ (00.000.000/0000-00)
     const handleCnpjChange = (e) => {
         let value = e.target.value.replace(/\D/g, '');
         value = value.replace(/^(\d{2})(\d)/, '$1.$2');
@@ -85,13 +89,29 @@ export default function Create() {
         setData('cnpj', value.substring(0, 18));
     };
 
-    // Máscara para Telefone (Fixo ou Celular)
     const handleTelefoneChange = (e) => {
         let value = e.target.value.replace(/\D/g, '');
         value = value.replace(/^(\d{2})(\d)/g, '($1) $2');
         value = value.replace(/(\d)(\d{4})$/, '$1-$2');
         
         setData('telefone', value.substring(0, 15));
+    };
+
+    // Funções para lidar com as imagens e gerar o preview
+    const handleLogoChange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            setData('foto_perfil', file);
+            setPreviewLogo(URL.createObjectURL(file));
+        }
+    };
+
+    const handleBannerChange = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            setData('foto_banner', file);
+            setPreviewBanner(URL.createObjectURL(file));
+        }
     };
 
     const submit = (e) => {
@@ -122,8 +142,11 @@ export default function Create() {
                     </h2>
                     <Link
                         href={route('dashboard')}
-                        className="text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 transition"
+                        className="flex items-center gap-2 text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 transition"
                     >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                        </svg>
                         Voltar ao Dashboard
                     </Link>
                 </div>
@@ -142,16 +165,76 @@ export default function Create() {
                 <div className="bg-white dark:bg-gray-800 overflow-hidden shadow-sm rounded-xl sm:rounded-2xl border border-gray-100 dark:border-gray-700 p-4 sm:p-8">
                     
                     <div className="mb-8 border-b border-gray-100 dark:border-gray-700 pb-6">
-                        <div className="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-xl flex items-center justify-center text-gray-600 dark:text-gray-300 font-bold text-lg mb-4">
-                            W
-                        </div>
                         <h3 className="text-2xl font-bold text-gray-900 dark:text-white">Cadastrar Local</h3>
                         <p className="text-gray-500 dark:text-gray-400 mt-1 text-sm sm:text-base">
                             Preencha as informações do negócio. Apenas o nome é estritamente obrigatório, mas dados completos ajudam na gestão.
                         </p>
                     </div>
 
-                    <form onSubmit={submit} className="space-y-8">
+                    <div className="pt-6 border-t border-gray-100 dark:border-gray-700 space-y-10">
+                        
+                        {/* Logo do Estabelecimento */}
+                        <div className="flex flex-col sm:flex-row gap-6 items-start">
+                            <label 
+                                htmlFor="foto_perfil" 
+                                className="relative shrink-0 w-36 h-36 flex items-center justify-center border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-2xl bg-gray-50 dark:bg-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer overflow-hidden group"
+                            >
+                                {previewLogo ? (
+                                    <img src={previewLogo} alt="Preview Logo" className="w-full h-full object-cover" />
+                                ) : (
+                                    <span className="text-4xl font-semibold text-slate-400 group-hover:text-slate-500 transition">C</span>
+                                )}
+                                <input
+                                    id="foto_perfil"
+                                    type="file"
+                                    accept="image/png, image/jpeg, image/webp"
+                                    className="hidden"
+                                    onChange={handleLogoChange}
+                                />
+                            </label>
+                            <div className="flex flex-col justify-center sm:pt-4">
+                                <h4 className="text-lg font-bold text-gray-900 dark:text-white">Logo do Estabelecimento</h4>
+                                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 max-w-lg">
+                                    Esta imagem será exibida para os clientes na tela de agendamento e buscas. Formatos: JPG, PNG, WEBP (Max: 2MB).
+                                </p>
+                                <InputError message={errors.foto_perfil} className="mt-2" />
+                            </div>
+                        </div>
+
+                        {/* Banner da Loja */}
+                        <div className="border-t border-gray-100 dark:border-gray-700 pt-8">
+                            <h4 className="text-lg font-bold text-gray-900 dark:text-white">Banner da Loja</h4>
+                            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 mb-6">
+                                Este banner será exibido na parte superior da página pública do seu estabelecimento.
+                            </p>
+                            
+                            <label 
+                                htmlFor="foto_banner" 
+                                className="relative w-full h-48 sm:h-64 flex flex-col items-center justify-center border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-2xl bg-gray-50 dark:bg-gray-900 hover:bg-gray-100 dark:hover:bg-gray-800 transition cursor-pointer overflow-hidden group"
+                            >
+                                {previewBanner ? (
+                                    <img src={previewBanner} alt="Preview Banner" className="w-full h-full object-cover" />
+                                ) : (
+                                    <div className="flex flex-col items-center text-slate-400 group-hover:text-slate-500 transition">
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                        </svg>
+                                        <span className="font-bold tracking-wider text-sm uppercase">Inserir Banner da Vitrine</span>
+                                    </div>
+                                )}
+                                <input
+                                    id="foto_banner"
+                                    type="file"
+                                    accept="image/png, image/jpeg, image/webp"
+                                    className="hidden"
+                                    onChange={handleBannerChange}
+                                />
+                            </label>
+                            <InputError message={errors.foto_banner} className="mt-2" />
+                        </div>
+                    </div>
+
+                    <form onSubmit={submit} className="space-y-12" encType="multipart/form-data">
                         
                         {/* --- SEÇÃO 1: Informações Básicas --- */}
                         <div>
@@ -167,7 +250,6 @@ export default function Create() {
                                         className="mt-1 block w-full py-2.5 sm:py-3"
                                         isFocused={true}
                                         onChange={(e) => setData('nome', e.target.value)}
-                                        placeholder="Ex: Barbearia Central"
                                     />
                                     <InputError message={errors.nome} className="mt-2" />
                                 </div>
@@ -200,14 +282,22 @@ export default function Create() {
 
                                 <div>
                                     <InputLabel htmlFor="ramo_atuacao" value="Ramo de Atuação" className="text-gray-700 dark:text-gray-300" />
-                                    <TextInput
+                                    <select
                                         id="ramo_atuacao"
-                                        type="text"
                                         value={data.ramo_atuacao}
-                                        className="mt-1 block w-full py-2.5 sm:py-3"
                                         onChange={(e) => setData('ramo_atuacao', e.target.value)}
-                                        placeholder="Ex: Clínica Médica"
-                                    />
+                                        className="mt-1 block w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 dark:focus:border-indigo-600 focus:ring-indigo-500 dark:focus:ring-indigo-600 rounded-md shadow-sm py-2.5 sm:py-3"
+                                    >
+                                        <option value="">Selecione o ramo de atuação...</option>
+                                        <option value="Barbearia">Barbearia</option>
+                                        <option value="Salão de Beleza">Salão de Beleza</option>
+                                        <option value="Clínica Médica/Odontológica">Clínica Médica / Odontológica</option>
+                                        <option value="Restaurante/Lanchonete">Restaurante / Lanchonete</option>
+                                        <option value="Oficina Mecânica">Oficina Mecânica</option>
+                                        <option value="Pet Shop">Pet Shop</option>
+                                        <option value="Estética">Estética / Spa</option>
+                                        <option value="Outros">Outros</option>
+                                    </select>
                                     <InputError message={errors.ramo_atuacao} className="mt-2" />
                                 </div>
 
@@ -236,11 +326,29 @@ export default function Create() {
                                     />
                                     <InputError message={errors.site} className="mt-2" />
                                 </div>
+
+                                <div className="sm:col-span-2">
+                                    <InputLabel htmlFor="bio" value="Sobre o Estabelecimento (Bio)" className="text-gray-700 dark:text-gray-300" />
+                                    <textarea
+                                        id="bio"
+                                        value={data.bio}
+                                        onChange={(e) => setData('bio', e.target.value)}
+                                        maxLength="1000"
+                                        className="mt-1 block w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 dark:focus:border-indigo-600 focus:ring-indigo-500 dark:focus:ring-indigo-600 rounded-md shadow-sm"
+                                        rows="4"
+                                        placeholder="Descreva brevemente o seu negócio..."
+                                    ></textarea>
+                                    <div className="text-right text-xs text-gray-500 mt-1">
+                                        {data.bio.length}/1000
+                                    </div>
+                                    <InputError message={errors.bio} className="mt-2" />
+                                </div>
+
                             </div>
                         </div>
 
                         {/* --- SEÇÃO 2: Localização --- */}
-                        <div>
+                        <div className="pt-6 border-t border-gray-100 dark:border-gray-700">
                             <h4 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
                                 Localização {loadingCep && <span className="text-sm font-normal text-gray-400 ml-2 animate-pulse">Buscando endereço...</span>}
                             </h4>
@@ -326,15 +434,41 @@ export default function Create() {
 
                                 <div className="sm:col-span-1">
                                     <InputLabel htmlFor="estado" value="UF" />
-                                    <TextInput
+                                    <select
                                         id="estado"
-                                        type="text"
                                         value={data.estado}
-                                        className="mt-1 block w-full uppercase py-2.5 sm:py-3"
-                                        maxLength="2"
-                                        onChange={(e) => setData('estado', e.target.value.toUpperCase())}
-                                        placeholder="PE"
-                                    />
+                                        onChange={(e) => setData('estado', e.target.value)}
+                                        className="mt-1 block w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 dark:focus:border-indigo-600 focus:ring-indigo-500 dark:focus:ring-indigo-600 rounded-md shadow-sm py-2.5 sm:py-3"
+                                    >
+                                        <option value="">--</option>
+                                        <option value="AC">AC</option>
+                                        <option value="AL">AL</option>
+                                        <option value="AP">AP</option>
+                                        <option value="AM">AM</option>
+                                        <option value="BA">BA</option>
+                                        <option value="CE">CE</option>
+                                        <option value="DF">DF</option>
+                                        <option value="ES">ES</option>
+                                        <option value="GO">GO</option>
+                                        <option value="MA">MA</option>
+                                        <option value="MT">MT</option>
+                                        <option value="MS">MS</option>
+                                        <option value="MG">MG</option>
+                                        <option value="PA">PA</option>
+                                        <option value="PB">PB</option>
+                                        <option value="PR">PR</option>
+                                        <option value="PE">PE</option>
+                                        <option value="PI">PI</option>
+                                        <option value="RJ">RJ</option>
+                                        <option value="RN">RN</option>
+                                        <option value="RS">RS</option>
+                                        <option value="RO">RO</option>
+                                        <option value="RR">RR</option>
+                                        <option value="SC">SC</option>
+                                        <option value="SP">SP</option>
+                                        <option value="SE">SE</option>
+                                        <option value="TO">TO</option>
+                                    </select>
                                     <InputError message={errors.estado} className="mt-2" />
                                 </div>
                             </div>

@@ -12,7 +12,7 @@ import {
 // ==========================================
 // IMPORTANTE: Coloque seu Token do Mapbox
 // ==========================================
-mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN || 'pk.SEU_TOKEN_PUBLICO_AQUI';
+mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
 
 export default function MapaRastreamento({ auth, agendamentosAtivos }) {
   const mapContainer = useRef(null);

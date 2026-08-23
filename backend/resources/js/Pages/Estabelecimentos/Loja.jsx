@@ -7,7 +7,6 @@ import {
     UserGroupIcon, 
     CreditCardIcon, 
     CalendarIcon, 
-    ShoppingBagIcon, 
     ChevronRightIcon,
     ChevronLeftIcon,
     ShareIcon, 
@@ -193,6 +192,10 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
                                 <span className="bg-emerald-500 text-white rounded-full p-1 flex items-center justify-center shadow-sm" title="Verificado">
                                     <CheckIcon className="w-3 h-3" strokeWidth={3} />
                                 </span>
+                                
+                                {/* Carrinho global no menu principal da loja */}
+                                
+
                                 {isAdminOuGerente && (
                                     <span className="text-[10px] bg-indigo-600/90 backdrop-blur-md text-white px-2.5 py-1 rounded-full uppercase tracking-wider font-bold">Visão Gerencial</span>
                                 )}
@@ -273,11 +276,11 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
 
             {checkoutPendente && !isAdminOuGerente && (
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
-                    <div className="bg-amber-50 border border-amber-200 text-amber-900 px-5 py-4 rounded-2xl flex flex-col sm:flex-row justify-between items-center shadow-sm gap-4 animate-pulse">
-                        <span className="text-sm font-bold flex items-center gap-2">
-                            <ShoppingCartIcon className="w-5 h-5 text-amber-600" /> Você tem um agendamento pendente em andamento!
+                    <div className="bg-green-100 border-2 border-green-500 text-green-900 px-5 py-4 rounded-2xl flex flex-col sm:flex-row justify-between items-center shadow-lg shadow-green-500/20 gap-4 animate-pulse">
+                        <span className="text-base font-extrabold flex items-center gap-2">
+                            <ShoppingCartIcon className="w-6 h-6 text-green-700" /> Você tem um agendamento pendente em andamento!
                         </span>
-                        <button onClick={voltarParaCheckout} className="bg-amber-500 hover:bg-amber-600 text-white px-6 py-2.5 rounded-xl text-sm font-bold transition shadow-sm w-full sm:w-auto text-center">
+                        <button onClick={voltarParaCheckout} className="bg-green-600 hover:bg-green-700 text-white px-6 py-2.5 rounded-xl text-sm font-bold transition shadow-sm w-full sm:w-auto text-center">
                             Continuar Checkout
                         </button>
                     </div>
@@ -437,9 +440,28 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
 
                             <div className="w-full lg:w-1/2 pb-24 lg:pb-0">
                                 <span className="text-sm text-orange-500 font-extrabold uppercase tracking-widest">{servicoSelecionado.tipo_servico}</span>
-                                <h1 className="text-3xl md:text-5xl font-extrabold text-gray-900 mt-2 mb-4 tracking-tight leading-tight">
-                                    {servicoSelecionado.nome}
-                                </h1>
+                                
+                                {/* AQUI ESTÁ A MODIFICAÇÃO: Ícone de carrinho ao lado do nome do serviço, na extremidade */}
+                                <div className="flex items-start justify-between gap-4 mt-2 mb-4">
+                                    <h1 className="text-3xl md:text-5xl font-extrabold text-gray-900 tracking-tight leading-tight">
+                                        {servicoSelecionado.nome}
+                                    </h1>
+                                    
+                                    {!isAdminOuGerente && (
+                                        <button 
+                                            onClick={adicionarAoCarrinho}
+                                            disabled={adicionandoAoCarrinho}
+                                            title="Adicionar ao Carrinho"
+                                            className="flex-shrink-0 flex h-12 w-12 sm:h-14 sm:w-14 items-center justify-center bg-white hover:bg-orange-50 text-gray-700 hover:text-orange-500 border-2 border-gray-100 hover:border-orange-200 rounded-2xl transition-all disabled:opacity-50 shadow-sm"
+                                        >
+                                            {adicionandoAoCarrinho ? (
+                                                <svg className="animate-spin h-5 w-5 sm:h-6 sm:w-6" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                            ) : (
+                                                <ShoppingCartIcon className="w-5 h-5 sm:w-6 sm:h-6" />
+                                            )}
+                                        </button>
+                                    )}
+                                </div>
 
                                 <div className="flex flex-wrap items-center gap-x-6 gap-y-4 border-b border-gray-100 pb-6 mb-6">
                                     <div className="flex items-center gap-1 font-bold text-gray-900 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-100">
@@ -546,19 +568,7 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
                             
                             {!isAdminOuGerente && (
                                 <div className="flex items-center gap-3 w-full sm:w-auto">
-                                    <button 
-                                        onClick={adicionarAoCarrinho}
-                                        disabled={adicionandoAoCarrinho}
-                                        title="Adicionar ao Carrinho"
-                                        className="hidden sm:flex h-14 w-14 items-center justify-center bg-white hover:bg-orange-50 text-gray-700 hover:text-orange-500 border-2 border-gray-100 hover:border-orange-200 rounded-2xl transition-all disabled:opacity-50 shadow-sm"
-                                    >
-                                        {adicionandoAoCarrinho ? (
-                                            <svg className="animate-spin h-6 w-6" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                                        ) : (
-                                            <ShoppingBagIcon className="w-6 h-6" />
-                                        )}
-                                    </button>
-
+                                    {/* O Botão de adicionar ao carrinho foi movido para o topo, mantendo aqui apenas o botão principal de Agendar */}
                                     <Link 
                                         href={route('cliente.agendar', { 
                                             estabelecimento: estabelecimento.id, 
@@ -566,7 +576,7 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
                                             data: dataSelecionada || undefined,
                                             hora: horaSelecionada || undefined
                                         })}
-                                        className={`flex-1 sm:flex-none text-center font-bold py-3.5 sm:py-4 px-6 sm:px-10 rounded-2xl shadow-lg transition-all text-sm sm:text-base ${(!dataSelecionada || !horaSelecionada) ? 'bg-gray-900 text-white hover:bg-black shadow-gray-900/20' : 'bg-orange-500 text-white hover:bg-orange-600 hover:scale-[1.02] shadow-orange-500/30'}`}
+                                        className={`flex-1 sm:flex-none text-center font-bold py-3.5 sm:py-4 px-6 sm:px-10 rounded-2xl shadow-lg transition-all text-sm sm:text-base w-full ${(!dataSelecionada || !horaSelecionada) ? 'bg-gray-900 text-white hover:bg-black shadow-gray-900/20' : 'bg-orange-500 text-white hover:bg-orange-600 hover:scale-[1.02] shadow-orange-500/30'}`}
                                     >
                                         {dataSelecionada && horaSelecionada ? 'Avançar para Pagamento' : 'Agendar agora'}
                                     </Link>

@@ -8,9 +8,11 @@ use App\Http\Controllers\Api\ClienteAgendamentoController;
 use App\Http\Controllers\Api\ClienteExplorarController;
 use App\Http\Controllers\Api\PagamentoController;
 use App\Http\Controllers\Api\ServicoController;
+use App\Http\Controllers\Api\ClienteController;
 use App\Http\Controllers\Api\FuncionarioCatalogoController;
 use App\Http\Controllers\Api\FuncionarioCarteiraController;
 use App\Http\Controllers\Api\CarrinhoController;
+
 use App\Http\Controllers\Api\FuncionarioAusenciaController;
 use App\Http\Controllers\Api\ProviderController;
 use App\Http\Controllers\Api\CupomController;
@@ -186,8 +188,8 @@ Route::get('/meus-estornos', [EstornoController::class, 'index'])->name('cliente
     
     // Fila e Configurações (Aninhadas em Estabelecimentos)
    // Ambas as rotas agora chamam o método index do AgendamentoController
-Route::get('/fila', [AgendamentoController::class, 'index'])->name('fila.index');
-Route::get('/estabelecimentos/{estabelecimento}/fila', [AgendamentoController::class, 'index'])->name('estabelecimentos.fila');
+Route::get('/fila', [App\Http\Controllers\Api\FilaController::class, 'index'])->name('fila.index');
+Route::get('/estabelecimentos/{estabelecimento}/fila', [App\Http\Controllers\Api\FilaController::class, 'index'])->name('estabelecimentos.fila');
     Route::get('/estabelecimentos/{estabelecimento}/configuracoes', [EstabelecimentoController::class, 'configuracoes'])->name('estabelecimentos.configuracoes');
 
     // Agendamentos
@@ -274,6 +276,7 @@ Route::get('/estabelecimentos/{estabelecimento}/fila', [AgendamentoController::c
      });
 
      // Agrupando as rotas que precisam de autenticação
+   Route::get('/favoritos', [FavoritoController::class, 'index'])->name('cliente.favoritos');
 Route::post('/favoritos/toggle', [FavoritoController::class, 'toggleFavorito'])->name('api.favoritos.toggle');
 
 Route::post('/rastreamento/update', [AgendamentoController::class, 'rastrearLocalizacao']);
@@ -420,10 +423,17 @@ Route::get('/pagamento/status', [ClienteAgendamentoController::class, 'callbackM
     Route::delete('/funcionarios/{funcionario}', [FuncionarioController::class, 'destroy'])->name('funcionarios.destroy');
 
   Route::get('/funcionarios/{funcionario}/edit', [FuncionarioController::class, 'edit'])->name('funcionarios.edit');
+
+  // Rota para ver os detalhes do cliente com seus agendamentos
+
+  Route::get('/clientes/{id}/detalhes', [ClienteController::class, 'detalhes']);
    
    
     // Tela da Fila do Estabelecimento
 Route::match(['get', 'post'], '/estabelecimentos/{estabelecimento}/agenda-equipe', [App\Http\Controllers\Api\FilaController::class, 'agendaFuncionarios'])->name('estabelecimentos.agenda-equipe');
+// Adicione esta linha dentro do seu grupo de rotas autenticadas em routes/web.php
+Route::get('/clientes/{id}/detalhes', [App\Http\Controllers\Api\ClienteController::class, 'detalhes'])
+    ->name('clientes.detalhes');
  //equipe global (visão do dono/gerente)
 Route::get('/minha-equipe', [App\Http\Controllers\Api\FilaController::class, 'equipeGlobal'])->name('equipe.global');
 // Rota para atribuir TODOS os clientes em espera a um funcionário específico

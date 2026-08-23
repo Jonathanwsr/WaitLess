@@ -47,8 +47,10 @@ class FilaController extends Controller
     public function agendaFuncionarios(Request $request, Estabelecimento $estabelecimento)
     {
         $user = \Illuminate\Support\Facades\Auth::user();
-        if (!in_array($user->papel, ['admin', 'socio', 'gerente'])) {
-            abort(403, 'Apenas a gerência tem acesso ao quadro de produtividade.');
+        
+        // ADICIONADOS: proprietario e funcionario
+        if (!in_array($user->papel, ['admin', 'socio', 'gerente', 'proprietario', 'funcionario'])) {
+            abort(403, 'Você não tem permissão para acessar o quadro de produtividade.');
         }
 
         // 1. Processamento dos Filtros de Data
@@ -117,8 +119,10 @@ class FilaController extends Controller
     public function equipeGlobal(Request $request)
     {
         $user = \Illuminate\Support\Facades\Auth::user();
-        if (!in_array($user->papel, ['admin', 'socio', 'gerente', 'proprietario'])) {
-            abort(403, 'Apenas a gerência tem acesso à equipa global.');
+        
+        // ADICIONADO: funcionario
+        if (!in_array($user->papel, ['admin', 'socio', 'gerente', 'proprietario', 'funcionario'])) {
+            abort(403, 'Você não tem permissão para acessar a equipe global.');
         }
 
         $estabelecimentosIds = \App\Models\Estabelecimento::where('user_id', $user->id)

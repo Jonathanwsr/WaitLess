@@ -77,7 +77,8 @@ public function estabelecimentosComoCliente()
 
 public function agendamentos()
 {
-    return $this->hasMany(Agendamento::class);
+    // Adicione o 'usuario_id' como segundo parâmetro!
+    return $this->hasMany(Agendamento::class, 'usuario_id');
 }
 
 public function pontos()
@@ -132,4 +133,6 @@ public function estabelecimentos()
     return $this->hasMany(Favorito::class, 'usuario_id');
 }
 
+
+ 
 }

@@ -69,7 +69,7 @@ class RegisteredUserController extends Controller
         try {
             // 2. PRIMEIRO: Integração com a Asaas para gerar o Customer ID (cus_...)
             $asaasUrl = config('services.asaas.url');
-            $asaasKey = config('services.asaas.key'); // 👉 CORRIGIDO AQUI!
+            $asaasKey = config('services.asaas.key');
 
             $response = Http::withHeaders([
                 'access_token' => $asaasKey,
@@ -98,7 +98,7 @@ class RegisteredUserController extends Controller
 
             // Pega os dados de retorno com sucesso
             $asaasData = $response->json();
-            $asaasCustomerId = $asaasData['id']; // Esse é o "cus_..."
+            $asaasCustomerId = $asaasData['id'];
 
             // 3. SEGUNDO: Como o Asaas aprovou, agora salvamos o usuário no Banco de Dados local
             $user = User::create([
@@ -118,7 +118,7 @@ class RegisteredUserController extends Controller
                 'state' => strtoupper($request->state),
                 'person_type' => $request->person_type,
                 'birth_date' => $request->birth_date,
-                'asaas_customer_id' => $asaasCustomerId, // 👉 SALVA O CUS AQUI!
+                'asaas_customer_id' => $asaasCustomerId,
                 
                 // Novos campos salvos no banco de dados
                 'onde_estudei' => $request->onde_estudei,
@@ -127,6 +127,29 @@ class RegisteredUserController extends Controller
                 'profissao' => $request->profissao,
                 'sobre_mim' => $request->sobre_mim,
             ]);
+
+            // 4. TERCEIRO: Envio de e-mail de boas-vindas via Brevo API
+            $brevoKey = config('services.brevo.key');
+            if ($brevoKey) {
+                Http::withHeaders([
+                    'api-key' => $brevoKey,
+                    'Content-Type' => 'application/json',
+                    'Accept' => 'application/json',
+                ])->post('https://api.brevo.com/v3/smtp/email', [
+                    'sender' => [
+                        'name' => 'Lokyva',
+                        'email' => config('mail.from.address', 'nao-responda@lokyva.com'),
+                    ],
+                    'to' => [
+                        [
+                            'email' => $user->email,
+                            'name' => $user->name,
+                        ]
+                    ],
+                    'subject' => 'Seja bem-vindo(a) à Lokyva!',
+                    'htmlContent' => '<html><body><h2>Olá, ' . htmlspecialchars($user->name) . '!</h2><p>Seja muito bem-vindo(a) à Lokyva. Seu cadastro foi realizado com sucesso!</p></body></html>',
+                ]);
+            }
 
             event(new Registered($user));
 

@@ -39,7 +39,7 @@ class ClienteExplorarController extends Controller
 
         $estabelecimentos = null;
         $itens = null;
-        $estabelecimentoSelect = 'id,name as nome,foto_perfil,cidade,estado';
+        $estabelecimentoSelect = 'id,name as name,foto_perfil,cidade,estado';
 
         // =====================================================================
         // FLUXO A: BUSCA POR ESTABELECIMENTOS
@@ -50,7 +50,7 @@ class ClienteExplorarController extends Controller
             if ($busca) {
                 $termo = "%{$busca}%";
                 $queryEstabelecimentos->where(function($q) use ($termo) {
-                    $q->where('nome', 'ilike', $termo)
+                    $q->where('name', 'ilike', $termo)
                       ->orWhere('cidade', 'ilike', $termo)
                       ->orWhere('estado', 'ilike', $termo);
                 });
@@ -89,8 +89,14 @@ class ClienteExplorarController extends Controller
         // =====================================================================
         if ($tipoBusca === 'servicos' || $tipoBusca === 'reservas') {
             
-            $queryItens = ItemAluguel::with(["estabelecimento:{$estabelecimentoSelect}"])
-                ->whereHas('estabelecimento');
+            // Traz as reservas cadastradas (alugueis) para calcularmos os bloqueios e vagas ocupadas
+            $queryItens = ItemAluguel::with([
+                "estabelecimento:{$estabelecimentoSelect}",
+                "alugueis" => function($q) {
+                    // Ignora as que foram canceladas ou reprovadas
+                    $q->whereNotIn('status', ['cancelado', 'reprovada']);
+                }
+            ])->whereHas('estabelecimento');
 
             if ($busca) {
                 $queryItens->where(function ($q) use ($busca) {
@@ -102,7 +108,6 @@ class ClienteExplorarController extends Controller
                 });
             }
 
-            // 🚀 CORREÇÃO AQUI: Removemos o orWhereHas que procurava ramo_atuacao na tabela users
             if ($categoria && $categoria !== 'todas') {
                 $queryItens->where('categoria', $categoria);
             }
@@ -203,12 +208,21 @@ class ClienteExplorarController extends Controller
 
             $itens = $queryItens->paginate($perPage)->withQueryString();
 
-            $itens->getCollection()->transform(function ($item) {
+            // ============================================================================
+            // INÍCIO DO PROCESSAMENTO MÁGICO DE VAGAS E DISPONIBILIDADE NA VITRINE
+            // ============================================================================
+            $itens->getCollection()->transform(function ($item) use ($dataDesejada) {
+                // Decodificando arrays Json base
                 $item->fotos = is_string($item->fotos) ? json_decode($item->fotos, true) : ($item->fotos ?? []);
                 $item->recursos_oferecidos = is_string($item->recursos_oferecidos) ? json_decode($item->recursos_oferecidos, true) : ($item->recursos_oferecidos ?? []);
                 $item->acessorios = is_string($item->acessorios) ? json_decode($item->acessorios, true) : ($item->acessorios ?? []);
                 
-                $valorBase = floatval($item->valor_diaria);
+                // Decodificando arrays Json de Controle de Vagas
+                $item->dias_disponiveis = is_string($item->dias_disponiveis) ? json_decode($item->dias_disponiveis, true) : ($item->dias_disponiveis ?? []);
+                $item->horarios_disponiveis = is_string($item->horarios_disponiveis) ? json_decode($item->horarios_disponiveis, true) : ($item->horarios_disponiveis ?? []);
+
+                // 1. CÁLCULO DE VALORES E DESCONTOS
+                $valorBase = floatval($item->valor_diaria ?: ($item->valor_mensal ?: $item->valor));
                 $precoComDesconto = $valorBase;
 
                 if ($item->tem_promocao && floatval($item->valor_desconto) > 0) {
@@ -218,8 +232,92 @@ class ClienteExplorarController extends Controller
                         $precoComDesconto = max(0, $valorBase - floatval($item->valor_desconto));
                     }
                 }
-
                 $item->preco_final_cliente = number_format($precoComDesconto, 2, '.', '');
+
+                // 2. CÁLCULO INTELIGENTE DE VAGAS POR DATA
+                $dataConsulta = $dataDesejada ?: Carbon::today()->toDateString();
+                
+                // Vagas padrão do item caso não haja sobreposição
+                $vagasTotaisDia = intval($item->quantidade_padrao ?: ($item->quantidade ?: 1));
+                
+                // Se ele controla por data, procura no JSON para ver se hoje a quantidade é diferente
+                if ($item->disponibilidade_por_data && is_array($item->dias_disponiveis)) {
+                    foreach ($item->dias_disponiveis as $diaConfig) {
+                        if (($diaConfig['data'] ?? '') === $dataConsulta) {
+                            $vagasTotaisDia = intval($diaConfig['quantidade'] ?? $vagasTotaisDia);
+                            break;
+                        }
+                    }
+                }
+
+                $vagasOcupadasDia = 0;
+                $reservasDoDia = collect();
+
+                // 3. Verifica as Reservas Ativas (Alugueis) que cruzam com esta data
+                if ($item->relationLoaded('alugueis')) {
+                    $reservasDoDia = $item->alugueis->filter(function($aluguel) use ($dataConsulta) {
+                        $dataInicio = $aluguel->data_inicio ?? $aluguel->data_agendamento ?? null;
+                        $dataFim = $aluguel->data_fim ?? $aluguel->data_inicio ?? $aluguel->data_agendamento ?? null;
+                        
+                        if (!$dataInicio) return false;
+                        
+                        return $dataInicio <= $dataConsulta && $dataFim >= $dataConsulta;
+                    });
+
+                    // Soma das vagas ocupadas na tabela `alugueis` daquele item
+                    $vagasOcupadasDia = $reservasDoDia->sum(function($aluguel) {
+                        return intval($aluguel->quantidade ?: 1);
+                    });
+                }
+
+                $vagasLivresDia = max(0, $vagasTotaisDia - $vagasOcupadasDia);
+
+                // 4. Processa Disponibilidade de Horários e Subtrai Vagas de Cada Horário
+                $horariosProcessados = [];
+                if ($item->disponibilidade_por_data && is_array($item->horarios_disponiveis)) {
+                    foreach ($item->horarios_disponiveis as $horaConfig) {
+                        if (($horaConfig['data'] ?? '') === $dataConsulta && !empty($horaConfig['horarios'])) {
+                            foreach ($horaConfig['horarios'] as $h) {
+                                $hInicio = $h['inicio'];
+                                $hFim = $h['fim'];
+                                $vagasTotaisHora = intval($h['quantidade'] ?? $vagasTotaisDia);
+                                
+                                // Olha se há aluguéis que esbarram dentro desse horário
+                                $ocupadasHora = $reservasDoDia->filter(function($aluguel) use ($hInicio, $hFim) {
+                                    $resInicio = $aluguel->horario_inicio ?? '00:00';
+                                    $resFim = $aluguel->horario_fim ?? '23:59';
+                                    return ($resInicio < $hFim) && ($resFim > $hInicio);
+                                })->sum(function($aluguel) {
+                                    return intval($aluguel->quantidade ?: 1);
+                                });
+
+                                $horariosProcessados[] = [
+                                    'inicio' => $hInicio,
+                                    'fim' => $hFim,
+                                    'vagas_totais' => $vagasTotaisHora,
+                                    'vagas_ocupadas' => $ocupadasHora,
+                                    'vagas_livres' => max(0, $vagasTotaisHora - $ocupadasHora),
+                                    'esgotado' => max(0, $vagasTotaisHora - $ocupadasHora) === 0
+                                ];
+                            }
+                        }
+                    }
+                }
+
+                // 5. Encapsula o resultado para exibir o botão de reservar ou esgotado no Frontend
+                $item->disponibilidade_hoje = [
+                    'data' => $dataConsulta,
+                    'tipo_medida' => $item->tipo_quantidade ?? 'vagas',
+                    'vagas_totais' => $vagasTotaisDia,
+                    'vagas_ocupadas' => $vagasOcupadasDia,
+                    'vagas_livres' => $vagasLivresDia,
+                    'horarios' => $horariosProcessados,
+                    'status' => $vagasLivresDia > 0 ? 'disponivel' : 'esgotado'
+                ];
+
+                // ⚠️ SEGURANÇA: Remove as reservas da resposta JSON
+                $item->unsetRelation('alugueis');
+
                 return $item;
             });
         }

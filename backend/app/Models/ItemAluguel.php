@@ -37,6 +37,16 @@ class ItemAluguel extends Model
          'datas_bloqueadas' => 'array',
          'horarios_bloqueados' => 'array',
          'sempre_disponivel' => 'boolean',
+         'disponibilidade_por_data' => 'boolean',
+        'quantidade_padrao'        => 'integer',
+        'dias_disponiveis'         => 'array', // Converte o JSON do banco para Array no PHP
+        'horarios_disponiveis'     => 'array', // Converte o JSON do banco para Array no PHP
+        'valor'                    => 'decimal:2',
+        'valor_original'           => 'decimal:2',
+        'percentual_desconto'      => 'decimal:2',
+    
+        'valor_final'              => 'decimal:2',
+
     ];
 
     public function estabelecimento(): BelongsTo

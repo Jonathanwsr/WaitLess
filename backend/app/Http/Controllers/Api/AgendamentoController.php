@@ -207,8 +207,15 @@ class AgendamentoController extends Controller
         return back()->with('success', 'Muito obrigado pela sua avaliação! Você acabou de ganhar 50 pontos na sua carteira.');
     }
 
-    public function index(Request $request, $estabelecimento = null)
+   public function index(Request $request, $estabelecimento = null)
     {
+        $user = Auth::user();
+
+        // 1. CORREÇÃO DO 403: Trava de papéis (roles) atualizada com todos os permitidos
+        if (!in_array($user->papel, ['admin', 'socio', 'gerente', 'proprietario', 'funcionario', 'atendente'])) {
+            abort(403, 'Você não tem permissão para acessar a fila de atendimento.');
+        }
+
         $hoje = Carbon::today()->toDateString();
 
         $filtros = [
@@ -220,12 +227,26 @@ class AgendamentoController extends Controller
             'per_page'         => $request->input('per_page', 10),
         ];
 
-        $estabelecimentos = Auth::user()->estabelecimentos()->get();
-        $todosIds = $estabelecimentos->pluck('id')->toArray();
+        // 2. BUSCA A LOGO: Pega os estabelecimentos e mapeia a URL do ImageKit
+        $estabelecimentos = $user->estabelecimentos()->get()->map(function ($est) {
+            // Recomendo colocar isso no seu arquivo .env como IMAGEKIT_URL=https://ik.imagekit.io/seu_id
+            $imageKitBaseUrl = env('IMAGEKIT_URL', 'https://ik.imagekit.io/SUA_ID_AQUI'); 
+            
+            // Monta a URL da foto de perfil se ela existir no banco
+            if (!empty($est->foto_perfil)) {
+                $est->foto_perfil_url = rtrim($imageKitBaseUrl, '/') . '/' . ltrim($est->foto_perfil, '/');
+            } else {
+                $est->foto_perfil_url = null;
+            }
+            
+            return $est;
+        });
 
+        $todosIds = $estabelecimentos->pluck('id')->toArray();
         $estabelecimentoAtual = null;
         $estabelecimentosIdsBusca = $todosIds;
 
+        // Verifica se o usuário selecionou um estabelecimento específico
         if ($estabelecimento) {
             $idProcurado = $estabelecimento instanceof \App\Models\Estabelecimento ? $estabelecimento->id : $estabelecimento;
             $estabelecimentoAtual = $estabelecimentos->firstWhere('id', $idProcurado);
@@ -233,6 +254,7 @@ class AgendamentoController extends Controller
             if ($estabelecimentoAtual) {
                 $estabelecimentosIdsBusca = [$estabelecimentoAtual->id];
             } else {
+                // Erro 403 de segurança: Cai aqui se o usuário tentar acessar a URL de um estabelecimento que não é dele
                 abort(403, 'Você não tem permissão para acessar este estabelecimento.');
             }
         }

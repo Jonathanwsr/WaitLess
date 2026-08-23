@@ -8,7 +8,8 @@ import {
   ActivityIndicator, 
   Alert,
   Linking,
-  Platform
+  Platform,
+  Image
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -29,12 +30,26 @@ const COLORS = {
 };
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
+const BASE_URL = API_URL?.replace('/api', ''); // Para renderizar as imagens do /storage
 
-// Interfaces para evitar o uso de 'any'
 interface Servico {
   nome: string;
   descricao: string;
   duracao_minutos: number;
+}
+
+interface ItemAluguel {
+  nome: string;
+  descricao: string;
+  fotos?: string[] | string;
+  categoria?: string;
+  marca?: string;
+  modelo?: string;
+  capacidade_pessoas?: number;
+  tipo_quantidade?: string;
+  recursos_oferecidos?: string[] | string;
+  acessorios?: any[] | string;
+  ano?: number;
 }
 
 interface Estabelecimento {
@@ -45,29 +60,38 @@ interface Estabelecimento {
   bairro: string;
   cidade: string;
   estado: string;
+  latitude?: string;
+  longitude?: string;
 }
 
 interface Reserva {
-  id: string | string[];
+  id: string | number;
   status: string;
   status_pagamento: string;
   codigo_verificacao?: string;
-  data_agendamento: string;
-  hora_agendamento: string;
+  data_agendamento?: string;
+  hora_agendamento?: string;
+  data_inicio?: string;
+  data_fim?: string;
+  horario_inicio?: string;
+  horario_fim?: string;
+  quantidade?: number;
   valor_final: number;
   posicao_fila?: number;
-  servico: Servico;
+  servico?: Servico;
+  item?: ItemAluguel;
   estabelecimento: Estabelecimento;
 }
 
 export default function DetalhesAgendamento() {
   const router = useRouter();
-  const { id, tipo } = useLocalSearchParams(); // tipo: 'servico' ou 'aluguel'
+  const { id, tipo } = useLocalSearchParams(); 
 
-  // Utilizando a tipagem Reserva para evitar erro de 'any'
   const [reserva, setReserva] = useState<Reserva | null>(null);
   const [loading, setLoading] = useState(true);
   const [processando, setProcessando] = useState(false);
+
+  const isAluguel = tipo === 'aluguel';
 
   useEffect(() => {
     carregarDetalhes();
@@ -76,9 +100,9 @@ export default function DetalhesAgendamento() {
   const carregarDetalhes = async () => {
     try {
       const token = await AsyncStorage.getItem('@waitless_token');
+      const endpoint = isAluguel ? `alugueis/${id}/detalhes` : `agendamentos/${id}/detalhes`;
       
-      // Ajustado para o endpoint solicitado
-      const response = await fetch(`${API_URL}/reservas/item/${id}`, {
+      const response = await fetch(`${API_URL}/${endpoint}`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -101,7 +125,6 @@ export default function DetalhesAgendamento() {
   };
 
   const handleCancelar = () => {
-    const isAluguel = tipo === 'aluguel';
     const avisoTempo = isAluguel ? '24 horas' : '30 minutos';
 
     Alert.alert(
@@ -118,7 +141,6 @@ export default function DetalhesAgendamento() {
               const token = await AsyncStorage.getItem('@waitless_token');
               const endpoint = isAluguel ? `alugueis/${id}/cancelar` : `agendamentos/${id}/cancelar`;
 
-              // Corrigido API_BASE_URL para API_URL
               const response = await fetch(`${API_URL}/${endpoint}`, {
                 method: 'DELETE',
                 headers: {
@@ -150,6 +172,11 @@ export default function DetalhesAgendamento() {
     
     setProcessando(true);
     try {
+      const nomeProduto = isAluguel ? reserva.item?.nome : reserva.servico?.nome;
+      const dataDisplay = isAluguel 
+        ? `De ${reserva.data_inicio?.split('-').reverse().join('/')} até ${reserva.data_fim?.split('-').reverse().join('/')}`
+        : `${reserva.data_agendamento?.split('-').reverse().join('/')} às ${reserva.hora_agendamento?.substring(0,5)}`;
+
       const html = `
         <html>
           <head>
@@ -173,15 +200,15 @@ export default function DetalhesAgendamento() {
               </div>
               <div class="row">
                 <span class="label">Serviço / Item</span>
-                <span class="val">${reserva.servico.nome}</span>
+                <span class="val">${nomeProduto} ${isAluguel && reserva.quantidade ? `(x${reserva.quantidade})` : ''}</span>
               </div>
               <div class="row">
-                <span class="label">Data e Hora</span>
-                <span class="val">${reserva.data_agendamento.split('-').reverse().join('/')} às ${reserva.hora_agendamento.substring(0,5)}</span>
+                <span class="label">Período / Data</span>
+                <span class="val">${dataDisplay}</span>
               </div>
               <div class="row">
                 <span class="label">Valor Pago</span>
-                <span class="val">R$ ${reserva.valor_final.toFixed(2).replace('.', ',')}</span>
+                <span class="val">R$ ${reserva.valor_final?.toFixed(2).replace('.', ',')}</span>
               </div>
               <div class="row">
                 <span class="label">PIN de Segurança</span>
@@ -226,6 +253,14 @@ export default function DetalhesAgendamento() {
 
   const isCancelado = reserva.status === 'cancelado' || reserva.status === 'estornado';
   const podeCancelar = !isCancelado && reserva.status !== 'finalizado';
+  
+  // Tratamento de Fotos do Item
+  let fotosArray: string[] = [];
+  if (isAluguel && reserva.item?.fotos) {
+    fotosArray = typeof reserva.item.fotos === 'string' 
+      ? JSON.parse(reserva.item.fotos) 
+      : reserva.item.fotos;
+  }
 
   return (
     <View style={styles.container}>
@@ -256,14 +291,14 @@ export default function DetalhesAgendamento() {
           )}
         </View>
 
-        {!isCancelado && reserva.posicao_fila && (
+        {!isCancelado && reserva.posicao_fila && !isAluguel && (
           <View style={styles.queueCard}>
             <View style={styles.queueIcon}>
               <Text style={{ fontSize: 24 }}>⏳</Text>
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.queueTitle}>Você é o {reserva.posicao_fila}º da fila</Text>
-              <Text style={styles.queueDesc}>Chegue 10 minutos antes do seu horário ({reserva.hora_agendamento.substring(0,5)}).</Text>
+              <Text style={styles.queueDesc}>Chegue 10 minutos antes do seu horário ({reserva.hora_agendamento?.substring(0,5)}).</Text>
             </View>
           </View>
         )}
@@ -271,12 +306,62 @@ export default function DetalhesAgendamento() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>O que está incluso</Text>
           <View style={styles.infoBox}>
-            <Text style={styles.infoHighlight}>{reserva.servico?.nome}</Text>
-            <Text style={styles.infoNormal}>{reserva.servico?.descricao}</Text>
+            <Text style={styles.infoHighlight}>
+              {isAluguel ? reserva.item?.nome : reserva.servico?.nome} 
+              {isAluguel && reserva.quantidade && ` (x${reserva.quantidade})`}
+            </Text>
+            <Text style={styles.infoNormal}>{isAluguel ? reserva.item?.descricao : reserva.servico?.descricao}</Text>
+            
+            {isAluguel && fotosArray.length > 0 && (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photoCarousel}>
+                {fotosArray.map((foto, idx) => (
+                  <Image 
+                    key={idx} 
+                    source={{ uri: foto.startsWith('http') ? foto : `${BASE_URL}${foto}` }} 
+                    style={styles.carouselImage} 
+                  />
+                ))}
+              </ScrollView>
+            )}
+
+            {isAluguel && (
+              <View style={styles.specsContainer}>
+                {reserva.item?.capacidade_pessoas && (
+                  <View style={styles.specBadge}>
+                    <Ionicons name="people-outline" size={14} color={COLORS.gray} />
+                    <Text style={styles.specText}>Lotação: {reserva.item.capacidade_pessoas}</Text>
+                  </View>
+                )}
+                {reserva.item?.marca && (
+                  <View style={styles.specBadge}>
+                    <Ionicons name="car-outline" size={14} color={COLORS.gray} />
+                    <Text style={styles.specText}>{reserva.item.marca} {reserva.item.modelo}</Text>
+                  </View>
+                )}
+                {reserva.item?.ano && (
+                  <View style={styles.specBadge}>
+                    <Ionicons name="calendar-outline" size={14} color={COLORS.gray} />
+                    <Text style={styles.specText}>Ano: {reserva.item.ano}</Text>
+                  </View>
+                )}
+              </View>
+            )}
+
             <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>Duração Estimada:</Text>
-              <Text style={styles.infoData}>{reserva.servico?.duracao_minutos} minutos</Text>
+              <Text style={styles.infoLabel}>{isAluguel ? 'Período/Data:' : 'Duração Estimada:'}</Text>
+              <Text style={styles.infoData}>
+                {isAluguel 
+                  ? `${reserva.data_inicio?.split('-').reverse().join('/')} até ${reserva.data_fim?.split('-').reverse().join('/')}`
+                  : `${reserva.servico?.duracao_minutos} minutos`
+                }
+              </Text>
             </View>
+            {isAluguel && reserva.horario_inicio && (
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>Horários:</Text>
+                <Text style={styles.infoData}>{reserva.horario_inicio?.substring(0,5)} às {reserva.horario_fim?.substring(0,5)}</Text>
+              </View>
+            )}
             <View style={styles.infoRow}>
               <Text style={styles.infoLabel}>Valor Pago:</Text>
               <Text style={[styles.infoData, { color: COLORS.primary }]}>R$ {reserva.valor_final?.toFixed(2).replace('.', ',')}</Text>
@@ -325,12 +410,10 @@ const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   scrollContent: { padding: 24, paddingBottom: 60 },
 
-  // Header
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: Platform.OS === 'ios' ? 60 : 40, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: COLORS.border },
   backButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: COLORS.lightGray, alignItems: 'center', justifyContent: 'center' },
   headerTitle: { fontSize: 18, fontWeight: '900', color: COLORS.secondary },
 
-  // Status & PIN Banner
   statusCard: { borderRadius: 24, padding: 24, marginBottom: 24 },
   bgPrimary: { backgroundColor: COLORS.secondary },
   bgError: { backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA' },
@@ -345,18 +428,24 @@ const styles = StyleSheet.create({
   pinValue: { fontSize: 40, fontWeight: '900', color: COLORS.white, letterSpacing: 6, marginBottom: 8 },
   pinDesc: { fontSize: 12, color: '#9CA3AF', textAlign: 'center' },
 
-  // Queue Card
   queueCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.primaryLight, padding: 20, borderRadius: 20, marginBottom: 24 },
   queueIcon: { width: 50, height: 50, borderRadius: 25, backgroundColor: COLORS.white, alignItems: 'center', justifyContent: 'center', marginRight: 16 },
   queueTitle: { fontSize: 16, fontWeight: '900', color: COLORS.primary, marginBottom: 4 },
   queueDesc: { fontSize: 12, color: '#9A3412', fontWeight: '500' },
 
-  // Sections
   section: { marginBottom: 24 },
   sectionTitle: { fontSize: 18, fontWeight: '900', color: COLORS.secondary, marginBottom: 16, letterSpacing: -0.5 },
   infoBox: { backgroundColor: COLORS.white, borderRadius: 20, padding: 20, borderWidth: 1, borderColor: COLORS.border, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.02, shadowRadius: 8, elevation: 1 },
   infoHighlight: { fontSize: 16, fontWeight: '900', color: COLORS.secondary, marginBottom: 8 },
-  infoNormal: { fontSize: 14, color: COLORS.gray, marginBottom: 4, lineHeight: 20 },
+  infoNormal: { fontSize: 14, color: COLORS.gray, marginBottom: 12, lineHeight: 20 },
+  
+  photoCarousel: { marginBottom: 16, flexDirection: 'row' },
+  carouselImage: { width: 100, height: 100, borderRadius: 12, marginRight: 12, backgroundColor: COLORS.lightGray },
+  
+  specsContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
+  specBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.lightGray, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: COLORS.border },
+  specText: { fontSize: 12, fontWeight: '700', color: COLORS.gray, marginLeft: 4 },
+
   infoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: COLORS.border },
   infoLabel: { fontSize: 13, fontWeight: '700', color: COLORS.gray },
   infoData: { fontSize: 14, fontWeight: '900', color: COLORS.secondary },
@@ -364,7 +453,6 @@ const styles = StyleSheet.create({
   actionButtonLight: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.lightGray, paddingVertical: 12, borderRadius: 12, marginTop: 16 },
   actionButtonLightText: { marginLeft: 8, fontSize: 14, fontWeight: '800', color: COLORS.secondary },
 
-  // Bottom Actions
   actionsContainer: { marginTop: 10, gap: 12 },
   downloadButton: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.secondary, paddingVertical: 16, borderRadius: 16 },
   downloadButtonText: { marginLeft: 8, fontSize: 15, fontWeight: '900', color: COLORS.white },
