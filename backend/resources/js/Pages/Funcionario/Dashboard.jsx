@@ -1,5 +1,6 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link, router, usePage } from '@inertiajs/react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect, useMemo } from 'react';
 import { 
     CurrencyDollarIcon, ClockIcon, CheckCircleIcon, 
@@ -9,8 +10,10 @@ import {
     QueueListIcon, MagnifyingGlassIcon, XCircleIcon,
     DocumentArrowDownIcon, PencilSquareIcon, ArrowPathIcon,
     PauseCircleIcon, PlayCircleIcon, SparklesIcon, CalendarDaysIcon,
-    ExclamationCircleIcon, UserGroupIcon, ShieldCheckIcon
+    ExclamationCircleIcon, UserGroupIcon, ShieldCheckIcon,
+    ShieldExclamationIcon, CheckBadgeIcon, ArrowLeftEndOnRectangleIcon
 } from '@heroicons/react/24/solid';
+import { CheckCircleIcon as CheckSolid } from '@heroicons/react/24/outline';
 
 export default function FuncionarioDashboard({ auth, funcionarios, emAtendimento, proximo, filaEspera, historico, ganhosHoje, filtros, now }) {
     const { flash = {}, errors = {} } = usePage().props;
@@ -55,7 +58,7 @@ export default function FuncionarioDashboard({ auth, funcionarios, emAtendimento
     const proximoLocal = filaLocal.length > 0 ? filaLocal[0] : null;
     const emAtendimentoLocal = emAtendimento?.funcionario_id === abaAtiva ? emAtendimento : null;
 
-    // IDENTIFICAÇÃO DE PAPEL (Gestores e Sócios têm poder total)
+    // IDENTIFICAÇÃO DE PAPEL
     const papelUsuario = auth?.user?.papel?.toLowerCase() || auth?.user?.role?.toLowerCase() || '';
     const isGestor = ['admin', 'proprietario', 'socio', 'gerente'].includes(papelUsuario);
     const temPoderDeCaixa = useMemo(() => {
@@ -78,7 +81,7 @@ export default function FuncionarioDashboard({ auth, funcionarios, emAtendimento
     const historicoLocal = historico?.data || [];
 
     // ==========================================
-    // ⚡ AÇÕES CONECTADAS AO BACKEND (ASAAS / DB)
+    // ⚡ AÇÕES CONECTADAS AO BACKEND
     // ==========================================
     const mudarPeriodo = (novoPeriodo) => {
         setPeriodo(novoPeriodo);
@@ -91,12 +94,12 @@ export default function FuncionarioDashboard({ auth, funcionarios, emAtendimento
 
     const handleChamarProximo = (id) => {
         if (emAtendimento) return alert("Finalize o atendimento atual na cadeira antes de chamar o próximo cliente.");
-        router.patch(route('funcionario.chamar', id), {}, { preserveScroll: true });
+        router.post(route('funcionario.chamar', id), { _method: 'patch' }, { preserveScroll: true });
     };
 
     const pularCliente = (id) => {
-        if(window.confirm('Colocar este cliente como ATRASADO e enviá-lo para o fim da fila de prioridade?')) {
-            router.patch(route('funcionario.pular', id), {}, { preserveScroll: true });
+        if(window.confirm('Colocar este cliente como ATRASADO e enviá-lo para o fim da fila de prioridade? Ele receberá um email de aviso.')) {
+            router.post(route('funcionario.pular', id), { _method: 'patch' }, { preserveScroll: true });
         }
     };
 
@@ -109,19 +112,24 @@ export default function FuncionarioDashboard({ auth, funcionarios, emAtendimento
         }
 
         const msg = isPago 
-            ? '⚠️ Atenção: O cliente realizou o pagamento online. Esta ação executará o ESTORNO definitivo no gateway Asaas e deduzirá o saldo. Confirmar transação?' 
-            : 'Confirmar cancelamento deste agendamento no banco de dados?';
+            ? '⚠️ Atenção: O cliente realizou o pagamento online. Esta ação executará o ESTORNO no gateway e deduzirá o saldo (Sujeito à regra de retenção de 2% para faltas). Confirmar transação?' 
+            : 'Confirmar cancelamento deste agendamento e liberação da fila?';
             
         if(window.confirm(msg)) {
-            router.delete(route('funcionario.cancelar', id), { preserveScroll: true });
+            // Enviando _method DELETE via POST (Maneira recomendada pelo Inertia/Laravel para evitar cors e falhas)
+            router.post(route('funcionario.cancelar', id), { _method: 'delete' }, { preserveScroll: true });
         }
     };
 
+    // FINALIZAÇÃO COM O PIN DE 4 DÍGITOS
     const confirmarComPin = (id) => {
         if (pinDigitado.length !== 4) return alert('O código de verificação PIN requer exatamente 4 dígitos.');
         
         setProcessandoPin(true);
-        router.post(route('funcionario.finalizar', id), { codigo_pin: pinDigitado }, {
+        router.post(route('funcionario.finalizar', id), { 
+            codigo_pin: pinDigitado,
+            forma_pagamento: emAtendimentoLocal?.status_pagamento === 'pago_online' ? 'online' : 'presencial' // Manda presencial por padrão na view rápida
+        }, {
             preserveScroll: true,
             onSuccess: () => { setPinDigitado(''); },
             onFinish: () => { setProcessandoPin(false); }
@@ -149,29 +157,29 @@ export default function FuncionarioDashboard({ auth, funcionarios, emAtendimento
             case 'pendente': return <span className="flex items-center gap-1.5 bg-amber-50 text-amber-700 px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider shadow-sm border border-amber-100"><ClockIcon className="w-3 h-3"/> Aguardando</span>;
             case 'atrasado': return <span className="flex items-center gap-1.5 bg-rose-50 text-rose-700 px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider shadow-sm border border-rose-100"><ExclamationTriangleIcon className="w-3 h-3"/> Atrasado</span>;
             case 'concluido': 
-            case 'finalizado': return <span className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider shadow-sm border border-emerald-100"><CheckCircleIcon className="w-3 h-3"/> Concluído</span>;
+            case 'finalizado': return <span className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider shadow-sm border border-emerald-100"><CheckSolid className="w-3 h-3"/> Concluído</span>;
             case 'cancelado': return <span className="flex items-center gap-1.5 bg-gray-100 text-gray-700 px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider shadow-sm border border-gray-200"><XCircleIcon className="w-3 h-3"/> Cancelado</span>;
             default: return <span className="bg-gray-100 text-gray-600 px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider">{status}</span>;
         }
     };
 
     const BadgePagamento = ({ status }) => {
-        if (status === 'pago_online' || status === 'pago') return <span className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider border border-emerald-100 shadow-sm"><CheckCircleIcon className="w-3 h-3"/> Pago (Asaas)</span>;
+        if (status === 'pago_online' || status === 'pago') return <span className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider border border-emerald-100 shadow-sm"><CheckSolid className="w-3 h-3"/> Pago (Asaas)</span>;
         if (status === 'estornado') return <span className="flex items-center gap-1.5 bg-rose-50 text-rose-700 px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider border border-rose-100 shadow-sm"><ArrowPathIcon className="w-3 h-3"/> Estornado</span>;
         return <span className="flex items-center gap-1.5 bg-white text-gray-700 px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-wider border border-gray-200 shadow-sm"><CreditCardIcon className="w-3 h-3"/> Balcão</span>;
     };
 
     return (
         <AuthenticatedLayout user={auth.user}>
-            <Head title="Painel de Operações - WaitLess" />
+            <Head title="Painel de Operações - Atendente" />
 
             <div className="space-y-6 max-w-7xl mx-auto px-4 sm:px-6 pb-24 mt-6 font-sans">
                 
-                {/* CABEÇALHO DA TELA COM BADGE DE GESTOR */}
+                {/* CABEÇALHO */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
                     <div>
                         <h2 className="text-3xl font-black text-gray-900 tracking-tight">Mesa Operacional</h2>
-                        <p className="text-gray-500 font-medium text-sm mt-1">Gerencie a fila de clientes e finalize os atendimentos.</p>
+                        <p className="text-gray-500 font-medium text-sm mt-1">Gerencie a fila de clientes, valide PINs e finalize atendimentos.</p>
                     </div>
                     {isGestor && (
                         <div className="inline-flex items-center gap-2 bg-indigo-50 border border-indigo-200 text-indigo-700 px-4 py-2 rounded-xl text-sm font-black tracking-tight shadow-sm">
@@ -181,27 +189,29 @@ export default function FuncionarioDashboard({ auth, funcionarios, emAtendimento
                     )}
                 </div>
 
-                {/* NOTIFICAÇÕES E ALERTAS DE TRANSAÇÃO */}
-                {flash?.success && (
-                    <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 p-4 rounded-xl shadow-sm flex items-center gap-3 animate-fadeIn">
-                        <CheckCircleIcon className="w-6 h-6 text-emerald-500 shrink-0" />
-                        <span className="font-bold text-sm tracking-tight">{flash.success}</span>
-                    </div>
-                )}
-                {errors?.error && (
-                    <div className="bg-rose-50 border border-rose-200 text-rose-900 p-4 rounded-xl shadow-sm flex items-center gap-3 animate-bounce">
-                        <ExclamationTriangleIcon className="w-6 h-6 text-rose-600 shrink-0" />
-                        <span className="font-bold text-sm tracking-tight">{errors.error}</span>
-                    </div>
-                )}
-                {atendimentoPendenteNoutraLoja && (
-                    <div className="bg-amber-50 border border-amber-300 text-amber-900 p-4 rounded-xl shadow-sm flex items-center gap-3 animate-pulse">
-                        <ExclamationTriangleIcon className="w-6 h-6 text-amber-600 shrink-0" />
-                        <span className="font-bold text-sm tracking-tight">Atenção: Você possui atendimento em andamento na unidade <b>{atendimentoPendenteNoutraLoja}</b>.</span>
-                    </div>
-                )}
+                {/* ALERTAS INTELIGENTES */}
+                <AnimatePresence>
+                    {flash?.success && (
+                        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="bg-emerald-50 border border-emerald-200 text-emerald-900 p-4 rounded-xl shadow-sm flex items-center gap-3">
+                            <CheckCircleIcon className="w-6 h-6 text-emerald-500 shrink-0" />
+                            <span className="font-bold text-sm tracking-tight">{flash.success}</span>
+                        </motion.div>
+                    )}
+                    {errors?.error && (
+                        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="bg-rose-50 border border-rose-200 text-rose-900 p-4 rounded-xl shadow-sm flex items-center gap-3">
+                            <ExclamationTriangleIcon className="w-6 h-6 text-rose-600 shrink-0" />
+                            <span className="font-bold text-sm tracking-tight">{errors.error}</span>
+                        </motion.div>
+                    )}
+                    {atendimentoPendenteNoutraLoja && (
+                        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="bg-amber-50 border border-amber-300 text-amber-900 p-4 rounded-xl shadow-sm flex items-center gap-3">
+                            <ExclamationTriangleIcon className="w-6 h-6 text-amber-600 shrink-0" />
+                            <span className="font-bold text-sm tracking-tight">Atenção: Você possui atendimento em andamento na unidade <b>{atendimentoPendenteNoutraLoja}</b>.</span>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
 
-                {/* FILTRO DE ABAS PARA MULTI-UNIDADES */}
+                {/* ABAS DE FUNCIONÁRIOS (MULTI-UNIDADES) */}
                 {funcionarios.length > 1 && (
                     <div className="bg-white p-2 rounded-2xl shadow-sm border border-gray-200 flex overflow-x-auto hide-scrollbar gap-2">
                         {funcionarios.map(func => (
@@ -218,7 +228,7 @@ export default function FuncionarioDashboard({ auth, funcionarios, emAtendimento
                     </div>
                 )}
 
-                {/* RESUMO DAS MÉTRICAS DO DIA */}
+                {/* MÉTRICAS (PRODUÇÃO E FILA) */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-4">
                     <div className="lg:col-span-3">
                         <button 
@@ -261,7 +271,7 @@ export default function FuncionarioDashboard({ auth, funcionarios, emAtendimento
                     </div>
                 </div>
 
-                {/* BOTÕES DE ACESSO RÁPIDO */}
+                {/* ATALHOS RÁPIDOS */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <Link href={route('funcionario.carteira')} className="bg-white border border-gray-200 rounded-3xl p-5 flex items-center gap-4 hover:border-indigo-300 hover:shadow-md transition-all group">
                         <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 group-hover:scale-110 transition-transform"><CurrencyDollarIcon className="w-6 h-6" /></div>
@@ -286,18 +296,18 @@ export default function FuncionarioDashboard({ auth, funcionarios, emAtendimento
                     </Link>
                 </div>
 
-                {/* ALTERNADOR DE SEÇÕES INTERNAS */}
+                {/* ABAS DE NAVEGAÇÃO DE TELA */}
                 <div className="flex bg-white p-1.5 rounded-2xl border border-gray-200 shadow-sm overflow-x-auto gap-1">
                     <button onClick={() => setSubTela('operacao')} className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${subTela === 'operacao' ? 'bg-indigo-50 text-indigo-700 shadow-sm' : 'text-gray-600 hover:bg-gray-50'}`}>Mesa de Operação</button>
                     <button onClick={() => setSubTela('fila_completa')} className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${subTela === 'fila_completa' ? 'bg-indigo-50 text-indigo-700 shadow-sm' : 'text-gray-600 hover:bg-gray-50'}`}>Monitor de Fila</button>
                     <button onClick={() => setSubTela('historico')} className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-bold text-sm transition-all whitespace-nowrap ${subTela === 'historico' ? 'bg-indigo-50 text-indigo-700 shadow-sm' : 'text-gray-600 hover:bg-gray-50'}`}>Relatórios e Histórico</button>
                 </div>
 
-                {/* --- SEÇÃO: OPERAÇÃO DA CADEIRA PRINCIPAL --- */}
+                {/* --- MESA DE OPERAÇÃO (CADEIRA) --- */}
                 {subTela === 'operacao' && (
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2">
                         
-                        {/* ESTAÇÃO ATUAL / COMANDO DE CUSTÓDIA */}
+                        {/* CADEIRA DE ATENDIMENTO ATIVA */}
                         <div className="flex flex-col">
                             <h3 className="text-xs font-black text-gray-500 uppercase tracking-widest mb-3 flex items-center gap-2">
                                 <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></div> Cadeira de Atendimento Ativa
@@ -319,11 +329,11 @@ export default function FuncionarioDashboard({ auth, funcionarios, emAtendimento
                                         </div>
                                     </div>
 
-                                    {/* Validação de PIN de Segurança */}
+                                    {/* VALIDAÇÃO DE PIN DE SEGURANÇA */}
                                     <div className="bg-gray-900 rounded-3xl p-6 mt-auto shadow-lg relative overflow-hidden">
                                         <div className="absolute -right-4 -top-4 w-24 h-24 bg-white/5 rounded-full blur-xl"></div>
                                         <p className="text-[10px] font-black text-gray-300 uppercase tracking-widest text-center mb-3">Conclusão Segura (PIN do Cliente)</p>
-                                        <div className="flex gap-3">
+                                        <div className="flex gap-3 relative z-10">
                                             <input 
                                                 type="text" placeholder="0000" maxLength={4} disabled={!temPoderDeCaixa || processandoPin}
                                                 value={pinDigitado} onChange={e => setPinDigitado(e.target.value.replace(/\D/g, ''))}
@@ -361,7 +371,12 @@ export default function FuncionarioDashboard({ auth, funcionarios, emAtendimento
                                 <div className={`bg-white rounded-[2rem] border p-8 shadow-sm flex-1 flex flex-col justify-between min-h-[420px] transition-all ${isHoraDoCliente(proximoLocal.hora_agendamento, proximoLocal.data_agendamento) ? 'border-rose-200 ring-4 ring-rose-50' : 'border-gray-200'}`}>
                                     <div>
                                         <div className="flex justify-between items-start mb-6">
-                                            <div className="w-14 h-14 bg-gray-50 rounded-2xl flex items-center justify-center font-black text-gray-700 text-2xl border border-gray-100 shadow-sm">{proximoLocal.usuario?.name?.charAt(0) || '?'}</div>
+                                            {proximoLocal.usuario?.foto_perfil ? (
+                                                <img src={proximoLocal.usuario.foto_perfil.startsWith('http') ? proximoLocal.usuario.foto_perfil : `/storage/${proximoLocal.usuario.foto_perfil}`} alt="Foto Cliente" className="w-14 h-14 rounded-2xl object-cover border border-gray-100 shadow-sm" />
+                                            ) : (
+                                                <div className="w-14 h-14 bg-gray-50 rounded-2xl flex items-center justify-center font-black text-gray-700 text-2xl border border-gray-100 shadow-sm">{proximoLocal.usuario?.name?.charAt(0) || '?'}</div>
+                                            )}
+                                            
                                             <span className="text-sm font-black text-gray-700 bg-gray-50 border border-gray-200 px-4 py-2 rounded-xl">{proximoLocal.hora_agendamento?.substring(0, 5)}</span>
                                         </div>
                                         <h4 className="font-black text-gray-900 text-2xl truncate mb-1 tracking-tight">{proximoLocal.usuario?.name}</h4>
@@ -370,10 +385,22 @@ export default function FuncionarioDashboard({ auth, funcionarios, emAtendimento
                                             <BadgePagamento status={proximoLocal.status_pagamento} />
                                             <BadgeStatus status={proximoLocal.status} />
                                         </div>
+                                        
+                                        {proximoLocal.delegador?.name && (
+                                            <div className="flex items-center gap-2 mt-4 text-xs font-bold text-gray-400 bg-gray-50 p-2 rounded-lg border border-gray-100 w-fit">
+                                                <ArrowLeftEndOnRectangleIcon className="w-3.5 h-3.5 text-indigo-400" />
+                                                Delegado por: <span className="text-gray-600">{proximoLocal.delegador.name}</span>
+                                            </div>
+                                        )}
+                                        {!proximoLocal.delegador && (
+                                            <div className="flex items-center gap-2 mt-4 text-[10px] font-black uppercase tracking-widest text-indigo-400 bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100 w-fit">
+                                                App / Fila Geral
+                                            </div>
+                                        )}
                                     </div>
 
-                                    {/* Ações Gerenciais */}
-                                    <div className="space-y-3 mt-auto">
+                                    {/* Ações */}
+                                    <div className="space-y-3 mt-auto pt-6">
                                         <button 
                                             onClick={() => handleChamarProximo(proximoLocal.id)} disabled={!!emAtendimentoLocal || !temPoderDeCaixa} 
                                             className="w-full py-4.5 bg-gray-900 hover:bg-black text-white font-black rounded-2xl text-sm shadow-md transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-30 disabled:active:scale-100 disabled:cursor-not-allowed"
@@ -406,7 +433,7 @@ export default function FuncionarioDashboard({ auth, funcionarios, emAtendimento
 
                 {/* --- MONITOR DE FILA COMPLETA --- */}
                 {subTela === 'fila_completa' && (
-                    <div className="bg-white border border-gray-200 rounded-[2rem] p-6 sm:p-10 shadow-sm">
+                    <div className="bg-white border border-gray-200 rounded-[2rem] p-6 sm:p-10 shadow-sm animate-fadeIn">
                         <div className="flex items-center justify-between mb-8 pb-6 border-b border-gray-100">
                             <div>
                                 <h3 className="text-2xl font-black text-gray-900 tracking-tight">Painel Cronológico de Chegada</h3>
@@ -428,7 +455,11 @@ export default function FuncionarioDashboard({ auth, funcionarios, emAtendimento
                                         <div className={`bg-white border rounded-3xl p-6 transition-all hover:shadow-md ${index === 0 ? 'border-indigo-200 ring-4 ring-indigo-50' : 'border-gray-200 shadow-sm'}`}>
                                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5">
                                                 <div className="flex items-center gap-5">
-                                                    <div className="w-12 h-12 bg-gray-50 rounded-2xl flex items-center justify-center font-black text-gray-600 text-xl border border-gray-100 shadow-sm">{ag.usuario?.name?.charAt(0) || '?'}</div>
+                                                    {ag.usuario?.foto_perfil ? (
+                                                        <img src={ag.usuario.foto_perfil.startsWith('http') ? ag.usuario.foto_perfil : `/storage/${ag.usuario.foto_perfil}`} alt="Foto Cliente" className="w-12 h-12 rounded-2xl object-cover border border-gray-100 shadow-sm" />
+                                                    ) : (
+                                                        <div className="w-12 h-12 bg-gray-50 rounded-2xl flex items-center justify-center font-black text-gray-600 text-xl border border-gray-100 shadow-sm">{ag.usuario?.name?.charAt(0) || '?'}</div>
+                                                    )}
                                                     <div>
                                                         <h4 className="font-black text-gray-900 text-lg tracking-tight leading-tight">{ag.usuario?.name}</h4>
                                                         <p className="text-sm text-gray-500 font-bold mt-0.5">{ag.servico?.nome}</p>
@@ -448,7 +479,7 @@ export default function FuncionarioDashboard({ auth, funcionarios, emAtendimento
                     </div>
                 )}
 
-                {/* --- TABELA DE HISTÓRICO E RELATÓRIOS --- */}
+                {/* --- RELATÓRIOS E HISTÓRICO --- */}
                 {subTela === 'historico' && (
                     <div className="space-y-6 animate-fadeIn">
                         <div className="bg-white p-6 md:p-8 rounded-[2rem] border border-gray-200 flex flex-col md:flex-row md:items-center justify-between gap-6 shadow-sm">
@@ -458,7 +489,7 @@ export default function FuncionarioDashboard({ auth, funcionarios, emAtendimento
                             </div>
                             
                             <div className="flex flex-wrap items-center gap-3">
-                                <div className="flex bg-gray-50 p-1.5 rounded-2xl border border-gray-200 shadow-inner">
+                                <div className="flex bg-gray-50 p-1.5 rounded-2xl border border-gray-200 shadow-inner overflow-x-auto hide-scrollbar">
                                     {['hoje', 'mes', 'ano', 'todos'].map((opt) => (
                                         <button 
                                             key={opt} onClick={() => mudarPeriodo(opt)}
@@ -474,7 +505,7 @@ export default function FuncionarioDashboard({ auth, funcionarios, emAtendimento
                             </div>
                         </div>
 
-                        <div className="bg-white border border-gray-200 rounded-[2rem] overflow-hidden shadow-sm">
+                        <div className="bg-white border border-gray-200 rounded-[2rem] overflow-hidden shadow-sm printable-area">
                             {historicoLocal.length === 0 ? (
                                 <div className="text-center py-24 text-gray-400 flex flex-col items-center">
                                     <BriefcaseIcon className="w-16 h-16 mb-4 text-gray-200" />
@@ -485,16 +516,29 @@ export default function FuncionarioDashboard({ auth, funcionarios, emAtendimento
                                     {historicoLocal.map(ag => (
                                         <div key={ag.id} className="p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-5 hover:bg-gray-50 transition-colors">
                                             <div className="flex items-center gap-5">
-                                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-xl border shadow-sm ${['concluido','finalizado'].includes(ag.status) ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>{ag.usuario?.name?.charAt(0) || '?'}</div>
+                                                {ag.usuario?.foto_perfil ? (
+                                                    <img src={ag.usuario.foto_perfil.startsWith('http') ? ag.usuario.foto_perfil : `/storage/${ag.usuario.foto_perfil}`} alt="Foto Cliente" className={`w-14 h-14 rounded-2xl object-cover border-2 shadow-sm ${['concluido','finalizado'].includes(ag.status) ? 'border-emerald-200' : 'border-gray-200'}`} />
+                                                ) : (
+                                                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-2xl border shadow-sm ${['concluido','finalizado'].includes(ag.status) ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>{ag.usuario?.name?.charAt(0) || '?'}</div>
+                                                )}
                                                 <div>
-                                                    <p className="font-black text-gray-900 text-lg tracking-tight leading-tight">{ag.usuario?.name || 'Cliente'}</p>
-                                                    <p className="text-sm text-gray-500 font-bold mt-1">
-                                                        {new Date(ag.data_agendamento).toLocaleDateString('pt-BR')} • {ag.hora_agendamento?.substring(0,5)} • <span className="text-gray-400">{ag.servico?.nome}</span>
+                                                    <p className="font-black text-gray-900 text-lg tracking-tight leading-tight flex items-center gap-2">
+                                                        {ag.usuario?.name || 'Cliente'}
+                                                        {ag.delegador?.name && (
+                                                            <span title={`Delegado por ${ag.delegador.name}`} className="bg-indigo-50 text-indigo-500 rounded-md p-1 border border-indigo-100"><ArrowLeftEndOnRectangleIcon className="w-3 h-3"/></span>
+                                                        )}
+                                                    </p>
+                                                    <p className="text-sm text-gray-500 font-bold mt-1 flex flex-wrap items-center gap-1.5">
+                                                        <span className="bg-gray-100 px-2 py-0.5 rounded-md">{new Date(ag.data_agendamento).toLocaleDateString('pt-BR')}</span> 
+                                                        <span>•</span> 
+                                                        <span className="text-gray-900">{ag.hora_agendamento?.substring(0,5)}</span> 
+                                                        <span>•</span> 
+                                                        <span className="text-gray-400 truncate max-w-[150px] sm:max-w-[300px]">{ag.servico?.nome}</span>
                                                     </p>
                                                 </div>
                                             </div>
-                                            <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between gap-3">
-                                                <p className="font-black text-gray-900 text-xl tracking-tight">{formatarMoeda(ag.valor_final)}</p>
+                                            <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between gap-3 mt-4 sm:mt-0 pt-4 sm:pt-0 border-t sm:border-0 border-gray-100">
+                                                <p className="font-black text-gray-900 text-2xl sm:text-xl tracking-tight">{formatarMoeda(ag.valor_final)}</p>
                                                 <div className="flex items-center gap-2">
                                                     <BadgePagamento status={ag.status_pagamento} />
                                                     <BadgeStatus status={ag.status} />

@@ -1,6 +1,6 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { Head, Link, router } from '@inertiajs/react';
-import { useState, useCallback } from 'react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
+import { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
 
@@ -12,6 +12,10 @@ import {
 } from 'lucide-react';
 
 export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtros = {} }) {
+    // 💡 IMPORTANTE: Pegamos o ID do usuário logado para saber de quem são os favoritos
+    const user = usePage().props.auth.user;
+    const userId = user?.id;
+
     const [tipoBusca, setTipoBusca] = useState(filtros.tipo_busca || 'servicos');
     const [busca, setBusca] = useState(filtros.busca || '');
     const [enderecoManual, setEnderecoManual] = useState(filtros.endereco_manual || '');
@@ -28,7 +32,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
     // Estado para exibir a mensagem na tela (Toast)
     const [toast, setToast] = useState({ show: false, message: '' });
 
-    // Mapeamento EXATO com o banco de dados para os filtros funcionarem
+    // Mapeamento EXATO com o banco de dados
     const categorias = [
         { nome: 'todas', label: 'Todos', icon: Layers },
         
@@ -48,6 +52,29 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
         { nome: 'Serviços Profissionais', label: 'Profissionais', icon: Briefcase },
         { nome: 'Automotivo', label: 'Oficinas', icon: Car },
     ];
+
+    // 👇 ESTA FUNÇÃO É A MÁGICA QUE VERIFICA SE JÁ VEIO FAVORITADO DO BANCO 👇
+    const checarSeEhFavorito = (item, tipoItem) => {
+        const key = `${tipoItem}-${item.id}`;
+        
+        // 1. Se a pessoa acabou de clicar na tela, o estado local (React) manda!
+        if (favoritosLocais[key] !== undefined) {
+            return favoritosLocais[key];
+        }
+
+        // 2. Se o backend mandou um campo booleano 'is_favorito' explícito
+        if (item.is_favorito !== undefined) {
+            return !!item.is_favorito;
+        }
+
+        // 3. Se o backend mandou os favoritos num array (Padrão do Laravel com ->with('favoritos'))
+        if (item.favoritos && Array.isArray(item.favoritos)) {
+            // Verifica se no array de favoritos tem algum que pertença ao usuário logado
+            return item.favoritos.some(fav => fav.usuario_id === userId);
+        }
+
+        return false;
+    };
 
     const atualizarResultados = useCallback((novosFiltros = {}) => {
         setCarregando(true);
@@ -114,41 +141,35 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
         setImageErrors(prev => ({ ...prev, [id]: true }));
     };
 
-    // Função para mostrar a mensagem na tela
     const showToast = (mensagem) => {
         setToast({ show: true, message: mensagem });
-        setTimeout(() => setToast({ show: false, message: '' }), 3000); // Esconde depois de 3 segundos
+        setTimeout(() => setToast({ show: false, message: '' }), 3000); 
     };
 
-    // Função para favoritar/desfavoritar via API (Axios)
-    const handleToggleFavorito = async (e, id, tipo) => {
+    const handleToggleFavorito = async (e, id, tipo, isAtualmenteFavorito) => {
         e.preventDefault(); 
         e.stopPropagation();
 
         const chave = `${tipo}-${id}`;
         
-        // 1. Atualiza interface instantaneamente (Optimistic UI) para não haver delay
+        // 1. Atualiza interface (inverte o valor que está agora)
         setFavoritosLocais(prev => ({
             ...prev,
-            [chave]: !prev[chave]
+            [chave]: !isAtualmenteFavorito
         }));
 
         try {
-            // 2. Dispara para o backend via axios
+            // 2. Dispara pro backend
             const response = await axios.post('/favoritos/toggle', { tipo, id });
-            
-            // 3. Mostra a mensagem de sucesso que veio do seu Controller
             showToast(response.data.message);
-            
         } catch (error) {
             console.error("Erro ao alterar favoritos:", error);
             
-            // Se der erro, desfaz a alteração visual
+            // 3. Se der erro, desfaz (volta ao que era antes do clique)
             setFavoritosLocais(prev => ({
                 ...prev,
-                [chave]: !prev[chave]
+                [chave]: isAtualmenteFavorito
             }));
-            
             showToast("Ocorreu um erro ao atualizar.");
         }
     };
@@ -158,26 +179,14 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
     const listaResultados = dadosPaginados?.data || [];
     const linksPaginacao = dadosPaginados?.links || [];
 
-    // Animações
     const containerVariants = {
         hidden: { opacity: 0 },
-        visible: {
-            opacity: 1,
-            transition: {
-                staggerChildren: 0.08,
-                delayChildren: 0.1
-            }
-        }
+        visible: { opacity: 1, transition: { staggerChildren: 0.08, delayChildren: 0.1 } }
     };
 
     const cardVariants = {
         hidden: { opacity: 0, y: 40, scale: 0.95 },
-        visible: { 
-            opacity: 1, 
-            y: 0, 
-            scale: 1,
-            transition: { type: "spring", stiffness: 70, damping: 20 }
-        }
+        visible: { opacity: 1, y: 0, scale: 1, transition: { type: "spring", stiffness: 70, damping: 20 } }
     };
 
     return (
@@ -419,9 +428,11 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                                 ) : (
                                     listaResultados.map((item) => {
                                         const tipoItem = isEstabelecimentos 
-    ? 'estabelecimento' 
-    : (item.valor_diaria !== undefined ? 'item_aluguel' : 'servico');
+                                            ? 'estabelecimento' 
+                                            : (item.valor_diaria !== undefined ? 'item_aluguel' : 'servico');
+                                            
                                         const key = `${tipoItem}-${item.id}`;
+                                        
                                         const linkRoute = isEstabelecimentos 
                                             ? route('estabelecimentos.loja', item.id) 
                                             : route('itens.detalhes', item.id);
@@ -432,8 +443,8 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
 
                                         const temPromo = !isEstabelecimentos && item.tem_promocao && Number(item.valor_desconto) > 0;
                                         
-                                        // Verifica se está favoritado (baseado na propriedade do backend OU no estado local)
-                                        const isFavoritado = favoritosLocais[key] !== undefined ? favoritosLocais[key] : !!item.is_favorito;
+                                        // 👇 ISSO AQUI FAZ O CORAÇÃO FICAR VERMELHO 👇
+                                        const isFavoritado = checarSeEhFavorito(item, tipoItem);
 
                                         return (
                                             <motion.div
@@ -463,7 +474,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
 
                                                         {/* Botão de Favoritar */}
                                                         <button
-                                                            onClick={(e) => handleToggleFavorito(e, item.id, tipoItem)}
+                                                            onClick={(e) => handleToggleFavorito(e, item.id, tipoItem, isFavoritado)}
                                                             className="absolute top-4 right-4 z-20 w-9 h-9 flex items-center justify-center bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md rounded-full shadow-sm hover:scale-110 transition-all"
                                                         >
                                                             <Heart className={`w-4 h-4 transition-colors ${

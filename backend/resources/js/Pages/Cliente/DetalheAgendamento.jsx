@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, router } from '@inertiajs/react';
+import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
 import { 
   ArrowLeft, Calendar, Wallet, MapPin, 
@@ -15,6 +16,9 @@ export default function DetalheAgendamento({ auth, dados }) {
   
   // Estado local para o botão de favoritar (Inicia com o valor vindo do BD)
   const [isFavorito, setIsFavorito] = useState(dados?.is_favorito || false);
+  
+  // Estado para exibir a mensagem flutuante (Toast)
+  const [toast, setToast] = useState({ show: false, message: '' });
 
   // === ESTADOS PARA O RASTREAMENTO EM TEMPO REAL ===
   const [isRastreando, setIsRastreando] = useState(false);
@@ -69,13 +73,41 @@ export default function DetalheAgendamento({ auth, dados }) {
     ? `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`
     : `https://waze.com/ul?q=${encodeURIComponent(enderecoTexto)}&navigate=yes`;
 
-  // Lógica de Favoritar que salva no Banco de Dados
-  const handleToggleFavorito = () => {
+
+  // Função para mostrar Toast
+  const showToast = (mensagem) => {
+      setToast({ show: true, message: mensagem });
+      setTimeout(() => setToast({ show: false, message: '' }), 3000); 
+  };
+
+  // ==========================================================
+  // LÓGICA DE FAVORITAR (Axios + Otimização Visual)
+  // ==========================================================
+  const handleToggleFavorito = async () => {
+    // ⚠️ IMPORTANTE: Estamos pegando o ID do serviço/item, e não do agendamento
+    const tipoItem = dados.tipo === 'aluguel' ? 'item_aluguel' : 'servico';
+    const idItemAlvo = dados.servico_id || dados.item_aluguel_id || dados.item_id;
+
+    if (!idItemAlvo) {
+        showToast("Não foi possível identificar o item para favoritar.");
+        return;
+    }
+
+    // Atualiza a tela instantaneamente
     setIsFavorito(!isFavorito);
-    router.post(route('favoritos.toggle'), {
-      item_id: dados.id,
-      tipo: dados.tipo
-    }, { preserveScroll: true });
+
+    try {
+        const response = await axios.post('/favoritos/toggle', { 
+            tipo: tipoItem, 
+            id: idItemAlvo 
+        });
+        showToast(response.data.message);
+    } catch (error) {
+        console.error("Erro ao favoritar:", error);
+        // Desfaz se der erro de conexão
+        setIsFavorito(isFavorito);
+        showToast("Ocorreu um erro ao atualizar.");
+    }
   };
 
   // ==========================================================
@@ -155,7 +187,23 @@ export default function DetalheAgendamento({ auth, dados }) {
     >
       <Head title={`Detalhes - ${dados.titulo}`} />
 
-      <div className="py-8 bg-slate-50/50 min-h-screen">
+      <div className="py-8 bg-slate-50/50 min-h-screen relative">
+        
+        {/* TOAST NOTIFICATION */}
+        <AnimatePresence>
+            {toast.show && (
+                <motion.div
+                    initial={{ opacity: 0, y: 50, x: '-50%' }}
+                    animate={{ opacity: 1, y: 0, x: '-50%' }}
+                    exit={{ opacity: 0, y: 50, x: '-50%' }}
+                    className="fixed bottom-10 left-1/2 z-50 flex items-center gap-2 px-6 py-3 rounded-full shadow-lg bg-zinc-900 text-white font-medium text-sm"
+                >
+                    <Heart className={`w-4 h-4 ${toast.message.includes('Adicionado') ? 'fill-red-500 text-red-500' : ''}`} />
+                    {toast.message}
+                </motion.div>
+            )}
+        </AnimatePresence>
+
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
           
           {/* Topbar: Voltar e Favoritar */}
@@ -180,7 +228,7 @@ export default function DetalheAgendamento({ auth, dados }) {
                 }`}
                 title={isFavorito ? "Remover dos Favoritos" : "Salvar nos Favoritos"}
               >
-                <Heart className={`w-5 h-5 ${isFavorito ? 'fill-current' : ''}`} />
+                <Heart className={`w-5 h-5 ${isFavorito ? 'fill-red-500 text-red-500' : ''}`} />
               </button>
               <span className="text-xs font-bold text-gray-400 uppercase tracking-widest bg-white px-3 py-2 rounded-xl border border-gray-200/40 shadow-sm flex items-center h-full">
                 ID: #{dados.codigo_reserva || dados.id}
@@ -303,7 +351,7 @@ export default function DetalheAgendamento({ auth, dados }) {
                       </span>
                     ) : (
                       <span className="bg-amber-100 text-amber-700 text-[10px] font-black px-2.5 py-1 rounded-md uppercase tracking-wider flex items-center gap-1">
-                        <ClockIcon className="w-3 h-3"/> Pendente
+                        <Loader className="w-3 h-3 animate-spin"/> Pendente
                       </span>
                     )}
                   </div>

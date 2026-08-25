@@ -7,8 +7,9 @@ import {
     MapPinIcon, ArrowPathIcon 
 } from '@heroicons/react/24/solid';
 import { StarIcon as StarOutlineIcon } from '@heroicons/react/24/outline'; 
+import { motion, AnimatePresence } from 'framer-motion';
 
-export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
+export default function ClienteDashboard({ auth, agendamentos = [], historico = [], usuario }) {
     // Controle das Abas de Agendamentos
     const [abaAtiva, setAbaAtiva] = useState('proximos'); 
 
@@ -101,23 +102,34 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
         });
     };
 
+    // ====================================================
+    // PROCESSAMENTO E SEPARAÇÃO DE ABAS
+    // ====================================================
     const agsProximos = [];
     const agsPendentes = [];
     const agsConcluidos = [];
     const agsCancelados = [];
 
+    // Processa os Agendamentos Ativos
     agendamentos.forEach(ag => {
         const statusTempo = verificarExpiracao(ag);
         const isCancelado = statusTempo.cancelado || ag.status_pagamento === 'estornado' || (statusTempo.expirou && ag.status_pagamento !== 'pago_online' && ag.status_pagamento !== 'presencial');
         
         if (isCancelado) {
             agsCancelados.push(ag);
-        } else if (ag.status === 'concluido' || ag.status === 'finalizado') {
-            agsConcluidos.push(ag);
         } else if (ag.status === 'aguardando_pagamento' && ag.status_pagamento === 'pendente') {
             agsPendentes.push(ag);
         } else {
             agsProximos.push(ag);
+        }
+    });
+
+    // Processa o Histórico (Concluídos e Cancelados pelo Banco)
+    historico.forEach(ag => {
+        if (ag.status === 'concluido' || ag.status === 'finalizado') {
+            agsConcluidos.push(ag);
+        } else if (ag.status === 'cancelado') {
+            agsCancelados.push(ag);
         }
     });
 
@@ -134,9 +146,23 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
                 <div className="max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-12 pt-8 md:pt-12">
                     
                     {/* Alertas Flutuantes */}
-                    {flash?.success && <div className="mb-8 p-4 text-emerald-800 bg-emerald-50 border border-emerald-100 rounded-2xl flex items-center gap-3 text-sm font-medium w-full md:w-max mx-auto shadow-sm animate-in fade-in slide-in-from-top-4"><CheckCircleIcon className="w-5 h-5 shrink-0"/> {flash.success}</div>}
-                    {flash?.warning && <div className="mb-8 p-4 text-[#E05D36] bg-[#FFF2EE] border border-[#FADCD2] rounded-2xl flex items-center gap-3 text-sm font-medium w-full md:w-max mx-auto shadow-sm animate-in fade-in slide-in-from-top-4"><ExclamationTriangleIcon className="w-5 h-5 shrink-0"/> {flash.warning}</div>}
-                    {flash?.error && <div className="mb-8 p-4 text-red-800 bg-red-50 border border-red-100 rounded-2xl flex items-center gap-3 text-sm font-medium w-full md:w-max mx-auto shadow-sm animate-in fade-in slide-in-from-top-4"><XCircleIcon className="w-5 h-5 shrink-0"/> {flash.error}</div>}
+                    <AnimatePresence>
+                        {flash?.success && (
+                            <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mb-8 p-4 text-emerald-800 bg-emerald-50 border border-emerald-100 rounded-2xl flex items-center gap-3 text-sm font-medium w-full md:w-max mx-auto shadow-sm">
+                                <CheckCircleIcon className="w-5 h-5 shrink-0"/> {flash.success}
+                            </motion.div>
+                        )}
+                        {flash?.warning && (
+                            <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mb-8 p-4 text-[#E05D36] bg-[#FFF2EE] border border-[#FADCD2] rounded-2xl flex items-center gap-3 text-sm font-medium w-full md:w-max mx-auto shadow-sm">
+                                <ExclamationTriangleIcon className="w-5 h-5 shrink-0"/> {flash.warning}
+                            </motion.div>
+                        )}
+                        {flash?.error && (
+                            <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mb-8 p-4 text-red-800 bg-red-50 border border-red-100 rounded-2xl flex items-center gap-3 text-sm font-medium w-full md:w-max mx-auto shadow-sm">
+                                <XCircleIcon className="w-5 h-5 shrink-0"/> {flash.error}
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
 
                     {/* CABEÇALHO RESPONSIVO */}
                     <div className="flex flex-col xl:flex-row xl:items-center justify-between mb-10 gap-6">
@@ -197,17 +223,17 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
                             <p className="text-gray-500 text-sm mt-2 max-w-sm mx-auto">Não encontramos nenhum agendamento nesta categoria no momento.</p>
                         </div>
                     ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6">
                             {agendamentosExibidos.map((agendamento) => {
                                 const statusTempo = verificarExpiracao(agendamento);
                                 const isPago = agendamento.status_pagamento === 'pago_online';
                                 const isEstornado = agendamento.status_pagamento === 'estornado';
                                 const isConcluido = agendamento.status === 'concluido' || agendamento.status === 'finalizado';
                                 const isConfirmado = (isPago || agendamento.status_pagamento === 'presencial' || agendamento.status === 'confirmado') && !statusTempo.cancelado && !isConcluido;
-                                const isCanceladoDefinitivo = statusTempo.cancelado || isEstornado || (statusTempo.expirou && !isConfirmado);
+                                const isCanceladoDefinitivo = agendamento.status === 'cancelado' || statusTempo.cancelado || isEstornado || (statusTempo.expirou && !isConfirmado);
                                 const isAguardandoPagamento = agendamento.status === 'aguardando_pagamento' && !isCanceladoDefinitivo && !isConfirmado;
                                 
-                                const isEmAndamento = agendamento.status === 'em_andamento' || agendamento.em_andamento;
+                                const isEmAndamento = agendamento.status === 'em_atendimento' || agendamento.status === 'em_andamento' || agendamento.em_andamento;
 
                                 return (
                                     <div key={agendamento.id} className={`rounded-[2rem] bg-white border p-6 flex flex-col justify-between transition-all duration-300 ${isEmAndamento ? 'border-[#E05D36] shadow-[0_8px_30px_rgba(224,93,54,0.15)] ring-1 ring-[#E05D36]' : 'border-gray-100 shadow-[0_4px_25px_rgba(0,0,0,0.04)] hover:shadow-[0_8px_35px_rgba(0,0,0,0.08)] hover:-translate-y-1'}`}>
@@ -225,13 +251,13 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
                                                     ) : isAguardandoPagamento ? (
                                                         <span className="bg-[#FFF2EE] text-[#E05D36] text-[10px] uppercase tracking-widest font-black px-3 py-1.5 rounded-lg border border-[#FADCD2]">Pendente</span>
                                                     ) : (
-                                                        <span className="bg-gray-50 text-gray-800 text-[10px] uppercase tracking-wider font-black px-3 py-1.5 rounded-lg border border-gray-200">Confirmado</span>
+                                                        <span className="bg-emerald-50 text-emerald-800 text-[10px] uppercase tracking-wider font-black px-3 py-1.5 rounded-lg border border-emerald-100">Agendado</span>
                                                     )}
                                                 </div>
 
                                                 <div className="text-right break-words">
                                                     <span className="text-2xl font-black text-gray-900 tracking-tight">
-                                                        {formatarMoeda(agendamento?.valor_final)}
+                                                        {formatarMoeda(agendamento?.valor_final || agendamento?.servico?.valor)}
                                                     </span>
                                                 </div>
                                             </div>
@@ -251,15 +277,17 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
                                                     <CalendarIcon className="w-5 h-5 text-gray-800" />
                                                 </div>
                                                 <div className="overflow-hidden">
-                                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Agendado para</p>
+                                                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">{isConcluido ? 'Realizado em' : 'Agendado para'}</p>
                                                     <p className={`text-sm font-bold truncate ${isCanceladoDefinitivo ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
-                                                        {formatarDataCompleta(agendamento?.data_agendamento, agendamento?.hora_agendamento)}
+                                                        {agendamento.data_formatada 
+                                                            ? `${agendamento.data_formatada} • ${agendamento.hora_agendamento?.substring(0,5)}`
+                                                            : formatarDataCompleta(agendamento?.data_agendamento, agendamento?.hora_agendamento)}
                                                     </p>
                                                 </div>
                                             </div>
 
-                                            {/* PIN Code */}
-                                            {isConfirmado && agendamento?.codigo_verificacao && !isConcluido && !isEmAndamento && (
+                                            {/* PIN Code para Reservas Ativas (Esconde se for aba concluídos/cancelados) */}
+                                            {isConfirmado && agendamento?.codigo_verificacao && !isConcluido && !isEmAndamento && abaAtiva === 'proximos' && (
                                                 <div className="mb-6 bg-gray-900 text-white rounded-[1.25rem] p-4 text-center shadow-md relative overflow-hidden">
                                                     <div className="absolute top-0 right-0 w-16 h-16 bg-white/10 rounded-bl-full"></div>
                                                     <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1 relative z-10">Código de Check-in</p>
@@ -267,58 +295,93 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
                                                 </div>
                                             )}
                                             
-                                            {/* Status de Avaliação */}
+                                            {/* Status de Avaliação e Pontos Ganhos */}
                                             {isConcluido && agendamento.nota && (
-                                                <div className="mb-6 flex items-center gap-2 bg-yellow-50/80 p-2.5 rounded-xl border border-yellow-100 w-max">
-                                                    <div className="flex items-center gap-0.5">
-                                                        {[1, 2, 3, 4, 5].map((estrela) => (
-                                                            agendamento.nota >= estrela 
-                                                            ? <StarIcon key={estrela} className="w-4 h-4 text-yellow-500" /> 
-                                                            : <StarOutlineIcon key={estrela} className="w-4 h-4 text-gray-300" />
-                                                        ))}
+                                                <div className="mb-6 flex flex-col gap-1">
+                                                    <div className="flex items-center gap-2 bg-yellow-50/80 p-2.5 rounded-xl border border-yellow-100 w-max">
+                                                        <div className="flex items-center gap-0.5">
+                                                            {[1, 2, 3, 4, 5].map((estrela) => (
+                                                                agendamento.nota >= estrela 
+                                                                ? <StarIcon key={estrela} className="w-4 h-4 text-yellow-500" /> 
+                                                                : <StarOutlineIcon key={estrela} className="w-4 h-4 text-gray-300" />
+                                                            ))}
+                                                        </div>
+                                                        <span className="text-[10px] font-bold text-yellow-700 uppercase tracking-wider pr-1">Avaliado</span>
                                                     </div>
-                                                    <span className="text-[10px] font-bold text-yellow-700 uppercase tracking-wider pr-1">Avaliado</span>
+                                                    <p className="text-xs text-gray-400 font-bold ml-1">+ Pontos Fidelidade Ganhos!</p>
                                                 </div>
                                             )}
                                         </div>
 
-                                        {/* AÇÕES (Botões maiores p/ mobile) */}
+                                        {/* AÇÕES BOTÕES */}
                                         <div className="mt-4 space-y-3">
-                                            {isEmAndamento ? (
-                                                <button className="w-full py-4 bg-[#E05D36] text-white rounded-2xl text-sm font-bold hover:bg-[#C74B27] transition-all shadow-[0_4px_15px_rgba(224,93,54,0.3)]">
-                                                    Acompanhar Atendimento
-                                                </button>
-                                            ) : isAguardandoPagamento ? (
-                                                <>
-                                                    <button onClick={() => pagarNovamente(agendamento.id)} disabled={loadingPagar === agendamento.id} className="w-full py-4 bg-emerald-600 text-white rounded-2xl text-sm font-bold hover:bg-emerald-700 transition-all shadow-[0_4px_15px_rgba(5,150,105,0.2)] disabled:opacity-70 flex justify-center items-center gap-2">
-                                                        {loadingPagar === agendamento.id ? <ArrowPathIcon className="w-4 h-4 animate-spin" /> : null}
-                                                        {loadingPagar === agendamento.id ? 'Processando...' : 'Finalizar Pagamento'}
-                                                    </button>
-                                                    <button onClick={() => cancelarVaga(agendamento.id, isPago)} disabled={loadingCancelar === agendamento.id} className="w-full text-xs font-bold text-gray-400 hover:text-red-500 py-3 transition-colors">
-                                                        Cancelar Agendamento
-                                                    </button>
-                                                </>
-                                            ) : isConcluido && !agendamento.nota ? (
-                                                <button onClick={() => abrirModalAvaliacao(agendamento)} className="w-full py-4 bg-white border-2 border-[#E05D36] text-[#E05D36] rounded-2xl text-sm font-bold hover:bg-[#FFF2EE] transition-all shadow-sm">
-                                                    Avaliar Experiência
-                                                </button>
-                                            ) : isConfirmado ? (
-                                                <>
-                                                    <button onClick={() => router.get(`/meus-pedidos/agendamento/${agendamento.id}`)} className="w-full py-4 bg-gray-50 border border-gray-200 text-gray-900 rounded-2xl text-sm font-bold hover:border-gray-300 hover:bg-gray-100 transition-all">
+                                            {(() => {
+                                                // 1. SE EM ATENDIMENTO
+                                                if (isEmAndamento) {
+                                                    return (
+                                                        <button className="w-full py-4 bg-[#E05D36] text-white rounded-2xl text-sm font-bold hover:bg-[#C74B27] transition-all shadow-[0_4px_15px_rgba(224,93,54,0.3)] cursor-default">
+                                                            Atendimento em Andamento
+                                                        </button>
+                                                    );
+                                                }
+                                                // 2. SE AGUARDANDO PAGAMENTO
+                                                if (isAguardandoPagamento) {
+                                                    return (
+                                                        <>
+                                                            <button onClick={() => pagarNovamente(agendamento.id)} disabled={loadingPagar === agendamento.id} className="w-full py-4 bg-emerald-600 text-white rounded-2xl text-sm font-bold hover:bg-emerald-700 transition-all shadow-[0_4px_15px_rgba(5,150,105,0.2)] disabled:opacity-70 flex justify-center items-center gap-2">
+                                                                {loadingPagar === agendamento.id ? <ArrowPathIcon className="w-4 h-4 animate-spin" /> : null}
+                                                                {loadingPagar === agendamento.id ? 'Processando...' : 'Finalizar Pagamento'}
+                                                            </button>
+                                                            <button onClick={() => cancelarVaga(agendamento.id, isPago)} disabled={loadingCancelar === agendamento.id} className="w-full text-xs font-bold text-gray-400 hover:text-red-500 py-3 transition-colors">
+                                                                Cancelar Agendamento
+                                                            </button>
+                                                        </>
+                                                    );
+                                                }
+                                                // 3. SE CONCLUÍDO E AINDA PODE AVALIAR
+                                                if (isConcluido && agendamento.pode_avaliar) {
+                                                    return (
+                                                        <>
+                                                            <button onClick={() => abrirModalAvaliacao(agendamento)} className="w-full py-4 bg-white border-2 border-[#E05D36] text-[#E05D36] rounded-2xl text-sm font-bold hover:bg-[#FFF2EE] transition-all shadow-sm">
+                                                                ⭐ Avaliar Experiência
+                                                            </button>
+                                                            <Link href={`/estabelecimentos/${agendamento.estabelecimento_id}`} className="w-full flex justify-center py-3 bg-gray-50 text-gray-600 rounded-2xl text-sm font-bold hover:bg-gray-100 transition-all">
+                                                                🔄 Reagendar Novamente
+                                                            </Link>
+                                                        </>
+                                                    );
+                                                }
+                                                // 4. SE CONCLUÍDO OU CANCELADO DEFINITIVO
+                                                if (isConcluido || isCanceladoDefinitivo) {
+                                                    return (
+                                                        <Link href={`/estabelecimentos/${agendamento.estabelecimento_id}`} className="w-full flex justify-center items-center gap-2 py-4 bg-indigo-50 border border-indigo-100 text-indigo-700 rounded-2xl text-sm font-bold hover:bg-indigo-100 transition-all">
+                                                            <ArrowPathIcon className="w-4 h-4" /> Reagendar Serviço
+                                                        </Link>
+                                                    );
+                                                }
+                                                // 5. SE ATIVO / CONFIRMADO FUTURO
+                                                if (isConfirmado) {
+                                                    return (
+                                                        <>
+                                                            <button onClick={() => router.get(`/meus-pedidos/agendamento/${agendamento.id}`)} className="w-full py-4 bg-gray-50 border border-gray-200 text-gray-900 rounded-2xl text-sm font-bold hover:border-gray-300 hover:bg-gray-100 transition-all">
+                                                                Ver Detalhes
+                                                            </button>
+                                                            <button onClick={() => cancelarVaga(agendamento.id, isPago)} disabled={loadingCancelar === agendamento.id} className="w-full text-xs font-bold text-gray-400 hover:text-red-500 py-3 block text-center transition-colors">
+                                                                Cancelar Agendamento
+                                                            </button>
+                                                        </>
+                                                    );
+                                                }
+                                                // FALLBACK GERAL
+                                                return (
+                                                    <button 
+                                                        onClick={() => router.get(`/meus-pedidos/agendamento/${agendamento.id}`)} 
+                                                        className="w-full py-4 bg-gray-50 border border-gray-200 text-gray-900 rounded-2xl text-sm font-bold hover:border-gray-300 hover:bg-gray-100 transition-all"
+                                                    >
                                                         Ver Detalhes
                                                     </button>
-                                                    <button onClick={() => cancelarVaga(agendamento.id, isPago)} disabled={loadingCancelar === agendamento.id} className="w-full text-xs font-bold text-gray-400 hover:text-red-500 py-3 block text-center transition-colors">
-                                                        Cancelar Agendamento
-                                                    </button>
-                                                </>
-                                            ) : (
-                                                <button 
-                                                    onClick={() => router.get(`/meus-pedidos/agendamento/${agendamento.id}`)} 
-                                                    className="w-full py-4 bg-gray-50 border border-gray-200 text-gray-900 rounded-2xl text-sm font-bold hover:border-gray-300 hover:bg-gray-100 transition-all"
-                                                >
-                                                    Ver Detalhes
-                                                </button>
-                                            )}
+                                                );
+                                            })()}
                                         </div>
                                     </div>
                                 );
@@ -386,8 +449,8 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
                 </div>
             )}
 
-            {/* Ocultar barra de rolagem (Adicione no seu CSS global se já não tiver) */}
-            <style jsx global>{`
+            {/* Ocultar barra de rolagem de forma segura p/ React 18+ */}
+            <style dangerouslySetInnerHTML={{__html: `
                 .no-scrollbar::-webkit-scrollbar {
                     display: none;
                 }
@@ -395,7 +458,7 @@ export default function ClienteDashboard({ auth, agendamentos = [], usuario }) {
                     -ms-overflow-style: none;
                     scrollbar-width: none;
                 }
-            `}</style>
+            `}} />
         </AuthenticatedLayout>
     );
 }

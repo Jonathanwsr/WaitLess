@@ -154,6 +154,12 @@ Route::prefix('estornos')->group(function () {
         Route::post('/{id}/contestar', [EstornoController::class, 'contestar']);
     });
 
+// Rota para Cancelamento e Estorno de Agendamentos (Pelo Cliente)
+Route::post('/agendamentos/{id}/cancelar', [AgendamentoController::class, 'cancelarPeloCliente'])->name('cliente.agendamentos.cancelar');
+// adiar 
+Route::post('/agendamentos/{id}/chamar', [App\Http\Controllers\Api\AgendamentoController::class, 'chamar'])->name('agendamentos.chamar');
+Route::post('/agendamentos/{id}/adiar', [App\Http\Controllers\Api\AgendamentoController::class, 'adiar'])->name('agendamentos.adiar');
+
 
     Route::prefix('admin/estornos')->group(function () {
         
@@ -279,6 +285,10 @@ Route::get('/estabelecimentos/{estabelecimento}/fila', [App\Http\Controllers\Api
    Route::get('/favoritos', [FavoritoController::class, 'index'])->name('cliente.favoritos');
 Route::post('/favoritos/toggle', [FavoritoController::class, 'toggleFavorito'])->name('api.favoritos.toggle');
 
+// comprovante PDF do agendamento
+// Modifique a rota para usar o namespace da Api (caso seu controller esteja lá)
+Route::get('/agendamentos/{id}/comprovante-pdf', [App\Http\Controllers\Api\AgendamentoController::class, 'gerarComprovantePDF'])
+    ->name('agendamentos.comprovante')->middleware('auth');
 Route::post('/rastreamento/update', [AgendamentoController::class, 'rastrearLocalizacao']);
 
 // Rota que alimenta o Mapa do Proprietário no App Mobile

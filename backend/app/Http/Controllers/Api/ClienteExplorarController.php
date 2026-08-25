@@ -7,6 +7,7 @@ use App\Models\Estabelecimento;
 use App\Models\ItemAluguel;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth; // Adicionado para pegar o ID do usuário logado
 use Carbon\Carbon;
 use Inertia\Inertia;
 
@@ -40,6 +41,22 @@ class ClienteExplorarController extends Controller
         $estabelecimentos = null;
         $itens = null;
         $estabelecimentoSelect = 'id,name as name,foto_perfil,cidade,estado';
+
+        // =====================================================================
+        // LÓGICA DE FAVORITOS (Otimizada para não pesar o banco)
+        // =====================================================================
+        $userId = Auth::id();
+        $favEstabelecimentos = [];
+        $favItensAluguel = [];
+        $favServicos = [];
+
+        // Se tiver usuário logado, busca os IDs favoritos dele numa tacada só
+        if ($userId) {
+            $favoritosDoUsuario = DB::table('favoritos')->where('usuario_id', $userId)->get();
+            $favEstabelecimentos = $favoritosDoUsuario->pluck('estabelecimento_id')->filter()->toArray();
+            $favItensAluguel = $favoritosDoUsuario->pluck('item_aluguel_id')->filter()->toArray();
+            $favServicos = $favoritosDoUsuario->pluck('servico_id')->filter()->toArray();
+        }
 
         // =====================================================================
         // FLUXO A: BUSCA POR ESTABELECIMENTOS
@@ -82,6 +99,12 @@ class ClienteExplorarController extends Controller
             }
 
             $estabelecimentos = $queryEstabelecimentos->paginate($perPage)->withQueryString();
+
+            // MÁGICA DOS FAVORITOS: Injeta "is_favorito" nos estabelecimentos
+            $estabelecimentos->getCollection()->transform(function ($est) use ($favEstabelecimentos) {
+                $est->is_favorito = in_array($est->id, $favEstabelecimentos);
+                return $est;
+            });
         }
 
         // =====================================================================
@@ -211,7 +234,11 @@ class ClienteExplorarController extends Controller
             // ============================================================================
             // INÍCIO DO PROCESSAMENTO MÁGICO DE VAGAS E DISPONIBILIDADE NA VITRINE
             // ============================================================================
-            $itens->getCollection()->transform(function ($item) use ($dataDesejada) {
+            $itens->getCollection()->transform(function ($item) use ($dataDesejada, $favItensAluguel, $favServicos) {
+                
+                // MÁGICA DOS FAVORITOS: Checa em ambas as listas (caso seja serviço ou aluguel)
+                $item->is_favorito = in_array($item->id, $favItensAluguel) || in_array($item->id, $favServicos);
+
                 // Decodificando arrays Json base
                 $item->fotos = is_string($item->fotos) ? json_decode($item->fotos, true) : ($item->fotos ?? []);
                 $item->recursos_oferecidos = is_string($item->recursos_oferecidos) ? json_decode($item->recursos_oferecidos, true) : ($item->recursos_oferecidos ?? []);

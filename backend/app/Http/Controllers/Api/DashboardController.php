@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 use App\Models\Estabelecimento;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
+use Carbon\Carbon;
 
 class DashboardController extends Controller
 {
@@ -43,12 +44,14 @@ class DashboardController extends Controller
         // ====================================================
         // 2. DASHBOARD DO CLIENTE FINAL
         // ====================================================
+        
+        // A. Busca Agendamentos ATIVOS (Pendentes, Confirmados, Pagando)
         $meusAgendamentos = Agendamento::with([
                 'estabelecimento:id,nome,cidade,estado', 
                 'servico:id,nome,valor,duracao_minutos'
             ])
             ->where('usuario_id', $user->id)
-            ->whereIn('status', ['pendente', 'confirmado', 'aguardando_pagamento', 'cancelado'])
+            ->whereIn('status', ['pendente', 'confirmado', 'aguardando_pagamento'])
             ->orderBy('data_agendamento', 'asc')
             ->orderBy('hora_agendamento', 'asc')
             ->get();
@@ -63,17 +66,31 @@ class DashboardController extends Controller
             $agendamento->pessoas_na_frente = $pessoasNaFrente;
         }
 
-        // ----------------------------------------------------
-        // LÓGICA DE GEOLOCALIZAÇÃO: Estabelecimentos Próximos
-        // ----------------------------------------------------
-        // Verifica se as coordenadas foram enviadas na requisição inicial
+        // B. NOVO: Busca HISTÓRICO de Agendamentos (Concluídos e Cancelados)
+        $historicoAgendamentos = Agendamento::with([
+                'estabelecimento:id,nome,foto_perfil,cidade', 
+                'servico:id,nome,valor,duracao_minutos'
+            ])
+            ->where('usuario_id', $user->id)
+            ->whereIn('status', ['concluido', 'finalizado', 'cancelado'])
+            ->orderBy('data_agendamento', 'desc')
+            ->orderBy('hora_agendamento', 'desc')
+            ->take(20) // Limita os últimos 20 para não pesar a tela inicial
+            ->get()
+            ->map(function ($item) {
+                // Prepara variáveis auxiliares para o Front-end facilitar a exibição
+                $item->pode_avaliar = in_array($item->status, ['concluido', 'finalizado']) && is_null($item->nota);
+                $item->data_formatada = Carbon::parse($item->data_agendamento)->format('d/m/Y');
+                return $item;
+            });
+
+        // C. LÓGICA DE GEOLOCALIZAÇÃO: Estabelecimentos Próximos
         $userLat = $request->input('lat');
         $userLng = $request->input('lng');
         $radius = $request->input('radius', 10); // Padrão 10km
         
         $estabelecimentosProximos = [];
 
-        // Se o frontend enviou as coordenadas, faz o cálculo via Haversine (Scope do Model)
         if ($userLat && $userLng) {
             $estabelecimentosProximos = Estabelecimento::withinDistance($userLat, $userLng, $radius)
                 ->with(['servicos:id,estabelecimento_id,nome,valor'])
@@ -82,8 +99,9 @@ class DashboardController extends Controller
 
         return Inertia::render('Cliente/Dashboard', [
             'agendamentos' => $meusAgendamentos,
+            'historico' => $historicoAgendamentos, // <--- Enviado para a nova aba do Front-end
             'usuario' => $user,
-            'estabelecimentos_proximos' => $estabelecimentosProximos // Envia pro Vue/React
+            'estabelecimentos_proximos' => $estabelecimentosProximos 
         ]);
     }
 
@@ -92,23 +110,20 @@ class DashboardController extends Controller
     // ====================================================
     public function getNearby(Request $request)
     {
-        // Validação dos dados de entrada
         $request->validate([
-            'lat' => 'required|numeric', // Latitude do usuário
-            'lng' => 'required|numeric', // Longitude do usuário
-            'radius' => 'nullable|integer|min:1|max:50', // Raio de busca em km (padrão 10)
+            'lat' => 'required|numeric', 
+            'lng' => 'required|numeric', 
+            'radius' => 'nullable|integer|min:1|max:50', 
         ]);
 
         $userLat = $request->input('lat');
         $userLng = $request->input('lng');
-        $radius = $request->input('radius', 10); // Valor padrão de 10km
+        $radius = $request->input('radius', 10); 
 
-        // Executa a busca usando a scope definida no modelo Estabelecimento
         $nearbyEstabelecimentos = Estabelecimento::withinDistance($userLat, $userLng, $radius)
             ->with(['servicos:id,estabelecimento_id,nome,valor']) 
             ->get();
 
-        // Retorna os dados em formato JSON para o frontend (para a atualização de 5 em 5 min)
         return response()->json($nearbyEstabelecimentos);
     }
 
@@ -117,17 +132,12 @@ class DashboardController extends Controller
         return Inertia::render('Cliente/Home');
     }
 
-    
     public function showEstabelecimento($id)
     {
-        // 1. Busca o estabelecimento pelo ID ou retorna erro 404 se não achar
         $estabelecimento = Estabelecimento::with([
-            'servicos' // Traz os serviços vinculados para mostrar na tela da loja
-            // Você pode adicionar outros relacionamentos aqui, como 'avaliacoes', 'profissionais', etc.
+            'servicos' 
         ])->findOrFail($id);
 
-        // 2. Renderiza a tela do Inertia passando os dados
-        // (Você precisará criar esse arquivo JSX: resources/js/Pages/Cliente/EstabelecimentoShow.jsx)
         return Inertia::render('Cliente/EstabelecimentoShow', [
             'estabelecimento' => $estabelecimento
         ]);

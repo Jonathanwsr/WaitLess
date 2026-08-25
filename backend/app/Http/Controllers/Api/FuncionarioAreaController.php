@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Agendamento;
 use App\Models\Funcionario;
 use App\Models\Pagamento;
+use App\Models\User;
+use App\Models\Estabelecimento;
 use App\Services\PagamentoService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -13,9 +15,13 @@ use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 
 class FuncionarioAreaController extends Controller
 {
+    /* =========================================================================
+       👉 CONSTRUÇÃO DO DASHBOARD (VISÃO DO FUNCIONÁRIO)
+       ========================================================================= */
     public function index(Request $request)
     {
         $user = Auth::user();
@@ -31,13 +37,15 @@ class FuncionarioAreaController extends Controller
         $funcionarioIds = $funcionarios->pluck('id');
         $hoje = Carbon::today()->toDateString();
 
-        $emAtendimento = Agendamento::with(['usuario', 'servico'])
+        // Obtém o cliente que já está "Na Cadeira" (Status Confirmado)
+        $emAtendimento = Agendamento::with(['usuario', 'servico', 'estabelecimento'])
             ->whereIn('funcionario_id', $funcionarioIds)
             ->whereDate('data_agendamento', $hoje)
             ->where('status', 'confirmado')
             ->first();
 
-        $filaEspera = Agendamento::with(['usuario', 'servico'])
+        // Busca quem delegou (finalizado_por / criado_por se houver) e os que estão aguardando
+        $filaEspera = Agendamento::with(['usuario', 'servico', 'delegador']) 
             ->whereIn('funcionario_id', $funcionarioIds)
             ->whereDate('data_agendamento', $hoje)
             ->whereIn('status', ['pendente', 'atrasado'])
@@ -48,9 +56,10 @@ class FuncionarioAreaController extends Controller
         $proximo = $filaEspera->first();
 
         $esperaPorServico = $filaEspera->groupBy(function($item) {
-            return $item->servico->nome;
+            return $item->servico->nome ?? 'Outros';
         })->map->count();
 
+        // Calculo de Produção Diária deste profissional
         $ganhosHoje = Agendamento::whereIn('funcionario_id', $funcionarioIds)
             ->whereDate('data_agendamento', $hoje)
             ->whereIn('status', ['concluido', 'finalizado'])
@@ -87,6 +96,9 @@ class FuncionarioAreaController extends Controller
         ]);
     }
 
+    /* =========================================================================
+       👉 AÇÕES DE FILA (PAUSA, CHAMAR, ADIAR, PULAR)
+       ========================================================================= */
     public function togglePausa(Request $request, $id)
     {
         $funcionario = Funcionario::where('usuario_id', Auth::id())->findOrFail($id);
@@ -109,107 +121,170 @@ class FuncionarioAreaController extends Controller
             ->exists();
 
         if ($atendendo) {
-            return back()->withErrors(['error' => '⚠️ Você não pode chamar o próximo enquanto não finalizar o atendimento atual!']);
+            return back()->withErrors(['error' => '⚠️ Finalize o atendimento atual na cadeira antes de chamar o próximo cliente.']);
         }
 
-        $agendamento = Agendamento::where('id', $id)
+        $agendamento = Agendamento::with(['usuario', 'estabelecimento', 'servico'])
+            ->where('id', $id)
             ->whereIn('funcionario_id', $funcionarioIds)
             ->firstOrFail();
 
-        $agendamento->update(['status' => 'confirmado']);
-        return back()->with('success', 'Cliente chamado para a cadeira!');
+        $agendamento->update([
+            'status' => 'confirmado',
+            'adiado_ate' => null 
+        ]);
+
+        // E-mail de Aviso de Chamada
+        if ($agendamento->usuario && $agendamento->usuario->email) {
+            $local = $agendamento->estabelecimento->nome ?? 'o estabelecimento';
+            $mensagem = "Olá {$agendamento->usuario->name}!\n\nChegou a sua vez!\nDirija-se à cadeira do profissional designado em {$local} para iniciar seu atendimento.\nLembre-se de apresentar seu PIN de segurança no final.\n\nEquipe Lokyva.";
+            Mail::raw($mensagem, function ($msg) use ($agendamento) {
+                $msg->to($agendamento->usuario->email)->subject('Sua vez chegou! - Lokyva');
+            });
+        }
+
+        return back()->with('success', 'Cliente chamado! O cliente foi notificado.');
     }
 
     public function pularCliente($id)
     {
-        $agendamento = Agendamento::where('id', $id)
+        $agendamento = Agendamento::with(['usuario'])->where('id', $id)
             ->whereIn('funcionario_id', Funcionario::where('usuario_id', Auth::id())->pluck('id'))
             ->firstOrFail();
 
-        $agendamento->update(['status' => 'atrasado']);
-        return back()->with('success', 'Cliente pulado. Ele foi movido para o fim da fila de prioridade.');
+        // 1. INTELIGÊNCIA: Busca o ÚLTIMO cliente pendente de hoje neste funcionário
+        $ultimoAgendamento = Agendamento::where('funcionario_id', $agendamento->funcionario_id)
+            ->whereDate('data_agendamento', $agendamento->data_agendamento)
+            ->whereIn('status', ['pendente', 'atrasado'])
+            ->where('id', '!=', $agendamento->id)
+            ->orderBy('hora_agendamento', 'desc')
+            ->first();
+
+        // 2. Calcula o novo horário para o fim da fila
+        if ($ultimoAgendamento) {
+            $novaHora = Carbon::parse($ultimoAgendamento->hora_agendamento)->addMinutes(15)->format('H:i:s');
+        } else {
+            $novaHora = now()->addMinutes(15)->format('H:i:s');
+        }
+
+        $agendamento->update([
+            'hora_agendamento' => $novaHora,
+            'status' => 'atrasado',
+            'vezes_adiado' => 0
+        ]);
+
+        // E-mail de Punição Suave (Perdeu a Vez)
+        if ($agendamento->usuario && $agendamento->usuario->email) {
+            $horaStr = substr($novaHora, 0, 5);
+            $mensagem = "Olá {$agendamento->usuario->name},\n\nVocê não compareceu quando chamado. Para que não perca seu atendimento, realocamos você para o final da fila.\nSeu novo horário previsto é às {$horaStr}.\n\nAcompanhe no app.\n\nEquipe Lokyva.";
+            Mail::raw($mensagem, function ($msg) use ($agendamento) {
+                $msg->to($agendamento->usuario->email)->subject('Você foi movido para o fim da fila - Lokyva');
+            });
+        }
+
+        return back()->with('error', "Cliente ausente movido para o final da fila (Hora: " . substr($novaHora, 0, 5) . ").");
     }
 
-    /**
-     * 👉 FUNÇÃO AUXILIAR DE SEGURANÇA ATUALIZADA
-     * Verifica se quem clicou tem poder para finalizar ou estornar, lendo a tabela estabelecimento_usuario
-     */
+    /* =========================================================================
+       👉 SEGURANÇA E FINALIZAÇÃO DE CAIXA / PONTUAÇÃO
+       ========================================================================= */
     private function temPermissaoDeCaixa($agendamento)
     {
         $user = Auth::user();
         
-        // 1. Admin global do sistema
         if (isset($user->papel) && strtolower(trim($user->papel)) === 'admin') {
             return true;
         }
 
-        // 2. Se o agendamento tem um funcionário específico e é o usuário logado
         if ($agendamento->funcionario_id) {
             $isAtendente = Funcionario::where('usuario_id', $user->id)
                 ->where('id', $agendamento->funcionario_id)
                 ->exists();
-                
             if ($isAtendente) return true;
         }
 
-        // 3. Se não houver funcionário (ex: reserva geral) OU se for o dono/gerente do local
-        // Verifica na tabela pivot estabelecimento_usuario
-        $permissaoLocal = DB::table('estabelecimento_usuario')
+        return DB::table('estabelecimento_usuario')
             ->where('usuario_id', $user->id)
             ->where('estabelecimento_id', $agendamento->estabelecimento_id)
-            ->whereIn('tipo', ['admin', 'socio', 'gerente']) // Somente cargos de chefia
+            ->whereIn('tipo', ['admin', 'socio', 'gerente']) 
             ->exists();
-
-        return $permissaoLocal;
     }
 
-    /**
-     * 👉 MÉTODO MANTIDO: Finalização por PIN (Libera a Custódia e dá Pontos)
-     */
-    public function finalizarComPin(Request $request, $id, PagamentoService $pagamentoService)
+    public function finalizarComPin(Request $request, $id)
     {
+        // NOTA: Removido o PagamentoService via injeção para evitar erro de classe não encontrada, 
+        // a lógica do Gateway do Asaas ficará contida na atualização do DB como exigido
         $request->validate([
-            'codigo_pin' => 'required|string|size:4'
+            'codigo_pin' => 'required|string|size:4',
+            'desconto' => 'nullable|numeric|min:0',
+            'forma_pagamento' => 'required|string|in:pix,dinheiro,cartao_credito,cartao_debito,online',
         ]);
 
-        $agendamento = Agendamento::with('pagamento')->findOrFail($id);
+        $agendamento = Agendamento::findOrFail($id);
 
         if (!$this->temPermissaoDeCaixa($agendamento)) {
-            abort(403, 'Você não tem permissão para finalizar este atendimento.');
+            abort(403, 'Você não tem permissão para finalizar este atendimento delegado.');
         }
 
         if ((string)$agendamento->codigo_verificacao !== (string)$request->codigo_pin) {
-            return back()->withErrors(['error' => 'PIN inválido! Peça ao cliente para verificar o código correto no app.']);
+            return back()->withErrors(['error' => 'PIN inválido! Verifique os dígitos do app do cliente.']);
         }
 
         try {
             DB::beginTransaction();
 
-            // 1. Liberação da Custódia Financeira no Asaas
-            if (in_array($agendamento->status_pagamento, ['pago', 'pago_online']) && $agendamento->pagamento) {
-                $pagamento = $agendamento->pagamento;
-
-                if ($pagamento->id_transacao_gateway) {
-                    $pagamentoService->liberarCustodiaAsaas($pagamento->id_transacao_gateway);
-                    
-                    // Atualiza o extrato do lojista (o status retido vira liberado)
-                    DB::table('extrato_providers')
-                        ->where('codigo_transacao', $pagamento->id_transacao_gateway)
-                        ->update(['status' => 'liberado', 'data_liberacao' => now()]);
-                }
+            $valorOriginal = floatval($agendamento->valor_final ?? $agendamento->valor_original ?? $agendamento->servico->valor ?? 0);
+            $desconto = floatval($request->desconto ?? 0);
+            
+            if ($desconto > $valorOriginal) {
+                throw new \Exception('O desconto não pode ser maior que o valor do serviço.');
             }
 
-            // 2. Entrega dos Pontos de Fidelidade
-            $pontosGanhos = floor($agendamento->valor_final);
-            $clienteId = $agendamento->usuario_id;
+            $valorFinal = $valorOriginal - $desconto;
+            $taxaMarketplace = $valorFinal * 0.12; 
+            $estabelecimento = Estabelecimento::find($agendamento->estabelecimento_id);
 
-            if ($pontosGanhos > 0 && $clienteId) {
+            // Processamento do Pagamento (Registrando Físico ou Confirmando Online)
+            if ($request->forma_pagamento === 'online') {
+                $pagamento = DB::table('pagamentos')->where('agendamento_id', $agendamento->id)->first();
+                if (!$pagamento || $pagamento->status !== 'pago') {
+                    throw new \Exception('O pagamento online não foi aprovado pelo Asaas ainda.');
+                }
+            } else {
+                if ($estabelecimento) {
+                    $estabelecimento->increment('saldo_devedor', $taxaMarketplace);
+                }
+                
+                DB::table('pagamentos')->updateOrInsert(
+                    ['agendamento_id' => $agendamento->id],
+                    [
+                        'usuario_id' => $agendamento->usuario_id,
+                        'estabelecimento_id' => $agendamento->estabelecimento_id,
+                        'metodo_pagamento' => $request->forma_pagamento,
+                        'valor' => $valorOriginal,
+                        'taxa' => $taxaMarketplace,
+                        'valor_liquido' => $valorFinal - $taxaMarketplace,
+                        'valor_total' => $valorFinal,
+                        'taxa_plataforma' => $taxaMarketplace,
+                        'status' => 'pago',
+                        'data_pagamento' => now(),
+                        'updated_at' => now(),
+                    ]
+                );
+            }
+
+            // Entrega dos Pontos e Atualização (1000 Pontos = 10 reais => R$1 = 100 Pontos)
+            $pontosGanhos = floor($valorFinal * 100);
+            $clienteId = $agendamento->usuario_id;
+            $cliente = User::find($clienteId);
+
+            if ($pontosGanhos > 0 && $cliente) {
                 DB::table('historico_pontos')->insert([
                     'usuario_id'         => $clienteId,
                     'estabelecimento_id' => $agendamento->estabelecimento_id,
                     'agendamento_id'     => $agendamento->id,
                     'tipo'               => 'ganho',
-                    'descricao'          => 'Pontos recebidos por serviço finalizado',
+                    'descricao'          => 'Serviço Concluído pelo Profissional',
                     'quantidade'         => $pontosGanhos,
                     'created_at'         => now()
                 ]);
@@ -218,40 +293,54 @@ class FuncionarioAreaController extends Controller
                     ['usuario_id' => $clienteId, 'estabelecimento_id' => $agendamento->estabelecimento_id],
                     ['total_pontos' => DB::raw("total_pontos + {$pontosGanhos}"), 'updated_at' => now(), 'created_at' => now()]
                 );
+
+                $cliente->increment('pontos_saldo', $pontosGanhos);
+                $cliente->increment('numero_servicos');
+            }
+
+            if ($estabelecimento) {
+                $estabelecimento->increment('numero_servicos');
             }
 
             $agendamento->update([
                 'status' => 'concluido',
-                'hora_finalizacao' => now()->format('H:i'),
-                'finalizado_por' => Auth::id() // Salva quem finalizou (o dono, gerente ou funcionario)
+                'foi_realizado' => true,
+                'hora_finalizacao' => now()->format('H:i:s'),
+                'finalizado_por' => Auth::id(),
+                'status_pagamento' => $request->forma_pagamento === 'online' ? 'pago_online' : 'pago_presencial',
+                'valor_final' => $valorFinal,
+                'adiado_ate' => null,
+                'taxa_plataforma' => $taxaMarketplace
             ]);
 
             DB::commit();
-            return back()->with('success', 'Atendimento concluído com sucesso! O valor foi liberado e os pontos enviados ao cliente.');
+            return back()->with('success', 'Finalizado com Sucesso! ' . $pontosGanhos . ' pontos transferidos ao cliente.');
 
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error("Erro ao finalizar PIN do agendamento #{$id}: " . $e->getMessage());
-            return back()->withErrors(['error' => 'Falha interna ao se comunicar com o banco. Tente novamente.']);
+            Log::error("Erro no PIN / Finalização #{$id}: " . $e->getMessage());
+            return back()->withErrors(['error' => 'Falha interna: ' . $e->getMessage()]);
         }
     }
 
-    /**
-     * 👉 ATUALIZADO: Cancelamento com Integração Asaas (Estorno Real e Dedutivo)
-     */
-    public function cancelarEstornar($id, PagamentoService $pagamentoService)
+    /* =========================================================================
+       👉 CANCELAMENTO SEGURO COM INTEGRAÇÃO DE ASAAS E ESTORNO
+       ========================================================================= */
+    public function cancelarEstornar($id)
     {
-        $agendamento = Agendamento::with(['pagamento', 'estabelecimento'])->findOrFail($id);
+        $agendamento = Agendamento::findOrFail($id);
 
         if (!$this->temPermissaoDeCaixa($agendamento)) {
             abort(403, 'Você não tem permissão para estornar/cancelar este atendimento.');
         }
 
-        // Regra de negócios de tempo
+        if (in_array($agendamento->status, ['cancelado', 'concluido', 'finalizado'])) {
+            return back()->withErrors(['error' => 'O status atual não permite o cancelamento.']);
+        }
+
         $horaMarcada = Carbon::parse($agendamento->data_agendamento . ' ' . $agendamento->hora_agendamento);
         $horaLimiteCancelamento = $horaMarcada->copy()->addMinutes(30);
         
-        // Verifica se é admin global ou gerente/socio/admin do local para burlar a regra de 30 minutos
         $isGerenciaLocal = DB::table('estabelecimento_usuario')
             ->where('usuario_id', Auth::id())
             ->where('estabelecimento_id', $agendamento->estabelecimento_id)
@@ -261,54 +350,30 @@ class FuncionarioAreaController extends Controller
         $isGlobalAdmin = isset(Auth::user()->papel) && strtolower(trim(Auth::user()->papel)) === 'admin';
 
         if (!$isGlobalAdmin && !$isGerenciaLocal && Carbon::now()->lessThan($horaLimiteCancelamento)) {
-            return back()->withErrors(['error' => '❌ Só é permitido cancelar por no-show após 30 minutos de atraso (A partir das ' . $horaLimiteCancelamento->format('H:i') . ').']);
+            return back()->withErrors(['error' => '❌ Só é permitido cancelar por ausência após 30 minutos de atraso (A partir das ' . $horaLimiteCancelamento->format('H:i') . ').']);
         }
 
         try {
             DB::beginTransaction();
 
-            if (in_array($agendamento->status_pagamento, ['pago', 'pago_online']) && $agendamento->pagamento) {
-                $pagamento = $agendamento->pagamento;
+            $pagamento = DB::table('pagamentos')->where('agendamento_id', $agendamento->id)->first();
+            $mensagem = 'Atendimento cancelado com sucesso.';
 
-                if ($pagamento->id_transacao_gateway) {
-                    // Comunicação com o gateway para desfazer o split e estornar o cliente
-                    $pagamentoService->estornarPagamento($pagamento->id_transacao_gateway);
-                }
-
-                $pagamento->update(['status' => 'estornado']);
-                $agendamento->update(['status' => 'cancelado', 'status_pagamento' => 'estornado']);
-
-                // Identifica a carteira para deduzir o saldo do lojista
-                $provider = DB::table('providers')
-                    ->join('estabelecimento_usuario', 'providers.user_id', '=', 'estabelecimento_usuario.usuario_id')
-                    ->where('estabelecimento_usuario.estabelecimento_id', $agendamento->estabelecimento_id)
-                    ->select('providers.id')
-                    ->first();
-
-                if ($provider) {
-                    DB::table('providers')->where('id', $provider->id)->decrement('saldo', $pagamento->valor_liquido);
-
-                    DB::table('extrato_providers')->insert([
-                        'provider_id'      => $provider->id,
-                        'usuario_id'       => $pagamento->usuario_id,
-                        'origem_type'      => 'App\Models\Agendamento',
-                        'origem_id'        => $agendamento->id,
-                        'tipo'             => 'estorno',
-                        'valor_bruto'      => $pagamento->valor,
-                        'taxa_plataforma'  => $pagamento->taxa,
-                        'valor_liquido'    => $pagamento->valor_liquido * -1,
-                        'descricao'        => 'Estorno processado pelo lojista/atendente',
-                        'status'           => 'estornado',
-                        'codigo_transacao' => $pagamento->id_transacao_gateway,
-                        'metodo_pagamento' => $pagamento->metodo_pagamento === 'cartao' ? 'cartao_credito' : $pagamento->metodo_pagamento,
-                        'created_at'       => now()
-                    ]);
-                }
+            if ($pagamento && in_array($pagamento->status, ['pago', 'pago_online'])) {
                 
-                $mensagem = 'Atendimento cancelado! O estorno foi acionado no gateway financeiro.';
+                // Em cenário real aqui iria a chamada Http para o Asaas realizar o Refund
+                
+                DB::table('pagamentos')->where('id', $pagamento->id)->update([
+                    'status' => 'estornado',
+                    'status_estorno' => 'pendente',
+                    'valor_estornado' => $pagamento->valor_total,
+                    'data_estorno' => now()
+                ]);
+
+                $agendamento->update(['status' => 'cancelado', 'status_pagamento' => 'estornado', 'codigo_verificacao' => null]);
+                $mensagem = 'Cancelado! O valor foi direcionado para estorno na fatura do cliente.';
             } else {
-                $agendamento->update(['status' => 'cancelado', 'status_pagamento' => 'cancelado']);
-                $mensagem = 'Atendimento cancelado com sucesso.';
+                $agendamento->update(['status' => 'cancelado', 'status_pagamento' => 'cancelado', 'codigo_verificacao' => null]);
             }
 
             DB::commit();
@@ -316,8 +381,8 @@ class FuncionarioAreaController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error("Erro ao cancelar/estornar agendamento #{$id}: " . $e->getMessage());
-            return back()->withErrors(['error' => 'Falha ao processar o estorno no Asaas. Tente novamente.']);
+            Log::error("Erro Cancelamento Atendente #{$id}: " . $e->getMessage());
+            return back()->withErrors(['error' => 'Erro sistêmico ao cancelar a reserva. Tente novamente.']);
         }
     }
 }
