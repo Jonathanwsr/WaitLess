@@ -167,20 +167,13 @@ public function pularProximo($id)
         ]);
 
         $agendamento = Agendamento::findOrFail($id);
-        $userLogado = Auth::user();
 
-        // 1. Validação de Papel (Apenas Staff/Dono pode finalizar)
-        if (!in_array($userLogado->papel, ['admin', 'socio', 'gerente', 'proprietario', 'funcionario', 'atendente'])) {
-            return redirect()->back()->withErrors(['error' => 'Você não tem permissão para finalizar atendimentos.']);
-        }
-
-        // 2. Validação do PIN de Segurança
         if ((string)$agendamento->codigo_verificacao !== (string)$request->codigo_pin) {
-            return redirect()->back()->withErrors(['error' => 'PIN inválido! Peça ao cliente para verificar o código correto no aplicativo.']);
+            return back()->withErrors(['error' => 'PIN inválido! Verifique os dígitos do app do cliente.']);
         }
 
         try {
-            DB::beginTransaction(); // Inicia transação
+            DB::beginTransaction();
 
             $valorOriginal = floatval($agendamento->valor_final ?? $agendamento->valor_original ?? $agendamento->servico->valor ?? 0);
             $desconto = floatval($request->desconto ?? 0);
@@ -190,17 +183,16 @@ public function pularProximo($id)
             }
 
             $valorFinal = $valorOriginal - $desconto;
-            $taxaMarketplace = $valorFinal * 0.12; // 12% da Plataforma
+            $taxaMarketplace = $valorFinal * 0.12; 
             $estabelecimento = Estabelecimento::find($agendamento->estabelecimento_id);
 
-            // 3. Processamento de Pagamento
+            // Processamento do Pagamento (Registrando Físico ou Confirmando Online)
             if ($request->forma_pagamento === 'online') {
                 $pagamento = DB::table('pagamentos')->where('agendamento_id', $agendamento->id)->first();
                 if (!$pagamento || $pagamento->status !== 'pago') {
-                    throw new \Exception('Este agendamento é Online, mas o pagamento no Asaas consta como pendente.');
+                    throw new \Exception('O pagamento online não foi aprovado pelo Asaas ainda.');
                 }
             } else {
-                // Pagamento presencial: Logista deve 12%
                 if ($estabelecimento) {
                     $estabelecimento->increment('saldo_devedor', $taxaMarketplace);
                 }
@@ -223,64 +215,69 @@ public function pularProximo($id)
                 );
             }
 
-            // 4. Atualiza o Agendamento
-            $agendamento->update([
-                'status' => 'concluido',
-                'foi_realizado' => true,
-                'hora_finalizacao' => now()->format('H:i:s'),
-                'finalizado_por' => $userLogado->id,
-                'status_pagamento' => $request->forma_pagamento === 'online' ? 'pago_online' : 'pago_presencial',
-                'valor_final' => $valorFinal,
-                'adiado_ate' => null,
-                'taxa_plataforma' => $taxaMarketplace
-            ]);
-
-            // 5. Histórico e Pontuação do Cliente
-            $clienteId = $agendamento->usuario_id ?? $agendamento->user_id;
+            // Entrega dos Pontos (1000 Pontos = 10 reais => R$1 = 100 Pontos)
+            $pontosGanhos = floor($valorFinal * 100);
+            $clienteId = $agendamento->usuario_id;
             $cliente = User::find($clienteId);
-            
-            if ($cliente) {
-                $cliente->increment('numero_servicos');
-                
-                // Nova regra: 1000 pontos = 10 reais, logo 100 pontos = 1 real
-                $pontosGanhos = floor($valorFinal * 100); 
 
-                if ($pontosGanhos > 0) {
-                    DB::table('historico_pontos')->insert([
+            if ($pontosGanhos > 0 && $cliente) {
+                DB::table('historico_pontos')->insert([
+                    'usuario_id'         => $clienteId,
+                    'estabelecimento_id' => $agendamento->estabelecimento_id,
+                    'agendamento_id'     => $agendamento->id,
+                    'tipo'               => 'ganho',
+                    'descricao'          => 'Serviço Concluído na Loja',
+                    'quantidade'         => $pontosGanhos,
+                    'created_at'         => now()
+                ]);
+
+                // Correção do banco para os pontos (INSERT OU UPDATE SEGURO)
+                $registroPontos = DB::table('pontos_usuario_estabelecimento')
+                    ->where('usuario_id', $clienteId)
+                    ->where('estabelecimento_id', $agendamento->estabelecimento_id)
+                    ->first();
+
+                if ($registroPontos) {
+                    DB::table('pontos_usuario_estabelecimento')
+                        ->where('id', $registroPontos->id)
+                        ->increment('total_pontos', $pontosGanhos, ['updated_at' => now()]);
+                } else {
+                    DB::table('pontos_usuario_estabelecimento')->insert([
                         'usuario_id' => $clienteId,
                         'estabelecimento_id' => $agendamento->estabelecimento_id,
-                        'agendamento_id' => $agendamento->id,
-                        'tipo' => 'ganho',
-                        'descricao' => 'Pontos recebidos por serviço finalizado',
-                        'quantidade' => $pontosGanhos,
-                        'created_at' => now()
+                        'total_pontos' => $pontosGanhos,
+                        'created_at' => now(),
+                        'updated_at' => now()
                     ]);
-                    
-                    DB::table('pontos_usuario_estabelecimento')->updateOrInsert(
-                        [
-                            'usuario_id' => $clienteId,
-                            'estabelecimento_id' => $agendamento->estabelecimento_id,
-                        ],
-                        [
-                            'total_pontos' => DB::raw("total_pontos + $pontosGanhos"),
-                            'updated_at' => now()
-                        ]
-                    );
-
-                    $cliente->increment('pontos_saldo', $pontosGanhos);
                 }
+
+                $cliente->increment('pontos_saldo', $pontosGanhos);
+                $cliente->increment('numero_servicos');
             }
 
             if ($estabelecimento) {
                 $estabelecimento->increment('numero_servicos');
             }
 
+            // Atualização do Agendamento usando 'finalizado' (Corrigindo o check violation)
+            $agendamento->update([
+                'status' => 'finalizado', 
+                'foi_realizado' => true,
+                'hora_finalizacao' => now()->format('H:i:s'),
+                'finalizado_por' => Auth::id(),
+                'status_pagamento' => $request->forma_pagamento === 'online' ? 'pago_online' : 'pago_presencial',
+                'valor_final' => $valorFinal,
+                'adiado_ate' => null,
+                'taxa_plataforma' => $taxaMarketplace
+            ]);
+
             DB::commit();
-            return redirect()->back()->with('success', 'Atendimento concluído com sucesso! Cliente liberado para avaliar.');
+            return back()->with('success', 'Finalizado com Sucesso! ' . $pontosGanhos . ' pontos transferidos ao cliente.');
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return redirect()->back()->withErrors(['error' => 'Erro ao finalizar: ' . $e->getMessage()]);
+            Log::error("Erro no PIN / Finalização #{$id}: " . $e->getMessage());
+            return back()->withErrors(['error' => 'Falha interna: ' . $e->getMessage()]);
         }
     }
 

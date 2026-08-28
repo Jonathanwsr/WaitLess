@@ -98,6 +98,16 @@ Route::get('/api/provider', [ProviderController::class, 'show'])->name('provider
     // Dashboard
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
+    //avaliaçoes 
+
+    Route::get('/avaliacoes/{id}', [App\Http\Controllers\Api\AvaliacaoController::class, 'indexReact'])->name('avaliacoes.index');
+    Route::post('/api/avaliacoes', [App\Http\Controllers\Api\AvaliacaoController::class, 'store'])->name('avaliacoes.store');
+
+ // Rotas de Avaliações (Deixe exatamente assim)
+Route::get('/avaliacoes', [App\Http\Controllers\Api\AvaliacaoController::class, 'indexReact'])->name('avaliacoes.geral');
+Route::get('/avaliacoes/{id}', [App\Http\Controllers\Api\AvaliacaoController::class, 'indexReact'])->name('avaliacoes.index');
+Route::post('/api/avaliacoes', [App\Http\Controllers\Api\AvaliacaoController::class, 'store'])->name('avaliacoes.store');
+
     Route::prefix('admin/financeiro')->group(function () {
         // Tela principal para monitorar tabelas de jobs, saldos e failed_jobs
         Route::get('/painel', [AdminFinanceiroController::class, 'index'])->name('admin.financeiro.index');

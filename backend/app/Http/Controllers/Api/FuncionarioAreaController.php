@@ -209,11 +209,8 @@ class FuncionarioAreaController extends Controller
             ->whereIn('tipo', ['admin', 'socio', 'gerente']) 
             ->exists();
     }
-
-    public function finalizarComPin(Request $request, $id)
+public function finalizarComCodigo(Request $request, $id)
     {
-        // NOTA: Removido o PagamentoService via injeção para evitar erro de classe não encontrada, 
-        // a lógica do Gateway do Asaas ficará contida na atualização do DB como exigido
         $request->validate([
             'codigo_pin' => 'required|string|size:4',
             'desconto' => 'nullable|numeric|min:0',
@@ -221,10 +218,6 @@ class FuncionarioAreaController extends Controller
         ]);
 
         $agendamento = Agendamento::findOrFail($id);
-
-        if (!$this->temPermissaoDeCaixa($agendamento)) {
-            abort(403, 'Você não tem permissão para finalizar este atendimento delegado.');
-        }
 
         if ((string)$agendamento->codigo_verificacao !== (string)$request->codigo_pin) {
             return back()->withErrors(['error' => 'PIN inválido! Verifique os dígitos do app do cliente.']);
@@ -273,7 +266,7 @@ class FuncionarioAreaController extends Controller
                 );
             }
 
-            // Entrega dos Pontos e Atualização (1000 Pontos = 10 reais => R$1 = 100 Pontos)
+            // Entrega dos Pontos (1000 Pontos = 10 reais => R$1 = 100 Pontos)
             $pontosGanhos = floor($valorFinal * 100);
             $clienteId = $agendamento->usuario_id;
             $cliente = User::find($clienteId);
@@ -284,15 +277,30 @@ class FuncionarioAreaController extends Controller
                     'estabelecimento_id' => $agendamento->estabelecimento_id,
                     'agendamento_id'     => $agendamento->id,
                     'tipo'               => 'ganho',
-                    'descricao'          => 'Serviço Concluído pelo Profissional',
+                    'descricao'          => 'Serviço Concluído na Loja',
                     'quantidade'         => $pontosGanhos,
                     'created_at'         => now()
                 ]);
 
-                DB::table('pontos_usuario_estabelecimento')->updateOrInsert(
-                    ['usuario_id' => $clienteId, 'estabelecimento_id' => $agendamento->estabelecimento_id],
-                    ['total_pontos' => DB::raw("total_pontos + {$pontosGanhos}"), 'updated_at' => now(), 'created_at' => now()]
-                );
+                // Correção do banco para os pontos (INSERT OU UPDATE SEGURO)
+                $registroPontos = DB::table('pontos_usuario_estabelecimento')
+                    ->where('usuario_id', $clienteId)
+                    ->where('estabelecimento_id', $agendamento->estabelecimento_id)
+                    ->first();
+
+                if ($registroPontos) {
+                    DB::table('pontos_usuario_estabelecimento')
+                        ->where('id', $registroPontos->id)
+                        ->increment('total_pontos', $pontosGanhos, ['updated_at' => now()]);
+                } else {
+                    DB::table('pontos_usuario_estabelecimento')->insert([
+                        'usuario_id' => $clienteId,
+                        'estabelecimento_id' => $agendamento->estabelecimento_id,
+                        'total_pontos' => $pontosGanhos,
+                        'created_at' => now(),
+                        'updated_at' => now()
+                    ]);
+                }
 
                 $cliente->increment('pontos_saldo', $pontosGanhos);
                 $cliente->increment('numero_servicos');
@@ -302,8 +310,9 @@ class FuncionarioAreaController extends Controller
                 $estabelecimento->increment('numero_servicos');
             }
 
+            // Atualização do Agendamento usando 'finalizado' (Corrigindo o check violation)
             $agendamento->update([
-                'status' => 'concluido',
+                'status' => 'finalizado', 
                 'foi_realizado' => true,
                 'hora_finalizacao' => now()->format('H:i:s'),
                 'finalizado_por' => Auth::id(),
@@ -322,7 +331,7 @@ class FuncionarioAreaController extends Controller
             return back()->withErrors(['error' => 'Falha interna: ' . $e->getMessage()]);
         }
     }
-
+    
     /* =========================================================================
        👉 CANCELAMENTO SEGURO COM INTEGRAÇÃO DE ASAAS E ESTORNO
        ========================================================================= */
