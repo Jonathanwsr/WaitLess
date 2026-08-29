@@ -4,9 +4,9 @@ import { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
 
-import { 
+import {
     Search, MapPin, Calendar, Star, ArrowRight, ImageOff, Layers,
-    Scissors, Home, Car, Laptop, PartyPopper, Store, Briefcase, 
+    Scissors, Home, Car, Laptop, PartyPopper, Store, Briefcase,
     Tag, ChevronDown, ChevronLeft, ChevronRight, Heart,
     HeartPulse, Plane, GraduationCap, Dog, Wrench
 } from 'lucide-react';
@@ -87,7 +87,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
             categoria: novosFiltros.categoria ?? categoriaAtiva,
             ordem: novosFiltros.ordem ?? ordenarPor,
             apenas_promocoes: novosFiltros.apenas_promocoes ?? apenasPromocoes,
-            page: novosFiltros.page || 1, 
+            page: novosFiltros.page || 1,
         };
 
         if (params.categoria === 'todas') delete params.categoria;
@@ -143,11 +143,11 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
 
     const showToast = (mensagem) => {
         setToast({ show: true, message: mensagem });
-        setTimeout(() => setToast({ show: false, message: '' }), 3000); 
+        setTimeout(() => setToast({ show: false, message: '' }), 3000);
     };
 
     const handleToggleFavorito = async (e, id, tipo, isAtualmenteFavorito) => {
-        e.preventDefault(); 
+        e.preventDefault();
         e.stopPropagation();
 
         const chave = `${tipo}-${id}`;
@@ -211,13 +211,13 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                 </AnimatePresence>
 
                 {/* HERO */}
-                <motion.div 
+                <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     className="bg-gradient-to-br from-zinc-900 via-zinc-950 to-black text-white pt-16 pb-12"
                 >
                     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                        <motion.div 
+                        <motion.div
                             initial={{ y: 30, opacity: 0 }}
                             animate={{ y: 0, opacity: 1 }}
                             transition={{ duration: 0.6 }}
@@ -235,7 +235,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
 
                 {/* SEARCH BAR */}
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-8 relative z-10">
-                    <motion.form 
+                    <motion.form
                         initial={{ y: 20, opacity: 0 }}
                         animate={{ y: 0, opacity: 1 }}
                         transition={{ delay: 0.2 }}
@@ -290,7 +290,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                     {/* Filtros e Categorias */}
                     <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 mb-8">
                         {/* Tipo de Busca */}
-                        <motion.div 
+                        <motion.div
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
                             className="inline-flex bg-white dark:bg-zinc-900 rounded-full p-1 shadow-sm border border-zinc-200 dark:border-zinc-800"
@@ -306,8 +306,8 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                                     whileTap={{ scale: 0.95 }}
                                     onClick={() => handleTipoBuscaClick(id)}
                                     className={`flex items-center gap-2 px-6 py-2.5 rounded-full text-sm font-semibold transition-all ${
-                                        tipoBusca === id 
-                                            ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900' 
+                                        tipoBusca === id
+                                            ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900'
                                             : 'text-zinc-500 hover:text-zinc-900 dark:hover:text-white'
                                     }`}
                                 >
@@ -324,8 +324,8 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                                 whileTap={{ scale: 0.95 }}
                                 onClick={handlePromocoesToggle}
                                 className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold transition-all border ${
-                                    apenasPromocoes 
-                                        ? 'bg-emerald-600 text-white border-emerald-600' 
+                                    apenasPromocoes
+                                        ? 'bg-emerald-600 text-white border-emerald-600'
                                         : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700 hover:border-zinc-300'
                                 }`}
                             >
@@ -353,7 +353,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                     </div>
 
                     {/* Categorias */}
-                    <motion.div 
+                    <motion.div
                         className="flex gap-3 overflow-x-auto pb-6 scrollbar-hide mb-10"
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
@@ -371,8 +371,8 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                                     whileTap={{ scale: 0.95 }}
                                     onClick={() => handleCategoriaClick(cat.nome)}
                                     className={`flex items-center gap-2.5 px-6 py-3 rounded-2xl font-semibold text-sm whitespace-nowrap transition-all flex-shrink-0 ${
-                                        active 
-                                            ? 'bg-[#FF5A00] text-white shadow-lg shadow-orange-500/30' 
+                                        active
+                                            ? 'bg-[#FF5A00] text-white shadow-lg shadow-orange-500/30'
                                             : 'bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-700'
                                     }`}
                                 >
@@ -400,7 +400,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                                 className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
                             >
                                 {listaResultados.length === 0 ? (
-                                    <motion.div 
+                                    <motion.div
                                         initial={{ opacity: 0, scale: 0.9 }}
                                         animate={{ opacity: 1, scale: 1 }}
                                         className="col-span-full text-center py-24 bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-100 dark:border-zinc-800"
@@ -427,24 +427,28 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                                     </motion.div>
                                 ) : (
                                     listaResultados.map((item) => {
-                                        const tipoItem = isEstabelecimentos 
-                                            ? 'estabelecimento' 
+                                        const tipoItem = isEstabelecimentos
+                                            ? 'estabelecimento'
                                             : (item.valor_diaria !== undefined ? 'item_aluguel' : 'servico');
-                                            
+                                        
                                         const key = `${tipoItem}-${item.id}`;
                                         
-                                        const linkRoute = isEstabelecimentos 
-                                            ? route('estabelecimentos.loja', item.id) 
+                                        const linkRoute = isEstabelecimentos
+                                            ? route('estabelecimentos.loja', item.id)
                                             : route('itens.detalhes', item.id);
 
-                                        const fotoUrl = isEstabelecimentos 
-                                            ? item.foto_perfil 
+                                        // ✅ AQUI LIGAMOS AS AVALIAÇÕES PARA SEREM VISTAS DO EXPLORAR!
+                                        const routeAvaliacoes = route('explorar.avaliacoes', { id: item.id, tipo: tipoItem });
+
+                                        const fotoUrl = isEstabelecimentos
+                                            ? item.foto_perfil
                                             : (item.fotos?.[0] || item.estabelecimento?.foto_perfil);
 
                                         const temPromo = !isEstabelecimentos && item.tem_promocao && Number(item.valor_desconto) > 0;
                                         
-                                        // 👇 ISSO AQUI FAZ O CORAÇÃO FICAR VERMELHO 👇
                                         const isFavoritado = checarSeEhFavorito(item, tipoItem);
+                                        const notaExibir = Number(item.avaliacao_media || 0).toFixed(1);
+                                        const temAvaliacoes = item.total_avaliacoes > 0;
 
                                         return (
                                             <motion.div
@@ -472,23 +476,28 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                                                             </div>
                                                         )}
 
-                                                        {/* Botão de Favoritar */}
                                                         <button
                                                             onClick={(e) => handleToggleFavorito(e, item.id, tipoItem, isFavoritado)}
                                                             className="absolute top-4 right-4 z-20 w-9 h-9 flex items-center justify-center bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md rounded-full shadow-sm hover:scale-110 transition-all"
                                                         >
                                                             <Heart className={`w-4 h-4 transition-colors ${
-                                                                isFavoritado 
-                                                                    ? 'fill-red-500 text-red-500' 
+                                                                isFavoritado
+                                                                    ? 'fill-red-500 text-red-500'
                                                                     : 'text-zinc-400 dark:text-zinc-500 hover:text-red-500'
                                                             }`} />
                                                         </button>
 
-                                                        {(item.avaliacao_media || isEstabelecimentos) && (
-                                                            <div className="absolute top-4 left-4 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md px-3 py-1.5 rounded-2xl text-sm font-bold flex items-center gap-1.5 shadow-sm">
+                                                        {/* TAG DE AVALIAÇÃO CLICÁVEL */}
+                                                        {temAvaliacoes && (
+                                                            <Link 
+                                                                href={routeAvaliacoes}
+                                                                onClick={(e) => e.stopPropagation()} // Impede o clique de abrir o card inteiro
+                                                                className="absolute top-4 left-4 z-20 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md px-3 py-1.5 rounded-2xl text-sm font-bold flex items-center gap-1.5 shadow-sm hover:bg-zinc-100 hover:scale-105 transition-all"
+                                                            >
                                                                 <Star className="w-4 h-4 text-amber-500 fill-amber-500" />
-                                                                {item.avaliacao_media ? Number(item.avaliacao_media).toFixed(1) : '4.9'}
-                                                            </div>
+                                                                {notaExibir}
+                                                                <span className="text-[10px] text-zinc-400 ml-0.5">({item.total_avaliacoes})</span>
+                                                            </Link>
                                                         )}
 
                                                         {temPromo && (
@@ -510,7 +519,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                                                         <div className="flex items-center gap-1.5 text-sm text-zinc-500 mb-6">
                                                             <MapPin className="w-4 h-4" />
                                                             <span className="line-clamp-1">
-                                                                {isEstabelecimentos 
+                                                                {isEstabelecimentos
                                                                     ? `${item.bairro ? item.bairro + ', ' : ''}${item.cidade}`
                                                                     : item.estabelecimento?.cidade}
                                                             </span>
@@ -558,8 +567,8 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                                         onClick={() => handleMudancaPagina(link.url)}
                                         disabled={isDesabilitado}
                                         className={`min-w-[40px] h-10 px-3 flex items-center justify-center rounded-xl text-sm font-bold transition-all border ${
-                                            isAtivo 
-                                                ? 'bg-[#FF5A00] text-white border-[#FF5A00] shadow-md shadow-orange-500/20' 
+                                            isAtivo
+                                                ? 'bg-[#FF5A00] text-white border-[#FF5A00] shadow-md shadow-orange-500/20'
                                                 : isDesabilitado
                                                     ? 'bg-transparent text-zinc-300 dark:text-zinc-700 border-zinc-200 dark:border-zinc-800 cursor-not-allowed'
                                                     : 'bg-white dark:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800 hover:border-[#FF5A00] hover:text-[#FF5A00]'

@@ -13,7 +13,6 @@ use App\Http\Controllers\Api\ClienteController;
 use App\Http\Controllers\Api\FuncionarioCatalogoController;
 use App\Http\Controllers\Api\FuncionarioCarteiraController;
 use App\Http\Controllers\Api\CarrinhoController;
-
 use App\Http\Controllers\Api\FuncionarioAusenciaController;
 use App\Http\Controllers\Api\ProviderController;
 use App\Http\Controllers\Api\CupomController;
@@ -163,21 +162,32 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/financeiro/extrato/exportar', [ExtratoProviderController::class, 'exportar'])->name('provider.financeiro.export');
 });
 
+// estornos
+Route::get('/estornos', [EstornoController::class, 'index'])->name('estornos.index');
+Route::get('/pagamentos/elegiveis-estorno', [EstornoController::class, 'elegiveisEstorno']);
 
-Route::prefix('estornos')->group(function () {
-        
-        // Listar as solicitações do usuário (Como cliente ou prestador)
-        Route::get('/', [EstornoController::class, 'minhasSolicitacoes']);
-        
-        // Visualizar os detalhes, fotos e motivos de um estorno específico
-        Route::get('/{id}/detalhes', [EstornoController::class, 'detalhes']);
-        
-        // Cliente solicita um estorno para um pagamento finalizado (aceita upload de imagens)
-        Route::post('/solicitar/pagamento/{pagamento_id}', [EstornoController::class, 'solicitar']);
-        
-        // Proprietário envia sua defesa/contestação contra um estorno de um cliente (aceita imagens)
-        Route::post('/{id}/contestar', [EstornoController::class, 'contestar']);
-    });
+// Ação do Prestador
+    Route::post('/api/estornos/{id}/contestar', [EstornoController::class, 'contestar']);
+    
+    // Rotas exclusivas do Administrador
+    Route::get('/api/admin/estornos', [EstornoController::class, 'adminIndex']);
+    Route::post('/api/admin/estornos/{id}/aprovar', [EstornoController::class, 'adminAprovar']);
+    Route::post('/api/admin/estornos/{id}/reprovar', [EstornoController::class, 'adminReprovar']);
+
+// Fica dentro do seu grupo de rotas logadas
+Route::post('/api/estornos/{pagamento_id}/solicitar', [EstornoController::class, 'solicitar']);
+    Route::get('/estornos/lista', [EstornoController::class, 'index']);
+
+Route::prefix('api/estornos')->middleware(['auth'])->group(function () {
+    // Listar as solicitações via Axios (Para alimentar a tabela no React)
+    Route::get('/lista', [EstornoController::class, 'minhasSolicitacoes']);
+    
+    
+    // Demais rotas
+    Route::get('/{id}/detalhes', [EstornoController::class, 'detalhes']);
+    Route::post('/solicitar/pagamento/{pagamento_id}', [EstornoController::class, 'solicitar']);
+    Route::post('/{id}/contestar', [EstornoController::class, 'contestar']);
+});
 
 // Rota para Cancelamento e Estorno de Agendamentos (Pelo Cliente)
 Route::post('/agendamentos/{id}/cancelar', [AgendamentoController::class, 'cancelarPeloCliente'])->name('cliente.agendamentos.cancelar');
@@ -432,12 +442,11 @@ Route::get('/pagamento/falha/{agendamento}', [ClienteAgendamentoController::clas
 
 // Rota principal do Dashboard financeiro 
   // 1. Rota que ABRE A TELA React (Inertia)
-    Route::get('/meu-extrato', function () {
-        return Inertia::render('Estabelecimentos/FinanceiroExtrato');
-    })->name('tela.financeiro.extrato');
-
+   
     // 2. Rota que DEVOLVE OS DADOS JSON para o Axios
-    Route::get('/financeiro/dashboard-dados', [FinanceiroController::class, 'dashboard'])->name('financeiro.dados');
+    Route::get('/meu-extrato', [FinanceiroController::class, 'dashboard'])->name('tela.financeiro.extrato');
+
+    Route::get('/meu-extrato/exportar', [FinanceiroController::class, 'exportar'])->name('financeiro.exportar');
     
     // 3. Rotas dos relatórios
     Route::post('/financeiro/relatorio/semanal', [FinanceiroController::class, 'enviarRelatorioSemanal']);
@@ -456,6 +465,13 @@ Route::get('/pagamento/status', [ClienteAgendamentoController::class, 'callbackM
 
     // explorar estabelecimentos
     Route::get('/explorar', [ClienteExplorarController::class, 'index'])->name('cliente.explorar');
+
+    // 2. Rota para exibir as avaliações de um Item específico a partir do Explorar
+    Route::get('/explorar/{id}/avaliacoes', [ClienteExplorarController::class, 'mostrarAvaliacoes'])->name('explorar.avaliacoes');
+
+    // 3. Rota para permitir que o cliente Denuncie um comentário diretamente (Pode coexistir com a rota do AvaliacaoController)
+    Route::post('/explorar/avaliacoes/{id}/denunciar', [ClienteExplorarController::class, 'denunciar'])->name('explorar.denunciar');
+
     Route::post('/agendamentos/{agendamento}/finalizar', [AgendamentoController::class, 'finalizarComCodigo'])->name('agendamentos.finalizar');
 
     // Serviços

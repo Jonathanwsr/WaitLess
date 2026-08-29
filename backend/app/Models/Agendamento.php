@@ -39,4 +39,10 @@ class Agendamento extends Model
     {
         return $this->belongsTo(Pagamento::class, 'pagamento_id');
     }
+
+function itemAluguel()
+{
+    return $this->belongsTo(ItemAluguel::class);
+}
+
 }

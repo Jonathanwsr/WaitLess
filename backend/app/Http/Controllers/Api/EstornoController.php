@@ -5,10 +5,14 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Estorno;
 use App\Models\Pagamento;
+use App\Models\Agendamento;
 use App\Services\EstornoService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
+use Carbon\Carbon;
 use Inertia\Inertia; 
 
 class EstornoController extends Controller
@@ -24,9 +28,6 @@ class EstornoController extends Controller
     // 🖥️ ROTA DE TELA (INERTIA/REACT)
     // =========================================================================
     
-    /**
-     * Carrega a página principal de estornos no Frontend de acordo com o papel do usuário
-     */
     public function index(Request $request)
     {
         $user = Auth::user();
@@ -34,10 +35,30 @@ class EstornoController extends Controller
 
         if (in_array($papel, ['admin', 'superadmin'])) {
             return Inertia::render('Admin/Estornos');
-        } elseif (in_array($papel, ['socio', 'proprietario'])) {
-            return Inertia::render('Proprietario/Estornos');
+        } elseif (in_array($papel, ['socio', 'proprietario', 'estabelecimento'])) {
+            return Inertia::render('Estabelecimentos/Estornos');
         } else {
             return Inertia::render('Cliente/MeusEstornos');
+        }
+    }
+
+
+    // 🐛 FUNÇÃO QUE ESTAVA FALTANDO!
+    public function adminAprovar($id)
+    {
+        $admin = Auth::user();
+        $estorno = Estorno::findOrFail($id);
+
+        try {
+            $this->estornoService->aprovarEstorno($estorno, $admin);
+
+            return response()->json([
+                'status' => 'success', 
+                'message' => 'Estorno aprovado e processado no Asaas com sucesso!'
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Erro Admin Aprovar Estorno: ' . $e->getMessage());
+            return response()->json(['error' => $e->getMessage()], 400);
         }
     }
 
@@ -45,32 +66,147 @@ class EstornoController extends Controller
     // 👤 PARA CLIENTES E PROPRIETÁRIOS
     // =========================================================================
 
-    /**
-     * Lista todos os estornos vinculados ao usuário logado (Seja ele quem pediu, ou o dono do local)
-     */
     public function minhasSolicitacoes(Request $request)
     {
         $user = Auth::user();
         
-        $query = Estorno::with(['estabelecimento', 'servico', 'itemAluguel'])
+        $query = Estorno::with(['estabelecimento', 'servico', 'itemAluguel', 'cliente', 'prestador'])
             ->where(function ($q) use ($user) {
-                $q->where('usuario_id', $user->id)     // Sou o cliente
-                  ->orWhere('prestador_id', $user->id); // Sou o prestador
+                $q->where('usuario_id', $user->id) 
+                  ->orWhere('prestador_id', $user->id);
             });
 
-        // Filtros (Ex: ?status=PENDENTE)
         if ($request->has('status')) {
             $query->where('status', $request->status);
         }
 
         $estornos = $query->orderBy('created_at', 'desc')->get();
-
         return response()->json(['status' => 'success', 'data' => $estornos]);
     }
 
-    /**
-     * Ver Detalhes do Estorno (Carrega as fotos, histórico de status e chat)
-     */
+    public function solicitar(Request $request, $pagamento_id)
+    {
+        try {
+            $request->validate([
+                'motivo' => 'required|string',
+                'descricao' => 'required|string|min:10',
+                'categoria' => 'required|in:SERVICO,ALUGUEL',
+                'subcategoria' => 'nullable|string',
+                'imagens' => 'nullable|array|max:5',
+                'imagens.*' => 'image|mimes:jpeg,png,jpg|max:2048', 
+            ]);
+
+            $cliente = Auth::user();
+            
+            $pagamento = Pagamento::where(function ($query) use ($pagamento_id) {
+                    $query->where('id', $pagamento_id)
+                          ->orWhere('agendamento_id', $pagamento_id);
+                })
+                ->whereIn('status', ['pago', 'PAGO', 'concluido', 'CONCLUIDO']) 
+                ->orderBy('id', 'desc') 
+                ->first();
+
+            if (!$pagamento) {
+                return response()->json(['error' => 'Nenhum pagamento concluído foi encontrado para este serviço.'], 404);
+            }
+
+            $pagamento->status = strtoupper($pagamento->status);
+
+            if ($pagamento->usuario_id !== $cliente->id) {
+                return response()->json(['error' => 'Este pagamento não pertence a você.'], 403);
+            }
+
+            if ($pagamento->agendamento_id) {
+                $agendamento = Agendamento::find($pagamento->agendamento_id);
+                
+                if ($agendamento) {
+                    if (!$agendamento->foi_realizado) {
+                        return response()->json(['error' => 'Você só pode solicitar estorno de um serviço que já foi finalizado.'], 403);
+                    }
+
+                    $dataConclusao = null;
+                    if ($agendamento->data_agendamento && $agendamento->hora_finalizacao) {
+                        $dataConclusao = \Carbon\Carbon::parse($agendamento->data_agendamento . ' ' . $agendamento->hora_finalizacao);
+                    } else {
+                        $dataConclusao = \Carbon\Carbon::parse($agendamento->updated_at);
+                    }
+                    
+                    if (now()->greaterThan($dataConclusao->copy()->addDays(4))) {
+                        return response()->json(['error' => 'O prazo de 4 dias após a conclusão do serviço para solicitar estorno expirou.'], 403);
+                    }
+                }
+            }
+
+            $imagens = $request->file('imagens') ?? [];
+            
+            $estorno = $this->estornoService->solicitarEstorno($cliente, $pagamento, $request->all(), $imagens);
+
+            $estorno->update([
+                'prazo_resposta' => now()->addDays(2),
+                'data_solicitacao' => now(),
+                'status' => 'PENDENTE'
+            ]);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Solicitação de estorno enviada com sucesso.',
+                'data' => $estorno
+            ], 201);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json(['error' => collect($e->errors())->flatten()->first()], 422);
+
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Erro ao solicitar estorno: ' . $e->getMessage() . ' | Linha: ' . $e->getLine());
+            return response()->json(['error' => $e->getMessage()], 400); 
+        }
+    }
+
+    public function contestar(Request $request, $estorno_id)
+    {
+        $request->validate([
+            'descricao' => 'required|string|min:10',
+            'imagens' => 'nullable|array|max:5',
+            'imagens.*' => 'image|mimes:jpeg,png,jpg|max:2048', 
+        ]);
+
+        $prestador = Auth::user();
+        $estorno = Estorno::findOrFail($estorno_id);
+
+        try {
+            $imagens = $request->file('imagens') ?? [];
+            $this->estornoService->contestarEstorno($prestador, $estorno, $request->all(), $imagens);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Sua contestação foi enviada com sucesso e está em análise pela administração.'
+            ], 200);
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Erro ao contestar: ' . $e->getMessage());
+            return response()->json(['error' => $e->getMessage()], 400);
+        }
+    }
+
+    // =========================================================================
+    // 👑 PARA ADMINISTRADORES DA PLATAFORMA
+    // =========================================================================
+
+    public function adminIndex(Request $request)
+    {
+        if (!in_array(strtolower(Auth::user()->papel), ['admin', 'superadmin', 'administrador'])) {
+            return response()->json(['error' => 'Acesso restrito.'], 403);
+        }
+
+        $query = Estorno::with(['cliente:id,name', 'prestador:id,name', 'estabelecimento:id,nome']);
+
+        if ($request->has('status')) {
+            $query->where('status', $request->status);
+        }
+        
+        $estornos = $query->orderBy('created_at', 'desc')->paginate(20);
+        return response()->json(['status' => 'success', 'data' => $estornos]);
+    }
+
     public function detalhes($id)
     {
         $user = Auth::user();
@@ -80,18 +216,17 @@ class EstornoController extends Controller
             'prestador:id,name,email', 
             'estabelecimento:id,nome',
             'pagamento', 'servico', 'itemAluguel', 
-            'documentos', // Fotos e Pdfs
-            'historicos', // Linha do tempo
-            'mensagens.remetente' // Mensagens de contestação
+            'documentos', 
+            'historicos', 
+            'mensagens' 
         ])->findOrFail($id);
 
-        // Bloqueia acesso se o usuário não for o cliente, dono ou um admin
-        $isAdmin = in_array($user->papel, ['admin', 'superadmin']);
+        $isAdmin = in_array(strtolower($user->papel), ['admin', 'superadmin', 'administrador']);
+        
         if (!$isAdmin && $estorno->usuario_id !== $user->id && $estorno->prestador_id !== $user->id) {
             return response()->json(['error' => 'Acesso negado.'], 403);
         }
 
-        // Se o prestador está abrindo pela primeira vez, atualiza a flag de visualização
         if ($estorno->prestador_id === $user->id && !$estorno->prestador_visualizou) {
             $estorno->update([
                 'prestador_visualizou' => true,
@@ -100,146 +235,216 @@ class EstornoController extends Controller
         }
 
         return response()->json(['status' => 'success', 'data' => $estorno]);
-    }
+    } 
 
     /**
-     * Cliente SOLICITA o Estorno
+     * 3. ADMIN APROVA O ESTORNO
      */
-    public function solicitar(Request $request, $pagamento_id)
+    public function aprovarEstorno(Estorno $estorno, User $adminOuSistema)
     {
-        // 🚨 Validação limitando a 5 imagens de até 2MB (2048 KB)
-        $request->validate([
-            'motivo' => 'required|string',
-            'descricao' => 'required|string|min:10',
-            'categoria' => 'required|in:SERVICO,ALUGUEL',
-            'subcategoria' => 'nullable|string',
-            'imagens' => 'nullable|array|max:5',
-            'imagens.*' => 'image|mimes:jpeg,png,jpg|max:2048', // Modificado para 2MB
-        ]);
-
-        $cliente = Auth::user();
-        $pagamento = Pagamento::findOrFail($pagamento_id);
-
-        if ($pagamento->user_id !== $cliente->id) {
-            return response()->json(['error' => 'Este pagamento não pertence a você.'], 403);
+        if (in_array($estorno->status, ['ESTORNADO', 'CANCELADO', 'REPROVADO'])) {
+            throw new Exception("Este estorno já foi finalizado ou cancelado.");
         }
 
-        try {
-            // Pega as imagens enviadas e despacha para o Service (Hive AI + Cloudflare R2)
-            $imagens = $request->file('imagens') ?? [];
-            $estorno = $this->estornoService->solicitarEstorno($cliente, $pagamento, $request->all(), $imagens);
+        DB::transaction(function () use ($estorno, $adminOuSistema) {
+            $idTransacao = $estorno->id_transacao_asaas;
+            if (!$idTransacao && $estorno->pagamento) {
+                $idTransacao = $estorno->pagamento->id_transacao_gateway;
+            }
 
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Solicitação de estorno enviada com sucesso.',
-                'data' => $estorno
-            ], 201);
-        } catch (\Exception $e) {
-            // Se a HiveAI barrar a foto no Service, o erro cai aqui e retorna um 422 barrando a ação.
-            return response()->json(['error' => $e->getMessage()], 422);
-        }
-    }
+            if ($idTransacao) {
+                // 🐛 CORREÇÃO DEFINITIVA: Pega a chave EXCLUSIVA da subconta
+                $provider = DB::table('providers')->where('user_id', $estorno->prestador_id)->first();
+                $asaasKey = $provider->asaas_api_key ?? env('ASAAS_API_KEY');
 
-    /**
-     * Proprietário/Sócio CONTESTA o Estorno
-     */
-    public function contestar(Request $request, $estorno_id)
-    {
-        // 🚨 Validação idêntica à do cliente: Até 5 imagens, máx 2MB (2048 KB)
-        $request->validate([
-            'descricao' => 'required|string|min:10',
-            'imagens' => 'nullable|array|max:5',
-            'imagens.*' => 'image|mimes:jpeg,png,jpg|max:2048', // Modificado para 2MB
-        ]);
+                // Mantém a inteligência: Se a chave tiver 'hmlg', é Sandbox! Senão, é Produção.
+                if (strpos($asaasKey, '$aact_hmlg_') !== false) {
+                    $asaasUrl = 'https://sandbox.asaas.com/api/v3';
+                } else {
+                    $asaasUrl = rtrim(env('ASAAS_API_URL', 'https://api.asaas.com/v3'), '/');
+                }
 
-        $prestador = Auth::user();
-        $estorno = Estorno::findOrFail($estorno_id);
+                $asaasResponse = Http::withHeaders([
+                    'access_token' => $asaasKey,
+                    'Content-Type' => 'application/json',
+                ])->post("{$asaasUrl}/payments/{$idTransacao}/refund", [
+                    'value' => (float) $estorno->valor_estornado,
+                    'description' => 'Estorno aprovado via Plataforma WaitLess'
+                ]);
 
-        try {
-            // Pega as imagens da requisição 
-            $imagens = $request->file('imagens') ?? [];
+                if ($asaasResponse->failed()) {
+                    $estorno->update(['status' => 'ERRO_ASAAS']);
+                    $erroAsaas = $asaasResponse->json();
+                    
+                    $mensagemErro = $erroAsaas['errors'][0]['description'] ?? 'Erro desconhecido ao tentar estornar no Asaas.';
+                    
+                    Log::error("Erro Asaas Estorno [Transacao: {$idTransacao}]: " . json_encode($erroAsaas));
+                    throw new Exception("Asaas recusou o estorno: " . $mensagemErro);
+                }
+
+                $respostaData = $asaasResponse->json();
+                $estorno->id_estorno_asaas = $respostaData['id'] ?? null;
+            }
             
-            // O EstornoService fará o upload via S3 (Cloudflare R2) e a checagem booleana (True/False) na Hive AI
-            $this->estornoService->contestarEstorno($prestador, $estorno, $request->all(), $imagens);
+            // Atualiza financeiro do Provider (move de analise para estornado)
+            if (isset($provider)) {
+                DB::table('providers')->where('user_id', $estorno->prestador_id)->update([
+                    'valor_em_analise' => DB::raw("valor_em_analise - {$estorno->valor_pago}"),
+                    'valor_estornado' => DB::raw("valor_estornado + {$estorno->valor_pago}")
+                ]);
+            }
+            
+            // Regras internas de status
+            if (method_exists($estorno, 'processarEstornoConcluido')) {
+                $estorno->processarEstornoConcluido();
+            } else {
+                if ($estorno->pagamento) {
+                    $estorno->pagamento->update(['status' => 'estornado']);
+                }
+            }
 
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Sua contestação foi enviada e está em análise pela equipe.'
-            ], 200);
-        } catch (\Exception $e) {
-            // Caso tenha conteúdo adulto/indevido, a Hive AI joga exceção no Service e trava a contestação aqui.
-            return response()->json(['error' => $e->getMessage()], 422);
-        }
+            if ($estorno->pagamento && $estorno->pagamento->agendamento_id) {
+                $agendamento = Agendamento::where('id', $estorno->pagamento->agendamento_id)->first();
+                if ($agendamento) {
+                    $agendamento->update(['status' => 'estornado']);
+                }
+            }
+
+            $estorno->update([
+                'status' => 'ESTORNADO',
+                'data_aprovacao' => now(),
+                'data_estorno' => now()
+            ]);
+
+            HistoricoEstorno::create([
+                'estorno_id' => $estorno->id,
+                'usuario_id' => $adminOuSistema->id,
+                'status_anterior' => $estorno->status,
+                'novo_status' => 'ESTORNADO',
+                'descricao' => 'Estorno aprovado e efetuado diretamente na API do Asaas com sucesso.',
+                'ip' => request()->ip()
+            ]);
+
+            NotificacaoEstorno::create([
+                'estorno_id' => $estorno->id,
+                'usuario_id' => $estorno->usuario_id,
+                'titulo' => 'Estorno Aprovado',
+                'mensagem' => 'Seu estorno foi aprovado e o valor foi estornado para sua conta/cartão original.'
+            ]);
+
+            if (class_exists(\App\Services\NotificacaoService::class) && $estorno->prestador) {
+                $notificacaoService = new \App\Services\NotificacaoService();
+                $notificacaoService->notificarEventoEstorno($estorno->cliente, $estorno->prestador, 'APROVADO', $estorno->id);
+            }
+        });
     }
-
-
     // =========================================================================
-    // 👑 PARA ADMINISTRADORES DA PLATAFORMA
+    // 🔄 ASAAS WEBHOOK E ELEGIBILIDADE
     // =========================================================================
 
-    /**
-     * Lista Geral de Estornos para o Admin com múltiplos filtros
-     */
-    public function adminIndex(Request $request)
+    public function asaasWebhook(Request $request)
     {
-        if (!in_array(Auth::user()->papel, ['admin', 'superadmin'])) {
-            return response()->json(['error' => 'Acesso restrito.'], 403);
+        $evento = $request->input('event');
+        $pagamentoAsaas = $request->input('payment');
+
+        if ($evento === 'PAYMENT_REFUNDED' && isset($pagamentoAsaas['id'])) {
+            $pagamento = Pagamento::where('asaas_payment_id', $pagamentoAsaas['id'])->first();
+
+            if ($pagamento) {
+                if ($pagamento->status !== 'ESTORNADO') {
+                    $pagamento->update(['status' => 'ESTORNADO']);
+                }
+
+                $estorno = Estorno::where('pagamento_id', $pagamento->id)->first();
+                
+                if ($estorno && $estorno->status !== 'APROVADO') {
+                    $estorno->update([
+                        'status' => 'APROVADO',
+                        'data_aprovacao' => now(),
+                        'data_estorno' => now(),
+                        'descricao_admin' => 'Aprovado automaticamente.'
+                    ]);
+                }
+            }
         }
 
-        $query = Estorno::with(['cliente:id,name', 'prestador:id,name', 'estabelecimento:id,nome']);
-
-        if ($request->has('status')) $query->where('status', $request->status);
-        if ($request->has('categoria')) $query->where('categoria', $request->categoria);
-        
-        if ($request->has('data_inicial')) {
-            $query->whereDate('data_solicitacao', '>=', $request->data_inicial);
-        }
-        if ($request->has('data_final')) {
-            $query->whereDate('data_solicitacao', '<=', $request->data_final);
-        }
-        if ($request->has('mes') && $request->has('ano')) {
-            $query->whereMonth('data_solicitacao', $request->mes)
-                  ->whereYear('data_solicitacao', $request->ano);
-        }
-
-        $estornos = $query->orderBy('created_at', 'desc')->paginate(20);
-
-        return response()->json(['status' => 'success', 'data' => $estornos]);
+        return response()->json(['status' => 'success'], 200);
     }
 
-    /**
-     * Admin APROVA e estorna pro cliente
-     */
-    public function adminAprovar(Request $request, $id)
+    public function elegiveisEstorno(Request $request)
     {
-        $admin = Auth::user();
-        $estorno = Estorno::findOrFail($id);
-
         try {
-            $this->estornoService->aprovarEstorno($estorno, $admin);
-            return response()->json(['status' => 'success', 'message' => 'Estorno aprovado e concluído com sucesso.']);
+            $userId = auth()->id();
+
+            $agendamentos = Agendamento::with(['servico', 'estabelecimento'])
+                ->where('usuario_id', $userId)
+                ->where('foi_realizado', true)
+                ->whereIn('id', function ($query) {
+                    $query->select('agendamento_id')
+                          ->from('pagamentos')
+                          ->whereIn('status', ['pago', 'PAGO', 'concluido', 'CONCLUIDO'])
+                          ->whereIn('metodo_pagamento', ['pix', 'PIX', 'cartao', 'CARTAO', 'boleto', 'BOLETO', 'CREDIT_CARD', 'pago_online'])
+                          ->whereNotIn('id', function ($sub) {
+                              $sub->select('pagamento_id')
+                                  ->from('estornos')
+                                  ->whereIn('status', ['PENDENTE', 'APROVADO', 'CONTESTADO']);
+                          });
+                })
+                ->latest('data_agendamento')
+                ->get();
+
+            $pagamentosLocais = DB::table('pagamentos')
+                ->whereIn('agendamento_id', $agendamentos->pluck('id'))
+                ->get()
+                ->keyBy('agendamento_id');
+
+            $resultado = $agendamentos->map(function ($agendamento) use ($pagamentosLocais) {
+                
+                $dataBase = null;
+                if ($agendamento->data_agendamento && $agendamento->hora_finalizacao) {
+                    $dataBase = \Carbon\Carbon::parse($agendamento->data_agendamento . ' ' . $agendamento->hora_finalizacao);
+                } else {
+                    $dataBase = \Carbon\Carbon::parse($agendamento->updated_at);
+                }
+                
+                $dataLimite = $dataBase->copy()->addDays(4);
+                
+                $agendamento->data_limite_estorno = $dataLimite->format('Y-m-d H:i:s');
+                $agendamento->data_limite_formatada = $dataLimite->format('d/m/Y \à\s H:i');
+                $agendamento->pode_solicitar = now()->lessThanOrEqualTo($dataLimite);
+                
+                $pagamentoLocal = $pagamentosLocais->get($agendamento->id);
+                
+                if ($pagamentoLocal) {
+                    $agendamento->id_pagamento_real = $pagamentoLocal->id;
+                    $agendamento->valor_total = $pagamentoLocal->valor; 
+                    $agendamento->taxa = $pagamentoLocal->taxa;
+                    $agendamento->valor_liquido = $pagamentoLocal->valor_liquido;
+                    $agendamento->metodo_pagamento = $pagamentoLocal->metodo_pagamento;
+                    $agendamento->data_pagamento = $pagamentoLocal->data_pagamento;
+                    
+                    $agendamento->gateway_pagamento = $pagamentoLocal->gateway_pagamento ?? null;
+                    $agendamento->id_transacao_gateway = $pagamentoLocal->id_transacao_gateway ?? null;
+                    $agendamento->status_estorno = $pagamentoLocal->status_estorno ?? null;
+                    $agendamento->valor_estornado = $pagamentoLocal->valor_estornado ?? null;
+                    $agendamento->data_estorno = $pagamentoLocal->data_estorno ?? null;
+                    $agendamento->codigo_estorno = $pagamentoLocal->codigo_estorno ?? null;
+                    $agendamento->id_estorno_asaas = $pagamentoLocal->id_estorno_asaas ?? null;
+                } else {
+                    $agendamento->id_pagamento_real = null;
+                }
+                
+                return $agendamento;
+
+            })->filter(function ($agendamento) {
+                return $agendamento->pode_solicitar && $agendamento->id_pagamento_real !== null;
+            })->values();
+
+            return response()->json($resultado, 200);
+
         } catch (\Exception $e) {
-            Log::error('Erro Admin Aprovar Estorno: ' . $e->getMessage());
-            return response()->json(['error' => $e->getMessage()], 500);
-        }
-    }
-
-    /**
-     * Admin REPROVA e devolve o dinheiro pra Wallet do prestador
-     */
-    public function adminReprovar(Request $request, $id)
-    {
-        $request->validate(['motivo_reprovacao' => 'required|string']);
-
-        $admin = Auth::user();
-        $estorno = Estorno::findOrFail($id);
-
-        try {
-            $this->estornoService->reprovarEstorno($estorno, $admin, $request->motivo_reprovacao);
-            return response()->json(['status' => 'success', 'message' => 'Estorno indeferido/reprovado. O valor retornou ao prestador.']);
-        } catch (\Exception $e) {
-            Log::error('Erro Admin Reprovar Estorno: ' . $e->getMessage());
-            return response()->json(['error' => $e->getMessage()], 500);
+            \Illuminate\Support\Facades\Log::error('Erro em elegiveisEstorno: ' . $e->getMessage());
+            return response()->json(['error' => 'Falha ao carregar itens elegíveis.', 'details' => $e->getMessage()], 500);
         }
     }
 }
