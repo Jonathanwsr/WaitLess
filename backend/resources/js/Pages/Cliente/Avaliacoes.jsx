@@ -3,7 +3,8 @@ import { Head, Link, router, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 import { 
     Star, ChevronRight, CheckCircle2, ImageOff, MapPin, 
-    MessageSquare, Camera, XCircle, Loader2, Store, Wrench
+    MessageSquare, Camera, XCircle, Loader2, Store, Wrench, Reply, Trash2, AlertTriangle,
+    X, ChevronLeft, Inbox
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -20,6 +21,7 @@ const ExpandableText = ({ text, maxLength = 150 }) => {
                 {isExpanded ? text : `${text.substring(0, maxLength)}... `}
             </p>
             <button 
+                type="button"
                 onClick={() => setIsExpanded(!isExpanded)} 
                 className="text-[#FF5A00] font-bold text-sm hover:underline ml-1 focus:outline-none"
             >
@@ -29,28 +31,80 @@ const ExpandableText = ({ text, maxLength = 150 }) => {
     );
 };
 
+// Componente reutilizável para as estrelinhas de cada categoria (1 a 5 estrelas)
+const StarRating = ({ label, icon: Icon, value, onChange }) => (
+    <div className="flex flex-col items-center p-3 bg-white border border-gray-100 rounded-xl shadow-sm">
+        <div className="flex items-center gap-1.5 mb-2">
+            <Icon className="w-4 h-4 text-gray-400" />
+            <span className="text-xs font-bold text-gray-600 uppercase tracking-wider">{label}</span>
+        </div>
+        <div className="flex gap-1">
+            {[1, 2, 3, 4, 5].map((estrela) => (
+                <button 
+                    type="button" 
+                    key={estrela}
+                    onClick={() => onChange(estrela)}
+                    className="focus:outline-none transition-transform hover:scale-110 active:scale-95"
+                >
+                    <Star className={`w-6 h-6 transition-colors ${value >= estrela ? 'fill-[#FF5A00] text-[#FF5A00]' : 'text-gray-200'}`} />
+                </button>
+            ))}
+        </div>
+    </div>
+);
+
 export default function Avaliacoes({ auth, item, avaliacoes, estatisticas, itemNaoEncontrado, tipo }) {
     const { url, errors, flash } = usePage().props;
     const searchParams = new URLSearchParams(window.location.search);
     const agendamentoId = searchParams.get('agendamento');
     const aluguelId = searchParams.get('aluguel');
 
+    // Identifica o tipo de visão da Tela (Admin, Anfitrião/Sócio/Gerente ou Cliente)
+    const isAdmin = url?.includes('/admin') || auth?.user?.papel?.toLowerCase() === 'admin';
+    const isAnfitriao = url?.includes('/anfitriao');
+    const isCliente = !isAdmin && !isAnfitriao;
+
     // Estado da Tela e Filtros
     const [filtroEstrela, setFiltroEstrela] = useState('Todas');
-    const [mostrarFormulario, setMostrarFormulario] = useState(!!agendamentoId || !!aluguelId);
+    const [mostrarFormulario, setMostrarFormulario] = useState(isCliente && (!!agendamentoId || !!aluguelId));
     
-    // Controle de Passos (Wizard de Avaliação)
-    const [passoFormulario, setPassoFormulario] = useState(1); // 1 = Local, 2 = Serviço/Reserva
+    // Controle de Passos (Wizard de Avaliação do Cliente)
+    const [passoFormulario, setPassoFormulario] = useState(1); 
 
-    // Estados do Formulário de Avaliação
-    const [notaLocal, setNotaLocal] = useState(5);
-    const [notaServico, setNotaServico] = useState(5);
+    // Estados do Formulário de Avaliação (Cliente)
+    const [notaLocal, setNotaLocal] = useState(10); // Avaliação principal do local (Passo 1)
+    const [notaServico, setNotaServico] = useState(5); // Nota Geral (Passo 2)
+    
+    // Novas categorias detalhadas
+    const [notaLimpeza, setNotaLimpeza] = useState(5);
+    const [notaPrecisao, setNotaPrecisao] = useState(5);
+    const [notaComunicacao, setNotaComunicacao] = useState(5);
+    const [notaCheckin, setNotaCheckin] = useState(5);
+    const [notaCustoBeneficio, setNotaCustoBeneficio] = useState(5);
+
     const [comentario, setComentario] = useState('');
     const [fotos, setFotos] = useState([]);
     const [fotosPreviews, setFotosPreviews] = useState([]);
     const [enviando, setEnviando] = useState(false);
+
+    // Estados do Formulário de Resposta (Anfitrião)
+    const [respondendoId, setRespondendoId] = useState(null);
+    const [respostaTexto, setRespostaTexto] = useState('');
+    const [enviandoResposta, setEnviandoResposta] = useState(false);
+
+    // Estados do Modal de Exclusão e Justificativa (Admin)
+    const [modalExclusaoAberto, setModalExclusaoAberto] = useState(false);
+    const [idParaExcluir, setIdParaExcluir] = useState(null);
+    const [justificativaAdmin, setJustificativaAdmin] = useState('');
+    const [apagando, setApagando] = useState(false);
+
+    // Estados da Galeria Lightbox (Ver fotos ampliadas)
+    const [lightboxAberto, setLightboxAberto] = useState(false);
+    const [fotosLightbox, setFotosLightbox] = useState([]);
+    const [indiceFotoAtual, setIndiceFotoAtual] = useState(0);
     
-    if (itemNaoEncontrado || !item) {
+    // Tratamento de Erro (Apenas se for cliente buscando um item específico que não existe)
+    if (isCliente && (itemNaoEncontrado || !item)) {
         return (
             <AuthenticatedLayout user={auth?.user}>
                 <Head title="Não Encontrado" />
@@ -71,7 +125,7 @@ export default function Avaliacoes({ auth, item, avaliacoes, estatisticas, itemN
     }
 
     // ----------------------------------------------------------------------
-    // LÓGICA DE UPLOAD DE FOTOS NO FRONT (Com limite de 2MB)
+    // LÓGICA DO CLIENTE: UPLOAD E SUBMISSÃO DA AVALIAÇÃO
     // ----------------------------------------------------------------------
     const handleAddFoto = (e) => {
         const files = Array.from(e.target.files);
@@ -80,16 +134,13 @@ export default function Avaliacoes({ auth, item, avaliacoes, estatisticas, itemN
             return;
         }
 
-        const validFiles = files.filter(file => file.size <= 2 * 1024 * 1024); // Máximo 2MB
+        const validFiles = files.filter(file => file.size <= 2 * 1024 * 1024); 
         if (validFiles.length < files.length) {
             alert('Atenção: Algumas fotos são maiores que 2MB e não foram adicionadas.');
         }
 
-        const newFotos = [...fotos, ...validFiles];
-        setFotos(newFotos);
-
-        const newPreviews = validFiles.map(file => URL.createObjectURL(file));
-        setFotosPreviews([...fotosPreviews, ...newPreviews]);
+        setFotos([...fotos, ...validFiles]);
+        setFotosPreviews([...fotosPreviews, ...validFiles.map(file => URL.createObjectURL(file))]);
     };
 
     const removerFoto = (index) => {
@@ -103,28 +154,27 @@ export default function Avaliacoes({ auth, item, avaliacoes, estatisticas, itemN
         setFotosPreviews(novasPreviews);
     };
 
-    // ----------------------------------------------------------------------
-    // SUBMISSÃO DA AVALIAÇÃO (Agendamento/Aluguel)
-    // ----------------------------------------------------------------------
     const submitAvaliacao = (e) => {
         e.preventDefault();
         setEnviando(true);
 
         const formData = new FormData();
         formData.append('estabelecimento_id', tipo === 'estabelecimento' ? item.id : item.estabelecimento_id);
-        
         if (agendamentoId) formData.append('agendamento_id', agendamentoId);
         if (aluguelId) formData.append('aluguel_id', aluguelId);
         
-        // Mapeando a "Nota Servico" como nota geral e "Nota Local" como nota de localização
         formData.append('nota', notaServico);
         formData.append('nota_localizacao', notaLocal);
+        formData.append('nota_limpeza', notaLimpeza);
+        formData.append('nota_precisao', notaPrecisao);
+        formData.append('nota_comunicacao', notaComunicacao);
+        formData.append('nota_checkin', notaCheckin);
+        formData.append('nota_custo_beneficio', notaCustoBeneficio);
+        
         formData.append('comentario', comentario);
         formData.append('publica', 1);
 
-        fotos.forEach((foto, i) => {
-            formData.append(`fotos[${i}]`, foto);
-        });
+        fotos.forEach((foto, i) => formData.append(`fotos[${i}]`, foto));
 
         router.post('/api/avaliacoes', formData, {
             forceFormData: true,
@@ -140,11 +190,89 @@ export default function Avaliacoes({ auth, item, avaliacoes, estatisticas, itemN
         });
     };
 
+    const handleDenunciar = (id) => {
+        const motivo = prompt("Qual o motivo da denúncia? (Será analisado pela administração)");
+        if (motivo !== null && motivo.trim() !== '') {
+            router.post(`/avaliacoes/${id}/denunciar`, { motivo }, { preserveScroll: true });
+        }
+    };
+
     // ----------------------------------------------------------------------
-    // FUNÇÕES AUXILIARES
+    // LÓGICA DO ADMIN: APAGAR AVALIAÇÃO COM JUSTIFICATIVA
+    // ----------------------------------------------------------------------
+    const abrirModalExclusao = (id) => {
+        setIdParaExcluir(id);
+        setJustificativaAdmin('');
+        setModalExclusaoAberto(true);
+    };
+
+    const confirmarExclusao = () => {
+        if (!justificativaAdmin.trim()) return;
+
+        setApagando(true);
+
+        router.post(`/admin/avaliacoes/${idParaExcluir}/apagar`, {
+            justificativa_admin: justificativaAdmin
+        }, { 
+            preserveScroll: true,
+            onSuccess: () => {
+                setModalExclusaoAberto(false);
+                setIdParaExcluir(null);
+                setJustificativaAdmin('');
+            },
+            onFinish: () => setApagando(false)
+        });
+    };
+
+    // ----------------------------------------------------------------------
+    // LÓGICA DO ANFITRIÃO: RESPONDER AVALIAÇÃO
+    // ----------------------------------------------------------------------
+    const submitResposta = (e, avalId) => {
+        e.preventDefault();
+        setEnviandoResposta(true);
+
+        router.post(`/anfitriao/avaliacoes/${avalId}/responder`, {
+            resposta_anfitriao: respostaTexto
+        }, {
+            preserveScroll: true,
+            onSuccess: () => {
+                setRespondendoId(null);
+                setRespostaTexto('');
+            },
+            onFinish: () => setEnviandoResposta(false)
+        });
+    };
+
+    // ----------------------------------------------------------------------
+    // LÓGICA DO LIGHTBOX (GALERIA DE FOTOS)
+    // ----------------------------------------------------------------------
+    const abrirLightbox = (fotos, indexInicial) => {
+        setFotosLightbox(fotos);
+        setIndiceFotoAtual(indexInicial);
+        setLightboxAberto(true);
+        document.body.style.overflow = 'hidden'; 
+    };
+
+    const fecharLightbox = () => {
+        setLightboxAberto(false);
+        setFotosLightbox([]);
+        setIndiceFotoAtual(0);
+        document.body.style.overflow = 'auto'; 
+    };
+
+    const proximaFoto = () => {
+        if (indiceFotoAtual < fotosLightbox.length - 1) setIndiceFotoAtual(indiceFotoAtual + 1);
+    };
+
+    const fotoAnterior = () => {
+        if (indiceFotoAtual > 0) setIndiceFotoAtual(indiceFotoAtual - 1);
+    };
+
+    // ----------------------------------------------------------------------
+    // FUNÇÕES AUXILIARES DE RENDERIZAÇÃO
     // ----------------------------------------------------------------------
     const calcularPorcentagem = (quantidade) => {
-        if (!estatisticas.total || estatisticas.total === 0) return 0;
+        if (!estatisticas?.total || estatisticas.total === 0) return 0;
         return (quantidade / estatisticas.total) * 100;
     };
 
@@ -154,6 +282,11 @@ export default function Avaliacoes({ auth, item, avaliacoes, estatisticas, itemN
             try { return JSON.parse(fotosData); } catch (e) { return []; }
         }
         return Array.isArray(fotosData) ? fotosData : [];
+    };
+
+    const capitalizePrimeiraLetra = (string) => {
+        if (!string) return '';
+        return string.charAt(0).toUpperCase() + string.slice(1);
     };
 
     const ProgressBar = ({ label, quantidade }) => (
@@ -180,22 +313,41 @@ export default function Avaliacoes({ auth, item, avaliacoes, estatisticas, itemN
     );
 
     const labelContexto = aluguelId || tipo === 'aluguel' ? 'reserva/espaço' : 'serviço';
+    
+    let tituloPagina = item?.nome || 'Avaliações';
+    if (isAdmin) tituloPagina = 'Moderação de Avaliações';
+    else if (isAnfitriao) tituloPagina = 'Painel de Avaliações';
 
     return (
         <AuthenticatedLayout user={auth.user}>
-            <Head title={`Avaliações de ${item.nome}`} />
+            <Head title={`Avaliações - ${tituloPagina}`} />
 
-            <div className="bg-[#FBF9F9] min-h-screen pb-24 font-sans">
+            <div className="bg-[#FBF9F9] min-h-screen pb-24 font-sans relative">
                 
                 {/* BREADCRUMB RESPONSIVO */}
                 <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8 pt-4 sm:pt-6 pb-4">
                     <div className="flex flex-wrap items-center text-xs sm:text-sm text-gray-500 font-medium gap-y-1">
                         <Link href={route('dashboard')} className="hover:underline">Início</Link>
                         <ChevronRight className="w-3 h-3 sm:w-4 sm:h-4 mx-1 sm:mx-2" />
-                        <Link href={route('cliente.explorar')} className="hover:underline">Destinos</Link>
-                        <ChevronRight className="w-3 h-3 sm:w-4 sm:h-4 mx-1 sm:mx-2" />
-                        <span className="hover:underline cursor-pointer truncate">{item.cidade || 'Localidade'}</span>
-                        <ChevronRight className="w-3 h-3 sm:w-4 sm:h-4 mx-1 sm:mx-2" />
+                        
+                        {isAdmin ? (
+                            <>
+                                <span className="text-gray-900 font-bold truncate">Administração</span>
+                                <ChevronRight className="w-3 h-3 sm:w-4 sm:h-4 mx-1 sm:mx-2" />
+                            </>
+                        ) : isAnfitriao ? (
+                            <>
+                                <span className="text-gray-900 font-bold truncate">Meu Negócio</span>
+                                <ChevronRight className="w-3 h-3 sm:w-4 sm:h-4 mx-1 sm:mx-2" />
+                            </>
+                        ) : (
+                            <>
+                                <Link href={route('cliente.explorar')} className="hover:underline">Destinos</Link>
+                                <ChevronRight className="w-3 h-3 sm:w-4 sm:h-4 mx-1 sm:mx-2" />
+                                <span className="hover:underline cursor-pointer truncate">{item?.cidade || 'Localidade'}</span>
+                                <ChevronRight className="w-3 h-3 sm:w-4 sm:h-4 mx-1 sm:mx-2" />
+                            </>
+                        )}
                         <span className="text-gray-900 font-bold truncate">Avaliações</span>
                     </div>
                 </div>
@@ -219,19 +371,23 @@ export default function Avaliacoes({ auth, item, avaliacoes, estatisticas, itemN
                     {/* CABEÇALHO */}
                     <div className="mb-6 sm:mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
                         <div>
-                            <h1 className="text-2xl sm:text-3xl md:text-4xl font-black text-gray-900 mb-1 sm:mb-2 tracking-tight">Avaliações: {item.nome}</h1>
-                            <p className="text-sm sm:text-base text-gray-500 font-medium">Veja o que os clientes que já utilizaram têm a dizer.</p>
+                            <h1 className="text-2xl sm:text-3xl md:text-4xl font-black text-gray-900 mb-1 sm:mb-2 tracking-tight">
+                                {isAdmin ? 'Moderação de Avaliações' : isAnfitriao ? 'Avaliações do seu Negócio' : `Avaliações: ${item?.nome}`}
+                            </h1>
+                            <p className="text-sm sm:text-base text-gray-500 font-medium">
+                                {isAdmin ? 'Analise denúncias e mantenha a qualidade da plataforma.' : isAnfitriao ? 'Acompanhe o que os clientes estão dizendo sobre seus serviços e estabelecimentos.' : 'Veja o que os clientes que já utilizaram têm a dizer.'}
+                            </p>
                         </div>
-                        {(!mostrarFormulario && (agendamentoId || aluguelId)) && (
+                        {(isCliente && !mostrarFormulario && (agendamentoId || aluguelId)) && (
                             <button onClick={() => setMostrarFormulario(true)} className="bg-[#FF5A00] hover:bg-[#E04F00] text-white px-6 py-3.5 rounded-2xl font-bold transition-all shadow-md flex items-center justify-center gap-2 text-sm sm:text-base">
                                 <Star className="w-5 h-5 fill-current" /> Deixar minha Avaliação
                             </button>
                         )}
                     </div>
 
-                    {/* WIZARD DE AVALIAÇÃO EM 2 PASSOS */}
+                    {/* WIZARD DE AVALIAÇÃO EM 2 PASSOS (APENAS CLIENTE) */}
                     <AnimatePresence>
-                        {mostrarFormulario && (
+                        {(isCliente && mostrarFormulario) && (
                             <motion.div 
                                 initial={{ opacity: 0, height: 0 }} 
                                 animate={{ opacity: 1, height: 'auto' }} 
@@ -239,7 +395,6 @@ export default function Avaliacoes({ auth, item, avaliacoes, estatisticas, itemN
                                 className="overflow-hidden mb-8"
                             >
                                 <div className="bg-white rounded-3xl p-5 sm:p-8 border border-gray-200 shadow-sm">
-                                    
                                     <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-3 border-b border-gray-100 pb-4">
                                         <div>
                                             <h3 className="text-lg sm:text-xl font-black text-gray-900 tracking-tight">
@@ -250,27 +405,31 @@ export default function Avaliacoes({ auth, item, avaliacoes, estatisticas, itemN
                                         <button onClick={() => setMostrarFormulario(false)} className="text-sm font-bold text-gray-400 hover:text-red-500 transition-colors self-start sm:self-auto">Cancelar e fechar</button>
                                     </div>
 
-                                    {/* PASSO 1: AVALIAÇÃO DO LOCAL */}
+                                    {/* PASSO 1: AVALIAÇÃO DO LOCAL (DE 1 A 10) */}
                                     {passoFormulario === 1 ? (
                                         <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="space-y-6">
                                             <div className="flex flex-col items-center bg-gray-50 py-8 rounded-2xl border border-gray-100">
                                                 <Store className="w-8 h-8 text-gray-400 mb-2" />
                                                 <p className="text-xs sm:text-sm font-bold text-gray-500 mb-4 uppercase tracking-widest text-center">Nota para o Espaço Físico / Estrutura</p>
-                                                <div className="flex gap-1 sm:gap-2">
-                                                    {[1, 2, 3, 4, 5].map((estrela) => (
-                                                        <button 
-                                                            type="button" 
-                                                            key={`local-${estrela}`}
-                                                            onClick={() => setNotaLocal(estrela)}
-                                                            className="focus:outline-none transition-transform hover:scale-110 active:scale-95 p-1"
-                                                        >
-                                                            <Star className={`w-12 h-12 sm:w-14 sm:h-14 transition-colors ${notaLocal >= estrela ? 'fill-[#FF5A00] text-[#FF5A00]' : 'text-gray-300'}`} />
-                                                        </button>
-                                                    ))}
+                                                <div className="flex flex-wrap justify-center gap-1 sm:gap-2 w-full px-2">
+                                                    {[...Array(10)].map((_, i) => {
+                                                        const estrela = i + 1;
+                                                        return (
+                                                            <button 
+                                                                type="button" 
+                                                                key={`local-${estrela}`}
+                                                                onClick={() => setNotaLocal(estrela)}
+                                                                className="focus:outline-none transition-transform hover:scale-110 active:scale-95 p-1"
+                                                            >
+                                                                <Star className={`w-8 h-8 sm:w-10 sm:h-10 transition-colors ${notaLocal >= estrela ? 'fill-[#FF5A00] text-[#FF5A00]' : 'text-gray-300'}`} />
+                                                            </button>
+                                                        );
+                                                    })}
                                                 </div>
                                                 <p className="text-sm font-bold mt-4 text-gray-700">
-                                                    {notaLocal === 5 ? 'Excelente' : notaLocal === 4 ? 'Muito Bom' : notaLocal === 3 ? 'Bom' : notaLocal === 2 ? 'Ruim' : 'Péssimo'}
+                                                    {notaLocal >= 9 ? 'Excelente' : notaLocal >= 7 ? 'Muito Bom' : notaLocal >= 5 ? 'Bom' : notaLocal >= 3 ? 'Ruim' : 'Péssimo'}
                                                 </p>
+                                                <span className="text-[10px] text-gray-400 font-bold mt-1">Avalie de 1 a 10</span>
                                             </div>
 
                                             <button 
@@ -282,9 +441,10 @@ export default function Avaliacoes({ auth, item, avaliacoes, estatisticas, itemN
                                             </button>
                                         </motion.div>
                                     ) : (
-                                        /* PASSO 2: AVALIAÇÃO DO SERVIÇO/RESERVA + FOTOS + TEXTO */
+                                        /* PASSO 2: AVALIAÇÃO DO SERVIÇO E DETALHES */
                                         <motion.form initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} onSubmit={submitAvaliacao} className="space-y-6">
                                             
+                                            {/* NOTA GERAL DO SERVIÇO */}
                                             <div className="flex flex-col items-center bg-[#FFF0E5]/50 py-6 rounded-2xl border border-[#FF5A00]/20">
                                                 <Wrench className="w-6 h-6 text-[#FF5A00] mb-2" />
                                                 <p className="text-xs sm:text-sm font-bold text-[#FF5A00] mb-3 uppercase tracking-widest text-center">Nota Geral do {labelContexto}</p>
@@ -302,6 +462,19 @@ export default function Avaliacoes({ auth, item, avaliacoes, estatisticas, itemN
                                                 </div>
                                             </div>
 
+                                            {/* CATEGORIAS DETALHADAS */}
+                                            <div>
+                                                <p className="text-[10px] sm:text-xs font-black text-gray-400 uppercase tracking-widest mb-3">Avalie os detalhes</p>
+                                                <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                                    <StarRating label="Limpeza" icon={Star} value={notaLimpeza} onChange={setNotaLimpeza} />
+                                                    <StarRating label="Qualidade" icon={Wrench} value={notaPrecisao} onChange={setNotaPrecisao} />
+                                                    <StarRating label="Atendimento" icon={MessageSquare} value={notaComunicacao} onChange={setNotaComunicacao} />
+                                                    <StarRating label="Recepção" icon={CheckCircle2} value={notaCheckin} onChange={setNotaCheckin} />
+                                                    <StarRating label="Custo-benefício" icon={Star} value={notaCustoBeneficio} onChange={setNotaCustoBeneficio} />
+                                                </div>
+                                            </div>
+
+                                            {/* TEXTO DO COMENTÁRIO */}
                                             <div>
                                                 <label className="block text-[10px] sm:text-xs font-black text-gray-400 uppercase tracking-widest mb-2">Comentário Escrito</label>
                                                 <textarea 
@@ -315,13 +488,13 @@ export default function Avaliacoes({ auth, item, avaliacoes, estatisticas, itemN
                                                 ></textarea>
                                             </div>
 
-                                            {/* UPLOAD FOTOS COM LIMITE DE TAMANHO/QUANTIDADE */}
+                                            {/* UPLOAD DE FOTOS */}
                                             <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100">
                                                 <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-3 gap-1">
                                                     <label className="block text-[10px] sm:text-xs font-black text-gray-500 uppercase tracking-widest">
                                                         Fotos do Local ou Serviço
                                                     </label>
-                                                    <span className="text-[#FF5A00] bg-[#FFF0E5] px-2 py-0.5 rounded-md text-[10px] font-bold w-fit border border-[#FF5A00]/20">+ Pontos Bônus</span>
+                                                    <span className="text-[#FF5A00] bg-[#FFF0E5] px-2 py-0.5 rounded-md text-[10px] font-bold w-fit border border-[#FF5A00]/20">+150 Pontos Bônus</span>
                                                 </div>
                                                 
                                                 <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
@@ -349,6 +522,7 @@ export default function Avaliacoes({ auth, item, avaliacoes, estatisticas, itemN
                                                 <p className="text-[10px] text-gray-400 mt-2 font-medium leading-tight">Ajude a comunidade compartilhando fotos. Max 2MB por foto.</p>
                                             </div>
 
+                                            {/* BOTÕES DE NAVEGAÇÃO DO WIZARD */}
                                             <div className="flex flex-col sm:flex-row gap-3 pt-2">
                                                 <button 
                                                     type="button" 
@@ -377,25 +551,25 @@ export default function Avaliacoes({ auth, item, avaliacoes, estatisticas, itemN
                     <div className="bg-white rounded-3xl p-6 sm:p-8 border border-gray-200 shadow-sm flex flex-col md:flex-row items-center gap-8 md:gap-12 mb-8">
                         <div className="flex flex-col items-center justify-center shrink-0 w-full md:w-auto">
                             <span className="text-5xl sm:text-6xl font-black text-gray-900 tracking-tighter mb-2">
-                                {Number(estatisticas.media_geral || 0).toFixed(1).replace('.', ',')}
+                                {Number(estatisticas?.media_geral || 0).toFixed(1).replace('.', ',')}
                             </span>
                             <div className="flex text-[#FF5A00] mb-2">
                                 {[1, 2, 3, 4, 5].map(star => (
-                                    <Star key={star} className={`w-4 h-4 sm:w-5 sm:h-5 ${star <= Math.round(estatisticas.media_geral || 0) ? 'fill-current' : 'text-gray-300'}`} />
+                                    <Star key={star} className={`w-4 h-4 sm:w-5 sm:h-5 ${star <= Math.round(estatisticas?.media_geral || 0) ? 'fill-current' : 'text-gray-300'}`} />
                                 ))}
                             </div>
                             <span className="font-bold text-gray-900 mb-0.5">
-                                {estatisticas.media_geral >= 4.5 ? 'Excelente' : estatisticas.media_geral >= 3.0 ? 'Bom' : 'Regular'}
+                                {estatisticas?.media_geral >= 4.5 ? 'Excelente' : estatisticas?.media_geral >= 3.0 ? 'Bom' : 'Regular'}
                             </span>
-                            <span className="text-xs text-gray-500 font-medium">Baseado em {estatisticas.total} avaliações</span>
+                            <span className="text-xs text-gray-500 font-medium">Baseado em {estatisticas?.total || 0} avaliações</span>
                         </div>
 
                         <div className="flex-1 w-full max-w-md border-t md:border-t-0 md:border-l border-gray-100 pt-6 md:pt-0 md:pl-12">
-                            <ProgressBar label="5" quantidade={estatisticas.estrelas['5'] || 0} />
-                            <ProgressBar label="4" quantidade={estatisticas.estrelas['4'] || 0} />
-                            <ProgressBar label="3" quantidade={estatisticas.estrelas['3'] || 0} />
-                            <ProgressBar label="2" quantidade={estatisticas.estrelas['2'] || 0} />
-                            <ProgressBar label="1" quantidade={estatisticas.estrelas['1'] || 0} />
+                            <ProgressBar label="5" quantidade={estatisticas?.estrelas['5'] || 0} />
+                            <ProgressBar label="4" quantidade={estatisticas?.estrelas['4'] || 0} />
+                            <ProgressBar label="3" quantidade={estatisticas?.estrelas['3'] || 0} />
+                            <ProgressBar label="2" quantidade={estatisticas?.estrelas['2'] || 0} />
+                            <ProgressBar label="1" quantidade={estatisticas?.estrelas['1'] || 0} />
                         </div>
 
                         <div className="flex-1 w-full border-t md:border-t-0 md:border-l border-gray-100 pt-6 md:pt-0 md:pl-12">
@@ -404,7 +578,7 @@ export default function Avaliacoes({ auth, item, avaliacoes, estatisticas, itemN
                             </div>
                             <h4 className="font-bold text-gray-900 mb-1 text-sm sm:text-base">Avaliações verificadas</h4>
                             <p className="text-xs sm:text-sm text-gray-500 leading-relaxed">
-                                Todas as avaliações são de clientes que realmente utilizaram este {labelContexto} através da plataforma Lokyva.
+                                Todas as avaliações são de clientes que realmente utilizaram os serviços através da plataforma Lokyva.
                             </p>
                         </div>
                     </div>
@@ -421,16 +595,28 @@ export default function Avaliacoes({ auth, item, avaliacoes, estatisticas, itemN
                                         onClick={() => setFiltroEstrela(filtro)} 
                                         className={`px-4 sm:px-5 py-2 sm:py-2.5 rounded-full font-bold text-xs sm:text-sm border transition-colors shrink-0 ${ filtroEstrela === filtro ? 'border-[#FF5A00] text-[#FF5A00] bg-[#FFF0E5]' : 'border-gray-300 text-gray-600 bg-white'}`}
                                     >
-                                        {filtro} {filtro === 'Todas' ? `(${estatisticas.total})` : ''}
+                                        {filtro} {filtro === 'Todas' ? `(${estatisticas?.total || 0})` : ''}
                                     </button>
                                 ))}
                             </div>
 
                             <div className="space-y-6 sm:space-y-8 bg-white p-4 sm:p-8 rounded-3xl border border-gray-100 shadow-sm">
                                 {!avaliacoes?.data || avaliacoes.data.length === 0 ? (
-                                    <div className="text-center py-12">
-                                        <h3 className="text-gray-900 font-bold text-base sm:text-lg mb-2">Ainda não há avaliações</h3>
-                                        <p className="text-sm text-gray-500 px-4">Seja o primeiro a compartilhar sua experiência após utilizar o {labelContexto}.</p>
+                                    /* EMPTY STATE ADAPTADO E ACOLHEDOR */
+                                    <div className="text-center py-16 px-4">
+                                        <div className="w-16 h-16 bg-[#FFF0E5] rounded-full flex items-center justify-center mx-auto mb-4 text-[#FF5A00]">
+                                            <Inbox className="w-8 h-8" />
+                                        </div>
+                                        <h3 className="text-gray-900 font-black text-lg sm:text-xl mb-2">
+                                            Ainda não há avaliações disponíveis
+                                        </h3>
+                                        <p className="text-sm text-gray-500 max-w-md mx-auto leading-relaxed">
+                                            {isAnfitriao 
+                                                ? "Ainda não há avaliações para os seus serviços e estabelecimentos. Assim que os clientes concluírem os atendimentos, os comentários aparecerão aqui para você acompanhar e responder."
+                                                : isAdmin 
+                                                ? "Nenhuma avaliação encontrada na plataforma para os filtros selecionados."
+                                                : "Seja o primeiro a compartilhar sua experiência após concluir um agendamento ou reserva neste local!"}
+                                        </p>
                                     </div>
                                 ) : (
                                     avaliacoes.data.map(aval => {
@@ -438,15 +624,52 @@ export default function Avaliacoes({ auth, item, avaliacoes, estatisticas, itemN
                                         const nomeServico = aval.agendamento?.servico?.nome || aval.aluguel?.item_aluguel?.nome;
                                         const nomeLocal = aval.estabelecimento?.nome;
                                         
-                                        // Filtro Simples
+                                        // Filtro Simples no Front-end
                                         if (filtroEstrela === '5 estrelas' && aval.nota !== 5) return null;
                                         if (filtroEstrela === '4 estrelas' && aval.nota !== 4) return null;
                                         if (filtroEstrela === '3 estrelas' && aval.nota !== 3) return null;
                                         if (filtroEstrela === '2 estrelas' && aval.nota !== 2) return null;
                                         if (filtroEstrela === '1 estrela' && aval.nota !== 1) return null;
 
+                                        // SE O COMENTÁRIO FOI BANIDO PELO ADMIN
+                                        if (aval.justificativa_admin) {
+                                            return (
+                                                <div key={aval.id} className="border-b border-gray-100 pb-6 sm:pb-8 last:border-0 last:pb-0">
+                                                    <div className="bg-red-50 border border-red-100 rounded-2xl p-4 sm:p-5 flex flex-col gap-2 relative overflow-hidden">
+                                                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-red-400"></div>
+                                                        <div className="flex items-center gap-2 text-red-700">
+                                                            <AlertTriangle className="w-5 h-5 shrink-0" />
+                                                            <span className="font-black text-sm sm:text-base">Aviso da Moderação: Seu comentário foi apagado.</span>
+                                                        </div>
+                                                        <p className="text-red-800 text-sm sm:text-base font-bold pl-7">
+                                                            Motivo: {capitalizePrimeiraLetra(aval.justificativa_admin)}
+                                                        </p>
+                                                        {aval.pontos_retirados > 0 && (
+                                                            <span className="text-xs font-bold text-red-500 bg-red-100 w-fit px-2 py-1 rounded-md mt-1 ml-7">
+                                                                -{aval.pontos_retirados} Pontos
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        }
+
                                         return (
                                             <div key={aval.id} className="border-b border-gray-100 pb-6 sm:pb-8 last:border-0 last:pb-0">
+                                                
+                                                {/* INFORMAÇÕES DE MODERAÇÃO PARA O ADMIN */}
+                                                {isAdmin && aval.denuncias_count > 0 && (
+                                                    <div className="bg-red-50 text-red-700 text-xs sm:text-sm font-bold px-4 py-3 rounded-xl mb-4 border border-red-100 flex flex-col sm:flex-row sm:items-center gap-2">
+                                                        <div className="flex items-center gap-2">
+                                                            <AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5 shrink-0" />
+                                                            <span>⚠️ {aval.denuncias_count} denúncia(s) recebida(s).</span>
+                                                        </div>
+                                                        {aval.motivo_denuncia && (
+                                                            <span className="font-medium text-red-600 sm:ml-auto">Motivos: {aval.motivo_denuncia}</span>
+                                                        )}
+                                                    </div>
+                                                )}
+
                                                 <div className="flex items-start justify-between mb-3 sm:mb-4">
                                                     <div className="flex items-center gap-3 sm:gap-4">
                                                         <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full overflow-hidden bg-gray-100 border border-gray-200 shadow-sm shrink-0">
@@ -468,8 +691,35 @@ export default function Avaliacoes({ auth, item, avaliacoes, estatisticas, itemN
                                                                 {nomeServico && (
                                                                     <p className="text-[#FF5A00]">Avaliou: {nomeServico} {nomeLocal ? `em ${nomeLocal}` : ''}</p>
                                                                 )}
+                                                                {isAdmin && aval.usuario?.email && (
+                                                                    <p className="text-gray-400">Email: {aval.usuario.email}</p>
+                                                                )}
                                                             </div>
                                                         </div>
+                                                    </div>
+
+                                                    {/* BOTÕES DE AÇÃO: APAGAR (ADMIN) OU DENUNCIAR (CLIENTE) */}
+                                                    <div className="flex items-center gap-2">
+                                                        {isAdmin && (
+                                                            <button 
+                                                                onClick={() => abrirModalExclusao(aval.id)} 
+                                                                className="text-red-500 hover:bg-red-50 p-2 rounded-full transition-colors flex items-center gap-1" 
+                                                                title="Apagar Avaliação (Moderação)"
+                                                            >
+                                                                <Trash2 className="w-4 h-4 sm:w-5 sm:h-5" />
+                                                                <span className="hidden sm:inline text-xs font-bold">Apagar</span>
+                                                            </button>
+                                                        )}
+                                                        {isCliente && (
+                                                            <button 
+                                                                onClick={() => handleDenunciar(aval.id)} 
+                                                                className="text-gray-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-full transition-colors flex items-center gap-1" 
+                                                                title="Denunciar Comentário"
+                                                            >
+                                                                <AlertTriangle className="w-4 h-4 sm:w-5 sm:h-5" />
+                                                                <span className="hidden sm:inline text-xs font-bold">Denunciar</span>
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 </div>
 
@@ -480,35 +730,90 @@ export default function Avaliacoes({ auth, item, avaliacoes, estatisticas, itemN
                                                         ))}
                                                     </div>
                                                     <span className="font-bold text-gray-900 text-sm">{aval.nota},0</span>
+                                                    {aval.nota_localizacao && (
+                                                        <span className="text-xs text-gray-400 ml-2 border-l border-gray-200 pl-2">Nota Local: {aval.nota_localizacao},0</span>
+                                                    )}
                                                 </div>
 
                                                 <ExpandableText text={aval.comentario} maxLength={180} />
 
-                                                {/* GALERIA DE FOTOS RENDERIZADAS AQUI */}
+                                                {/* GALERIA DE FOTOS (COM LIGHTBOX INTEGRADO) */}
                                                 {fotosArray.length > 0 && (
                                                     <div className="flex gap-2 sm:gap-3 overflow-x-auto pb-2 no-scrollbar mt-4">
                                                         {fotosArray.map((fotoUrl, idx) => (
-                                                            <div key={idx} className="w-24 h-20 sm:w-32 sm:h-24 shrink-0 rounded-xl sm:rounded-2xl overflow-hidden border border-gray-200 shadow-sm relative group">
+                                                            <div 
+                                                                key={idx} 
+                                                                onClick={() => abrirLightbox(fotosArray, idx)}
+                                                                className="w-24 h-20 sm:w-32 sm:h-24 shrink-0 rounded-xl sm:rounded-2xl overflow-hidden border border-gray-200 shadow-sm relative group cursor-pointer"
+                                                            >
                                                                 <img 
                                                                     src={fotoUrl} 
                                                                     alt="Foto da experiência" 
                                                                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" 
                                                                 />
-                                                                <div 
-                                                                    onClick={() => window.open(fotoUrl, '_blank')}
-                                                                    className="absolute inset-0 bg-black/0 group-hover:bg-black/10 cursor-zoom-in transition-colors duration-300 flex items-center justify-center"
-                                                                >
-                                                                </div>
+                                                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-300 flex items-center justify-center"></div>
                                                             </div>
                                                         ))}
                                                     </div>
                                                 )}
+
+                                                {/* RESPOSTA DO ANFITRIÃO */}
+                                                {aval.resposta_anfitriao ? (
+                                                    <div className="mt-5 bg-gray-50 p-4 sm:p-5 rounded-2xl border border-gray-200 ml-4 sm:ml-8 relative">
+                                                        <div className="absolute -left-[17px] sm:-left-[33px] top-6 w-4 sm:w-8 h-px bg-gray-200"></div>
+                                                        <div className="flex items-center gap-2 mb-2">
+                                                            <Store className="w-4 h-4 text-[#FF5A00]" />
+                                                            <span className="font-bold text-gray-900 text-xs sm:text-sm">Resposta do Estabelecimento</span>
+                                                            <span className="text-[10px] sm:text-xs text-gray-400 font-medium ml-auto">
+                                                                {aval.data_resposta ? new Date(aval.data_resposta).toLocaleDateString('pt-BR') : ''}
+                                                            </span>
+                                                        </div>
+                                                        <p className="text-xs sm:text-sm text-gray-700 leading-relaxed italic">"{aval.resposta_anfitriao}"</p>
+                                                    </div>
+                                                ) : (
+                                                    /* BOTÃO PARA O ANFITRIÃO RESPONDER */
+                                                    isAnfitriao && respondendoId !== aval.id && (
+                                                        <div className="mt-4 flex justify-end">
+                                                            <button 
+                                                                onClick={() => { setRespondendoId(aval.id); setRespostaTexto(''); }} 
+                                                                className="flex items-center gap-1.5 text-sm font-bold text-gray-500 hover:text-[#FF5A00] transition-colors bg-white border border-gray-200 px-4 py-2 rounded-xl shadow-sm hover:shadow"
+                                                            >
+                                                                <Reply className="w-4 h-4" /> Responder Cliente
+                                                            </button>
+                                                        </div>
+                                                    )
+                                                )}
+
+                                                {/* FORMULÁRIO DE RESPOSTA INLINE (ANFITRIÃO) */}
+                                                {isAnfitriao && respondendoId === aval.id && (
+                                                    <form onSubmit={(e) => submitResposta(e, aval.id)} className="mt-4 ml-4 sm:ml-8 relative">
+                                                        <div className="absolute -left-[17px] sm:-left-[33px] top-6 w-4 sm:w-8 h-px bg-gray-200"></div>
+                                                        <textarea 
+                                                            className="w-full rounded-2xl border-gray-200 focus:border-[#FF5A00] focus:ring-[#FF5A00] shadow-sm text-sm p-4 mb-3 resize-none bg-white"
+                                                            rows="3"
+                                                            placeholder="Escreva sua resposta de forma educada..."
+                                                            value={respostaTexto}
+                                                            onChange={e => setRespostaTexto(e.target.value)}
+                                                            required
+                                                        ></textarea>
+                                                        <div className="flex gap-2">
+                                                            <button type="button" onClick={() => setRespondendoId(null)} className="px-5 py-2.5 bg-gray-100 text-gray-600 text-sm font-bold rounded-xl hover:bg-gray-200 transition-colors">
+                                                                Cancelar
+                                                            </button>
+                                                            <button type="submit" disabled={enviandoResposta} className="px-5 py-2.5 bg-[#FF5A00] text-white text-sm font-bold rounded-xl hover:bg-[#E04F00] shadow-sm disabled:opacity-50 transition-colors flex items-center gap-2">
+                                                                {enviandoResposta ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquare className="w-4 h-4" />}
+                                                                {enviandoResposta ? 'Enviando...' : 'Publicar'}
+                                                            </button>
+                                                        </div>
+                                                    </form>
+                                                )}
+
                                             </div>
                                         );
                                     })
                                 )}
 
-                                {/* PAGINAÇÃO */}
+                                {/* PAGINAÇÃO DO LARAVEL */}
                                 {avaliacoes?.links && avaliacoes.links.length > 3 && (
                                     <div className="flex justify-center flex-wrap gap-1 mt-8 border-t border-gray-100 pt-6">
                                         {avaliacoes.links.map((link, idx) => (
@@ -529,20 +834,131 @@ export default function Avaliacoes({ auth, item, avaliacoes, estatisticas, itemN
                         {/* BARRA LATERAL - CATEGORIAS */}
                         <div className="lg:w-[30%] space-y-6">
                             <div className="bg-white border border-gray-200 rounded-3xl p-5 sm:p-6 shadow-sm sticky top-6">
-                                <h3 className="text-base sm:text-lg font-black text-gray-900 mb-4 tracking-tight">Notas detalhadas</h3>
+                                <h3 className="text-base sm:text-lg font-black text-gray-900 mb-4 tracking-tight">
+                                    {isAnfitriao || isAdmin ? 'Média Geral' : 'Notas detalhadas'}
+                                </h3>
                                 <div>
-                                    <CategoryScore icon={Store} label="Espaço Físico / Estrutura" score={estatisticas.categorias.localizacao || estatisticas.media_geral} />
-                                    <CategoryScore icon={Star} label="Limpeza do Local" score={estatisticas.categorias.limpeza || estatisticas.media_geral} />
-                                    <CategoryScore icon={Wrench} label="Qualidade do Serviço" score={estatisticas.categorias.precisao || estatisticas.media_geral} />
-                                    <CategoryScore icon={MessageSquare} label="Atendimento" score={estatisticas.categorias.comunicacao || estatisticas.media_geral} />
-                                    <CategoryScore icon={CheckCircle2} label="Recepção / Check-in" score={estatisticas.categorias.checkin || estatisticas.media_geral} />
-                                    <CategoryScore icon={Star} label="Custo-benefício" score={estatisticas.categorias.custo_beneficio || estatisticas.media_geral} />
+                                    <CategoryScore icon={Store} label="Espaço Físico / Estrutura" score={estatisticas?.categorias?.localizacao || estatisticas?.media_geral} />
+                                    <CategoryScore icon={Star} label="Limpeza do Local" score={estatisticas?.categorias?.limpeza || estatisticas?.media_geral} />
+                                    <CategoryScore icon={Wrench} label="Qualidade do Serviço" score={estatisticas?.categorias?.precisao || estatisticas?.media_geral} />
+                                    <CategoryScore icon={MessageSquare} label="Atendimento" score={estatisticas?.categorias?.comunicacao || estatisticas?.media_geral} />
+                                    <CategoryScore icon={CheckCircle2} label="Recepção / Check-in" score={estatisticas?.categorias?.checkin || estatisticas?.media_geral} />
+                                    <CategoryScore icon={Star} label="Custo-benefício" score={estatisticas?.categorias?.custo_beneficio || estatisticas?.media_geral} />
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
+
+            {/* ========================================================================= */}
+            {/* MODAL DE CONFIRMAÇÃO DE EXCLUSÃO E JUSTIFICATIVA (ADMIN) */}
+            {/* ========================================================================= */}
+            <AnimatePresence>
+                {modalExclusaoAberto && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                        <motion.div 
+                            initial={{ opacity: 0, scale: 0.95 }} 
+                            animate={{ opacity: 1, scale: 1 }} 
+                            exit={{ opacity: 0, scale: 0.95 }} 
+                            className="bg-white rounded-3xl p-6 sm:p-8 max-w-sm w-full shadow-2xl relative overflow-hidden"
+                        >
+                            <div className="absolute top-0 left-0 w-full h-2 bg-red-500"></div>
+                            
+                            <div className="flex justify-center mb-5">
+                                <div className="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center border-4 border-white shadow-sm">
+                                    <Trash2 className="w-8 h-8 text-red-500" />
+                                </div>
+                            </div>
+                            
+                            <h3 className="text-xl font-black text-gray-900 text-center mb-2">Apagar Avaliação?</h3>
+                            <p className="text-gray-500 text-sm text-center mb-6 leading-relaxed">
+                                Esta ação removerá os pontos do usuário, apagará as fotos e ocultará o comentário com uma justificativa.
+                            </p>
+
+                            <textarea
+                                className="w-full rounded-xl border-gray-200 focus:border-red-500 focus:ring-red-500 shadow-sm text-sm p-3 mb-6 resize-none bg-gray-50"
+                                rows="3"
+                                placeholder="Descreva o motivo da exclusão (Ex: Discurso de ódio)..."
+                                value={justificativaAdmin}
+                                onChange={(e) => setJustificativaAdmin(e.target.value)}
+                            ></textarea>
+                            
+                            <div className="flex gap-3">
+                                <button 
+                                    onClick={() => setModalExclusaoAberto(false)} 
+                                    className="flex-1 py-3.5 bg-gray-100 text-gray-700 font-bold rounded-xl hover:bg-gray-200 transition-colors"
+                                >
+                                    Cancelar
+                                </button>
+                                <button 
+                                    onClick={confirmarExclusao} 
+                                    disabled={apagando || !justificativaAdmin.trim()}
+                                    className="flex-1 py-3.5 bg-red-500 text-white font-bold rounded-xl hover:bg-red-600 shadow-md shadow-red-500/30 transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {apagando ? <Loader2 className="w-5 h-5 animate-spin" /> : <Trash2 className="w-5 h-5" />}
+                                    {apagando ? 'Apagando...' : 'Sim, apagar'}
+                                </button>
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* ========================================================================= */}
+            {/* MODAL LIGHTBOX (VISUALIZAÇÃO DE FOTOS EM TELA CHEIA) */}
+            {/* ========================================================================= */}
+            <AnimatePresence>
+                {lightboxAberto && (
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-md">
+                        
+                        {/* Botão de Fechar */}
+                        <button 
+                            onClick={fecharLightbox} 
+                            className="absolute top-6 right-6 text-white/70 hover:text-white p-2 rounded-full hover:bg-white/10 transition-colors z-50"
+                        >
+                            <X className="w-8 h-8" />
+                        </button>
+
+                        {/* Botão Anterior */}
+                        {indiceFotoAtual > 0 && (
+                            <button 
+                                onClick={fotoAnterior} 
+                                className="absolute left-4 sm:left-10 text-white/70 hover:text-white p-3 rounded-full hover:bg-white/10 transition-colors z-50"
+                            >
+                                <ChevronLeft className="w-10 h-10" />
+                            </button>
+                        )}
+
+                        {/* Imagem Principal */}
+                        <motion.img 
+                            key={indiceFotoAtual}
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.95 }}
+                            transition={{ duration: 0.2 }}
+                            src={fotosLightbox[indiceFotoAtual]} 
+                            alt={`Foto ${indiceFotoAtual + 1}`} 
+                            className="max-w-full max-h-[85vh] object-contain select-none rounded-lg shadow-2xl"
+                        />
+
+                        {/* Botão Próximo */}
+                        {indiceFotoAtual < fotosLightbox.length - 1 && (
+                            <button 
+                                onClick={proximaFoto} 
+                                className="absolute right-4 sm:right-10 text-white/70 hover:text-white p-3 rounded-full hover:bg-white/10 transition-colors z-50"
+                            >
+                                <ChevronRight className="w-10 h-10" />
+                            </button>
+                        )}
+
+                        {/* Indicador de Quantidade */}
+                        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 text-white font-bold text-sm bg-black/50 px-4 py-1.5 rounded-full backdrop-blur-sm">
+                            {indiceFotoAtual + 1} / {fotosLightbox.length}
+                        </div>
+                    </div>
+                )}
+            </AnimatePresence>
 
             <style dangerouslySetInnerHTML={{__html: `
                 .no-scrollbar::-webkit-scrollbar { display: none; }

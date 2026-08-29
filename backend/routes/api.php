@@ -53,7 +53,11 @@ use App\Http\Controllers\Api\Mobile\Proprietario\FuncionarioMobileController as 
 // Rotas públicas Web
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
-Route::post('/webhook/mercadopago', [WebhookController::class, 'mercadopago']);
+
+
+    // Rota para o Webhook do Asaas (POST)
+// Recebe os webhooks do Asaas apontando diretamente para o PagamentoController
+Route::post('/webhook/asaas', [PagamentoController::class, 'webhookAsaas']);
 
 // Rotas públicas Mobile
 Route::post('/mobile/login', [MobileAuthController::class, 'login']);
@@ -366,4 +370,7 @@ Route::get('/assinaturas/status', [AssinaturaMobileController::class, 'status'])
     Route::apiResource('respostas-triagem', RespostaTriagemController::class);
     Route::apiResource('contas-bancarias', ContaPagamentoEstabelecimentoController::class);
     Route::apiResource('gamificacoes', GamificacaoController::class);
+
+
+
 });

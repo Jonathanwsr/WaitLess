@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 
 class ExtratoProvider extends Model
@@ -64,6 +65,11 @@ class ExtratoProvider extends Model
         return $this->belongsTo(User::class, 'usuario_id');
     }
 
+    public function extratos(): HasMany
+    {
+        return $this->hasMany(ExtratoProvider::class, 'provider_id')->latest();
+    }
+
     /**
      * Relacionamento Polimórfico Dinâmico.
      *
@@ -79,14 +85,6 @@ class ExtratoProvider extends Model
      * Uso:
      * $extrato->origem
      */
-
-
-    public function extratos()
-{
-    return $this->hasMany(ExtratoProvider::class, 'provider_id')->latest();
-}
-
-
     public function origem(): MorphTo
     {
         return $this->morphTo();

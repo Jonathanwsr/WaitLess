@@ -138,10 +138,12 @@ class EstabelecimentoController extends Controller
             
             if (in_array($user->papel, ['proprietario', 'socio', 'gerente'])) {
                 // É dono ou tem vínculo na pivot
-                $isLinked = $estabelecimento->user_id === $user->id || $estabelecimento->proprietarios()->where('user_id', $user->id)->exists();
+                $isLinked = $estabelecimento->proprietarios()->where('users.id', $user->id)->exists();
             } else {
                 // É funcionário/atendente deste local
-                $isLinked = \App\Models\Funcionario::where('user_id', $user->id)->where('estabelecimento_id', $estabelecimento->id)->exists();
+                $isLinked = \App\Models\Funcionario::where('user_id', $user->id)
+                    ->where('estabelecimento_id', $estabelecimento->id)
+                    ->exists();
             }
 
             if (!$isLinked) {

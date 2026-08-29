@@ -1316,6 +1316,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                          <option value="Automotivo">Automotivo</option>
                                                          <option value="Turismo e Viagens">Turismo e Viagens</option>
                                                         <option value="Casa e Construção">Casa e Construção</option>
+                                                        <option value="Casa e Construção">Casamentos e aniversários</option>
                                                         <option value="Tecnologia">Tecnologia</option>
                                                         <option value="Educação e Cursos">Educação e Cursos</option>
                                                         <option value="Eventos e Entretenimento">Eventos e Entretenimento</option>

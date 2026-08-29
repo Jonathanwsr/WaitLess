@@ -98,7 +98,7 @@ export default function Carrinho({ auth, itensCarrinho = [] }) {
                 </h2>
             }
         >
-            <Head title="Carrinho - WaitLess" />
+            <Head title="Carrinho - LOKYVA" />
 
             <div className="max-w-[1400px] w-full mx-auto pb-20 mt-8 px-4 sm:px-6 lg:px-8 font-sans">
                 

@@ -8,6 +8,7 @@ use App\Http\Controllers\Api\ClienteAgendamentoController;
 use App\Http\Controllers\Api\ClienteExplorarController;
 use App\Http\Controllers\Api\PagamentoController;
 use App\Http\Controllers\Api\ServicoController;
+use App\Http\Controllers\Api\FinanceiroController;
 use App\Http\Controllers\Api\ClienteController;
 use App\Http\Controllers\Api\FuncionarioCatalogoController;
 use App\Http\Controllers\Api\FuncionarioCarteiraController;
@@ -103,10 +104,24 @@ Route::get('/api/provider', [ProviderController::class, 'show'])->name('provider
     Route::get('/avaliacoes/{id}', [App\Http\Controllers\Api\AvaliacaoController::class, 'indexReact'])->name('avaliacoes.index');
     Route::post('/api/avaliacoes', [App\Http\Controllers\Api\AvaliacaoController::class, 'store'])->name('avaliacoes.store');
 
- // Rotas de Avaliações (Deixe exatamente assim)
+ // Rotas de Avaliações 
 Route::get('/avaliacoes', [App\Http\Controllers\Api\AvaliacaoController::class, 'indexReact'])->name('avaliacoes.geral');
 Route::get('/avaliacoes/{id}', [App\Http\Controllers\Api\AvaliacaoController::class, 'indexReact'])->name('avaliacoes.index');
 Route::post('/api/avaliacoes', [App\Http\Controllers\Api\AvaliacaoController::class, 'store'])->name('avaliacoes.store');
+
+// Rota para Cliente denunciar um comentário
+Route::post('/avaliacoes/{id}/denunciar', [App\Http\Controllers\Api\AvaliacaoController::class, 'denunciar'])->name('avaliacoes.denunciar');
+
+// Rotas exclusivas do ADMIN da plataforma (Moderação)
+Route::middleware(['auth'])->group(function () {
+    Route::get('/admin/avaliacoes', [App\Http\Controllers\Api\AvaliacaoController::class, 'indexAdmin'])->name('admin.avaliacoes.index');
+  
+    Route::post('/admin/avaliacoes/{id}/apagar', [App\Http\Controllers\Api\AvaliacaoController::class, 'destroy'])->name('admin.avaliacoes.destroy');
+    });
+
+// Rotas de Avaliações (Anfitrião / Proprietário)
+Route::get('/anfitriao/avaliacoes', [App\Http\Controllers\Api\AvaliacaoController::class, 'indexAnfitriao'])->name('anfitriao.avaliacoes.index');
+Route::post('/anfitriao/avaliacoes/{id}/responder', [App\Http\Controllers\Api\AvaliacaoController::class, 'responder'])->name('anfitriao.avaliacoes.responder');
 
     Route::prefix('admin/financeiro')->group(function () {
         // Tela principal para monitorar tabelas de jobs, saldos e failed_jobs
@@ -414,6 +429,19 @@ Route::post('/webhooks/d4sign', [AgendamentoController::class, 'webhookD4Sign'])
     // Rotas de retorno do Mercado Pago
 Route::get('/pagamento/sucesso/{agendamento}', [ClienteAgendamentoController::class, 'pagamentoSucesso'])->name('pagamento.sucesso');
 Route::get('/pagamento/falha/{agendamento}', [ClienteAgendamentoController::class, 'pagamentoFalha'])->name('pagamento.falha');
+
+// Rota principal do Dashboard financeiro 
+  // 1. Rota que ABRE A TELA React (Inertia)
+    Route::get('/meu-extrato', function () {
+        return Inertia::render('Estabelecimentos/FinanceiroExtrato');
+    })->name('tela.financeiro.extrato');
+
+    // 2. Rota que DEVOLVE OS DADOS JSON para o Axios
+    Route::get('/financeiro/dashboard-dados', [FinanceiroController::class, 'dashboard'])->name('financeiro.dados');
+    
+    // 3. Rotas dos relatórios
+    Route::post('/financeiro/relatorio/semanal', [FinanceiroController::class, 'enviarRelatorioSemanal']);
+    Route::post('/financeiro/relatorio/mensal', [FinanceiroController::class, 'enviarRelatorioMensal']);
   
 Route::post('/agendamento/{id}/cancelar', [App\Http\Controllers\Api\ClienteAgendamentoController::class, 'cancelar'])->name('cliente.agendamento.cancelar');
 

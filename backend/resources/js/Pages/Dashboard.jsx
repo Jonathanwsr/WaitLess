@@ -16,7 +16,7 @@ import {
     WalletIcon, 
     BanknotesIcon, 
     CommandLineIcon,
-    ArrowUturnLeftIcon // <-- Ícone adicionado para o botão de Estornos
+    ArrowUturnLeftIcon
 } from '@heroicons/react/24/outline'; 
 
 export default function Dashboard({ auth, estabelecimentos = [], metricas = {} }) {
@@ -116,13 +116,22 @@ export default function Dashboard({ auth, estabelecimentos = [], metricas = {} }
                             </Link>
                         )}
 
-                        {/* 👉 NOVO BOTÃO: ESTORNOS (Adicionado ao lado do Painel Master) */}
+                        {/* 👉 BOTÃO DE ESTORNOS */}
                         <Link 
-                            href={route('estornos.index')} /* <-- Substitua pela sua rota de estornos correta */
+                            href={route('estornos.index')} 
                             className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-700 dark:text-gray-200 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition shadow-sm"
                         >
                             <ArrowUturnLeftIcon className="w-4 h-4 text-rose-500" />
                             Estornos
+                        </Link>
+
+                        {/* 👉 NOVO BOTÃO: AVALIAÇÕES (Dinâmico para Admin e Anfitrião) */}
+                        <Link 
+                            href={auth?.user?.papel === 'admin' || auth?.user?.role === 'admin' ? route('admin.avaliacoes.index') : route('anfitriao.avaliacoes.index')} 
+                            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-700 dark:text-gray-200 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition shadow-sm"
+                        >
+                            <StarIcon className="w-4 h-4 text-amber-500" />
+                            Avaliações
                         </Link>
 
                         <button className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-700 dark:text-gray-200 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition shadow-sm">

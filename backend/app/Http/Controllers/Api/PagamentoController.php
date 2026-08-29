@@ -176,10 +176,23 @@ class PagamentoController extends Controller
                                     'created_at' => now()
                                 ]);
 
-                                DB::table('pontos_usuario_estabelecimento')->updateOrInsert(
-                                    ['usuario_id' => $pagamento->usuario_id, 'estabelecimento_id' => $pagamento->estabelecimento_id],
-                                    ['total_pontos' => DB::raw("total_pontos + {$pontosGanhos}"), 'updated_at' => now(), 'created_at' => now()]
-                                );
+                                $registroPontos = DB::table('pontos_usuario_estabelecimento')
+                                    ->where('usuario_id', $pagamento->usuario_id)
+                                    ->where('estabelecimento_id', $pagamento->estabelecimento_id);
+
+                                if ($registroPontos->exists()) {
+                                    // Se já existe, apenas incrementa somando os pontos
+                                    $registroPontos->increment('total_pontos', $pontosGanhos, ['updated_at' => now()]);
+                                } else {
+                                    // Se é a primeira vez, insere o registro novo
+                                    DB::table('pontos_usuario_estabelecimento')->insert([
+                                        'usuario_id' => $pagamento->usuario_id,
+                                        'estabelecimento_id' => $pagamento->estabelecimento_id,
+                                        'total_pontos' => $pontosGanhos, // Valor inicial sem soma
+                                        'created_at' => now(),
+                                        'updated_at' => now()
+                                    ]);
+                                }
                             }
 
                             // 3. Dispara Notificação de Confirmação
