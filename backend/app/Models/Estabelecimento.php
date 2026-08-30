@@ -40,6 +40,14 @@ class Estabelecimento extends Model
         return $this->hasMany(Agendamento::class);
     }
 
+    public function produtos()
+{
+    // Se estiver 'promocao', mude para 'is_promocao'
+    return $this->hasMany(Produto::class)
+                ->orderBy('is_promocao', 'desc') 
+                ->orderBy('nome', 'asc');
+}
+
     public function descontos()
     {
         return $this->hasMany(Desconto::class);

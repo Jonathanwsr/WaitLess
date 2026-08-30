@@ -296,6 +296,26 @@ export default function Create() {
                                         <option value="Oficina Mecânica">Oficina Mecânica</option>
                                         <option value="Pet Shop">Pet Shop</option>
                                         <option value="Estética">Estética / Spa</option>
+                                        <option value="Locadora de Veículos">Locadora de Veículos</option>
+                                        <option value="Locadora de Carros de Luxo">Locadora de Carros de Luxo</option>
+<option value="Locadora de Carros Elétricos">Locadora de Carros Elétricos</option>
+<option value="Locadora de Utilitários e Vans">Locadora de Utilitários e Vans</option>
+<option value="Locadora de Caminhões e Carga">Locadora de Caminhões e Carga</option>
+<option value="Locadora de Motocicletas">Locadora de Motocicletas</option>
+<option value="Locadora de Veículos para Aplicativo">Locadora de Veículos para Aplicativo</option>
+<option value="Locadora de Veículos Blindados">Locadora de Veículos Blindados</option>
+<option value="Assinatura de Veículos a Longo Prazo">Assinatura de Veículos a Longo Prazo</option>
+<option value="Locadora de Quadriciclos e Off-Road">Locadora de Quadriciclos e Off-Road</option>
+<option value="Complexo Esportivo">Complexo Esportivo</option>
+<option value="Arena de Beach Tennis">Arena de Beach Tennis</option>
+<option value="Estúdio de Pilates e Funcional">Estúdio de Pilates e Funcional</option>
+<option value="Academia de Ginástica e Musculação">Academia de Ginástica e Musculação</option>
+<option value="Escola de Futebol e Futsal">Escola de Futebol e Futsal</option>
+<option value="Clube de Tênis e Squash">Clube de Tênis e Squash</option>
+<option value="Centro de Treinamento de Artes Marciais">Centro de Treinamento de Artes Marciais</option>
+<option value="Parque de Esportes Radicais e Skate">Parque de Esportes Radicais e Skate</option>
+<option value="Loja de Artigos Esportivos">Loja de Artigos Esportivos</option>
+<option value="Clube Social e Recreativo">Clube Social e Recreativo</option>
                                         <option value="Outros">Outros</option>
                                     </select>
                                     <InputError message={errors.ramo_atuacao} className="mt-2" />

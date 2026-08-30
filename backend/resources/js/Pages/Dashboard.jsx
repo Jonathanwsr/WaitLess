@@ -163,6 +163,14 @@ export default function Dashboard({ auth, estabelecimentos = [], metricas = {} }
                             Extrato Geral
                         </Link>
 
+                        {/* 👉 NOVO BOTÃO ADICIONADO AQUI CONFORME SOLICITADO */}
+                        <Link 
+                            href="/meus-produtos" 
+                            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 border border-transparent text-sm font-semibold text-white rounded-xl hover:bg-blue-700 transition shadow-sm"
+                        >
+                            Criar produtos
+                        </Link>
+
                         <Link 
                             href={route('estabelecimentos.create')}
                             className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-[#006837] text-white text-sm font-semibold rounded-xl hover:bg-[#00522b] transition shadow-sm"

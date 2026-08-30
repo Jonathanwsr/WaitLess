@@ -15,6 +15,9 @@ export default function Estornos({ auth }) {
     const [detalhesEstorno, setDetalhesEstorno] = useState(null);
     const [modalOpen, setModalOpen] = useState(false);
     
+    // Lightbox Moderno para Fotos
+    const [lightbox, setLightbox] = useState({ isOpen: false, images: [], currentIndex: 0 });
+    
     // Formulários de Ação
     const [motivoReprovacao, setMotivoReprovacao] = useState('');
     const [contestacaoDescricao, setContestacaoDescricao] = useState('');
@@ -150,7 +153,34 @@ export default function Estornos({ auth }) {
     };
 
     // =========================================================================
-    // 5. COMPONENTES VISUAIS E FORMATADORES
+    // 5. SISTEMA LIGHTBOX (GALERIA DE FOTOS MODERNA)
+    // =========================================================================
+    const openLightbox = (imagesArray, index) => {
+        setLightbox({ isOpen: true, images: imagesArray, currentIndex: index });
+    };
+
+    const closeLightbox = () => {
+        setLightbox({ isOpen: false, images: [], currentIndex: 0 });
+    };
+
+    const nextImage = (e) => {
+        e.stopPropagation();
+        setLightbox(prev => ({ 
+            ...prev, 
+            currentIndex: (prev.currentIndex + 1) % prev.images.length 
+        }));
+    };
+
+    const prevImage = (e) => {
+        e.stopPropagation();
+        setLightbox(prev => ({ 
+            ...prev, 
+            currentIndex: (prev.currentIndex - 1 + prev.images.length) % prev.images.length 
+        }));
+    };
+
+    // =========================================================================
+    // 6. COMPONENTES VISUAIS E FORMATADORES
     // =========================================================================
     const badgeStatus = (status) => {
         const cores = {
@@ -175,6 +205,13 @@ export default function Estornos({ auth }) {
         return new Date(dataStr).toLocaleString('pt-BR');
     };
 
+    // Filtros de Documentos Ativos no Modal
+    const clientDocs = detalhesEstorno?.documentos?.filter(d => d.usuario_id === detalhesEstorno.usuario_id) || [];
+    const clientDocUrls = clientDocs.map(d => d.arquivo);
+
+    const providerDocs = detalhesEstorno?.documentos?.filter(d => d.usuario_id === detalhesEstorno.prestador_id) || [];
+    const providerDocUrls = providerDocs.map(d => d.arquivo);
+
     return (
         <AuthenticatedLayout
             user={auth.user}
@@ -182,7 +219,6 @@ export default function Estornos({ auth }) {
         >
             <Head title="Estornos" />
 
-            {/* AQUI APLICAMOS A FONTE GLOBALMENTE PARA ESTE COMPONENTE (Ex: font-sans, font-serif, ou font-['SuaFonteAqui']) */}
             <div className="py-12 font-sans">
                 <div className="max-w-7xl mx-auto sm:px-6 lg:px-8">
                     
@@ -255,13 +291,25 @@ export default function Estornos({ auth }) {
                                                     <td className="px-6 py-4 whitespace-nowrap">
                                                         {badgeStatus(item.status)}
                                                     </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium flex justify-end gap-2 items-center">
                                                         <button 
                                                             onClick={() => abrirDetalhes(item.id)}
                                                             className="text-white hover:bg-indigo-700 bg-indigo-600 px-4 py-2 rounded-md font-semibold transition-colors shadow-sm"
                                                         >
-                                                            Abrir Processo
+                                                            Detalhes
                                                         </button>
+
+                                                        {/* BOTÃO DE BAIXAR O COMPROVANTE */}
+                                                        {item.status === 'ESTORNADO' && (
+                                                            <a 
+                                                                href={`/estornos/${item.id}/comprovante`}
+                                                                target="_blank" 
+                                                                rel="noopener noreferrer"
+                                                                className="text-green-800 hover:text-green-900 font-semibold border border-green-300 bg-green-100 hover:bg-green-200 px-4 py-2 rounded-md transition-colors shadow-sm inline-flex items-center"
+                                                            >
+                                                                Baixar PDF
+                                                            </a>
+                                                        )}
                                                     </td>
                                                 </tr>
                                             ))}
@@ -276,7 +324,6 @@ export default function Estornos({ auth }) {
 
             {/* MODAL DE DETALHES GIGANTE E BEM ESTRUTURADO */}
             {modalOpen && (
-                // A FONTE TAMBÉM É APLICADA AQUI NO MODAL
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900 bg-opacity-75 p-4 font-sans">
                     <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
                         
@@ -345,15 +392,25 @@ export default function Estornos({ auth }) {
                                             </p>
                                         </div>
 
-                                        {/* Fotos do Cliente */}
-                                        {detalhesEstorno.documentos?.filter(d => d.usuario_id === detalhesEstorno.usuario_id).length > 0 && (
+                                        {/* Fotos do Cliente Modernizadas */}
+                                        {clientDocs.length > 0 && (
                                             <div className="mt-4">
                                                 <span className="font-semibold text-red-900 block mb-2 text-sm">Evidências Anexadas:</span>
                                                 <div className="flex gap-2 overflow-x-auto pb-2">
-                                                    {detalhesEstorno.documentos.filter(d => d.usuario_id === detalhesEstorno.usuario_id).map(doc => (
-                                                        <a key={doc.id} href={doc.arquivo} target="_blank" rel="noopener noreferrer" className="block w-24 h-24 rounded-lg overflow-hidden border border-red-200 flex-shrink-0">
-                                                            <img src={doc.arquivo} alt="Evidência" className="w-full h-full object-cover hover:opacity-75 transition-opacity" />
-                                                        </a>
+                                                    {clientDocs.map((doc, index) => (
+                                                        <button 
+                                                            key={doc.id} 
+                                                            onClick={() => openLightbox(clientDocUrls, index)} 
+                                                            type="button"
+                                                            className="block w-24 h-24 rounded-lg overflow-hidden border border-red-200 flex-shrink-0 relative group"
+                                                        >
+                                                            <img src={doc.arquivo} alt="Evidência" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300" />
+                                                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                                                                <svg className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+                                                                </svg>
+                                                            </div>
+                                                        </button>
                                                     ))}
                                                 </div>
                                             </div>
@@ -377,15 +434,25 @@ export default function Estornos({ auth }) {
                                                 </div>
                                             ))}
 
-                                            {/* Fotos do Prestador */}
-                                            {detalhesEstorno.documentos?.filter(d => d.usuario_id === detalhesEstorno.prestador_id).length > 0 && (
+                                            {/* Fotos do Prestador Modernizadas */}
+                                            {providerDocs.length > 0 && (
                                                 <div className="mt-4">
                                                     <span className="font-semibold text-indigo-900 block mb-2 text-sm">Provas da Defesa:</span>
                                                     <div className="flex gap-2 overflow-x-auto pb-2">
-                                                        {detalhesEstorno.documentos.filter(d => d.usuario_id === detalhesEstorno.prestador_id).map(doc => (
-                                                            <a key={doc.id} href={doc.arquivo} target="_blank" rel="noopener noreferrer" className="block w-24 h-24 rounded-lg overflow-hidden border border-indigo-200 flex-shrink-0">
-                                                                <img src={doc.arquivo} alt="Defesa" className="w-full h-full object-cover hover:opacity-75 transition-opacity" />
-                                                            </a>
+                                                        {providerDocs.map((doc, index) => (
+                                                            <button 
+                                                                key={doc.id} 
+                                                                onClick={() => openLightbox(providerDocUrls, index)} 
+                                                                type="button"
+                                                                className="block w-24 h-24 rounded-lg overflow-hidden border border-indigo-200 flex-shrink-0 relative group"
+                                                            >
+                                                                <img src={doc.arquivo} alt="Defesa" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-300" />
+                                                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
+                                                                    <svg className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+                                                                    </svg>
+                                                                </div>
+                                                            </button>
                                                         ))}
                                                     </div>
                                                 </div>
@@ -409,10 +476,6 @@ export default function Estornos({ auth }) {
                                     </div>
 
                                     <hr className="border-gray-200" />
-
-                                    {/* ========================================================================= */}
-                                    {/* PAINÉIS DE AÇÃO DE ACORDO COM O PAPEL DO USUÁRIO */}
-                                    {/* ========================================================================= */}
 
                                     {/* 🪪 AÇÃO DO PRESTADOR (CONTESTAR) */}
                                     {isPrestador && detalhesEstorno.status === 'PENDENTE' && !detalhesEstorno.prestador_respondeu && (
@@ -457,7 +520,7 @@ export default function Estornos({ auth }) {
                                         </div>
                                     )}
 
-                                    {/* 👑 AÇÃO DO ADMINISTRADOR (JULGAR) - CÓDIGO RESTAURADO */}
+                                    {/* 👑 AÇÃO DO ADMINISTRADOR (JULGAR) */}
                                     {isAdmin && (detalhesEstorno.status === 'PENDENTE' || detalhesEstorno.status === 'EM_ANALISE') && (
                                         <div className="bg-gray-800 p-5 rounded-lg border border-gray-700 shadow-lg">
                                             <h4 className="font-black text-white mb-2 text-lg">Painel de Julgamento Administrativo</h4>
@@ -511,6 +574,58 @@ export default function Estornos({ auth }) {
                     </div>
                 </div>
             )}
+
+            {/* LIGHTBOX MODERNO (GALERIA FULLSCREEN) */}
+            {lightbox.isOpen && (
+                <div 
+                    className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm p-4 animate-in fade-in duration-200" 
+                    onClick={closeLightbox}
+                >
+                    {/* Botão Fechar */}
+                    <button 
+                        className="absolute top-6 right-6 text-white/70 hover:text-white transition-colors z-[110]" 
+                        onClick={closeLightbox}
+                    >
+                        <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+
+                    {/* Botão Anterior */}
+                    {lightbox.images.length > 1 && (
+                        <button 
+                            className="absolute left-4 md:left-10 text-white/70 hover:text-white bg-black/50 hover:bg-black/80 p-3 rounded-full z-[110] transition-all" 
+                            onClick={prevImage}
+                        >
+                            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7"></path></svg>
+                        </button>
+                    )}
+
+                    {/* Imagem Atual */}
+                    <img 
+                        src={lightbox.images[lightbox.currentIndex]} 
+                        className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl transition-transform duration-300" 
+                        alt="Visualização" 
+                        onClick={(e) => e.stopPropagation()} 
+                    />
+
+                    {/* Botão Próximo */}
+                    {lightbox.images.length > 1 && (
+                        <button 
+                            className="absolute right-4 md:right-10 text-white/70 hover:text-white bg-black/50 hover:bg-black/80 p-3 rounded-full z-[110] transition-all" 
+                            onClick={nextImage}
+                        >
+                            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7"></path></svg>
+                        </button>
+                    )}
+
+                    {/* Indicador Numérico */}
+                    {lightbox.images.length > 1 && (
+                        <div className="absolute bottom-8 text-white font-medium bg-black/60 px-5 py-2 rounded-full tracking-widest text-sm backdrop-blur">
+                            {lightbox.currentIndex + 1} / {lightbox.images.length}
+                        </div>
+                    )}
+                </div>
+            )}
+
         </AuthenticatedLayout>
     );
 }

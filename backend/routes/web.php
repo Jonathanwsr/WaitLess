@@ -10,6 +10,7 @@ use App\Http\Controllers\Api\PagamentoController;
 use App\Http\Controllers\Api\ServicoController;
 use App\Http\Controllers\Api\FinanceiroController;
 use App\Http\Controllers\Api\ClienteController;
+use App\Http\Controllers\Api\ProdutoController;
 use App\Http\Controllers\Api\FuncionarioCatalogoController;
 use App\Http\Controllers\Api\FuncionarioCarteiraController;
 use App\Http\Controllers\Api\CarrinhoController;
@@ -74,7 +75,9 @@ Route::get('/meu-painel/catalogo', [App\Http\Controllers\Api\FuncionarioCatalogo
 
 Route::get('/meu-painel/producao', [App\Http\Controllers\Api\FuncionarioCarteiraController::class, 'index'])->name('funcionario.carteira');
 Route::post('/meu-painel/producao/fechar-dia', [App\Http\Controllers\Api\FuncionarioCarteiraController::class, 'fecharDia'])->name('funcionario.fechar_dia');
-// assminaturas 
+
+
+// assinaturas 
 
 Route::post('/assinaturas/nova', [App\Http\Controllers\Api\AssinaturaController::class, 'assinar'])->name('assinatura.nova');
     Route::post('/assinaturas/cancelar', [App\Http\Controllers\Api\AssinaturaController::class, 'cancelar'])->name('assinatura.cancelar'); 
@@ -162,14 +165,73 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/financeiro/extrato/exportar', [ExtratoProviderController::class, 'exportar'])->name('provider.financeiro.export');
 });
 
+
+   //produtos 
+
+    // 1. Criar Produto
+   // 1. Criar Produto
+
+
+// 1. Criar Produto
+Route::post('/produtos', [ProdutoController::class, 'store'])->name('produtos.store');
+
+// 2. Editar Produto
+Route::put('/produtos/{id}', [ProdutoController::class, 'update'])->name('produtos.update');
+
+// 3. Apagar Produto de vez
+Route::delete('/produtos/{id}', [ProdutoController::class, 'destroy'])->name('produtos.destroy');
+
+// 4. Listar todos os meus produtos (Tela React/Inertia)
+Route::get('/meus-produtos', [ProdutoController::class, 'meusProdutos'])->name('produtos.meus');
+
+// 5. Listar todos os produtos de um estabelecimento (Geral)
+Route::get('/estabelecimentos/{estabelecimento_id}/produtos', [ProdutoController::class, 'produtosPorEstabelecimento'])->name('produtos.estabelecimento');
+
+// 6. Listar produtos visíveis para vincular ao cliente (MÉTODO CORRIGIDO)
+Route::get('/estabelecimentos/{estabelecimento_id}/produtos/vinculo', [ProdutoController::class, 'produtosDisponiveisParaCliente'])->name('produtos.vinculo');
+
+// 7. Listar promoções e produtos exclusivos Premium (MÉTODO CORRIGIDO)
+Route::get('/estabelecimentos/{estabelecimento_id}/produtos/vinculo-premium', [ProdutoController::class, 'produtosExclusivosPremium'])->name('produtos.vinculo.premium');
+Route::get('/estabelecimentos/{id}/produtos/premium', [ProdutoController::class, 'produtosExclusivosPremium'])->name('produtos.premium');
+
+// 8. Adicionar produto a um agendamento/aluguel
+Route::post('/produtos/{produto_id}/vincular', [ProdutoController::class, 'adicionarAoAgendamento'])->name('produtos.vincular');
+
+// 9. Repor estoque
+Route::patch('/produtos/{id}/estoque', [ProdutoController::class, 'adicionarEstoque'])->name('produtos.estoque.adicionar');
+
+// 10. Vincular direto na tabela itens_aluguel
+Route::post('/produtos/vincular', [ProdutoController::class, 'vincularProduto'])->name('produtos.vincular_cliente');
+
+// Buscar produtos via JSON
+Route::get('/meus-produtos/json', [ProdutoController::class, 'meusProdutosJson'])->name('produtos.meus.json');
+
+
+
+// ========================================================
+// ROTAS PÚBLICAS OU MISTAS (O Controller checa internamente)
+// ========================================================
+
+// Vitrine do Cliente na hora de agendar (Mostra tudo se for Premium, ou esconde os VIPs se for cliente comum/deslogado)
+Route::get('/estabelecimentos/{id}/produtos/cliente', [ProdutoController::class, 'produtosDisponiveisParaCliente'])->name('produtos.cliente');
+
+// Lista crua de produtos do estabelecimento (Uso geral)
+Route::get('/estabelecimentos/{id}/produtos', [ProdutoController::class, 'produtosPorEstabelecimento'])->name('produtos.estabelecimento');
+
 // estornos
 Route::get('/estornos', [EstornoController::class, 'index'])->name('estornos.index');
 Route::get('/pagamentos/elegiveis-estorno', [EstornoController::class, 'elegiveisEstorno']);
 
 // Ação do Prestador
     Route::post('/api/estornos/{id}/contestar', [EstornoController::class, 'contestar']);
+
+    // comprovante PDF do estorno
+    Route::get('/estornos/{id}/comprovante', [\App\Http\Controllers\Api\EstornoController::class, 'gerarComprovante']);
+
+
+
     
-    // Rotas exclusivas do Administrador
+    // fRotas exclusivas do Administrador
     Route::get('/api/admin/estornos', [EstornoController::class, 'adminIndex']);
     Route::post('/api/admin/estornos/{id}/aprovar', [EstornoController::class, 'adminAprovar']);
     Route::post('/api/admin/estornos/{id}/reprovar', [EstornoController::class, 'adminReprovar']);
@@ -181,6 +243,9 @@ Route::post('/api/estornos/{pagamento_id}/solicitar', [EstornoController::class,
 Route::prefix('api/estornos')->middleware(['auth'])->group(function () {
     // Listar as solicitações via Axios (Para alimentar a tabela no React)
     Route::get('/lista', [EstornoController::class, 'minhasSolicitacoes']);
+
+
+ 
     
     
     // Demais rotas
@@ -235,6 +300,7 @@ Route::get('/estabelecimentos/{estabelecimento}/fila', [App\Http\Controllers\Api
 
     // Agendamentos
     Route::put('/agendamentos/{agendamento}/status', [AgendamentoController::class, 'updateStatus'])->name('agendamentos.status.update');
+
     // ========================================================
     // 💎 GESTÃO DE ASSINATURAS E PLANOS
     // ========================================================
@@ -250,7 +316,7 @@ Route::get('/estabelecimentos/{estabelecimento}/fila', [App\Http\Controllers\Api
     // Atualização de dados financeiros (Ex: Endereço, travado para 1x ao mês)
     Route::put('/minha-assinatura/dados-financeiros', [AssinaturaController::class, 'atualizarDadosFinanceiros'])->name('assinaturas.dados_financeiros');
 
-    Route::get('/minha-assinatura/status', [AssinaturaController::class, 'status'])->name('assinatura.status');
+    
 
     Route::prefix('admin')->group(function () {
         // Listagem de todas as assinaturas ativas/canceladas/pendentes da plataforma
@@ -318,6 +384,7 @@ Route::get('/estabelecimentos/{estabelecimento}/fila', [App\Http\Controllers\Api
 
      // Agrupando as rotas que precisam de autenticação
    Route::get('/favoritos', [FavoritoController::class, 'index'])->name('cliente.favoritos');
+  
 Route::post('/favoritos/toggle', [FavoritoController::class, 'toggleFavorito'])->name('api.favoritos.toggle');
 
 // comprovante PDF do agendamento

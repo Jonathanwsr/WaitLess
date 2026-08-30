@@ -346,13 +346,27 @@ export default function MeusEstornos({ auth }) {
                                                     <td className="px-6 py-4 whitespace-nowrap">
                                                         {renderStatusBadge(estorno.status)}
                                                     </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-center">
-                                                        <button 
-                                                            onClick={() => abrirDetalhes(estorno)}
-                                                            className="text-blue-600 hover:text-blue-800 font-bold text-sm bg-blue-50 hover:bg-blue-100 px-4 py-2 rounded-lg transition-colors"
-                                                        >
-                                                            Detalhes
-                                                        </button>
+                                                    <td className="px-6 py-4 whitespace-nowrap">
+                                                        <div className="flex items-center justify-center gap-2">
+                                                            <button 
+                                                                onClick={() => abrirDetalhes(estorno)}
+                                                                className="text-blue-600 hover:text-blue-800 font-bold text-sm bg-blue-50 hover:bg-blue-100 px-4 py-2 rounded-lg transition-colors"
+                                                            >
+                                                                Detalhes
+                                                            </button>
+
+                                                            {/* BOTÃO DE BAIXAR ADICIONADO AQUI */}
+                                                            {estorno.status === 'ESTORNADO' && (
+                                                                <a 
+                                                                    href={`/estornos/${estorno.id}/comprovante`}
+                                                                    target="_blank" 
+                                                                    rel="noopener noreferrer"
+                                                                    className="text-emerald-700 hover:text-emerald-900 font-bold text-sm bg-emerald-50 hover:bg-emerald-100 px-4 py-2 rounded-lg transition-colors"
+                                                                >
+                                                                    Baixar PDF
+                                                                </a>
+                                                            )}
+                                                        </div>
                                                     </td>
                                                 </tr>
                                             );
@@ -435,7 +449,6 @@ export default function MeusEstornos({ auth }) {
                                             <div key={index} className="relative w-20 h-20 rounded-xl overflow-hidden border border-slate-200 group shadow-sm">
                                                 <img src={src} alt="Preview" className="w-full h-full object-cover" />
                                                 
-                                                {/* Botão de remoção aprimorado */}
                                                 <button
                                                     type="button"
                                                     onClick={() => removerImagem(index)}

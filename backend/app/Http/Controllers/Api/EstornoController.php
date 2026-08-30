@@ -387,7 +387,8 @@ class EstornoController extends Controller
                           ->whereNotIn('id', function ($sub) {
                               $sub->select('pagamento_id')
                                   ->from('estornos')
-                                  ->whereIn('status', ['PENDENTE', 'APROVADO', 'CONTESTADO']);
+                                  // 🐛 AJUSTE: Adicionados os status que bloqueiam a exibição na tela de solicitação
+                                  ->whereIn('status', ['PENDENTE', 'AGUARDANDO_DOCUMENTOS', 'EM_ANALISE', 'APROVADO', 'ESTORNADO', 'CONTESTADO']);
                           });
                 })
                 ->latest('data_agendamento')
@@ -446,5 +447,25 @@ class EstornoController extends Controller
             \Illuminate\Support\Facades\Log::error('Erro em elegiveisEstorno: ' . $e->getMessage());
             return response()->json(['error' => 'Falha ao carregar itens elegíveis.', 'details' => $e->getMessage()], 500);
         }
+    }
+
+
+    public function gerarComprovante($id)
+    {
+        $estorno = Estorno::with(['cliente', 'prestador', 'estabelecimento', 'pagamento'])->findOrFail($id);
+
+        $user = \Illuminate\Support\Facades\Auth::user();
+        $isAdmin = in_array(strtolower($user->papel), ['admin', 'superadmin', 'administrador']);
+        
+        // Proteção: Só o dono do estabelecimento, o cliente ou o admin podem ver o comprovante
+        if (!$isAdmin && $estorno->usuario_id !== $user->id && $estorno->prestador_id !== $user->id) {
+            abort(403, 'Acesso negado.');
+        }
+
+        if ($estorno->status !== 'ESTORNADO') {
+            abort(404, 'O comprovante só fica disponível após o estorno ser concluído.');
+        }
+
+        return view('pdfs.estorno', compact('estorno'));
     }
 }

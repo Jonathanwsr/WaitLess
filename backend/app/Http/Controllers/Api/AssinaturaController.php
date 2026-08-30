@@ -9,6 +9,7 @@ use App\Services\PlanoService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Inertia\Inertia;
 use Carbon\Carbon;
 
 class AssinaturaController extends Controller
@@ -186,20 +187,49 @@ class AssinaturaController extends Controller
      * 🔵 STATUS DA ASSINATURA (Web)
      * Retorna a view do Inertia com os dias faltantes e dados da assinatura.
      */
+   /**
+     * 🔵 STATUS DA ASSINATURA (Web)
+     * Retorna a view do Inertia com os dias faltantes e dados da assinatura direto do banco.
+     */
     public function status()
     {
         $user = Auth::user();
-        $assinatura = $user->assinaturaAtiva ?? $user->assinaturas()->latest()->first();
         
-        $expiraEm = $user->plano_expira_em;
-        $diasRestantes = $expiraEm ? \Carbon\Carbon::now()->diffInDays($expiraEm, false) : 0;
-        $isAtivo = $expiraEm && $expiraEm->isFuture();
+        // 1. Busca a assinatura mais recente do utilizador diretamente no banco de dados
+        $assinatura = Assinatura::where('user_id', $user->id)
+                                ->latest()
+                                ->first();
+        
+        // 2. Valores padrão caso o utilizador não tenha nenhuma assinatura
+        $planoAtual = 'gratuito';
+        $statusAcesso = 'inativo';
+        $expiraEm = null;
+        $diasRestantes = 0;
 
+        // 3. Se encontrou uma assinatura no banco, atualiza as variáveis usando a coluna `data_vencimento`
+        if ($assinatura) {
+            $planoAtual = $assinatura->nome_plano;
+            
+            if ($assinatura->data_vencimento) {
+                // Converte a data do banco para objeto Carbon
+                $expiraEm = Carbon::parse($assinatura->data_vencimento);
+                
+                // Calcula os dias restantes
+                $diasRestantes = Carbon::now()->diffInDays($expiraEm, false);
+                
+                // O acesso está ativo se a data de vencimento for no futuro E o status for 'ativa'
+                if ($expiraEm->isFuture() && $assinatura->status === 'ativa') {
+                    $statusAcesso = 'ativo';
+                }
+            }
+        }
+
+        // 4. Monta o array de resposta
         $statusAssinatura = [
-            'plano_atual' => $user->plano_assinatura ?? 'gratuito',
-            'status_acesso' => $isAtivo ? 'ativo' : 'inativo',
-            'expira_em' => $expiraEm ? $expiraEm->format('d/m/Y') : null,
-            'dias_restantes' => max(0, (int) $diasRestantes),
+            'plano_atual'     => $planoAtual,
+            'status_acesso'   => $statusAcesso,
+            'expira_em'       => $expiraEm ? $expiraEm->format('d/m/Y') : null,
+            'dias_restantes'  => max(0, (int) $diasRestantes), // max(0) evita dias negativos
             'detalhes_fatura' => $assinatura
         ];
 
@@ -212,4 +242,6 @@ class AssinaturaController extends Controller
             'statusAssinatura' => $statusAssinatura
         ]);
     }
+
+    
 }

@@ -45,4 +45,10 @@ function itemAluguel()
     return $this->belongsTo(ItemAluguel::class);
 }
 
+public function produtos()
+{
+  
+    return $this->hasMany(Produto::class, 'agendamento_id');
+}
+
 }

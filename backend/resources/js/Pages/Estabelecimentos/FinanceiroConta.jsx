@@ -288,7 +288,16 @@ export default function FinanceiroConta({ auth, userToken }) {
             <div className="space-y-6">
               
               <div className="bg-emerald-50 dark:bg-emerald-950/40 p-4 rounded-2xl font-medium border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-sm sm:text-base shadow-sm">
-                💡 Esses são os dados de sua conta no provedor financeiro, agora você pode receber pagamentos. Comece a criar seus serviços ou reservas.
+             
+
+Sua conta está pronta para receber pagamentos!
+Seus dados no provedor financeiro foram configurados com sucesso.
+
+Comece a vender: Crie agora mesmo seus serviços ou agendamentos de reservas.
+
+Acesse sua carteira: Faça login no site ou aplicativo do Asaas utilizando o seu e-mail cadastrado.
+
+Acompanhe seu saldo: Gerencie todos os seus recebimentos diretamente pelo painel.
               </div>
 
               <div className="bg-white dark:bg-gray-800 p-6 sm:p-8 border border-gray-100 dark:border-gray-700 rounded-2xl shadow-sm space-y-8">
@@ -397,7 +406,7 @@ export default function FinanceiroConta({ auth, userToken }) {
             <div className="bg-white dark:bg-gray-800 p-6 sm:p-8 border border-gray-100 dark:border-gray-700 rounded-2xl shadow-sm">
               <h3 className="text-xl font-bold mb-2 text-gray-900 dark:text-white">Perfil Financeiro</h3>
               <p className="text-sm text-gray-500 dark:text-gray-400 mb-8">
-                Preencha seus dados para habilitar o recebimento automático na sua conta.
+                Preencha seus dados para habilitar o recebimento automático na sua conta da assas .
               </p>
               
               {message.text && (
