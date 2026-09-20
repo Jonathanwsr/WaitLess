@@ -6,11 +6,36 @@ use App\Http\Controllers\Controller;
 use App\Models\Estabelecimento;
 use App\Models\Agendamento;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB; // 👉 Importante para buscar os itens
 use Inertia\Inertia;
 use Carbon\Carbon;
 
 class FilaController extends Controller
 {
+    /**
+     * Rota "/fila" (sem estabelecimento na URL) usada quando o usuário
+     * seleciona "Todos os locais" no seletor da tela de Fila. Não existe uma
+     * visão agregada entre estabelecimentos ainda, então redireciona para a
+     * fila do primeiro local vinculado ao usuário (dono, sócio, gerente ou
+     * funcionário) — evita o erro fatal de método inexistente que existia aqui.
+     */
+    public function index(Request $request)
+    {
+        $user = $request->user();
+
+        if (in_array($user->papel, ['atendente', 'funcionario'])) {
+            $estabelecimentoId = \App\Models\Funcionario::where('usuario_id', $user->id)->value('estabelecimento_id');
+        } else {
+            $estabelecimentoId = $user->estabelecimentos()->value('estabelecimentos.id');
+        }
+
+        if (!$estabelecimentoId) {
+            return redirect()->route('dashboard')->withErrors(['error' => 'Nenhum estabelecimento vinculado à sua conta.']);
+        }
+
+        return redirect()->route('estabelecimentos.fila', $estabelecimentoId);
+    }
+
     public function show(Request $request, Estabelecimento $estabelecimento)
     {
         $funcionarios = $estabelecimento->funcionarios()->where('ativo', true)->get(['id', 'nome', 'cargo']);
@@ -35,6 +60,19 @@ class FilaController extends Controller
 
         $perPage = $request->get('per_page', 10);
         $agendamentos = $query->paginate($perPage)->withQueryString();
+
+        // 👉 INJEÇÃO: Busca os Produtos Extras para a listagem da Fila
+        $agendamentos->getCollection()->transform(function ($agendamento) {
+            $extras = DB::table('itens_aluguel')
+                ->where('agendamento_id', $agendamento->id)
+                ->get();
+                
+            $agendamento->produtos_extras = $extras;
+            $agendamento->valor_total_extras = $extras->sum(function($item) {
+                return $item->valor_diaria * $item->quantidade; // valor_diaria salva o preço do produto no carrinho
+            });
+            return $agendamento;
+        });
 
         return Inertia::render('Estabelecimentos/Fila', [
             'estabelecimento' => $estabelecimento,
@@ -81,30 +119,62 @@ class FilaController extends Controller
             ->with(['agendamentos' => function($query) use ($strInicio, $strFim) {
                 $query->whereBetween('data_agendamento', [$strInicio, $strFim])
                       ->whereIn('status', ['pendente', 'confirmado', 'concluido', 'finalizado'])
-                      ->with(['usuario', 'servico'])
+                      ->with(['usuario', 'servico', 'pagamento', 'finalizadoPor:id,name'])
                       ->orderBy('data_agendamento', 'asc')
                       ->orderBy('hora_agendamento', 'asc');
             }])
             ->get();
 
+        // 👉 INJEÇÃO: Busca os Produtos Extras para os agendamentos já designados aos funcionários
+        foreach ($funcionarios as $funcionario) {
+            $funcionario->agendamentos->transform(function ($agendamento) {
+                $extras = DB::table('itens_aluguel')->where('agendamento_id', $agendamento->id)->get();
+                $agendamento->produtos_extras = $extras;
+                $agendamento->valor_total_extras = $extras->sum(function($item) {
+                    return $item->valor_diaria * $item->quantidade;
+                });
+                return $agendamento;
+            });
+        }
+
         $semFuncionario = Agendamento::where('estabelecimento_id', $estabelecimento->id)
             ->whereBetween('data_agendamento', [$strInicio, $strFim])
             ->whereNull('funcionario_id')
             ->whereIn('status', ['pendente', 'confirmado'])
-            ->with(['usuario', 'servico'])
+            ->with(['usuario', 'servico', 'pagamento'])
             ->orderBy('data_agendamento', 'asc')
             ->orderBy('hora_agendamento', 'asc')
             ->get();
 
+        // 👉 INJEÇÃO: Busca os Produtos Extras para agendamentos na fila de espera (Sem funcionário)
+        $semFuncionario->transform(function ($agendamento) {
+            $extras = DB::table('itens_aluguel')->where('agendamento_id', $agendamento->id)->get();
+            $agendamento->produtos_extras = $extras;
+            $agendamento->valor_total_extras = $extras->sum(function($item) {
+                return $item->valor_diaria * $item->quantidade;
+            });
+            return $agendamento;
+        });
+
         // 3. DADOS PARA O RELATÓRIO E PDF (Paginados)
         $queryRelatorio = Agendamento::where('estabelecimento_id', $estabelecimento->id)
             ->whereBetween('data_agendamento', [$strInicio, $strFim])
-            ->with(['usuario', 'servico', 'funcionario'])
+            ->with(['usuario', 'servico', 'funcionario', 'pagamento', 'finalizadoPor:id,name'])
             ->orderBy('data_agendamento', 'desc')
             ->orderBy('hora_agendamento', 'desc');
             
         $perPage = $request->get('per_page', 15);
         $agendamentosPaginados = $queryRelatorio->paginate($perPage)->withQueryString();
+
+        // 👉 INJEÇÃO: Busca os Produtos Extras para o formato de Tabela/Relatório PDF
+        $agendamentosPaginados->getCollection()->transform(function ($agendamento) {
+            $extras = DB::table('itens_aluguel')->where('agendamento_id', $agendamento->id)->get();
+            $agendamento->produtos_extras = $extras;
+            $agendamento->valor_total_extras = $extras->sum(function($item) {
+                return $item->valor_diaria * $item->quantidade;
+            });
+            return $agendamento;
+        });
 
         return Inertia::render('Estabelecimentos/AgendaFuncionarios', [
             'estabelecimento' => $estabelecimento,

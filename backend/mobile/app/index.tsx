@@ -45,7 +45,7 @@ export default function TelaEntrada() {
         } else if (['funcionario', 'admin'].includes(papelUsuario)) {
           router.replace('/src/funcionario/Painel-funcioanario');
         } else {
-          router.replace('/src/screens/Home');
+          router.replace('/(tabs)/home');
         }
       } else {
         // Se não tiver token, para de carregar e mostra a tela de entrada normal

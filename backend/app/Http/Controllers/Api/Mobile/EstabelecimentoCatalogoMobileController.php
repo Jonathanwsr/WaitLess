@@ -8,9 +8,11 @@ use App\Models\Estabelecimento;
 use App\Models\Servico;
 use App\Models\Agendamento;
 use App\Models\Pagamento;
+use App\Models\Produto;
 use App\Services\PagamentoService;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Exception;
 
 class EstabelecimentoCatalogoMobileController extends Controller
@@ -47,6 +49,50 @@ class EstabelecimentoCatalogoMobileController extends Controller
 
         } catch (Exception $e) {
             return response()->json(['error' => 'Estabelecimento não encontrado.'], 404);
+        }
+    }
+
+    /**
+     * 👉 PRODUTOS EXTRAS DISPONÍVEIS PARA ADICIONAR AO PEDIDO (estilo iFood)
+     * Equivalente mobile de Api\ProdutoController::produtosDisponiveisParaCliente
+     * — mesma regra (estoque disponível, atrelado a reservas, respeita
+     * benefício premium), servida numa rota autenticada por Sanctum.
+     */
+    public function listarProdutos($estabelecimentoId)
+    {
+        try {
+            $usuario = Auth::user();
+            $planosPremium = ['premium', 'premium_plus', 'pro'];
+            $isPremium = in_array(strtolower($usuario->plano_assinatura ?? ''), $planosPremium);
+
+            $query = Produto::where('estabelecimento_id', $estabelecimentoId)
+                ->where('estoque_disponivel', '>', 0)
+                ->where('atrelado_reservas', true);
+
+            if (!$isPremium) {
+                $query->where('somente_premium', false);
+            }
+
+            $produtos = $query->orderBy('is_promocao', 'desc')
+                ->orderBy('nome', 'asc')
+                ->get(['id', 'nome', 'descricao', 'valor_final', 'valor_normal', 'is_promocao', 'fotos', 'estoque_disponivel'])
+                ->map(function (Produto $produto) {
+                    $fotos = Produto::decodeFotos($produto->fotos);
+                    return [
+                        'id' => $produto->id,
+                        'nome' => $produto->nome,
+                        'descricao' => $produto->descricao,
+                        'valor' => (float) $produto->valor_final,
+                        'valor_original' => $produto->is_promocao ? (float) $produto->valor_normal : null,
+                        'foto' => $fotos[0] ?? null,
+                        'estoque_disponivel' => $produto->estoque_disponivel,
+                    ];
+                });
+
+            return response()->json(['status' => 'success', 'data' => $produtos]);
+        } catch (Exception $e) {
+            Log::error('Erro ao listar produtos extras (mobile): ' . $e->getMessage());
+            return response()->json(['error' => 'Não conseguimos carregar os itens adicionais agora.'], 500);
         }
     }
 

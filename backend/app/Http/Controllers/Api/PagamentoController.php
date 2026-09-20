@@ -33,16 +33,14 @@ class PagamentoController extends Controller
             // 👉 CASO 1: O CLIENTE ESCOLHEU PAGAR PRESENCIALMENTE (NO LOCAL)
             // =========================================================================
             if ($request->metodo_pagamento === 'local') {
-                $codigoPin = str_pad(mt_rand(0, 9999), 4, '0', STR_PAD_LEFT);
+                
+                // Chama o service que gera o PIN, envia e-mail e CALCULA OS 12% (se não for premium)
+                $pagamentoService->processarPagamentoLocal($agendamento);
 
+                // Assegura que o status geral do agendamento fique como 'confirmado' para entrar na fila
                 $agendamento->update([
-                    'status_pagamento'   => 'local', 
-                    'status'             => 'confirmado', // Entra na fila para ser atendido
-                    'codigo_verificacao' => $codigoPin,
+                    'status' => 'confirmado'
                 ]);
-
-                // Dispara e-mails simultâneos via Brevo (Cliente recebe o PIN, Dono recebe o aviso de reserva)
-                $pagamentoService->enviarEmailNotificacao($agendamento, 'local');
 
                 return response()->json([
                     'status'  => 'success',
@@ -89,10 +87,22 @@ class PagamentoController extends Controller
         $event = $request->input('event');
         $paymentData = $request->input('payment');
 
+        // 👉 CORREÇÃO AQUI: Verifica se o payload realmente tem os dados de 'payment'.
+        // Webhooks de assinaturas (como SUBSCRIPTION_CREATED) vêm com 'subscription' em vez de 'payment'.
+        // Retornar 200 limpa o erro no Asaas e faz ele parar de tentar reenviar esse payload.
+        if (!$paymentData || !isset($paymentData['id'])) {
+            return response()->json(['message' => 'Evento ignorado neste controller. Não possui array payment válido.'], 200);
+        }
+
         $pagamento = Pagamento::where('id_transacao_gateway', $paymentData['id'])->first();
 
+        // Não achar o pagamento localmente não é erro do nosso lado (pode ser
+        // webhook de teste do Asaas, ou cobrança de outro ambiente). Devolver
+        // 4xx/5xx aqui faz o Asaas ficar reenviando e penalizando o endpoint
+        // até desativar o webhook — então só logamos e confirmamos o recebimento.
         if (!$pagamento) {
-            return response()->json(['error' => 'Pagamento local não encontrado'], 404);
+            Log::warning("Webhook Asaas: pagamento local não encontrado para id_transacao_gateway={$paymentData['id']}");
+            return response()->json(['message' => 'Pagamento local não encontrado, evento ignorado.'], 200);
         }
 
         try {
@@ -131,7 +141,7 @@ class PagamentoController extends Controller
                             } elseif ($pagamento->aluguel_id) {
                                 $entidadeRelacionada = Aluguel::find($pagamento->aluguel_id);
                                 if ($entidadeRelacionada) {
-                                    $entidadeRelacionada->update(['status' => 'pago']);
+                                    $entidadeRelacionada->update(['status' => 'confirmado']);
                                 }
                             }
 
@@ -211,6 +221,18 @@ class PagamentoController extends Controller
                         $pagamento->update(['status' => 'vencido']);
                         if ($pagamento->agendamento_id) {
                             Agendamento::where('id', $pagamento->agendamento_id)->update(['status' => 'cancelado', 'status_pagamento' => 'cancelado']);
+                            
+                            // 👉 DEVOLVE O ESTOQUE DOS PRODUTOS CASO O CLIENTE NÃO PAGUE O BOLETO/PIX
+                            $itens = DB::table('itens_aluguel')->where('agendamento_id', $pagamento->agendamento_id)->get();
+                            foreach($itens as $item) {
+                                if (isset($item->produto_id) && $item->produto_id) {
+                                    DB::table('produtos')->where('id', $item->produto_id)->increment('estoque_disponivel', $item->quantidade);
+                                    if (\Illuminate\Support\Facades\Schema::hasColumn('produtos', 'quantidade_vendida')) {
+                                        DB::table('produtos')->where('id', $item->produto_id)->decrement('quantidade_vendida', $item->quantidade);
+                                    }
+                                }
+                            }
+
                         } elseif ($pagamento->aluguel_id) {
                             Aluguel::where('id', $pagamento->aluguel_id)->update(['status' => 'cancelado']);
                         }
@@ -218,12 +240,23 @@ class PagamentoController extends Controller
 
                     case 'PAYMENT_REFUNDED':
                         // O bloco verifica se o status não é estornado para evitar rodar em duplicidade
-                        // caso o ClienteAgendamentoController já tenha feito o estorno no banco de dados.
                         if ($pagamento->status !== 'estornado') {
                             $pagamento->update(['status' => 'estornado']);
                             
                             if ($pagamento->agendamento_id) {
                                 Agendamento::where('id', $pagamento->agendamento_id)->update(['status' => 'cancelado', 'status_pagamento' => 'estornado']);
+                                
+                                // 👉 DEVOLVE O ESTOQUE DOS PRODUTOS QUANDO HÁ ESTORNO (REFUND)
+                                $itens = DB::table('itens_aluguel')->where('agendamento_id', $pagamento->agendamento_id)->get();
+                                foreach($itens as $item) {
+                                    if (isset($item->produto_id) && $item->produto_id) {
+                                        DB::table('produtos')->where('id', $item->produto_id)->increment('estoque_disponivel', $item->quantidade);
+                                        if (\Illuminate\Support\Facades\Schema::hasColumn('produtos', 'quantidade_vendida')) {
+                                            DB::table('produtos')->where('id', $item->produto_id)->decrement('quantidade_vendida', $item->quantidade);
+                                        }
+                                    }
+                                }
+
                             } elseif ($pagamento->aluguel_id) {
                                 Aluguel::where('id', $pagamento->aluguel_id)->update(['status' => 'cancelado']);
                             }

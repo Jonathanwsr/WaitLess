@@ -23,22 +23,31 @@ class AsaasAssinaturaService
      */
     public function criarCobranca(Assinatura $assinatura, User $user, array $planoData, string $metodo)
     {
-        $billingType = $metodo === 'pix' ? 'PIX' : 'CREDIT_CARD';
+        // Converte o método recebido do frontend para o padrão da API do Asaas (apenas PIX ou Cartão de Crédito)
+        $billingType = match ($metodo) {
+            'pix'         => 'PIX',
+            'credit_card' => 'CREDIT_CARD',
+            default       => 'PIX'
+        };
         
         $payload = [
-            'customer' => $user->asaas_customer_id,
+            'customer'    => $user->asaas_customer_id,
             'billingType' => $billingType,
-            'value' => $planoData['valor'],
+            'value'       => $planoData['valor'],
+            'description' => "Assinatura Lokyva: Plano " . strtoupper($planoData['nome'])
         ];
 
         // Se for anual ou mensal, cria uma "Subscription"
         if ($planoData['ciclo'] !== 'avulso') {
+            // Identifica se o ciclo é Anual (YEARLY) ou Mensal (MONTHLY)
             $payload['cycle'] = $planoData['ciclo'] === 'anual' ? 'YEARLY' : 'MONTHLY';
-            $payload['nextDueDate'] = now()->format('Y-m-d');
+            
+            // Define o início da cobrança dinamicamente (7 dias de trial ou agendamento de mudança de plano)
+            $payload['nextDueDate'] = $planoData['data_cobranca']->format('Y-m-d');
             $endpoint = '/subscriptions';
         } else {
-            // Se for "Flex de 1 mês" operando como operadora (pré-pago avulso)
-            $payload['dueDate'] = now()->format('Y-m-d');
+            // Se for pré-pago avulso
+            $payload['dueDate'] = $planoData['data_cobranca']->format('Y-m-d');
             $endpoint = '/payments';
         }
 
@@ -47,7 +56,8 @@ class AsaasAssinaturaService
         ])->post($this->url . $endpoint, $payload);
 
         if ($response->failed()) {
-            throw new Exception("Falha no gateway: " . ($response->json('errors')[0]['description'] ?? 'Erro desconhecido.'));
+            $erroAsaas = $response->json('errors')[0]['description'] ?? 'Erro de comunicação desconhecido com o Asaas.';
+            throw new Exception("Falha no gateway Asaas: " . $erroAsaas);
         }
 
         return $response->json();
@@ -62,7 +72,10 @@ class AsaasAssinaturaService
             'access_token' => $this->key,
         ])->delete("{$this->url}/subscriptions/{$gatewayId}");
 
-        if ($response->failed()) throw new Exception("Falha ao cancelar no Asaas.");
+        if ($response->failed()) {
+            throw new Exception("Falha ao tentar cancelar a assinatura diretamente no Asaas.");
+        }
+        
         return true;
     }
 }

@@ -1,23 +1,47 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { ShieldCheckIcon, MagnifyingGlassIcon, TrashIcon } from '@heroicons/react/24/solid';
+import { ShieldCheckIcon, MagnifyingGlassIcon, TrashIcon, LockClosedIcon, CheckCircleIcon } from '@heroicons/react/24/solid';
+import { SignalIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { useState } from 'react';
 
 export default function AssinaturasAdmin({ auth, assinaturas }) {
     const { flash = {}, errors } = usePage().props;
-    
-   
+
+
     const [processingId, setProcessingId] = useState(null);
+    const [consultaAsaas, setConsultaAsaas] = useState(null);
+
+    const verStatusAsaas = async (id) => {
+        setConsultaAsaas({ loading: true });
+        try {
+            const res = await fetch(route('admin.assinaturas.asaas', id));
+            const json = await res.json();
+            setConsultaAsaas(json);
+        } catch (e) {
+            setConsultaAsaas({ erro: true });
+        }
+    };
+
+    const executarAcao = (id, acao, confirmacao) => {
+        if (confirmacao && !window.confirm(confirmacao)) return;
+
+        setProcessingId(id);
+        router.post(route('admin.assinaturas.acao', id), { acao }, {
+            preserveScroll: true,
+            onFinish: () => setProcessingId(null),
+        });
+    };
 
     const cancelarAssinatura = (id, nomeUser) => {
-        if (window.confirm(`ATENÇÃO: Deseja realmente CANCELAR a assinatura de ${nomeUser}? A cobrança no cartão será interrompida imediatamente.`)) {
-            setProcessingId(id);
-            
-            router.post(route('admin.assinaturas.cancelar', id), {}, {
-                preserveScroll: true,
-                onFinish: () => setProcessingId(null), 
-            });
-        }
+        executarAcao(id, 'cancelar', `ATENÇÃO: Deseja realmente CANCELAR a assinatura de ${nomeUser}? A cobrança no cartão será interrompida imediatamente.`);
+    };
+
+    const travarAssinatura = (id, nomeUser) => {
+        executarAcao(id, 'travar', `Marcar a assinatura de ${nomeUser} como ATRASADA? O acesso premium dela será suspenso.`);
+    };
+
+    const marcarComoPago = (id, nomeUser) => {
+        executarAcao(id, 'marcar_pago', `Marcar manualmente a assinatura de ${nomeUser} como PAGA? Isso renova o ciclo e credita os pontos do plano.`);
     };
 
     // Pega o primeiro erro de validação (se houver algum do Laravel)
@@ -106,6 +130,8 @@ export default function AssinaturasAdmin({ auth, assinaturas }) {
                                                         <span className="bg-green-100 text-green-700 font-bold px-3 py-1 rounded-full text-xs uppercase tracking-wider">Ativa</span>
                                                     ) : ass.status === 'pendente' ? (
                                                         <span className="bg-yellow-100 text-yellow-700 font-bold px-3 py-1 rounded-full text-xs uppercase tracking-wider">Pendente</span>
+                                                    ) : ass.status === 'atrasada' ? (
+                                                        <span className="bg-amber-100 text-amber-800 font-bold px-3 py-1 rounded-full text-xs uppercase tracking-wider">Atrasada</span>
                                                     ) : (
                                                         <span className="bg-red-100 text-red-700 font-bold px-3 py-1 rounded-full text-xs uppercase tracking-wider">Cancelada</span>
                                                     )}
@@ -114,25 +140,56 @@ export default function AssinaturasAdmin({ auth, assinaturas }) {
                                                     {ass.data_vencimento ? new Date(ass.data_vencimento).toLocaleDateString('pt-BR') : '-'}
                                                 </td>
                                                 <td className="py-4 px-6 text-right">
-                                                    {isAtiva && (
-                                                        <button 
-                                                            onClick={() => cancelarAssinatura(ass.id, ass.user?.name)}
-                                                            disabled={isProcessingThis}
-                                                            className={`inline-flex items-center justify-center gap-1 text-xs font-bold px-3 py-2 rounded-lg transition ${isProcessingThis ? 'bg-gray-200 text-gray-500 cursor-wait' : 'bg-red-50 hover:bg-red-600 text-red-600 hover:text-white'}`}
-                                                            title="Cancelar Assinatura"
-                                                        >
-                                                            {isProcessingThis ? (
-                                                                <>
-                                                                    <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                                                                    Aguarde...
-                                                                </>
-                                                            ) : (
-                                                                <>
-                                                                    <TrashIcon className="w-4 h-4" /> Cancelar
-                                                                </>
-                                                            )}
-                                                        </button>
-                                                    )}
+                                                    <div className="flex items-center justify-end gap-2">
+                                                        {ass.gateway_assinatura_id && (
+                                                            <button
+                                                                onClick={() => verStatusAsaas(ass.id)}
+                                                                className="inline-flex items-center gap-1 text-xs font-bold px-3 py-2 rounded-lg bg-indigo-50 hover:bg-indigo-600 text-indigo-600 hover:text-white transition"
+                                                                title="Ver status ao vivo no Asaas"
+                                                            >
+                                                                <SignalIcon className="w-4 h-4" /> Asaas
+                                                            </button>
+                                                        )}
+                                                        {ass.status !== 'ativa' && (
+                                                            <button
+                                                                onClick={() => marcarComoPago(ass.id, ass.user?.name)}
+                                                                disabled={isProcessingThis}
+                                                                className={`inline-flex items-center justify-center gap-1 text-xs font-bold px-3 py-2 rounded-lg transition ${isProcessingThis ? 'bg-gray-200 text-gray-500 cursor-wait' : 'bg-green-50 hover:bg-green-600 text-green-600 hover:text-white'}`}
+                                                                title="Marcar como Pago"
+                                                            >
+                                                                <CheckCircleIcon className="w-4 h-4" /> Marcar Pago
+                                                            </button>
+                                                        )}
+                                                        {isAtiva && (
+                                                            <button
+                                                                onClick={() => travarAssinatura(ass.id, ass.user?.name)}
+                                                                disabled={isProcessingThis}
+                                                                className={`inline-flex items-center justify-center gap-1 text-xs font-bold px-3 py-2 rounded-lg transition ${isProcessingThis ? 'bg-gray-200 text-gray-500 cursor-wait' : 'bg-amber-50 hover:bg-amber-600 text-amber-700 hover:text-white'}`}
+                                                                title="Travar por Atraso"
+                                                            >
+                                                                <LockClosedIcon className="w-4 h-4" /> Travar
+                                                            </button>
+                                                        )}
+                                                        {ass.status !== 'cancelada' && (
+                                                            <button
+                                                                onClick={() => cancelarAssinatura(ass.id, ass.user?.name)}
+                                                                disabled={isProcessingThis}
+                                                                className={`inline-flex items-center justify-center gap-1 text-xs font-bold px-3 py-2 rounded-lg transition ${isProcessingThis ? 'bg-gray-200 text-gray-500 cursor-wait' : 'bg-red-50 hover:bg-red-600 text-red-600 hover:text-white'}`}
+                                                                title="Cancelar Assinatura"
+                                                            >
+                                                                {isProcessingThis ? (
+                                                                    <>
+                                                                        <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                                                        Aguarde...
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <TrashIcon className="w-4 h-4" /> Cancelar
+                                                                    </>
+                                                                )}
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                 </td>
                                             </tr>
                                         );
@@ -157,6 +214,41 @@ export default function AssinaturasAdmin({ auth, assinaturas }) {
                     )}
                 </div>
             </div>
+
+            {/* MODAL DE STATUS AO VIVO NO ASAAS */}
+            {consultaAsaas && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 backdrop-blur-sm p-4">
+                    <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl p-6 relative">
+                        <button onClick={() => setConsultaAsaas(null)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-700">
+                            <XMarkIcon className="w-6 h-6" />
+                        </button>
+                        <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                            <SignalIcon className="w-5 h-5 text-indigo-600" /> Status ao vivo no Asaas
+                        </h3>
+
+                        {consultaAsaas.loading ? (
+                            <p className="text-sm text-gray-400 py-8 text-center">Consultando a API do Asaas...</p>
+                        ) : consultaAsaas.erro || !consultaAsaas.encontrado ? (
+                            <p className="text-sm text-rose-500 py-8 text-center">Não foi possível consultar esta assinatura no Asaas agora.</p>
+                        ) : (
+                            <div className="space-y-3 text-sm">
+                                <div className="flex justify-between border-b border-gray-100 pb-2">
+                                    <span className="text-gray-400 font-semibold">Status no gateway</span>
+                                    <span className="font-bold text-gray-900">{consultaAsaas.asaas.status}</span>
+                                </div>
+                                <div className="flex justify-between border-b border-gray-100 pb-2">
+                                    <span className="text-gray-400 font-semibold">Valor do ciclo</span>
+                                    <span className="font-bold text-gray-900">R$ {Number(consultaAsaas.asaas.value || 0).toFixed(2).replace('.', ',')}</span>
+                                </div>
+                                <div className="flex justify-between">
+                                    <span className="text-gray-400 font-semibold">Próximo vencimento</span>
+                                    <span className="font-bold text-gray-900">{consultaAsaas.asaas.nextDueDate || '-'}</span>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
         </AuthenticatedLayout>
     );
 }

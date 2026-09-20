@@ -102,6 +102,7 @@ export default function CriarReserva() {
 
   const [estabelecimento, setEstabelecimento] = useState<Estabelecimento | null>(null);
   const [servicos, setServicos] = useState<ItemCatalogo[]>([]);
+  const [produtosExtras, setProdutosExtras] = useState<ItemCatalogo[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<boolean>(false);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
@@ -325,6 +326,7 @@ export default function CriarReserva() {
         }
 
         buscarSaldoPontos(cleanBaseUrl, token, estData.id || id);
+        buscarProdutosExtras(cleanBaseUrl, token, estData.id || id);
       } else {
         setError(true);
       }
@@ -345,6 +347,32 @@ export default function CriarReserva() {
         setSaldoPontos(data.saldo || 0);
       }
     } catch (e) {}
+  };
+
+  // Itens extras (bebidas, produtos etc.) que podem ser adicionados ao
+  // pedido junto com o serviço/aluguel — estilo "adicione mais itens" do iFood.
+  const buscarProdutosExtras = async (baseUrl: string, token: string | null, estId: string) => {
+    try {
+      const res = await fetch(`${baseUrl}/mobile/estabelecimentos/${estId}/produtos`, {
+        headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const lista = Array.isArray(data.data) ? data.data : [];
+        setProdutosExtras(lista.map((p: any) => ({
+          id: p.id,
+          nome: p.nome,
+          descricao: p.descricao,
+          // obterPrecoEfetivo/obterPrecoOriginal esperam "valor" como preço
+          // cheio e "valor_promocional" como o preço com desconto (quando há).
+          valor: p.valor_original || p.valor,
+          valor_promocional: p.valor_original ? p.valor : undefined,
+          foto: p.foto,
+        })));
+      }
+    } catch (e) {
+      // seção opcional: silencia erro e simplesmente não mostra itens extras
+    }
   };
 
   // --- LÓGICA DE PREÇOS E PROMOÇÕES ---
@@ -494,14 +522,25 @@ export default function CriarReserva() {
       const data = await res.json();
 
       if (res.ok) {
-        router.push({
-          pathname: '/src/screens/PagamentoScreen',
-          params: {
-            agendamento_id: data.pagamento_id,
-            valor_total: data.resumo_financeiro?.valor_total || totalFinalLiquido,
-            codigo_pedido: data.codigo_pedido
-          }
-        });
+        // Reservou pelo menos um serviço (agendamento): leva direto para a tela
+        // de acompanhamento de fila (posição, mapa, código e comprovante em PDF).
+        if (Array.isArray(data.agendamento_ids) && data.agendamento_ids.length > 0) {
+          router.push({
+            pathname: '/src/screens/AcompanhamentoFilaScreen',
+            params: { id: String(data.agendamento_ids[0]) }
+          });
+        } else {
+          router.push({
+            pathname: '/src/screens/PagamentoScreen',
+            params: {
+              agendamento_id: data.pagamento_id,
+              valor_total: data.resumo_financeiro?.valor_total || totalFinalLiquido,
+              codigo_pedido: data.codigo_pedido
+            }
+          });
+        }
+      } else if (data.horario_ocupado) {
+        Alert.alert('Vaga preenchida', data.error || 'Este horário já foi reservado por outro cliente. Escolha outro horário.');
       } else {
         Alert.alert('Erro', data.error || 'Falha ao processar reserva.');
       }
@@ -902,6 +941,70 @@ export default function CriarReserva() {
               })
             )}
           </View>
+
+          {/* SEÇÃO 3.1: ITENS ADICIONAIS (estilo iFood — adicione mais ao pedido) */}
+          {produtosExtras.length > 0 && (
+            <>
+              <Text style={styles.sectionTitle}>Adicione mais ao seu pedido</Text>
+              <View style={styles.catalogContainer}>
+                {produtosExtras.map((item) => {
+                  const qtd = getItemQuantidade(item.id, 'produto');
+                  const precoEfetivo = obterPrecoEfetivo(item);
+                  const precoOriginal = obterPrecoOriginal(item);
+                  const temDesconto = !!item.valor_promocional && item.valor_promocional < precoOriginal;
+
+                  return (
+                    <View key={`produto-${item.id}`} style={styles.itemCard}>
+                      <View style={styles.itemCardContent}>
+                        <Image
+                          source={{ uri: item.foto || DEFAULT_PROFILE }}
+                          style={styles.itemImage}
+                        />
+                        <View style={styles.itemInfo}>
+                          <Text style={styles.itemName} numberOfLines={1}>{item.nome}</Text>
+                          {item.descricao ? (
+                            <Text style={styles.itemDesc} numberOfLines={2}>{item.descricao}</Text>
+                          ) : null}
+
+                          <View style={styles.itemPriceRow}>
+                            <Text style={styles.itemPrice}>
+                              R$ {precoEfetivo.toFixed(2).replace('.', ',')}
+                            </Text>
+                            {temDesconto && (
+                              <Text style={styles.itemOldPrice}>
+                                R$ {precoOriginal.toFixed(2).replace('.', ',')}
+                              </Text>
+                            )}
+                          </View>
+                        </View>
+                      </View>
+
+                      {/* CONTROLES DE QUANTIDADE DO CARRINHO */}
+                      <View style={styles.quantityContainer}>
+                        {qtd > 0 && (
+                          <>
+                            <TouchableOpacity
+                              style={styles.qtdButton}
+                              onPress={() => removerDoCarrinho(item.id, 'produto')}
+                            >
+                              <Ionicons name="remove" size={18} color={COLORS.primary} />
+                            </TouchableOpacity>
+                            <Text style={styles.qtdText}>{qtd}</Text>
+                          </>
+                        )}
+                        <TouchableOpacity
+                          style={[styles.qtdButton, styles.qtdButtonAdd]}
+                          onPress={() => adicionarAoCarrinho(item, 'produto')}
+                        >
+                          <Ionicons name="add" size={18} color={COLORS.cardBg} />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            </>
+          )}
 
           {/* SEÇÃO 4: SEUS DADOS */}
           <Text style={styles.sectionTitle}>4. Seus Dados</Text>

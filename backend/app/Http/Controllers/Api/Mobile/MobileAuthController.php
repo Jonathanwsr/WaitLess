@@ -35,7 +35,8 @@ class MobileAuthController extends Controller
         }
 
         $papel = strtolower(trim($user->papel ?? ''));
-        $isFuncionario = Funcionario::where('usuario_id', $user->id)->exists();
+        $funcionario = Funcionario::where('usuario_id', $user->id)->orderBy('id')->first();
+        $isFuncionario = $funcionario !== null;
 
         // LÓGICA DE REDIRECIONAMENTO AJUSTADA
         $destino = 'cliente';
@@ -43,6 +44,20 @@ class MobileAuthController extends Controller
             $destino = 'dashboard'; // Redireciona para /Proprietario/dashboard no app
         } elseif (in_array($papel, ['admin', 'funcionario', 'atendente']) || $isFuncionario) {
             $destino = 'funcionario'; // Redireciona para /src/funcionario/Painel-funcioanario
+        }
+
+        // 🔒 TRAVA DE PLANO: no plano básico do sócio/proprietário, só o
+        // primeiro funcionário cadastrado no estabelecimento pode acessar o
+        // app mobile. No plano superior (premium-socio / premium-socio-anual),
+        // todos os funcionários vinculados podem usar o app normalmente.
+        if ($papel !== 'admin' && $funcionario) {
+            $bloqueado = $this->funcionarioBloqueadoPeloPlano($funcionario);
+
+            if ($bloqueado) {
+                return response()->json([
+                    'message' => 'O plano atual do estabelecimento libera o app mobile apenas para o primeiro funcionário cadastrado. Peça ao responsável para fazer upgrade do plano e liberar o acesso para toda a equipe.'
+                ], 403);
+            }
         }
 
         // Apaga os tokens antigos para otimização
@@ -270,9 +285,9 @@ class MobileAuthController extends Controller
             /** @var User $user */
             $user = $request->user();
 
-            $user->load(['assinaturaAtiva', 'pontos']);
+            $user->load('assinaturaAtiva');
 
-            $totalPontos = $user->pontos_saldo ?? $user->pontos()->sum('total_pontos');
+            $totalPontos = $user->pontos_saldo ?? 0;
 
             return response()->json([
                 'success' => true,
@@ -339,6 +354,39 @@ class MobileAuthController extends Controller
                 'message' => 'Erro ao realizar logout: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Planos do sócio/proprietário que liberam o app mobile para TODOS os
+     * funcionários do estabelecimento (ver App\Services\PlanoService).
+     */
+    private const PLANOS_EQUIPE_COMPLETA = ['premium-socio', 'premium-socio-anual'];
+
+    /**
+     * Decide se este funcionário deve ser barrado do login mobile por causa
+     * do plano do estabelecimento: no plano básico, só o funcionário mais
+     * antigo (primeiro cadastrado) do local pode acessar o app.
+     */
+    private function funcionarioBloqueadoPeloPlano(Funcionario $funcionario): bool
+    {
+        $donoId = DB::table('estabelecimento_usuario')
+            ->where('estabelecimento_id', $funcionario->estabelecimento_id)
+            ->whereIn('tipo', ['proprietario', 'socio', 'admin'])
+            ->value('usuario_id');
+
+        $planoDono = $donoId
+            ? strtolower(User::where('id', $donoId)->value('plano_assinatura') ?? '')
+            : '';
+
+        if (in_array($planoDono, self::PLANOS_EQUIPE_COMPLETA)) {
+            return false; // Plano superior: todos os funcionários têm acesso
+        }
+
+        $primeiroFuncionarioId = Funcionario::where('estabelecimento_id', $funcionario->estabelecimento_id)
+            ->orderBy('id')
+            ->value('id');
+
+        return $primeiroFuncionarioId !== $funcionario->id;
     }
 
     /**

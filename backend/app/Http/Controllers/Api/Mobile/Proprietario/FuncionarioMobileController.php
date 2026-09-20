@@ -6,9 +6,11 @@ use App\Http\Controllers\Controller;
 use App\Models\Funcionario;
 use App\Models\User;
 use App\Models\Estabelecimento;
+use App\Models\Agendamento;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
 
 class FuncionarioMobileController extends Controller
 {
@@ -293,6 +295,86 @@ class FuncionarioMobileController extends Controller
         return response()->json([
             'status' => true,
             'message' => 'Funcionário inativado e removido da escala com sucesso!'
+        ], 200);
+    }
+
+    /**
+     * 👉 QUADRO DE PRODUTIVIDADE (equivalente mobile de
+     * Estabelecimentos/AgendaFuncionarios.jsx / FilaController::agendaFuncionarios):
+     * agendamentos do período agrupados por funcionário (colunas do Kanban),
+     * mais os que ainda não têm ninguém designado.
+     */
+    public function agenda(Request $request)
+    {
+        $user = $request->user();
+        $papel = strtolower(trim($user->papel ?? ''));
+
+        // Sócio/gerente/proprietario têm vínculo via a pivot de estabelecimentos;
+        // funcionário/atendente só aparecem na tabela `funcionarios` — sem este
+        // ramo, o quadro de produtividade nunca carregava pra quem atende no balcão.
+        if (in_array($papel, ['funcionario', 'atendente'])) {
+            $estabelecimentoId = Funcionario::where('usuario_id', $user->id)->value('estabelecimento_id');
+            $estabelecimentosIds = $estabelecimentoId ? [$estabelecimentoId] : [];
+        } else {
+            $estabelecimentosIds = $user->estabelecimentos()->pluck('estabelecimentos.id')->toArray();
+        }
+
+        if (empty($estabelecimentosIds)) {
+            return response()->json(['error' => 'Nenhum estabelecimento vinculado à sua conta.'], 404);
+        }
+
+        $estabelecimentoId = (int) $request->query('estabelecimento_id', $estabelecimentosIds[0]);
+        if (!in_array($estabelecimentoId, $estabelecimentosIds)) {
+            $estabelecimentoId = $estabelecimentosIds[0];
+        }
+
+        $periodo = $request->query('periodo', 'hoje');
+        $dataInicio = Carbon::today();
+        $dataFim = Carbon::today();
+
+        if ($periodo === 'mes') {
+            $dataInicio = Carbon::now()->startOfMonth();
+            $dataFim = Carbon::now()->endOfMonth();
+        } elseif ($periodo === 'ano') {
+            $dataInicio = Carbon::now()->startOfYear();
+            $dataFim = Carbon::now()->endOfYear();
+        }
+
+        $strInicio = $dataInicio->toDateString();
+        $strFim = $dataFim->toDateString();
+
+        $funcionarios = Funcionario::where('estabelecimento_id', $estabelecimentoId)
+            ->where('ativo', true)
+            ->with(['agendamentos' => function ($query) use ($strInicio, $strFim) {
+                $query->whereBetween('data_agendamento', [$strInicio, $strFim])
+                    ->whereIn('status', ['pendente', 'confirmado', 'em_atendimento', 'finalizado'])
+                    ->with(['usuario:id,name', 'servico:id,nome,valor', 'finalizadoPor:id,name'])
+                    ->orderBy('data_agendamento', 'asc')
+                    ->orderBy('hora_agendamento', 'asc');
+            }])
+            ->withCount(['agendamentos as total_finalizados' => function ($query) use ($strInicio, $strFim) {
+                $query->whereBetween('data_agendamento', [$strInicio, $strFim])->where('status', 'finalizado');
+            }])
+            ->withSum(['agendamentos as faturamento' => function ($query) use ($strInicio, $strFim) {
+                $query->whereBetween('data_agendamento', [$strInicio, $strFim])->where('status', 'finalizado');
+            }], 'valor_final')
+            ->get();
+
+        $semFuncionario = Agendamento::where('estabelecimento_id', $estabelecimentoId)
+            ->whereNull('funcionario_id')
+            ->whereBetween('data_agendamento', [$strInicio, $strFim])
+            ->whereIn('status', ['pendente', 'confirmado'])
+            ->with(['usuario:id,name', 'servico:id,nome'])
+            ->orderBy('data_agendamento', 'asc')
+            ->orderBy('hora_agendamento', 'asc')
+            ->get();
+
+        return response()->json([
+            'periodo' => $periodo,
+            'estabelecimento_id' => $estabelecimentoId,
+            'estabelecimentos_disponiveis' => $estabelecimentosIds,
+            'funcionarios' => $funcionarios,
+            'semFuncionario' => $semFuncionario,
         ], 200);
     }
 

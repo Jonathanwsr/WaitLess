@@ -3,8 +3,12 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\Pagamento;
+use App\Models\RoboExecucao;
 use App\Services\PagamentoService;
+use App\Services\AsaasWalletService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
@@ -15,15 +19,18 @@ use Exception;
 class AdminFinanceiroController extends Controller
 {
     protected $pagamentoService;
+    protected $asaasWallet;
 
-    public function __construct(PagamentoService $pagamentoService)
+    public function __construct(PagamentoService $pagamentoService, AsaasWalletService $asaasWallet)
     {
         $this->pagamentoService = $pagamentoService;
+        $this->asaasWallet = $asaasWallet;
     }
 
     public function index()
     {
-        // 1. Provedores
+        // 1. Provedores (inclui a asaas_api_key só pra consultar o saldo real
+        // na Asaas no servidor — nunca é exposta ao front, veja o map abaixo)
         $provedores = DB::table('providers')
             ->join('users', 'providers.user_id', '=', 'users.id')
             ->select(
@@ -32,9 +39,20 @@ class AdminFinanceiroController extends Controller
                 'users.email as proprietario_email',
                 'providers.saldo',
                 'providers.pix_key',
-                'providers.asaas_wallet_id'
+                'providers.asaas_wallet_id',
+                'providers.asaas_api_key'
             )
-            ->get();
+            ->get()
+            ->map(function ($provider) {
+                $saldoAsaas = $this->asaasWallet->saldoProvider($provider->asaas_api_key);
+
+                unset($provider->asaas_api_key);
+
+                $provider->saldo_asaas_real = $saldoAsaas['balance'] ?? null;
+                $provider->saldo_asaas_indisponivel = $saldoAsaas === null && $provider->asaas_wallet_id;
+
+                return $provider;
+            });
 
         // 2. Fila Ativa
         $jobsEmAndamento = DB::table('jobs')
@@ -58,13 +76,113 @@ class AdminFinanceiroController extends Controller
         // 5. NOVO: Calcular a data do próximo repasse automático (Próxima Segunda-feira às 05:00)
         $proximaSegunda = Carbon::now()->next(Carbon::MONDAY)->setTime(5, 0)->format('d/m/Y \à\s H:i');
 
+        // 6. NOVO: Status da última execução de cada robô automático (repasse, estornos vencidos, diário)
+        $robos = collect([
+            'financeiro:repassar-semanal' => 'Repasse Semanal (PIX)',
+            'estornos:processar-vencidos' => 'Estornos Vencidos (Auto-aprovação)',
+            'financeiro:processar-diario' => 'Verificação Diária de Reservas',
+        ])->map(function ($label, $comando) {
+            $ultima = RoboExecucao::where('comando', $comando)->latest('iniciado_em')->first();
+            return [
+                'comando' => $comando,
+                'label' => $label,
+                'ultima_execucao' => $ultima,
+            ];
+        })->values();
+
         return Inertia::render('Admin/FinanceiroMaster', [
             'provedores' => $provedores,
             'filaJobs' => $jobsEmAndamento,
             'filaFalhados' => $jobsFalhados,
             'ultimasTransacoes' => $ultimasTransacoes,
-            'proximoRepasse' => $proximaSegunda
+            'proximoRepasse' => $proximaSegunda,
+            'robos' => $robos,
         ]);
+    }
+
+    /**
+     * Lista paginada de todos os pagamentos da plataforma (fonte de verdade local,
+     * já que cada lojista tem sua própria wallet/API key no Asaas — não existe um
+     * endpoint único do Asaas que liste as transações de todos os provedores de uma vez).
+     */
+    public function pagamentos(Request $request)
+    {
+        $query = Pagamento::with(['usuario:id,name,email', 'estabelecimento:id,nome'])
+            ->orderByDesc('created_at');
+
+        if ($request->filled('status')) {
+            $query->where('status', $request->status);
+        }
+
+        if ($request->filled('metodo')) {
+            $query->where('metodo_pagamento', $request->metodo);
+        }
+
+        if ($request->filled('busca')) {
+            $busca = $request->busca;
+            $query->where(function ($q) use ($busca) {
+                $q->whereHas('usuario', fn ($u) => $u->where('name', 'like', "%{$busca}%"))
+                  ->orWhereHas('estabelecimento', fn ($e) => $e->where('nome', 'like', "%{$busca}%"))
+                  ->orWhere('id_transacao_gateway', 'like', "%{$busca}%");
+            });
+        }
+
+        $pagamentos = $query->paginate(20)->withQueryString();
+
+        $resumo = [
+            'total_pago' => (clone $query)->where('status', 'pago')->sum('valor'),
+            'total_pendente' => (clone $query)->where('status', 'pendente')->sum('valor'),
+            'total_estornado' => (clone $query)->where('status', 'estornado')->sum('valor'),
+        ];
+
+        return Inertia::render('Admin/Pagamentos', [
+            'pagamentos' => $pagamentos,
+            'filtros' => $request->only(['status', 'metodo', 'busca']),
+            'resumo' => $resumo,
+        ]);
+    }
+
+    /**
+     * Consulta em tempo real, direto na API do Asaas, o status real de UM
+     * pagamento (sob demanda — por isso não é feito para a lista inteira,
+     * que ficaria lenta fazendo uma chamada HTTP por linha).
+     */
+    public function consultarPagamentoAsaas($id)
+    {
+        $pagamento = Pagamento::findOrFail($id);
+
+        $dadosAsaas = $this->asaasWallet->consultarPagamento($pagamento->id_transacao_gateway);
+
+        return response()->json([
+            'encontrado' => $dadosAsaas !== null,
+            'asaas' => $dadosAsaas,
+        ]);
+    }
+
+    /**
+     * Permite ao admin disparar manualmente, na hora, qualquer um dos 3 robôs
+     * financeiros agendados (repasse semanal, estornos vencidos, diário), sem
+     * precisar esperar o cron — útil pra depurar ou processar algo urgente.
+     */
+    public function rodarRoboAgora(Request $request, $comando)
+    {
+        $comandosPermitidos = [
+            'repassar-semanal' => 'financeiro:repassar-semanal',
+            'estornos-vencidos' => 'estornos:processar-vencidos',
+            'processar-diario' => 'financeiro:processar-diario',
+        ];
+
+        if (!array_key_exists($comando, $comandosPermitidos)) {
+            return redirect()->back()->withErrors(['error' => 'Robô inválido.']);
+        }
+
+        try {
+            Artisan::call($comandosPermitidos[$comando], ['--manual' => true]);
+            return redirect()->back()->with('success', 'Robô executado manualmente com sucesso. Veja o resultado no histórico.');
+        } catch (Exception $e) {
+            Log::error("Erro ao rodar robô manualmente ({$comando}): " . $e->getMessage());
+            return redirect()->back()->withErrors(['error' => 'Falha ao executar: ' . $e->getMessage()]);
+        }
     }
 
     public function repassarManual(Request $request, $id)

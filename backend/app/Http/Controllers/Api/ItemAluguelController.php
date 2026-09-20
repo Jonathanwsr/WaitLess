@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ItemAluguel;
+use App\Models\Produto;
 use App\Services\HiveAiService; // Import do serviço Hive AI
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -209,7 +210,30 @@ class ItemAluguelController extends Controller
             'aceita_pontos'            => 'boolean',
             'maximo_pontos_permitidos' => 'nullable|integer|min:0',
             'exige_contrato'           => 'boolean',
+
+            'somente_premium'          => 'boolean',
+            'produtos_vinculados'      => 'nullable|array',
+            'produtos_vinculados.*'    => 'integer|exists:produtos,id',
         ];
+    }
+
+    /**
+     * Vincula um conjunto de produtos já cadastrados a um item de locação,
+     * desvinculando os que deixaram de ser selecionados. Restrito aos produtos
+     * do mesmo estabelecimento do item.
+     */
+    private function vincularProdutosExistentes(array $produtoIds, int $itemId, int $estabelecimentoId): void
+    {
+        Produto::where('aluguel_id', $itemId)
+            ->where('estabelecimento_id', $estabelecimentoId)
+            ->whereNotIn('id', $produtoIds)
+            ->update(['aluguel_id' => null]);
+
+        if (!empty($produtoIds)) {
+            Produto::where('estabelecimento_id', $estabelecimentoId)
+                ->whereIn('id', $produtoIds)
+                ->update(['aluguel_id' => $itemId]);
+        }
     }
 
     public function store(Request $request)
@@ -249,8 +273,14 @@ class ItemAluguelController extends Controller
         $dados['tem_promocao'] = $request->boolean('tem_promocao', false);
         $dados['aceita_pontos'] = $request->boolean('aceita_pontos', false);
         $dados['exige_contrato'] = $request->boolean('exige_contrato', false);
+        $dados['somente_premium'] = $request->boolean('somente_premium', false);
 
-        ItemAluguel::create($dados);
+        $produtosVinculados = $dados['produtos_vinculados'] ?? [];
+        unset($dados['produtos_vinculados']);
+
+        $item = ItemAluguel::create($dados);
+
+        $this->vincularProdutosExistentes($produtosVinculados, $item->id, $item->estabelecimento_id);
 
         return redirect()->back()->with('success', 'Produto / Locação salvo com sucesso no catálogo!');
     }
@@ -307,8 +337,14 @@ class ItemAluguelController extends Controller
         $dados['tem_promocao'] = $request->boolean('tem_promocao', false);
         $dados['aceita_pontos'] = $request->boolean('aceita_pontos', false);
         $dados['exige_contrato'] = $request->boolean('exige_contrato', false);
+        $dados['somente_premium'] = $request->boolean('somente_premium', false);
+
+        $produtosVinculados = $dados['produtos_vinculados'] ?? [];
+        unset($dados['produtos_vinculados']);
 
         $item->update($dados);
+
+        $this->vincularProdutosExistentes($produtosVinculados, $item->id, $item->estabelecimento_id);
 
         return redirect()->back()->with('success', 'Produto atualizado com sucesso!');
     }

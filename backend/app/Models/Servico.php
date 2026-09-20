@@ -17,6 +17,11 @@ class Servico extends Model
         'configuracoes' => 'array',
         'ativo' => 'boolean',
         'horarios_disponiveis' => 'array',
+        'somente_premium' => 'boolean',
+        'tem_promocao' => 'boolean',
+        'valor_desconto' => 'decimal:2',
+        'aceita_pontos' => 'boolean',
+        'maximo_pontos_permitidos' => 'integer',
     ];
 
     public function estabelecimento()
@@ -32,4 +37,9 @@ class Servico extends Model
     public function favoritadoPor() {
     return $this->hasMany(Favorito::class);
 }
+
+    public function produtosVinculados()
+    {
+        return $this->hasMany(Produto::class, 'servico_id');
+    }
 }

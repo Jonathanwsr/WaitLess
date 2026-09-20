@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\ServicoController;
 use App\Http\Controllers\Api\FinanceiroController;
 use App\Http\Controllers\Api\ClienteController;
 use App\Http\Controllers\Api\ProdutoController;
+use App\Http\Controllers\Api\OfertaPremiumController;
 use App\Http\Controllers\Api\FuncionarioCatalogoController;
 use App\Http\Controllers\Api\FuncionarioCarteiraController;
 use App\Http\Controllers\Api\CarrinhoController;
@@ -43,12 +44,16 @@ use Inertia\Inertia;
 | Rotas Públicas
 |--------------------------------------------------------------------------
 */
-Route::get('/', function () {
-    return Inertia::render('Welcome', [
-        'canLogin' => Route::has('login'),
-        'canRegister' => Route::has('register'),
-    ]);
-});
+Route::get('/', [App\Http\Controllers\WelcomeController::class, 'index'])->name('welcome');
+
+// Vitrine pública dos parceiros premium (usada no carrossel da Welcome, sem exigir login)
+Route::get('/api/vitrine-premium', [AssinaturaController::class, 'vitrinePremium'])->name('api.vitrine-premium');
+
+// Tela pública de detalhes de um serviço/aluguel (fotos, descrição e avaliações), sem exigir login
+Route::get('/vitrine/{tipo}/{id}', [App\Http\Controllers\WelcomeController::class, 'detalhes'])
+    ->where('tipo', 'servico|aluguel')
+    ->where('id', '[0-9]+')
+    ->name('vitrine.detalhe');
 
 /*
 |--------------------------------------------------------------------------
@@ -115,9 +120,9 @@ Route::post('/api/avaliacoes', [App\Http\Controllers\Api\AvaliacaoController::cl
 Route::post('/avaliacoes/{id}/denunciar', [App\Http\Controllers\Api\AvaliacaoController::class, 'denunciar'])->name('avaliacoes.denunciar');
 
 // Rotas exclusivas do ADMIN da plataforma (Moderação)
-Route::middleware(['auth'])->group(function () {
+Route::middleware(['auth', CheckAdmin::class])->group(function () {
     Route::get('/admin/avaliacoes', [App\Http\Controllers\Api\AvaliacaoController::class, 'indexAdmin'])->name('admin.avaliacoes.index');
-  
+
     Route::post('/admin/avaliacoes/{id}/apagar', [App\Http\Controllers\Api\AvaliacaoController::class, 'destroy'])->name('admin.avaliacoes.destroy');
     });
 
@@ -125,15 +130,20 @@ Route::middleware(['auth'])->group(function () {
 Route::get('/anfitriao/avaliacoes', [App\Http\Controllers\Api\AvaliacaoController::class, 'indexAnfitriao'])->name('anfitriao.avaliacoes.index');
 Route::post('/anfitriao/avaliacoes/{id}/responder', [App\Http\Controllers\Api\AvaliacaoController::class, 'responder'])->name('anfitriao.avaliacoes.responder');
 
-    Route::prefix('admin/financeiro')->group(function () {
+    Route::prefix('admin/financeiro')->middleware(['auth', CheckAdmin::class])->group(function () {
         // Tela principal para monitorar tabelas de jobs, saldos e failed_jobs
         Route::get('/painel', [AdminFinanceiroController::class, 'index'])->name('admin.financeiro.index');
-        
+
         // Ação do botão de clique para forçar o PIX do proprietário na hora
         Route::post('/repassar-manual/{id}', [AdminFinanceiroController::class, 'repassarManual'])->name('admin.financeiro.repassar');
-        
+
         // Ação do formulário para disparar e-mails customizados via Brevo
         Route::post('/enviar-email', [AdminFinanceiroController::class, 'enviarEmailPersonalizado'])->name('admin.financeiro.email');
+
+        // Pagamentos da plataforma (todas as transações Asaas) e status dos robôs automáticos
+        Route::get('/pagamentos', [AdminFinanceiroController::class, 'pagamentos'])->name('admin.financeiro.pagamentos');
+        Route::get('/pagamentos/{id}/asaas', [AdminFinanceiroController::class, 'consultarPagamentoAsaas'])->name('admin.financeiro.pagamentos.asaas');
+        Route::post('/robos/{comando}/rodar', [AdminFinanceiroController::class, 'rodarRoboAgora'])->name('admin.financeiro.robos.rodar');
     });
 
     // Perfil
@@ -170,7 +180,9 @@ Route::middleware(['auth'])->group(function () {
 
     // 1. Criar Produto
    // 1. Criar Produto
-
+Route::post('/cliente/carrinho', [\App\Http\Controllers\Api\AgendamentoController::class, 'storeCarrinho'])->name('cliente.carrinho.store');
+Route::post('/cliente/carrinho/produto', [\App\Http\Controllers\Api\AgendamentoController::class, 'storeProdutoCarrinho'])->name('cliente.carrinho.store_produto');
+Route::delete('/cliente/carrinho/item/{item_id}', [\App\Http\Controllers\Api\AgendamentoController::class, 'removerProdutoDoCarrinho'])->name('cliente.carrinho.remover_item');
 
 // 1. Criar Produto
 Route::post('/produtos', [ProdutoController::class, 'store'])->name('produtos.store');
@@ -312,20 +324,11 @@ Route::get('/estabelecimentos/{estabelecimento}/fila', [App\Http\Controllers\Api
     
     // Ação de cancelamento seguro (Mantém benefícios até o fim do ciclo)
     Route::post('/minha-assinatura/cancelar', [AssinaturaController::class, 'cancelar'])->name('assinaturas.cancelar');
+
+    Route::post('/minha-assinatura/mudar-plano', [AssinaturaController::class, 'mudarPlano'])->name('assinaturas.mudar_plano');
     
     // Atualização de dados financeiros (Ex: Endereço, travado para 1x ao mês)
     Route::put('/minha-assinatura/dados-financeiros', [AssinaturaController::class, 'atualizarDadosFinanceiros'])->name('assinaturas.dados_financeiros');
-
-    
-
-    Route::prefix('admin')->group(function () {
-        // Listagem de todas as assinaturas ativas/canceladas/pendentes da plataforma
-        Route::get('/assinaturas', [AssinaturaController::class, 'adminIndex'])->name('admin.assinaturas.index');
-        
-        // Ações forçadas do Admin (Travar, Cancelar Imediatamente, Marcar como Pago)
-        Route::post('/assinaturas/{id}/acao', [AssinaturaController::class, 'adminAcao'])->name('admin.assinaturas.acao');
-    });
-
 
     //RESERVAS
 // Criar novo item de locação
@@ -474,6 +477,12 @@ Route::get('/proprietario/rastreamento', [AgendamentoController::class, 'rastrea
 Route::get('/itens/{id}/detalhes', [App\Http\Controllers\Api\ItemAluguelController::class, 'show'])
     ->name('itens.detalhes');
 
+// Reserva enviada direto da tela de detalhes do item (DetalhesItem.jsx) —
+// mesma lógica de cálculo/cobrança de cliente.reservas.store, mas com o id
+// do item vindo pela URL em vez do corpo da requisição.
+Route::post('/itens/{id}/reservar', [App\Http\Controllers\Api\AgendamentoController::class, 'reservarItem'])
+    ->name('itens.reservar');
+
     
 
     Route::get('/itens/{id}/avaliacoes', [App\Http\Controllers\Api\AvaliacaoController::class, 'indexReact'])
@@ -545,7 +554,10 @@ Route::get('/pagamento/status', [ClienteAgendamentoController::class, 'callbackM
     Route::post('/estabelecimentos/servicos', [ServicoController::class, 'store'])->name('servicos.store');
     Route::put('/servicos/{servico}', [ServicoController::class, 'update'])->name('servicos.update');
     Route::delete('/servicos/{id}', [ServicoController::class, 'destroy'])->name('servicos.destroy');
-    
+
+    // Ofertas exclusivas para clientes Premium (serviços, reservas e produtos com desconto/pontos)
+    Route::get('/ofertas-premium', [OfertaPremiumController::class, 'index'])->name('cliente.ofertas_premium');
+
 
     // Funcionários
     Route::post('/estabelecimentos/{estabelecimento}/funcionarios', [FuncionarioController::class, 'store'])->name('funcionarios.store');
@@ -628,12 +640,24 @@ Route::get('/cliente/mensagens', [ClienteCupomController::class, 'mensagens'])->
 Route::post('/cliente/cupons/{id}/resgatar', [ClienteCupomController::class, 'resgatar'])->name('cliente.resgatar.cupom');
 
      Route::middleware(['auth', CheckAdmin::class])->group(function () {
-    
+
+    // Listagem de todas as assinaturas ativas/canceladas/pendentes da plataforma
     Route::get('/admin/assinaturas', [AssinaturaController::class, 'adminIndex'])
         ->name('admin.assinaturas.index');
-        
-    Route::post('/admin/assinaturas/{id}/cancelar', [AssinaturaController::class, 'adminCancelar'])
-        ->name('admin.assinaturas.cancelar');
+
+    // Ações forçadas do Admin (Cancelar Imediatamente, Travar, Marcar como Pago)
+    Route::post('/admin/assinaturas/{id}/acao', [AssinaturaController::class, 'adminAcao'])
+        ->name('admin.assinaturas.acao');
+
+    // Status real da assinatura direto na Asaas (sob demanda)
+    Route::get('/admin/assinaturas/{id}/asaas', [AssinaturaController::class, 'adminConsultarAsaas'])
+        ->name('admin.assinaturas.asaas');
+
+    // Auditoria de agendamentos: status, pagamento, local, quem fez/finalizou e estornos
+    Route::get('/admin/agendamentos', [App\Http\Controllers\Api\AdminAgendamentoController::class, 'index'])
+        ->name('admin.agendamentos.index');
+    Route::get('/admin/agendamentos/{id}', [App\Http\Controllers\Api\AdminAgendamentoController::class, 'show'])
+        ->name('admin.agendamentos.show');
     });
 
   

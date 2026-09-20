@@ -7,17 +7,22 @@ use App\Models\Aluguel;
 use App\Models\Agendamento;
 use App\Models\Pagamento;
 use App\Services\PagamentoService;
+use App\Models\RoboExecucao;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class VerificarReservas extends Command
 {
-    protected $signature = 'financeiro:processar-diario';
+    protected $signature = 'financeiro:processar-diario {--manual : Marca esta execução como disparada manualmente pelo admin}';
     protected $description = 'Verifica serviços não concluídos após 3 dias e processa os estornos automáticos da Custódia (Escrow) do Asaas.';
 
     public function handle(PagamentoService $pagamentoService)
     {
+        $execucao = RoboExecucao::iniciar('financeiro:processar-diario', $this->option('manual') ? 'manual' : 'agendado');
+        $totalProcessados = 0;
+        $totalFalhas = 0;
+
         $hoje = Carbon::today()->toDateString();
         // A regra é clara: 3 dias após a data agendada sem conclusão = Estorno
         $limiteDias = Carbon::today()->subDays(3)->toDateString(); 
@@ -78,7 +83,9 @@ class VerificarReservas extends Command
                     });
 
                     $this->info("Serviço {$agendamento->id} estornado com sucesso.");
+                    $totalProcessados++;
                 } catch (\Exception $e) {
+                    $totalFalhas++;
                     $this->error("Falha ao estornar Serviço {$agendamento->id}: " . $e->getMessage());
                     Log::error("Falha no estorno automático do agendamento #{$agendamento->id}: " . $e->getMessage());
                 }
@@ -132,7 +139,9 @@ class VerificarReservas extends Command
                     });
 
                     $this->info("Aluguel {$aluguel->id} estornado com sucesso.");
+                    $totalProcessados++;
                 } catch (\Exception $e) {
+                    $totalFalhas++;
                     $this->error("Falha ao estornar Aluguel {$aluguel->id}: " . $e->getMessage());
                     Log::error("Falha no estorno automático do aluguel #{$aluguel->id}: " . $e->getMessage());
                 }
@@ -140,5 +149,11 @@ class VerificarReservas extends Command
         }
 
         $this->info('Rotina financeira finalizada com sucesso!');
+
+        $execucao->finalizar(
+            $totalFalhas === 0,
+            $totalProcessados,
+            "{$totalProcessados} item(ns) estornado(s) automaticamente, {$totalFalhas} falha(s)."
+        );
     }
 }

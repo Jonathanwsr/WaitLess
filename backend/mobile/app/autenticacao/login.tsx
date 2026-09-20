@@ -206,7 +206,7 @@ export default function Login() {
         } else if (data.destino === 'funcionario') {
           router.replace('/src/funcionario/Painel-funcioanario');
         } else {
-          router.replace('/src/screens/Home');
+          router.replace('/(tabs)/home');
         }
         
       } else {

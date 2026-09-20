@@ -31,7 +31,10 @@ class ClienteAgendamentoMobileController extends Controller
 
     public function obterDadosAgendamento($estabelecimentoId)
     {
-        $estabelecimento = User::where('id', $estabelecimentoId)->first();
+        // Corrigido: $estabelecimentoId é o ID de um Estabelecimento, não de um
+        // User — buscar em User sempre retornava "não localizado" (a menos que
+        // os IDs coincidissem por acaso), quebrando esta tela por completo.
+        $estabelecimento = Estabelecimento::where('id', $estabelecimentoId)->where('ativo', true)->first();
 
         if (!$estabelecimento) {
             return response()->json(['error' => 'Estabelecimento não localizado.'], 404);
@@ -46,7 +49,7 @@ class ClienteAgendamentoMobileController extends Controller
         return response()->json([
             'estabelecimento' => [
                 'id' => $estabelecimento->id,
-                'nome' => $estabelecimento->name ?? $estabelecimento->nome,
+                'nome' => $estabelecimento->nome,
                 'foto_perfil' => $estabelecimento->foto_perfil ?? null,
                 'bairro' => $estabelecimento->bairro ?? null,
                 'cidade' => $estabelecimento->cidade ?? null,
@@ -87,7 +90,7 @@ class ClienteAgendamentoMobileController extends Controller
             'forma_pagamento'  => 'required|string|in:online_agora,online_depois,presencial',
         ]);
 
-        $estabelecimento = User::findOrFail($estabelecimentoId);
+        $estabelecimento = Estabelecimento::findOrFail($estabelecimentoId);
 
         $dataHoraAgendada = Carbon::parse($validated['data_agendamento'] . ' ' . $validated['hora_agendamento']);
         if ($dataHoraAgendada->isPast()) {
@@ -97,6 +100,23 @@ class ClienteAgendamentoMobileController extends Controller
         $servico = DB::table('servicos')->where('estabelecimento_id', $estabelecimento->id)->where('id', $validated['servico_id'])->first();
         if (!$servico) {
             return response()->json(['error' => 'Serviço não pertence a este estabelecimento.'], 404);
+        }
+
+        // 🚫 CONFLITO DE HORÁRIO: mesma regra usada em MobileAgendamentoController::checkoutMisto
+        $horarioOcupado = Agendamento::where('estabelecimento_id', $estabelecimento->id)
+            ->where('servico_id', $servico->id)
+            ->where('data_agendamento', $validated['data_agendamento'])
+            ->where('hora_agendamento', $validated['hora_agendamento'])
+            ->where('status', '!=', 'cancelado')
+            ->exists();
+
+        if ($horarioOcupado) {
+            $horaFormatada = substr($validated['hora_agendamento'], 0, 5);
+            $dataFormatada = $dataHoraAgendada->format('d/m/Y');
+            return response()->json([
+                'error' => "Vaga preenchida: já existe outro cliente agendado para {$servico->nome} às {$horaFormatada} do dia {$dataFormatada}. Escolha outro horário.",
+                'horario_ocupado' => true,
+            ], 409);
         }
 
         $configuracoes = is_string($servico->configuracoes) ? json_decode($servico->configuracoes, true) : ((array) $servico->configuracoes ?? []);
@@ -131,6 +151,9 @@ class ClienteAgendamentoMobileController extends Controller
                 'valor_final'        => $valorTotal,
                 'codigo_verificacao' => $codigoPin,
             ]);
+
+            // 📊 Contador de atividade do cliente na tabela users (numero_reservas)
+            Auth::user()->increment('numero_reservas');
 
             $pagamento = Pagamento::create([
                 'usuario_id'         => Auth::id(),

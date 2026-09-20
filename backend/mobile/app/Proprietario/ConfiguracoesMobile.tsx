@@ -47,6 +47,7 @@ export default function ConfiguracoesMobile() {
   const [funcionarios, setFuncionarios] = useState<any[]>([]);
   const [servicos, setServicos] = useState<any[]>([]);
   const [itensAluguel, setItensAluguel] = useState<any[]>([]);
+  const [produtos, setProdutos] = useState<any[]>([]);
 
   // Imagens
   const [fotoPerfilPreview, setFotoPerfilPreview] = useState<string | null>(null);
@@ -77,6 +78,10 @@ export default function ConfiguracoesMobile() {
     id: null as any, nome: '', tipo_servico: 'Geral', descricao: '', valor: '', duracao_minutos: '30',
     funcionario_id: '', dias_disponiveis: ['segunda', 'terca', 'quarta', 'quinta', 'sexta'] as string[],
     horarios_disponiveis: [] as string[],
+    tipo_pagamento: 'hibrido',
+    somente_premium: false, tem_promocao: false, tipo_desconto: 'percentual', valor_desconto: '',
+    aceita_pontos: false, maximo_pontos_permitidos: '',
+    produtos_vinculados: [] as number[],
   });
   const [novoHorarioServico, setNovoHorarioServico] = useState('');
 
@@ -93,7 +98,9 @@ export default function ConfiguracoesMobile() {
     tem_promocao: false, tipo_desconto: 'percentual', valor_desconto: '',
     aceita_pontos: false, maximo_pontos_permitidos: '',
     exige_contrato: false, observacoes_disponibilidade: '',
-    cep_retirada: '', rua_retirada: '', bairro_retirada: '', cidade_retirada: '', estado_retirada: ''
+    cep_retirada: '', rua_retirada: '', bairro_retirada: '', cidade_retirada: '', estado_retirada: '',
+    somente_premium: false,
+    produtos_vinculados: [] as number[],
   });
 
   // ==========================================
@@ -177,8 +184,12 @@ export default function ConfiguracoesMobile() {
         setFuncionarios(data.funcionarios || []);
         setServicos(data.servicos || []);
         setItensAluguel(data.itens_aluguel || []);
-      } else if (data.status === 403) {
+        setProdutos(data.produtos || []);
+      } else if (res.status === 403) {
         Alert.alert('Acesso Negado', 'Você não tem permissão para editar esta loja.');
+        router.back();
+      } else {
+        Alert.alert('Erro', data?.message || 'Não foi possível carregar os dados desta loja.');
         router.back();
       }
     } catch (err) {
@@ -253,9 +264,13 @@ export default function ConfiguracoesMobile() {
         formData.append('foto_banner', { uri: fotoBannerPreview, name: 'b.jpg', type: 'image/jpeg' } as any);
       }
       const res = await fetch(`${cleanBaseUrl}/estabelecimentos/${estabelecimento.id}`, { method: 'POST', headers: getHeaders(true), body: formData });
-      const { ok } = await handleApiResponse(res);
-      if (ok) mostrarMensagem('Perfil da loja atualizado!');
-    } catch { Alert.alert('Erro', 'Falha na atualização.'); } finally { setSubmitting(false); }
+      const { ok, data } = await handleApiResponse(res);
+      if (ok) {
+        mostrarMensagem('Perfil da loja atualizado!');
+      } else {
+        Alert.alert('Erro', data?.message || 'Não foi possível salvar o perfil da loja.');
+      }
+    } catch { Alert.alert('Erro de Conexão', 'Verifique sua internet e tente novamente.'); } finally { setSubmitting(false); }
   };
 
   const toggleStatus = async () => {
@@ -266,8 +281,10 @@ export default function ConfiguracoesMobile() {
       if (ok) {
         setEstabelecimento((p: any) => (p ? { ...p, ativo: data.ativo } : null));
         mostrarMensagem(data.ativo ? 'Loja Aberta!' : 'Loja Fechada!');
+      } else {
+        Alert.alert('Erro', data?.message || 'Não foi possível alterar o status da loja.');
       }
-    } catch {}
+    } catch { Alert.alert('Erro de Conexão', 'Verifique sua internet e tente novamente.'); }
   };
 
   const submitFuncionario = async () => {
@@ -295,8 +312,14 @@ export default function ConfiguracoesMobile() {
   const deleteFuncionario = async (id: any) => {
     try {
       const res = await fetch(`${cleanBaseUrl}/funcionarios/${id}`, { method: 'DELETE', headers: getHeaders() });
-      if (res.ok) { setFuncionarios(p => p.filter(f => f.id !== id)); mostrarMensagem('Profissional removido!'); }
-    } catch {}
+      const { ok, data } = await handleApiResponse(res);
+      if (ok) {
+        setFuncionarios(p => p.filter(f => f.id !== id));
+        mostrarMensagem('Profissional removido!');
+      } else {
+        Alert.alert('Erro', data?.message || 'Não foi possível remover o profissional.');
+      }
+    } catch { Alert.alert('Erro de Conexão', 'Verifique sua internet e tente novamente.'); }
   };
 
   const toggleDiaServico = (dia: string) => {
@@ -318,8 +341,8 @@ export default function ConfiguracoesMobile() {
       setSubmitting(true);
       const formData = new FormData();
       Object.entries(formServico).forEach(([k, v]) => {
-        if(k === 'dias_disponiveis' || k === 'horarios_disponiveis') {
-          (v as string[]).forEach(item => formData.append(`${k}[]`, item));
+        if (k === 'dias_disponiveis' || k === 'horarios_disponiveis' || k === 'produtos_vinculados') {
+          (v as (string | number)[]).forEach(item => formData.append(`${k}[]`, String(item)));
         } else if (v !== null) {
           formData.append(k, String(v));
         }
@@ -329,12 +352,28 @@ export default function ConfiguracoesMobile() {
 
       const res = await fetch(`${cleanBaseUrl}/servicos`, { method: 'POST', headers: getHeaders(true), body: formData });
       const { ok, data } = await handleApiResponse(res);
-      if (ok) { setServicos(p => [...p, data.servico || data]); setFotosServico([]); mostrarMensagem('Serviço salvo no catálogo!'); }
-    } catch {} finally { setSubmitting(false); }
+      if (ok) {
+        const criado = Array.isArray(data.data) ? data.data[0] : (data.servico || data);
+        setServicos(p => [...p, criado]);
+        setFotosServico([]);
+        mostrarMensagem('Serviço salvo no catálogo!');
+      } else {
+        Alert.alert('Erro', data?.message || 'Não foi possível salvar o serviço.');
+      }
+    } catch { Alert.alert('Erro de Conexão', 'Verifique sua internet e tente novamente.'); } finally { setSubmitting(false); }
   };
-  
+
   const deleteServico = async (id: any) => {
-    try { const res = await fetch(`${cleanBaseUrl}/servicos/${id}`, { method: 'DELETE', headers: getHeaders() }); if (res.ok) setServicos(p => p.filter(s => s.id !== id)); } catch {}
+    try {
+      const res = await fetch(`${cleanBaseUrl}/servicos/${id}`, { method: 'DELETE', headers: getHeaders() });
+      const { ok, data } = await handleApiResponse(res);
+      if (ok) {
+        setServicos(p => p.filter(s => s.id !== id));
+        mostrarMensagem('Serviço removido!');
+      } else {
+        Alert.alert('Erro', data?.message || 'Não foi possível remover o serviço.');
+      }
+    } catch { Alert.alert('Erro de Conexão', 'Verifique sua internet e tente novamente.'); }
   };
 
   const submitItem = async () => {
@@ -344,14 +383,38 @@ export default function ConfiguracoesMobile() {
       const formData = new FormData();
       formData.append('estabelecimento_id', String(estabelecimento.id));
       Object.entries(formItem).forEach(([k, v]) => {
-        if(v !== null && typeof v !== 'object') formData.append(k, String(v));
-        if(typeof v === 'boolean') formData.append(k, v ? '1' : '0');
+        if (k === 'produtos_vinculados') {
+          (v as (string | number)[]).forEach(item => formData.append(`${k}[]`, String(item)));
+        } else if (typeof v === 'boolean') {
+          formData.append(k, v ? '1' : '0');
+        } else if (v !== null && typeof v !== 'object') {
+          formData.append(k, String(v));
+        }
       });
       fotosItem.forEach((uri, idx) => formData.append('fotos[]', { uri, name: `i_${idx}.jpg`, type: 'image/jpeg' } as any));
       const res = await fetch(`${cleanBaseUrl}/itens-aluguel`, { method: 'POST', headers: getHeaders(true), body: formData });
       const { ok, data } = await handleApiResponse(res);
-      if (ok) { setItensAluguel(p => [...p, data.item || data]); setFotosItem([]); mostrarMensagem('Locação salva no sistema!'); }
-    } catch {} finally { setSubmitting(false); }
+      if (ok) {
+        setItensAluguel(p => [...p, data.data || data.item || data]);
+        setFotosItem([]);
+        mostrarMensagem('Locação salva no sistema!');
+      } else {
+        Alert.alert('Erro', data?.message || 'Não foi possível salvar a locação.');
+      }
+    } catch { Alert.alert('Erro de Conexão', 'Verifique sua internet e tente novamente.'); } finally { setSubmitting(false); }
+  };
+
+  const deleteItem = async (id: any) => {
+    try {
+      const res = await fetch(`${cleanBaseUrl}/reservas-itens/${id}`, { method: 'DELETE', headers: getHeaders() });
+      const { ok, data } = await handleApiResponse(res);
+      if (ok) {
+        setItensAluguel(p => p.filter((i: any) => i.id !== id));
+        mostrarMensagem('Locação removida!');
+      } else {
+        Alert.alert('Erro', data?.message || 'Não foi possível remover a locação.');
+      }
+    } catch { Alert.alert('Erro de Conexão', 'Verifique sua internet e tente novamente.'); }
   };
 
   const submitFinanceiro = async () => {
@@ -359,8 +422,13 @@ export default function ConfiguracoesMobile() {
     try {
       setSubmitting(true);
       const res = await fetch(`${cleanBaseUrl}/providers/store`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ estabelecimento_id: estabelecimento.id, ...formFinanceiro }) });
-      if (res.ok) mostrarMensagem('Dados de Pagamento salvos com sucesso!');
-    } catch {} finally { setSubmitting(false); }
+      const { ok, data } = await handleApiResponse(res);
+      if (ok) {
+        mostrarMensagem('Dados de Pagamento salvos com sucesso!');
+      } else {
+        Alert.alert('Erro', data?.message || 'Não foi possível salvar os dados financeiros.');
+      }
+    } catch { Alert.alert('Erro de Conexão', 'Verifique sua internet e tente novamente.'); } finally { setSubmitting(false); }
   };
 
   const tabsNav = [
@@ -586,6 +654,58 @@ export default function ConfiguracoesMobile() {
                 </ScrollView>
               </View>
 
+              <View style={styles.divider} />
+              <Text style={styles.sectionSubTitle}>Oferta Exclusiva Premium</Text>
+
+              <View style={styles.switchRow}>
+                <View style={{flex:1}}><Text style={styles.label}>Somente Assinantes Premium</Text><Text style={styles.labelSmall}>Só aparece liberado para clientes Premium.</Text></View>
+                <Switch value={formServico.somente_premium} onValueChange={(v) => setFormServico({...formServico, somente_premium: v})} trackColor={{ false: "#CBD5E1", true: "#FF5A00" }} />
+              </View>
+              <View style={styles.switchRow}>
+                <View style={{flex:1}}><Text style={styles.label}>Desconto Promocional</Text><Text style={styles.labelSmall}>Aparece na tela de Ofertas Premium.</Text></View>
+                <Switch value={formServico.tem_promocao} onValueChange={(v) => setFormServico({...formServico, tem_promocao: v})} trackColor={{ false: "#CBD5E1", true: "#FF5A00" }} />
+              </View>
+              {formServico.tem_promocao && (
+                <View style={styles.rowGrid}>
+                  <View style={styles.gridCol}>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap: 8}}>
+                      {[{id:'percentual', label:'%'}, {id:'fixo', label:'R$'}].map(t => (
+                        <TouchableOpacity key={t.id} onPress={() => setFormServico({...formServico, tipo_desconto: t.id})} style={[styles.chip, formServico.tipo_desconto === t.id && styles.chipActive]}>
+                          <Text style={[styles.chipText, formServico.tipo_desconto === t.id && styles.chipTextActive]}>{t.label}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
+                  <View style={styles.gridCol}><TextInput style={styles.input} placeholder="Valor do Desconto" keyboardType="numeric" value={formServico.valor_desconto} onChangeText={(t) => setFormServico({ ...formServico, valor_desconto: t })} /></View>
+                </View>
+              )}
+              <View style={styles.switchRow}>
+                <View style={{flex:1}}><Text style={styles.label}>Aceitar Pontos LOKYVA</Text><Text style={styles.labelSmall}>Permite desconto usando a carteira do app.</Text></View>
+                <Switch value={formServico.aceita_pontos} onValueChange={(v) => setFormServico({...formServico, aceita_pontos: v})} trackColor={{ false: "#CBD5E1", true: "#FF5A00" }} />
+              </View>
+              {formServico.aceita_pontos && (
+                <TextInput style={styles.input} placeholder="Máximo de Pontos Permitidos" keyboardType="numeric" value={formServico.maximo_pontos_permitidos} onChangeText={(t) => setFormServico({ ...formServico, maximo_pontos_permitidos: t })} />
+              )}
+
+              {produtos.length > 0 && (
+                <>
+                  <Text style={styles.labelSmall}>Vincular Produtos já Cadastrados</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap: 8, paddingBottom: 6}}>
+                    {produtos.map((p) => {
+                      const sel = formServico.produtos_vinculados.includes(p.id);
+                      return (
+                        <TouchableOpacity key={p.id} onPress={() => {
+                          const lista = sel ? formServico.produtos_vinculados.filter(id => id !== p.id) : [...formServico.produtos_vinculados, p.id];
+                          setFormServico({...formServico, produtos_vinculados: lista});
+                        }} style={[styles.chip, sel && styles.chipActive]}>
+                          <Text style={[styles.chipText, sel && styles.chipTextActive]}>{p.nome}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </>
+              )}
+
               <TouchableOpacity style={styles.accentButton} onPress={submitServico} disabled={submitting}>
                 <Text style={styles.accentButtonText}>Salvar Serviço</Text>
               </TouchableOpacity>
@@ -595,7 +715,14 @@ export default function ConfiguracoesMobile() {
               {servicos.length === 0 && <Text style={{ padding: 16, textAlign: 'center', color: '#64748B' }}>Nenhum serviço cadastrado.</Text>}
               {servicos.map((s) => (
                 <View key={s.id} style={styles.listItem}>
-                  <View><Text style={styles.listItemTitle}>{s.nome}</Text><Text style={styles.listItemSub}>R$ {s.valor} • {s.duracao_minutos} min</Text></View>
+                  <View>
+                    <View style={{flexDirection: 'row', alignItems: 'center', gap: 6}}>
+                      <Text style={styles.listItemTitle}>{s.nome}</Text>
+                      {!!s.somente_premium && <View style={styles.badge}><Text style={styles.badgeText}>Premium</Text></View>}
+                      {!!s.tem_promocao && <View style={[styles.badge, {backgroundColor: '#DC2626'}]}><Text style={styles.badgeText}>Promoção</Text></View>}
+                    </View>
+                    <Text style={styles.listItemSub}>R$ {s.valor} • {s.duracao_minutos} min</Text>
+                  </View>
                   <TouchableOpacity onPress={() => deleteServico(s.id)} style={styles.iconButton}><Ionicons name="trash-outline" size={18} color="#EF4444" /></TouchableOpacity>
                 </View>
               ))}
@@ -649,6 +776,28 @@ export default function ConfiguracoesMobile() {
                 <Switch value={formItem.sempre_disponivel} onValueChange={(v) => setFormItem({...formItem, sempre_disponivel: v})} trackColor={{ false: "#CBD5E1", true: "#FF5A00" }} />
               </View>
               <View style={styles.switchRow}>
+                <View style={{flex:1}}><Text style={styles.label}>Somente Assinantes Premium</Text><Text style={styles.labelSmall}>Só aparece liberado para clientes Premium.</Text></View>
+                <Switch value={formItem.somente_premium} onValueChange={(v) => setFormItem({...formItem, somente_premium: v})} trackColor={{ false: "#CBD5E1", true: "#FF5A00" }} />
+              </View>
+              {produtos.length > 0 && (
+                <>
+                  <Text style={styles.labelSmall}>Vincular Produtos já Cadastrados</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap: 8, paddingBottom: 6}}>
+                    {produtos.map((p) => {
+                      const sel = formItem.produtos_vinculados.includes(p.id);
+                      return (
+                        <TouchableOpacity key={p.id} onPress={() => {
+                          const lista = sel ? formItem.produtos_vinculados.filter(id => id !== p.id) : [...formItem.produtos_vinculados, p.id];
+                          setFormItem({...formItem, produtos_vinculados: lista});
+                        }} style={[styles.chip, sel && styles.chipActive]}>
+                          <Text style={[styles.chipText, sel && styles.chipTextActive]}>{p.nome}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </>
+              )}
+              <View style={styles.switchRow}>
                 <View style={{flex:1}}><Text style={styles.label}>Promoção Ativa</Text><Text style={styles.labelSmall}>Ofereça desconto.</Text></View>
                 <Switch value={formItem.tem_promocao} onValueChange={(v) => setFormItem({...formItem, tem_promocao: v})} trackColor={{ false: "#CBD5E1", true: "#FF5A00" }} />
               </View>
@@ -666,6 +815,23 @@ export default function ConfiguracoesMobile() {
               <TouchableOpacity style={styles.accentButton} onPress={submitItem} disabled={submitting}>
                 <Text style={styles.accentButtonText}>Finalizar Cadastro da Locação</Text>
               </TouchableOpacity>
+            </View>
+
+            <View style={styles.listCard}>
+              {itensAluguel.length === 0 && <Text style={{ padding: 16, textAlign: 'center', color: '#64748B' }}>Nenhuma locação cadastrada.</Text>}
+              {itensAluguel.map((it: any) => (
+                <View key={it.id} style={styles.listItem}>
+                  <View>
+                    <View style={{flexDirection: 'row', alignItems: 'center', gap: 6}}>
+                      <Text style={styles.listItemTitle}>{it.nome}</Text>
+                      {!!it.somente_premium && <View style={styles.badge}><Text style={styles.badgeText}>Premium</Text></View>}
+                      {!!it.tem_promocao && <View style={[styles.badge, {backgroundColor: '#DC2626'}]}><Text style={styles.badgeText}>Promoção</Text></View>}
+                    </View>
+                    <Text style={styles.listItemSub}>R$ {it.valor_diaria || it.valor_mensal || '0,00'} / diária</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => deleteItem(it.id)} style={styles.iconButton}><Ionicons name="trash-outline" size={18} color="#EF4444" /></TouchableOpacity>
+                </View>
+              ))}
             </View>
           </View>
         )}

@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import Dropdown from '@/Components/Dropdown';
 import { Link, usePage, router } from '@inertiajs/react';
-import { ShieldCheckIcon, UsersIcon, UserGroupIcon, MapIcon } from '@heroicons/react/24/solid';
+import { ShieldCheckIcon, UsersIcon, UserGroupIcon, MapIcon, BanknotesIcon, ClipboardDocumentListIcon, ArrowUturnLeftIcon, StarIcon, GlobeAltIcon } from '@heroicons/react/24/solid';
 
 export default function AuthenticatedLayout({ header, children }) {
-    const user = usePage().props.auth.user;
-    
+    const { auth, alertaCarteiraAsaas } = usePage().props;
+    const user = auth.user;
+
     // O estado do Menu Lateral no PC agora usa localStorage para "lembrar" se estava fechado ou aberto
     const [isSidebarExpanded, setIsSidebarExpanded] = useState(() => {
         if (typeof window !== 'undefined') {
@@ -225,6 +226,16 @@ export default function AuthenticatedLayout({ header, children }) {
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Explorar Lojas</span>
                             </Link>
 
+                            <Link href={route('cliente.ofertas_premium')} title="Ofertas Premium" className={`${baseLinkClass} ${route().current('cliente.ofertas_premium') ? activeLinkClass : inactiveLinkClass}`}>
+                                <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 16L3 8l5.5 4L12 4l3.5 8L21 8l-2 8H5zm0 0h14v2H5v-2z"></path></svg>
+                                <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Ofertas Premium</span>
+                            </Link>
+
+                             <Link href={route('dashboard')} title="Agendamentos" className={`${baseLinkClass} ${route().current('dashboard') ? activeLinkClass : inactiveLinkClass}`}>
+                                <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                                <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Agendamentos</span>
+                            </Link>
+
 <Link 
     href="/favoritos" 
     title="Meus Favoritos" 
@@ -252,10 +263,7 @@ export default function AuthenticatedLayout({ header, children }) {
     <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Minhas Avaliações</span>
 </Link>
 
-                            <Link href={route('dashboard')} title="Agendamentos" className={`${baseLinkClass} ${route().current('dashboard') ? activeLinkClass : inactiveLinkClass}`}>
-                                <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                                <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Agendamentos</span>
-                            </Link>
+                           
 
 
                                         <Link 
@@ -293,10 +301,7 @@ export default function AuthenticatedLayout({ header, children }) {
                                <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Minha Carteira (Plus)</span>
                             </Link>
                             
-                            <Link href="/financeiro/conta" title="Conta" className={`${baseLinkClass} ${window.location.pathname.includes('/financeiro/conta') ? activeLinkClass : inactiveLinkClass}`}>
-                                <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z"></path></svg>
-                                <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Conta (Recebimentos)</span>
-                            </Link>
+                         
                         </>
                     )}
 
@@ -332,9 +337,39 @@ export default function AuthenticatedLayout({ header, children }) {
                         <>
                             <SectionTitle title="Administração" />
 
+                            <Link href={route('admin.financeiro.index')} title="Painel Financeiro Master" className={`${baseLinkClass} ${route().current('admin.financeiro.index') ? activeLinkClass : inactiveLinkClass}`}>
+                                <BanknotesIcon className="w-6 h-6 shrink-0" />
+                                <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Painel Financeiro</span>
+                            </Link>
+
+                            <Link href={route('admin.financeiro.pagamentos')} title="Todos os Pagamentos" className={`${baseLinkClass} ${route().current('admin.financeiro.pagamentos') ? activeLinkClass : inactiveLinkClass}`}>
+                                <BanknotesIcon className="w-6 h-6 shrink-0 opacity-70" />
+                                <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Todos os Pagamentos</span>
+                            </Link>
+
+                            <Link href={route('admin.agendamentos.index')} title="Auditoria de Agendamentos" className={`${baseLinkClass} ${route().current('admin.agendamentos.index') ? activeLinkClass : inactiveLinkClass}`}>
+                                <ClipboardDocumentListIcon className="w-6 h-6 shrink-0" />
+                                <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Agendamentos</span>
+                            </Link>
+
+                            <Link href={route('estornos.index')} title="Estornos" className={`${baseLinkClass} ${route().current('estornos.index') ? activeLinkClass : inactiveLinkClass}`}>
+                                <ArrowUturnLeftIcon className="w-6 h-6 shrink-0" />
+                                <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Estornos</span>
+                            </Link>
+
                             <Link href={route('admin.assinaturas.index')} title="Assinaturas Gerais" className={`${baseLinkClass} ${route().current('admin.assinaturas.index') ? activeLinkClass : inactiveLinkClass}`}>
                                 <ShieldCheckIcon className="w-6 h-6 shrink-0" />
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Todas as Assinaturas</span>
+                            </Link>
+
+                            <Link href={route('admin.avaliacoes.index')} title="Moderação de Avaliações" className={`${baseLinkClass} ${route().current('admin.avaliacoes.index') ? activeLinkClass : inactiveLinkClass}`}>
+                                <StarIcon className="w-6 h-6 shrink-0" />
+                                <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Avaliações</span>
+                            </Link>
+
+                            <Link href={route('cliente.explorar')} title="Navegar como Cliente" className={`${baseLinkClass} ${route().current('cliente.explorar') ? activeLinkClass : inactiveLinkClass}`}>
+                                <GlobeAltIcon className="w-6 h-6 shrink-0" />
+                                <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Explorar (Cliente)</span>
                             </Link>
                         </>
                     )}
@@ -480,6 +515,23 @@ export default function AuthenticatedLayout({ header, children }) {
                             {header}
                         </div>
                     </header>
+                )}
+
+                {alertaCarteiraAsaas && (
+                    <div className="bg-red-50 border-b border-red-200">
+                        <div className="mx-auto px-4 py-3 sm:px-6 lg:px-8 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div>
+                                <p className="text-sm font-black text-red-800">{alertaCarteiraAsaas.mensagem}</p>
+                                <p className="text-xs text-red-700 mt-0.5">{alertaCarteiraAsaas.detalhe}</p>
+                            </div>
+                            <Link
+                                href={alertaCarteiraAsaas.rota}
+                                className="shrink-0 text-center px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-xl transition"
+                            >
+                                Cadastrar conta de recebimento
+                            </Link>
+                        </div>
+                    </div>
                 )}
 
                 <main className="flex-1 py-8 animate-in fade-in duration-500">

@@ -72,7 +72,7 @@ class ProdutoController extends Controller
                 $fotos = $request->file('fotos');
 
                 if (count($fotos) > 5) {
-                    return response()->json(['error' => 'Poxa, você só pode enviar no máximo 5 fotos por produto.'], 400);
+                    return response()->json(['error' => 'Você só pode enviar no máximo 5 fotos por produto.'], 400);
                 }
 
                 foreach ($fotos as $foto) {
@@ -87,7 +87,10 @@ class ProdutoController extends Controller
                 }
             }
 
-            $dados['fotos'] = json_encode($caminhosFotos);
+            // O Model já tem cast 'fotos' => 'array' — atribuir aqui uma string
+            // json_encode()ada fazia o cast codificar de novo por cima,
+            // gravando um JSON duplamente escapado no banco.
+            $dados['fotos'] = $caminhosFotos;
 
             $isPromocao = $request->boolean('is_promocao') || $request->boolean('promocao');
             $dados['is_promocao'] = $isPromocao;
@@ -106,7 +109,7 @@ class ProdutoController extends Controller
             return response()->json(['error' => $e->validator->errors()->first()], 422);
         } catch (\Exception $e) {
             Log::error('Erro ao criar produto: ' . $e->getMessage());
-            return response()->json(['error' => 'Ops! Ocorreu um erro inesperado ao salvar o produto.'], 500);
+            return response()->json(['error' => 'Ocorreu um erro inesperado ao salvar o produto.'], 500);
         }
     }
 
@@ -208,7 +211,7 @@ class ProdutoController extends Controller
     }
 
     /**
-     * 6. Listar produtos para o CLIENTE
+     * 6. Listar produtos para o CLIENTE (Vitrine e Extras)
      */
     public function produtosDisponiveisParaCliente(Request $request, $estabelecimento_id)
     {
@@ -272,48 +275,7 @@ class ProdutoController extends Controller
     }
 
     /**
-     * 8. Adicionar ao Agendamento/Aluguel
-     */
-    public function adicionarAoAgendamento(Request $request, $produto_id)
-    {
-        try {
-            $request->validate([
-                'vinculo_id' => 'required|integer',
-                'tipo'       => 'required|in:agendamento,aluguel'
-            ]);
-
-            $produto = Produto::findOrFail($produto_id);
-
-            if ($produto->estoque_disponivel <= 0) {
-                return response()->json(['error' => 'Produto sem estoque.'], 400);
-            }
-
-            $model = $request->tipo === 'agendamento' 
-                ? Agendamento::findOrFail($request->vinculo_id)
-                : Aluguel::findOrFail($request->vinculo_id);
-
-            if ($produto->estabelecimento_id !== $model->estabelecimento_id) {
-                return response()->json(['error' => 'Produto pertence a outro estabelecimento.'], 400);
-            }
-
-            $produto->decrement('estoque_disponivel');
-            $produto->increment('quantidade_vendida');
-
-            $model->valor_final += $produto->valor_final;
-            $model->save();
-
-            return response()->json([
-                'message'    => 'Produto adicionado com sucesso ao pedido!', 
-                'novo_valor' => $model->valor_final
-            ]);
-
-        } catch (\Exception $e) {
-            return response()->json(['error' => 'Não foi possível vincular o produto.'], 400);
-        }
-    }
-
-    /**
-     * 9. Repor Estoque
+     * 8. Repor Estoque
      */
     public function adicionarEstoque(Request $request, $id)
     {
@@ -333,17 +295,19 @@ class ProdutoController extends Controller
     }
 
     /**
-     * 10. Vincular Produto na Tabela Pivot `itens_aluguel`
+     * 9. Vincular Produto na Tabela Pivot `itens_aluguel`
      */
     public function vincularProduto(Request $request)
     {
         try {
             $request->validate([
-                'produto_id'     => 'required|exists:produtos,id',
-                'servico_id'     => 'nullable|exists:servicos,id',
-                'agendamento_id' => 'nullable|exists:agendamentos,id',
-                'aluguel_id'     => 'nullable|exists:alugueis,id',
-                'quantidade'     => 'required|integer|min:1'
+                'produto_id'                 => 'required|exists:produtos,id',
+                'servico_id'                 => 'nullable|exists:servicos,id',
+                'agendamento_id'             => 'nullable|exists:agendamentos,id',
+                'aluguel_id'                 => 'nullable|exists:alugueis,id',
+                'pagamento_id'               => 'nullable',
+                'usuario_estabelecimento_id' => 'nullable',
+                'quantidade'                 => 'required|integer|min:1'
             ]);
 
             $produto = Produto::findOrFail($request->produto_id);
@@ -353,18 +317,18 @@ class ProdutoController extends Controller
             }
 
             DB::table('itens_aluguel')->insert([
-                'estabelecimento_id'         => $produto->estabelecimento_id,
-                'servico_id'                 => $request->servico_id,
                 'nome'                       => $produto->nome,
                 'categoria'                  => 'outro',
                 'descricao'                  => $produto->descricao,
                 'quantidade'                 => $request->quantidade,
                 'valor_diaria'               => $produto->valor_final,
-                'usuario_id'                 => Auth::id(),
-                'usuario_estabelecimento_id' => null,
-                'pagamento_id'               => $request->pagamento_id,
+                'usuario_id'                 => Auth::id(), // Registra o usuário logado
+                'estabelecimento_id'         => $produto->estabelecimento_id,
+                'servico_id'                 => $request->servico_id,
                 'agendamento_id'             => $request->agendamento_id,
                 'aluguel_id'                 => $request->aluguel_id,
+                'pagamento_id'               => $request->pagamento_id,
+                'usuario_estabelecimento_id' => $request->usuario_estabelecimento_id ?? null,
                 'created_at'                 => now(),
                 'updated_at'                 => now(),
             ]);
@@ -380,12 +344,15 @@ class ProdutoController extends Controller
             ], 200);
 
         } catch (\Exception $e) {
-            Log::error('Erro ao vincular produto: ' . $e->getMessage());
+            Log::error('Erro ao vincular produto na tabela itens_aluguel: ' . $e->getMessage());
             return response()->json(['error' => 'Erro ao processar o vínculo do produto.'], 500);
         }
     }
 
-    /* Auxiliares Privados */
+    /* =========================================================================
+       MÉTODOS PRIVADOS AUXILIARES (HIVE AI E IMAGEKIT)
+       ========================================================================= */
+
     private function imagemContemConteudoInadequado($foto)
     {
         try {

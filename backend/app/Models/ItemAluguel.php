@@ -18,6 +18,7 @@ class ItemAluguel extends Model
     protected $casts = [
         'disponivel' => 'boolean',
         'ativo' => 'boolean',
+        'somente_premium' => 'boolean',
         'valor_diaria' => 'decimal:2',
         'valor_semanal' => 'decimal:2',
         'valor_mensal' => 'decimal:2',
@@ -57,5 +58,18 @@ class ItemAluguel extends Model
     public function alugueis(): HasMany
     {
         return $this->hasMany(Aluguel::class, 'item_aluguel_id');
+    }
+
+    public function produtosVinculados(): HasMany
+    {
+        return $this->hasMany(Produto::class, 'aluguel_id');
+    }
+
+    public function getEnderecoCompletoAttribute(): ?string
+    {
+        $linhaRua = collect([$this->endereco, $this->numero])->filter()->implode(', ');
+        $cidadeEstado = collect([$this->cidade, $this->estado])->filter()->implode('/');
+
+        return collect([$linhaRua, $this->bairro, $cidadeEstado])->filter()->implode(' - ') ?: null;
     }
 }

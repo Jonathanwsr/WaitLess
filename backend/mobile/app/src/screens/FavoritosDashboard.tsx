@@ -10,7 +10,8 @@ import {
   SafeAreaView,
   Modal,
   Dimensions,
-  Platform
+  Platform,
+  RefreshControl
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -85,7 +86,8 @@ export default function FavoritosDashboard() {
   // Abas: 'todos' | 'estabelecimentos' | 'servicos'
   const [abaAtiva, setAbaAtiva] = useState<'todos' | 'estabelecimentos' | 'servicos'>('todos');
   const [loading, setLoading] = useState(true);
-  
+  const [refreshing, setRefreshing] = useState(false);
+
   // Estado tipado corretamente para evitar o erro 'never'
   const [dados, setDados] = useState<DadosFavoritos>({ 
     estabelecimentos: [], 
@@ -100,6 +102,12 @@ export default function FavoritosDashboard() {
   useEffect(() => {
     carregarFavoritos();
   }, []);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await carregarFavoritos();
+    setRefreshing(false);
+  };
 
   const carregarFavoritos = async () => {
     setLoading(true);
@@ -191,11 +199,20 @@ export default function FavoritosDashboard() {
           </TouchableOpacity>
         </View>
 
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-          
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} colors={[COLORS.primary]} />
+          }
+        >
+
           {/* BANNER INFORMATIVO */}
           <View style={styles.heroSection}>
             <View style={styles.heroTextContainer}>
+              <Text style={styles.heroCount}>
+                {dados.estabelecimentos.length + dados.servicos.length} {(dados.estabelecimentos.length + dados.servicos.length) === 1 ? 'item salvo' : 'itens salvos'}
+              </Text>
               <Text style={styles.heroDescription}>
                 Acompanhe todos os lugares e serviços que você salvou para mais tarde.
               </Text>
@@ -316,15 +333,16 @@ export default function FavoritosDashboard() {
                         <View style={styles.ratingRow}>
                           <Ionicons name="star" size={13} color={COLORS.warning} />
                           <Text style={styles.ratingValue}>
-                            {item.avaliacao_media || '4.8'}{' '}
-                            <Text style={styles.ratingCount}>({item.total_avaliacoes || '86'})</Text>
+                            {item.avaliacao_media ? Number(item.avaliacao_media).toFixed(1) : 'Novo'}{' '}
+                            {item.total_avaliacoes ? <Text style={styles.ratingCount}>({item.total_avaliacoes})</Text> : null}
                           </Text>
                         </View>
 
-                        <Text style={styles.priceText}>
-                          R$ {item.preco_medio || item.valor || '620'}{' '}
-                          <Text style={styles.priceUnit}>/ noite</Text>
-                        </Text>
+                        {(item.preco_medio || item.valor) ? (
+                          <Text style={styles.priceText}>
+                            R$ {Number(item.preco_medio || item.valor).toFixed(2).replace('.', ',')}
+                          </Text>
+                        ) : null}
                       </View>
 
                       <TouchableOpacity 
@@ -385,8 +403,8 @@ export default function FavoritosDashboard() {
                         <View style={styles.ratingRow}>
                           <Ionicons name="star" size={13} color={COLORS.warning} />
                           <Text style={styles.ratingValue}>
-                            {item.avaliacao_media || '4.9'}{' '}
-                            <Text style={styles.ratingCount}>({item.total_avaliacoes || '230'})</Text>
+                            {item.avaliacao_media ? Number(item.avaliacao_media).toFixed(1) : 'Novo'}{' '}
+                            {item.total_avaliacoes ? <Text style={styles.ratingCount}>({item.total_avaliacoes})</Text> : null}
                           </Text>
                         </View>
                       </View>
@@ -408,7 +426,7 @@ export default function FavoritosDashboard() {
 
         {/* BOTTOM NAVIGATION BAR */}
         <View style={styles.bottomNav}>
-          <TouchableOpacity style={styles.navItem} onPress={() => router.push('/src/screens/Home')}>
+          <TouchableOpacity style={styles.navItem} onPress={() => router.push('/(tabs)/home')}>
             <Ionicons name="home-outline" size={22} color={COLORS.black} />
             <Text style={styles.navLabel}>Home</Text>
           </TouchableOpacity>
@@ -528,6 +546,12 @@ const styles = StyleSheet.create({
   heroTextContainer: {
     flex: 1,
     paddingRight: 12
+  },
+  heroCount: {
+    fontSize: 15,
+    fontWeight: '900',
+    color: COLORS.secondary,
+    marginBottom: 4
   },
   heroDescription: {
     fontSize: 13,

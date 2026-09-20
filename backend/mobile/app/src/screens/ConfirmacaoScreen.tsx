@@ -55,7 +55,7 @@ export default function ConfirmacaoScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.push('/src/screens/Home')}>
+        <TouchableOpacity onPress={() => router.push('/(tabs)/home')}>
           <Feather name="arrow-left" size={24} color="#1F2937" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Confirmação</Text>
@@ -120,7 +120,7 @@ export default function ConfirmacaoScreen() {
       </ScrollView>
 
       <View style={styles.footer}>
-        <TouchableOpacity style={styles.btnFinish} onPress={() => router.push('/src/screens/Home')}>
+        <TouchableOpacity style={styles.btnFinish} onPress={() => router.push('/(tabs)/home')}>
           <Text style={styles.btnFinishText}>Concluir e Voltar</Text>
           <Feather name="arrow-right" size={18} color="#FFF" />
         </TouchableOpacity>

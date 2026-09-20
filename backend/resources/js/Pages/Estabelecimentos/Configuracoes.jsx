@@ -33,7 +33,7 @@ import {
     CurrencyDollarIcon
 } from '@heroicons/react/24/solid';
 
-export default function Configuracoes({ auth, estabelecimento, meusEstabelecimentos, funcionarios, servicos, itensAluguel = [], itens_aluguel = [] }) {
+export default function Configuracoes({ auth, estabelecimento, meusEstabelecimentos, funcionarios, servicos, itensAluguel = [], itens_aluguel = [], produtos = [] }) {
     // ==========================================
     // 1. RECUPERA A ABA ATIVA DO LOCALSTORAGE
     // ==========================================
@@ -342,6 +342,13 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         tipo_desconto_cupom: 'percentual',
         valor_cupom: '',
         codigo_cupom: '',
+        somente_premium: false,
+        tem_promocao: false,
+        tipo_desconto: 'percentual',
+        valor_desconto: '',
+        aceita_pontos: false,
+        maximo_pontos_permitidos: '',
+        produtos_vinculados: [],
     });
 
     useEffect(() => {
@@ -466,6 +473,13 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
             tipo_desconto_cupom: config.tipo_desconto_cupom || 'percentual',
             valor_cupom: config.valor_cupom || '',
             codigo_cupom: config.codigo_cupom || '',
+            somente_premium: servico.somente_premium === 1 || servico.somente_premium === true,
+            tem_promocao: servico.tem_promocao === 1 || servico.tem_promocao === true,
+            tipo_desconto: servico.tipo_desconto || 'percentual',
+            valor_desconto: servico.valor_desconto ?? '',
+            aceita_pontos: servico.aceita_pontos === 1 || servico.aceita_pontos === true,
+            maximo_pontos_permitidos: servico.maximo_pontos_permitidos ?? '',
+            produtos_vinculados: produtos.filter(p => p.servico_id === servico.id).map(p => p.id),
         });
         
         window.scrollTo({ top: 0, behavior: 'smooth' }); 
@@ -616,6 +630,8 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         aceita_pontos: false,
         maximo_pontos_permitidos: '',
         exige_contrato: false,
+        somente_premium: false,
+        produtos_vinculados: [],
     });
 
     // Funções para adicionar vagas por Data e Horário
@@ -816,7 +832,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                 cancelarEdicaoItem();
                 mostrarMensagem('Sua locação foi salva com sucesso!');
                 atualizarListaLocacoes();
-                router.reload({ only: ['itensAluguel', 'itens_aluguel', 'meusEstabelecimentos', 'estabelecimentos'] });
+                router.reload({ only: ['itensAluguel', 'itens_aluguel', 'meusEstabelecimentos', 'estabelecimentos', 'produtos'] });
             }
         });
 
@@ -848,6 +864,8 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
             tem_promocao: item.tem_promocao === 1 || item.tem_promocao === true,
             aceita_pontos: item.aceita_pontos === 1 || item.aceita_pontos === true,
             exige_contrato: item.exige_contrato === 1 || item.exige_contrato === true,
+            somente_premium: item.somente_premium === 1 || item.somente_premium === true,
+            produtos_vinculados: produtos.filter(p => p.aluguel_id === item.id).map(p => p.id),
         });
         setDiasMesInput(parseArraySeguro(item.dias_mes_disponiveis).join(', '));
         setSimulacaoPontos('');
@@ -1395,6 +1413,97 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                     </div>
                                                 </div>
                                             </div>
+
+                                            {/* 👉 NOVO BLOCO: OFERTA EXCLUSIVA PREMIUM */}
+                                            <div className="bg-gradient-to-br from-orange-50 to-orange-100/50 p-6 rounded-3xl border border-orange-200">
+                                                <h4 className="text-sm font-black text-orange-900 uppercase tracking-wider mb-6 flex items-center gap-2"><GiftIcon className="w-5 h-5"/> Oferta Exclusiva Premium</h4>
+
+                                                <div className="bg-white p-5 rounded-2xl shadow-sm border border-orange-100 mb-4">
+                                                    <label className="flex items-center justify-between cursor-pointer">
+                                                        <div>
+                                                            <span className="font-bold text-sm text-gray-900 block flex items-center gap-1"><LockClosedIcon className="w-4 h-4"/> Somente para Assinantes Premium</span>
+                                                            <span className="text-xs text-gray-500">Este serviço só aparece liberado para clientes com plano Premium.</span>
+                                                        </div>
+                                                        <div className="relative inline-flex items-center">
+                                                            <input type="checkbox" className="sr-only peer" checked={formServico.data.somente_premium} onChange={e => formServico.setData('somente_premium', e.target.checked)} />
+                                                            <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#FF5A00]"></div>
+                                                        </div>
+                                                    </label>
+                                                </div>
+
+                                                <div className="bg-white p-5 rounded-2xl shadow-sm border border-orange-100 mb-4">
+                                                    <label className="flex items-center justify-between cursor-pointer mb-4">
+                                                        <div>
+                                                            <span className="font-bold text-sm text-gray-900 block">Habilitar Desconto Promocional?</span>
+                                                            <span className="text-xs text-gray-500">Aparece na tela de Ofertas Premium para os clientes.</span>
+                                                        </div>
+                                                        <div className="relative inline-flex items-center">
+                                                            <input type="checkbox" className="sr-only peer" checked={formServico.data.tem_promocao} onChange={e => formServico.setData('tem_promocao', e.target.checked)} />
+                                                            <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#FF5A00]"></div>
+                                                        </div>
+                                                    </label>
+
+                                                    {formServico.data.tem_promocao && (
+                                                        <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2 pt-4 border-t border-gray-100">
+                                                            <div>
+                                                                <InputLabel value="Tipo de Desconto" />
+                                                                <select className="mt-1 w-full border-gray-300 rounded-lg text-sm focus:border-[#FF5A00]" value={formServico.data.tipo_desconto ?? ''} onChange={e => formServico.setData('tipo_desconto', e.target.value)}>
+                                                                    <option value="percentual">Porcentagem (%)</option>
+                                                                    <option value="fixo">Fixo (R$)</option>
+                                                                </select>
+                                                            </div>
+                                                            <div>
+                                                                <InputLabel value="Valor do Desconto" />
+                                                                <TextInput type="number" min="0" step="0.01" className="mt-1 w-full focus:border-[#FF5A00]" value={formServico.data.valor_desconto ?? ''} onChange={e => formServico.setData('valor_desconto', e.target.value)} placeholder="Ex: 20" required={formServico.data.tem_promocao} />
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                <div className="bg-white p-5 rounded-2xl shadow-sm border border-orange-100">
+                                                    <label className="flex items-center justify-between cursor-pointer mb-4">
+                                                        <div>
+                                                            <span className="font-bold text-sm text-gray-900 block">Aceitar Pontos LOKYVA?</span>
+                                                            <span className="text-xs text-gray-500">Permitir desconto usando a carteira do app.</span>
+                                                        </div>
+                                                        <div className="relative inline-flex items-center">
+                                                            <input type="checkbox" className="sr-only peer" checked={formServico.data.aceita_pontos} onChange={e => formServico.setData('aceita_pontos', e.target.checked)} />
+                                                            <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#FF5A00]"></div>
+                                                        </div>
+                                                    </label>
+
+                                                    {formServico.data.aceita_pontos && (
+                                                        <div className="animate-in fade-in slide-in-from-top-2 pt-4 border-t border-gray-100">
+                                                            <InputLabel value="Máximo de Pontos Permitidos" />
+                                                            <TextInput type="number" min="1" className="mt-1 w-full focus:border-[#FF5A00]" value={formServico.data.maximo_pontos_permitidos ?? ''} onChange={e => formServico.setData('maximo_pontos_permitidos', e.target.value)} placeholder="Ex: 100 pontos" required={formServico.data.aceita_pontos} />
+                                                            <p className="text-[10px] text-gray-400 mt-1">Lembre-se: 100 pontos = R$ 1,00 de desconto.</p>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                {produtos.length > 0 && (
+                                                    <div className="bg-white p-5 rounded-2xl shadow-sm border border-orange-100 mt-4">
+                                                        <span className="font-bold text-sm text-gray-900 block mb-1">Vincular Produtos já Cadastrados</span>
+                                                        <span className="text-xs text-gray-500 block mb-3">Produtos marcados aparecem junto com este serviço na hora do agendamento.</span>
+                                                        <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto pr-1">
+                                                            {produtos.map(p => {
+                                                                const selecionado = formServico.data.produtos_vinculados.includes(p.id);
+                                                                return (
+                                                                    <button type="button" key={p.id} onClick={() => {
+                                                                        const lista = selecionado
+                                                                            ? formServico.data.produtos_vinculados.filter(id => id !== p.id)
+                                                                            : [...formServico.data.produtos_vinculados, p.id];
+                                                                        formServico.setData('produtos_vinculados', lista);
+                                                                    }} className={`px-3 py-2 rounded-lg text-xs font-bold border transition ${selecionado ? 'bg-orange-100 text-[#FF5A00] border-orange-300' : 'bg-white text-gray-500 border-gray-200'}`}>
+                                                                        {p.nome}
+                                                                    </button>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+
                                             <div className="flex justify-end pt-4 gap-2">
                                                 {isEditingServico && <button type="button" onClick={cancelarEdicaoServico} className="px-4 py-2 text-gray-500 font-bold">Cancelar</button>}
                                                 <PrimaryButton className="px-8 py-3 bg-green-600 hover:bg-green-700 text-white rounded-xl shadow-lg" disabled={formServico.processing}>
@@ -1410,7 +1519,11 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                         {servicos.map(s => (
                                             <div key={s.id} className="py-4 flex justify-between items-center">
                                                 <div>
-                                                    <h4 className="font-bold text-gray-900">{s.nome}</h4>
+                                                    <h4 className="font-bold text-gray-900 flex items-center gap-2">
+                                                        {s.nome}
+                                                        {s.somente_premium && <span className="text-[10px] font-black bg-orange-100 text-[#FF5A00] px-2 py-0.5 rounded uppercase tracking-wider flex items-center gap-1"><LockClosedIcon className="w-3 h-3"/> Premium</span>}
+                                                        {s.tem_promocao && <span className="text-[10px] font-black bg-red-100 text-red-700 px-2 py-0.5 rounded uppercase tracking-wider">Promoção Ativa</span>}
+                                                    </h4>
                                                     <p className="text-sm text-gray-500">R$ {s.valor} • {s.duracao_minutos} min</p>
                                                 </div>
                                                 <div className="flex gap-2">
@@ -1620,7 +1733,43 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                     {/* 👉 NOVO BLOCO: PROMOÇÕES E PONTUAÇÃO */}
                                                     <div className="flex-1 bg-gradient-to-br from-orange-50 to-orange-100/50 p-6 rounded-3xl border border-orange-200">
                                                         <h4 className="text-sm font-black text-orange-900 uppercase tracking-wider mb-6 flex items-center gap-2"><GiftIcon className="w-5 h-5"/> Promoções e Fidelidade</h4>
-                                                        
+
+                                                        {/* Exclusivo Premium */}
+                                                        <div className="bg-white p-5 rounded-2xl shadow-sm border border-orange-100 mb-4">
+                                                            <label className="flex items-center justify-between cursor-pointer">
+                                                                <div>
+                                                                    <span className="font-bold text-sm text-gray-900 block flex items-center gap-1"><LockClosedIcon className="w-4 h-4"/> Somente para Assinantes Premium</span>
+                                                                    <span className="text-xs text-gray-500">Esta reserva só aparece liberada para clientes com plano Premium.</span>
+                                                                </div>
+                                                                <div className="relative inline-flex items-center">
+                                                                    <input type="checkbox" className="sr-only peer" checked={formItem.data.somente_premium} onChange={e => formItem.setData('somente_premium', e.target.checked)} />
+                                                                    <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#FF5A00]"></div>
+                                                                </div>
+                                                            </label>
+                                                        </div>
+
+                                                        {produtos.length > 0 && (
+                                                            <div className="bg-white p-5 rounded-2xl shadow-sm border border-orange-100 mb-4">
+                                                                <span className="font-bold text-sm text-gray-900 block mb-1">Vincular Produtos já Cadastrados</span>
+                                                                <span className="text-xs text-gray-500 block mb-3">Produtos marcados aparecem junto com esta reserva.</span>
+                                                                <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto pr-1">
+                                                                    {produtos.map(p => {
+                                                                        const selecionado = formItem.data.produtos_vinculados.includes(p.id);
+                                                                        return (
+                                                                            <button type="button" key={p.id} onClick={() => {
+                                                                                const lista = selecionado
+                                                                                    ? formItem.data.produtos_vinculados.filter(id => id !== p.id)
+                                                                                    : [...formItem.data.produtos_vinculados, p.id];
+                                                                                formItem.setData('produtos_vinculados', lista);
+                                                                            }} className={`px-3 py-2 rounded-lg text-xs font-bold border transition ${selecionado ? 'bg-orange-100 text-[#FF5A00] border-orange-300' : 'bg-white text-gray-500 border-gray-200'}`}>
+                                                                                {p.nome}
+                                                                            </button>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            </div>
+                                                        )}
+
                                                         {/* Promoção */}
                                                         <div className="bg-white p-5 rounded-2xl shadow-sm border border-orange-100 mb-4">
                                                             <label className="flex items-center justify-between cursor-pointer mb-4">
@@ -2163,6 +2312,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                     <div className="mb-4 sm:mb-0">
                                                         <div className="flex items-center gap-2 mb-1">
                                                             <span className="text-[10px] font-black bg-orange-50 text-[#FF5A00] px-2 py-0.5 rounded uppercase tracking-wider border border-orange-100">{item.categoria.replace(/_/g, ' ')}</span>
+                                                            {item.somente_premium && <span className="text-[10px] font-black bg-orange-100 text-[#FF5A00] px-2 py-0.5 rounded uppercase tracking-wider flex items-center gap-1"><LockClosedIcon className="w-3 h-3"/> Premium</span>}
                                                             {item.tem_promocao && <span className="text-[10px] font-black bg-red-100 text-red-700 px-2 py-0.5 rounded uppercase tracking-wider">Promoção Ativa</span>}
                                                             {item.exige_contrato && <span className="text-[10px] font-black bg-blue-100 text-blue-700 px-2 py-0.5 rounded uppercase tracking-wider">Com Contrato</span>}
                                                         </div>

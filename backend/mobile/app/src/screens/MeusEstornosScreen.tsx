@@ -53,6 +53,9 @@ export default function MeusEstornosScreen() {
   const [descricao, setDescricao] = useState('');
   const [imagens, setImagens] = useState<ImagePicker.ImagePickerAsset[]>([]);
   const [enviando, setEnviando] = useState(false);
+  const [elegiveis, setElegiveis] = useState<any[]>([]);
+  const [carregandoElegiveis, setCarregandoElegiveis] = useState(false);
+  const [pedidoSelecionado, setPedidoSelecionado] = useState<any>(null);
 
   // Modal Detalhes (Ações Admin/Proprietário)
   const [modalDetalhesVisible, setModalDetalhesVisible] = useState(false);
@@ -125,6 +128,27 @@ export default function MeusEstornosScreen() {
     valorDeferido: estornos.filter(i => ['APROVADO', 'ESTORNADO'].includes(i.status)).reduce((acc, curr) => acc + Number(curr.valor_estornado || curr.valor_pago), 0),
   };
 
+  // --- ABRIR FORMULÁRIO: BUSCA OS PEDIDOS ELEGÍVEIS PARA ESTORNO ---
+  const abrirFormulario = async () => {
+    setCurrentView('FORM');
+    setPedidoSelecionado(null);
+    setCarregandoElegiveis(true);
+    try {
+      const token = await AsyncStorage.getItem('@waitless_token');
+      const res = await fetch(`${API_URL}/estornos/elegiveis`, {
+        headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+      });
+      const data = await res.json();
+      const lista = res.ok && Array.isArray(data.data) ? data.data : [];
+      setElegiveis(lista);
+      if (lista.length === 1) setPedidoSelecionado(lista[0]);
+    } catch (e) {
+      setElegiveis([]);
+    } finally {
+      setCarregandoElegiveis(false);
+    }
+  };
+
   // --- AÇÕES DO FORMULÁRIO (IMAGEM 2) ---
   const selecionarImagem = async () => {
     if (imagens.length >= 5) return Alert.alert('Atenção', 'Máximo de 5 imagens.');
@@ -136,6 +160,7 @@ export default function MeusEstornosScreen() {
   };
 
   const enviarSolicitacao = async () => {
+    if (!pedidoSelecionado) return Alert.alert('Atenção', 'Selecione qual pedido você quer contestar.');
     if (!motivo) return Alert.alert('Atenção', 'Selecione o motivo do estorno.');
     if (descricao.length < 10) return Alert.alert('Atenção', 'Descreva o que aconteceu (mínimo 10 caracteres).');
 
@@ -145,14 +170,13 @@ export default function MeusEstornosScreen() {
       const formData = new FormData();
       formData.append('motivo', motivo);
       formData.append('descricao', descricao);
-      formData.append('categoria', 'SERVICO'); // Mock: Isso viria do ID do pagamento real
-      
+      formData.append('categoria', 'SERVICO');
+
       imagens.forEach((img, index) => {
         formData.append('imagens[]', { uri: img.uri, name: `img_${index}.jpg`, type: 'image/jpeg' } as any);
       });
 
-      // ID Mockado 1 apenas para exemplo do formulário isolado
-      const res = await fetch(`${API_URL}/estornos/solicitar/pagamento/1`, {
+      const res = await fetch(`${API_URL}/estornos/solicitar/${pedidoSelecionado.pagamento_id}`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: formData
@@ -162,7 +186,7 @@ export default function MeusEstornosScreen() {
       if (res.ok) {
         Alert.alert('Sucesso!', 'Sua solicitação de estorno foi enviada.');
         setCurrentView('LIST');
-        setMotivo(''); setDescricao(''); setImagens([]);
+        setMotivo(''); setDescricao(''); setImagens([]); setPedidoSelecionado(null);
         fetchEstornos();
       } else {
         Alert.alert('Atenção', data.error || 'Falha ao solicitar estorno.');
@@ -210,24 +234,54 @@ export default function MeusEstornosScreen() {
           </View>
 
           {/* Pedido */}
-          <Text style={styles.sectionTitle}>Pedido</Text>
-          <View style={styles.pedidoCard}>
-            <Image source={{ uri: 'https://images.unsplash.com/photo-1522708323590-d24dbb6b0267' }} style={styles.pedidoImg} />
-            <View style={styles.pedidoInfo}>
-              <Text style={styles.pedidoTitle} numberOfLines={1}>Apartamento Vista Mar</Text>
-              <View style={styles.pedidoRow}>
-                <Feather name="calendar" size={12} color={COLORS.gray} />
-                <Text style={styles.pedidoText}>12 - 15 mai 2025</Text>
-                <Feather name="users" size={12} color={COLORS.gray} style={{ marginLeft: 8 }} />
-                <Text style={styles.pedidoText}>2 hóspedes</Text>
-              </View>
-              <Text style={styles.pedidoId}>Reserva #LKY12345</Text>
+          <Text style={styles.sectionTitle}>Qual pedido você quer contestar?</Text>
+          {carregandoElegiveis ? (
+            <ActivityIndicator size="small" color={COLORS.primary} style={{ marginVertical: 12 }} />
+          ) : elegiveis.length === 0 ? (
+            <View style={styles.emptyElegiveisBox}>
+              <Feather name="info" size={18} color={COLORS.gray} />
+              <Text style={styles.emptyElegiveisText}>
+                Nenhum serviço finalizado nos últimos 4 dias está disponível para estorno no momento.
+              </Text>
             </View>
-            <View style={{ alignItems: 'flex-end', justifyContent: 'center' }}>
-              <Text style={styles.pedidoPrice}>R$ 1.250,00</Text>
-              <Feather name="chevron-right" size={20} color={COLORS.gray} style={{ marginTop: 4 }} />
-            </View>
-          </View>
+          ) : (
+            elegiveis.map((item) => {
+              const selecionado = pedidoSelecionado?.agendamento_id === item.agendamento_id;
+              return (
+                <TouchableOpacity
+                  key={item.agendamento_id}
+                  style={[styles.pedidoCard, selecionado && styles.pedidoCardSelecionado]}
+                  onPress={() => setPedidoSelecionado(item)}
+                  activeOpacity={0.85}
+                >
+                  {item.estabelecimento_foto ? (
+                    <Image source={{ uri: item.estabelecimento_foto }} style={styles.pedidoImg} />
+                  ) : (
+                    <View style={[styles.pedidoImg, styles.pedidoImgPlaceholder]}>
+                      <Feather name="scissors" size={18} color={COLORS.gray} />
+                    </View>
+                  )}
+                  <View style={styles.pedidoInfo}>
+                    <Text style={styles.pedidoTitle} numberOfLines={1}>{item.servico || 'Serviço'}</Text>
+                    <View style={styles.pedidoRow}>
+                      <Feather name="map-pin" size={12} color={COLORS.gray} />
+                      <Text style={styles.pedidoText} numberOfLines={1}>{item.estabelecimento}</Text>
+                    </View>
+                    <Text style={styles.pedidoId}>Prazo para pedir: {item.data_limite_formatada}</Text>
+                  </View>
+                  <View style={{ alignItems: 'flex-end', justifyContent: 'center' }}>
+                    <Text style={styles.pedidoPrice}>{formatMoney(item.valor_total || 0)}</Text>
+                    <Ionicons
+                      name={selecionado ? 'checkmark-circle' : 'ellipse-outline'}
+                      size={20}
+                      color={selecionado ? COLORS.primary : COLORS.gray}
+                      style={{ marginTop: 4 }}
+                    />
+                  </View>
+                </TouchableOpacity>
+              );
+            })
+          )}
 
           {/* Motivo */}
           <Text style={styles.sectionTitle}>Motivo do estorno</Text>
@@ -292,7 +346,11 @@ export default function MeusEstornosScreen() {
           </View>
 
           {/* Botoes */}
-          <TouchableOpacity style={styles.btnPrimary} onPress={enviarSolicitacao} disabled={enviando}>
+          <TouchableOpacity
+            style={[styles.btnPrimary, !pedidoSelecionado && styles.btnPrimaryDisabled]}
+            onPress={enviarSolicitacao}
+            disabled={enviando || !pedidoSelecionado}
+          >
             {enviando ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnPrimaryText}>Enviar solicitação de estorno</Text>}
           </TouchableOpacity>
           <TouchableOpacity style={styles.btnOutline} onPress={() => setCurrentView('LIST')} disabled={enviando}>
@@ -326,7 +384,7 @@ export default function MeusEstornosScreen() {
         <View style={styles.dashTopRow}>
           <Text style={styles.dashSub}>Acompanhe suas solicitações de estorno de forma rápida e segura.</Text>
           {isCliente && (
-            <TouchableOpacity style={styles.btnSolicitar} onPress={() => setCurrentView('FORM')}>
+            <TouchableOpacity style={styles.btnSolicitar} onPress={abrirFormulario}>
               <Feather name="plus" size={16} color={COLORS.primary} />
               <Text style={styles.btnSolicitarText}>Solicitar estorno</Text>
             </TouchableOpacity>
@@ -532,8 +590,12 @@ const styles = StyleSheet.create({
   safeBannerTitle: { fontSize: 14, fontWeight: '800', color: COLORS.secondary, marginBottom: 2 },
   safeBannerDesc: { fontSize: 12, color: COLORS.gray, lineHeight: 18 },
 
-  pedidoCard: { flexDirection: 'row', backgroundColor: COLORS.white, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: COLORS.border, marginBottom: 24 },
+  pedidoCard: { flexDirection: 'row', backgroundColor: COLORS.white, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: COLORS.border, marginBottom: 12 },
+  pedidoCardSelecionado: { borderColor: COLORS.primary, borderWidth: 2, backgroundColor: COLORS.primaryLight },
   pedidoImg: { width: 60, height: 60, borderRadius: 8, backgroundColor: COLORS.lightGray },
+  pedidoImgPlaceholder: { alignItems: 'center', justifyContent: 'center' },
+  emptyElegiveisBox: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: COLORS.lightGray, padding: 14, borderRadius: 12, marginBottom: 20 },
+  emptyElegiveisText: { flex: 1, fontSize: 12, color: COLORS.gray, lineHeight: 17 },
   pedidoInfo: { flex: 1, marginLeft: 12, justifyContent: 'center' },
   pedidoTitle: { fontSize: 14, fontWeight: '800', color: COLORS.secondary, marginBottom: 4 },
   pedidoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
@@ -567,6 +629,7 @@ const styles = StyleSheet.create({
   shieldText: { marginLeft: 8, fontSize: 12, color: COLORS.secondary, fontWeight: '500' },
 
   btnPrimary: { backgroundColor: COLORS.primary, paddingVertical: 16, borderRadius: 12, alignItems: 'center', marginBottom: 12 },
+  btnPrimaryDisabled: { backgroundColor: COLORS.border },
   btnPrimaryText: { color: COLORS.white, fontSize: 15, fontWeight: '800' },
   btnOutline: { backgroundColor: COLORS.white, paddingVertical: 16, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: COLORS.primary },
   btnOutlineText: { color: COLORS.primary, fontSize: 15, fontWeight: '800' },

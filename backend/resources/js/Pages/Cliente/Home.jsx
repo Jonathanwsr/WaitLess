@@ -24,10 +24,11 @@ const GlobalStyle = createGlobalStyle`
     margin: 0;
     padding: 0;
     font-family: 'Inter', sans-serif;
-    background-color: #FBF9F9; 
+    background-color: #FBF9F9;
     color: #333;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
   }
   *, *::before, *::after {
     box-sizing: border-box;
@@ -35,18 +36,23 @@ const GlobalStyle = createGlobalStyle`
 `;
 
 const colors = {
-  primary: '#E04F36', 
-  primaryLight: '#FFF0ED', 
-  secondary: '#111827', 
-  accent: '#FBBF24', 
-  gray: '#6B7280', 
-  lightGray: '#F3F4F6', 
+  primary: '#FF5A00',
+  primaryDark: '#E04F1A',
+  primaryLight: '#FFF1E8',
+  primaryGlow: 'rgba(255, 90, 0, 0.16)',
+  secondary: '#111827',
+  accent: '#FBBF24',
+  gray: '#6B7280',
+  lightGray: '#F5F4F2',
   white: '#FFFFFF',
-  border: '#E5E7EB',
-  error: '#DC2626', 
+  border: '#E9E4DF',
+  error: '#DC2626',
 };
 
 const media = {
+  // Alinhado ao breakpoint "sm" (640px) do Tailwind usado no restante do app,
+  // onde o AuthenticatedLayout já recolhe a sidebar para um menu mobile.
+  mobile: (...args) => css`@media (max-width: 480px) { ${css(...args)}; }`,
   tablet: (...args) => css`@media (max-width: 768px) { ${css(...args)}; }`,
   desktop: (...args) => css`@media (max-width: 1024px) { ${css(...args)}; }`,
 };
@@ -54,49 +60,79 @@ const media = {
 // --- COMPONENTES STYLED (LAYOUT E UI) ---
 
 const MainContainer = styled.div`
-  max-width: 1200px;
+  max-width: 1240px;
   margin: 0 auto;
   padding: 2rem;
   display: flex;
   flex-direction: column;
-  gap: 3rem;
+  gap: 3.5rem;
+
+  ${media.desktop`
+    padding: 1.5rem;
+    gap: 2.5rem;
+  `}
 
   ${media.tablet`
+    padding: 1.25rem;
+    gap: 2.25rem;
+  `}
+
+  ${media.mobile`
     padding: 1rem;
-    gap: 2rem;
+    gap: 1.75rem;
   `}
 `;
 
 // HERO SECTION
 const HeroSection = styled.header`
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1.05fr 0.95fr;
   gap: 3rem;
   align-items: center;
+  position: relative;
 
-  ${media.tablet`
+  ${media.desktop`
     grid-template-columns: 1fr;
     text-align: center;
+    gap: 2rem;
   `}
 `;
 
 const HeroText = styled.div`
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+
+  ${media.desktop`
+    align-items: center;
+  `}
+
   h1 {
-    font-size: 3.2rem;
+    font-size: clamp(2rem, 4.2vw, 3.2rem);
     font-weight: 800;
-    line-height: 1.1;
+    line-height: 1.12;
+    letter-spacing: -0.02em;
     margin-bottom: 1rem;
     color: ${colors.secondary};
   }
   h1 span {
     color: ${colors.primary};
+    background: linear-gradient(90deg, ${colors.primary}, ${colors.primaryDark});
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
   }
   p {
-    font-size: 1.1rem;
+    font-size: clamp(0.95rem, 1.4vw, 1.1rem);
     color: ${colors.gray};
     line-height: 1.6;
     margin-bottom: 2rem;
+    max-width: 46ch;
   }
+
+  ${media.desktop`
+    p { max-width: 56ch; }
+  `}
 `;
 
 const HeroBadge = styled.div`
@@ -112,6 +148,7 @@ const HeroBadge = styled.div`
   margin-bottom: 1.2rem;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  border: 1px solid rgba(255, 90, 0, 0.15);
 `;
 
 const HeroBenefits = styled.ul`
@@ -126,33 +163,41 @@ const HeroBenefits = styled.ul`
     display: flex;
     align-items: center;
     gap: 0.6rem;
-    font-size: 1rem;
+    font-size: clamp(0.9rem, 1.2vw, 1rem);
     color: ${colors.secondary};
     font-weight: 500;
-    
-    ${media.tablet`
+
+    ${media.desktop`
       justify-content: center;
     `}
 
     svg {
       color: #10B981;
       font-size: 1.2rem;
+      flex-shrink: 0;
     }
   }
 `;
 
 const SearchBarForm = styled.form`
   display: flex;
+  width: 100%;
   background-color: ${colors.white};
   border: 1px solid ${colors.border};
   border-radius: 50px;
   padding: 0.4rem;
   margin-bottom: 1rem;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 8px 20px -8px rgba(17, 24, 39, 0.12);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+
+  &:focus-within {
+    border-color: ${colors.primary};
+    box-shadow: 0 8px 24px -6px ${colors.primaryGlow};
+  }
 
   ${media.tablet`
     flex-direction: column;
-    border-radius: 15px;
+    border-radius: 18px;
     padding: 0.8rem;
     gap: 0.8rem;
   `}
@@ -178,7 +223,7 @@ const SearchInput = styled.div`
 `;
 
 const SearchButton = styled.button`
-  background-color: ${colors.primary};
+  background: linear-gradient(135deg, ${colors.primary}, ${colors.primaryDark});
   color: ${colors.white};
   border: none;
   padding: 0.8rem 2.5rem;
@@ -186,17 +231,23 @@ const SearchButton = styled.button`
   font-weight: 600;
   font-size: 1rem;
   cursor: pointer;
-  transition: opacity 0.2s;
+  white-space: nowrap;
+  transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.2s;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 0.5rem;
+  flex-shrink: 0;
 
-  &:hover { opacity: 0.9; }
+  &:hover { transform: translateY(-1px); box-shadow: 0 6px 16px -4px ${colors.primaryGlow}; }
+  &:active { transform: translateY(0); }
   ${media.tablet`width: 100%; justify-content: center;`}
-  
+
   &:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
   }
 `;
 
@@ -204,11 +255,11 @@ const SearchSuggestions = styled.div`
   font-size: 0.85rem;
   color: ${colors.gray};
   display: flex;
-  gap: 1rem;
+  gap: 0.6rem;
   flex-wrap: wrap;
   align-items: center;
 
-  span { font-weight: 500; }
+  span { font-weight: 500; margin-right: 0.2rem; }
   a {
     background-color: ${colors.lightGray};
     padding: 0.4rem 0.8rem;
@@ -216,48 +267,76 @@ const SearchSuggestions = styled.div`
     cursor: pointer;
     text-decoration: none;
     color: ${colors.secondary};
-    transition: background 0.2s;
-    &:hover { background-color: #E5E7EB; }
+    font-weight: 500;
+    transition: background 0.2s, color 0.2s;
+    &:hover { background-color: ${colors.primaryLight}; color: ${colors.primary}; }
   }
-  ${media.tablet`justify-content: center;`}
+  ${media.desktop`justify-content: center;`}
 `;
 
 const HeroImageArea = styled.div`
   position: relative;
-  border-radius: 20px;
+  border-radius: 24px;
   overflow: hidden;
-  height: 400px;
-  background-color: ${colors.lightGray};
+  height: 420px;
+  width: 100%;
+  background: linear-gradient(135deg, ${colors.primaryLight}, ${colors.lightGray});
   display: flex;
   justify-content: center;
   align-items: center;
-  
+  box-shadow: 0 20px 40px -16px rgba(17, 24, 39, 0.15);
+
   img {
     width: 100%;
     height: 100%;
     object-fit: cover;
   }
 
-  ${media.tablet`height: 300px;`}
+  ${media.desktop`
+    height: 340px;
+    max-width: 560px;
+    margin: 0 auto;
+  `}
+
+  ${media.tablet`height: 280px;`}
+  ${media.mobile`
+    height: 220px;
+    border-radius: 18px;
+  `}
 `;
 
 const FloatingWidget = styled.div`
   position: absolute;
-  background-color: ${colors.white};
+  background-color: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   padding: 1rem;
-  border-radius: 12px;
+  border-radius: 14px;
   display: flex;
   align-items: center;
   gap: 0.8rem;
-  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 12px 24px -8px rgba(17, 24, 39, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.6);
 
   .icon { font-size: 1.8rem; color: ${colors.primary}; }
   .text {
     font-size: 0.85rem;
     color: ${colors.gray};
     line-height: 1.2;
+    white-space: nowrap;
     strong { font-size: 1.1rem; font-weight: 700; color: ${colors.secondary}; }
   }
+
+  /* Nos telões estreitos os offsets negativos vazavam pra fora do container
+     e criavam scroll horizontal indesejado — a partir do tablet, elas
+     encolhem e ficam coladas nas bordas em vez de flutuar para fora. */
+  ${media.tablet`
+    padding: 0.7rem 0.9rem;
+    .icon { font-size: 1.4rem; }
+    .text { font-size: 0.75rem; strong { font-size: 0.95rem; } }
+  `}
+
+  ${media.mobile`display: none;`}
 `;
 
 // CATEGORIES SECTION
@@ -271,16 +350,34 @@ const SectionHeader = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  
-  h2 { font-size: 1.4rem; font-weight: 700; margin: 0; color: ${colors.secondary}; }
-  
+  gap: 1rem;
+
+  h2 { font-size: clamp(1.15rem, 2.4vw, 1.4rem); font-weight: 700; margin: 0; color: ${colors.secondary}; }
+
   .header-actions {
     display: flex;
     align-items: center;
-    gap: 1.5rem;
+    gap: 1.25rem;
+    flex-shrink: 0;
 
-    a { font-size: 0.9rem; color: ${colors.primary}; text-decoration: none; font-weight: 600; display: flex; align-items: center; gap: 0.4rem; }
+    a {
+      font-size: 0.9rem;
+      color: ${colors.primary};
+      text-decoration: none;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      white-space: nowrap;
+      transition: opacity 0.2s;
+      &:hover { opacity: 0.75; }
+    }
   }
+
+  ${media.mobile`
+    flex-wrap: wrap;
+    .header-actions { gap: 0.85rem; }
+  `}
 `;
 
 const CarouselNav = styled.div`
@@ -316,9 +413,12 @@ const CategoryList = styled.div`
   gap: 1.2rem;
   overflow-x: auto;
   padding-bottom: 0.5rem;
-  scroll-behavior: smooth; 
-  scrollbar-width: none; 
+  scroll-behavior: smooth;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
   &::-webkit-scrollbar { display: none; }
+
+  ${media.mobile`gap: 0.8rem;`}
 `;
 
 const CategoryItem = styled.div`
@@ -329,19 +429,39 @@ const CategoryItem = styled.div`
   align-items: center;
   justify-content: center;
   gap: 0.8rem;
-  border-radius: 16px;
+  border-radius: 18px;
   cursor: pointer;
   background-color: ${colors.white};
   border: 1px solid ${colors.border};
-  transition: all 0.2s;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  scroll-snap-align: start;
 
   &:hover {
     border-color: ${colors.primary};
-    box-shadow: 0 4px 6px -1px rgba(224, 79, 54, 0.1);
+    box-shadow: 0 8px 16px -6px ${colors.primaryGlow};
+    transform: translateY(-2px);
   }
 
-  .icon-holder { font-size: 1.8rem; color: #9CA3AF; }
+  .icon-holder {
+    font-size: 1.6rem;
+    color: ${colors.primary};
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background-color: ${colors.primaryLight};
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
   p { font-size: 0.85rem; font-weight: 600; margin: 0; color: ${colors.secondary}; text-align: center; }
+
+  ${media.mobile`
+    flex: 0 0 92px;
+    height: 96px;
+    gap: 0.6rem;
+    .icon-holder { width: 38px; height: 38px; font-size: 1.4rem; }
+    p { font-size: 0.78rem; }
+  `}
 `;
 
 // --- SEÇÃO: CARROSEL DE SERVIÇOS COM FOTOS ---
@@ -357,30 +477,38 @@ const ServicesCarousel = styled.div`
   gap: 1.5rem;
   overflow-x: auto;
   padding-bottom: 1rem;
-  scroll-behavior: smooth; 
-  scrollbar-width: none; 
+  scroll-behavior: smooth;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
   &::-webkit-scrollbar { display: none; }
+
+  ${media.mobile`gap: 1rem;`}
 `;
 
 const ServiceCard = styled.div`
   flex: 0 0 320px;
   background-color: ${colors.white};
-  border-radius: 12px;
+  border-radius: 16px;
   overflow: hidden;
   border: 1px solid ${colors.border};
   display: flex;
   flex-direction: column;
-  cursor: pointer; 
-  transition: all 0.2s ease-in-out;
+  cursor: pointer;
+  scroll-snap-align: start;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 
   &:hover {
-    border-color: #2563EB;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-    transform: translateY(-3px);
+    border-color: ${colors.primary};
+    box-shadow: 0 12px 24px -10px rgba(17, 24, 39, 0.18);
+    transform: translateY(-4px);
   }
 
   ${media.tablet`
-    flex: 0 0 280px;
+    flex: 0 0 260px;
+  `}
+
+  ${media.mobile`
+    flex: 0 0 220px;
   `}
 `;
 
@@ -388,46 +516,60 @@ const ServiceImage = styled.div`
   height: 180px;
   background-color: ${colors.lightGray};
   position: relative;
-  
+  overflow: hidden;
+
   img {
     width: 100%;
     height: 100%;
     object-fit: cover;
+    transition: transform 0.3s ease;
   }
+
+  ${ServiceCard}:hover & img {
+    transform: scale(1.06);
+  }
+
+  ${media.mobile`height: 140px;`}
 `;
 
 const ServiceIconBadge = styled.div`
   position: absolute;
   bottom: -16px;
   left: 1.5rem;
-  width: 32px;
-  height: 32px;
-  background-color: #2563EB; 
+  width: 34px;
+  height: 34px;
+  background: linear-gradient(135deg, ${colors.primary}, ${colors.primaryDark});
   color: ${colors.white};
-  border-radius: 6px;
+  border-radius: 9px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 1rem;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  box-shadow: 0 4px 10px -2px ${colors.primaryGlow};
 `;
 
 const ServiceContent = styled.div`
   padding: 2.5rem 1.5rem 1.5rem;
-  
+
   h3 {
-    font-size: 1.1rem;
+    font-size: 1.05rem;
     font-weight: 700;
     margin: 0 0 0.5rem 0;
     color: ${colors.secondary};
   }
-  
+
   p {
     font-size: 0.85rem;
     color: ${colors.gray};
     margin: 0;
     line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
+
+  ${media.mobile`padding: 2rem 1.1rem 1.1rem;`}
 `;
 
 // ESTABELECIMENTOS SECTION
@@ -475,13 +617,15 @@ const LocationSelector = styled.div`
 const LocationBlockContainer = styled.div`
   background-color: ${colors.white};
   border: 1px solid ${colors.border};
-  border-radius: 16px;
+  border-radius: 18px;
   padding: 1.5rem;
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 8px 20px -10px rgba(17, 24, 39, 0.12);
   display: flex;
   flex-direction: column;
   gap: 1.2rem;
   width: 100%;
+
+  ${media.mobile`padding: 1.1rem;`}
 `;
 
 const LocationHeader = styled.div`
@@ -531,25 +675,30 @@ const LocationFormFields = styled.form`
 // --- ESTILOS DOS CARDS DE ESTABELECIMENTOS ---
 const StoresGrid = styled.div`
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 1.5rem;
   margin-top: 1rem;
+
+  ${media.mobile`
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  `}
 `;
 
 const StoreCard = styled.div`
   background-color: ${colors.white};
   border: 1px solid ${colors.border};
-  border-radius: 12px;
+  border-radius: 16px;
   overflow: hidden;
-  transition: all 0.2s ease-in-out;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
   cursor: pointer;
   display: flex;
   flex-direction: column;
 
   &:hover {
     border-color: ${colors.primary};
-    box-shadow: 0 4px 12px rgba(224, 79, 54, 0.1);
-    transform: translateY(-3px);
+    box-shadow: 0 12px 24px -10px ${colors.primaryGlow};
+    transform: translateY(-4px);
   }
 `;
 
@@ -557,11 +706,17 @@ const StoreImage = styled.div`
   height: 160px;
   background-color: ${colors.lightGray};
   width: 100%;
-  
+  overflow: hidden;
+
   img {
     width: 100%;
     height: 100%;
     object-fit: cover;
+    transition: transform 0.3s ease;
+  }
+
+  ${StoreCard}:hover & img {
+    transform: scale(1.06);
   }
 `;
 
@@ -643,23 +798,25 @@ const StoreInfo = styled.div`
 
 const EmptyState = styled.div`
   text-align: center;
-  padding: 3rem 1rem;
+  padding: 3rem 1.25rem;
   background-color: ${colors.white};
-  border: 1px dashed ${colors.border};
-  border-radius: 12px;
+  border: 1.5px dashed ${colors.border};
+  border-radius: 18px;
   color: ${colors.gray};
 
   svg {
     font-size: 2.5rem;
-    color: #9CA3AF;
+    color: ${colors.primary};
     margin-bottom: 1rem;
   }
-  
+
   h4 {
     margin: 0 0 0.5rem 0;
     color: ${colors.secondary};
     font-size: 1.1rem;
   }
+
+  p { max-width: 40ch; margin: 0 auto; }
 `;
 
 const LoadingState = styled(EmptyState)`
@@ -1012,13 +1169,13 @@ export default function Home() {
               src="/images/Home.png"
               alt="Propaganda Waitless" 
             />
-            <FloatingWidget style={{ top: '30px', right: '-20px' }}>
+            <FloatingWidget style={{ top: '24px', right: '-12px' }}>
               <FiMapPin className="icon" style={{color: colors.primary}} />
               <div className="text">
                 <strong>Perto de você</strong> <br /> BUSCA INTELIGENTE
               </div>
             </FloatingWidget>
-            <FloatingWidget style={{ bottom: '30px', left: '-20px' }}>
+            <FloatingWidget style={{ bottom: '24px', left: '-12px' }}>
               <div className="icon" style={{color: '#10B981'}}>📈</div>
               <div className="text">
                 <strong>+2.500</strong> <br /> Profissionais ativos

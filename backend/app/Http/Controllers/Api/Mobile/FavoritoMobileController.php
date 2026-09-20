@@ -16,12 +16,19 @@ class FavoritoMobileController extends Controller
     public function toggleFavorito(Request $request)
     {
         $request->validate([
-            'tipo' => 'required|in:estabelecimento,servico',
+            'tipo' => 'required|in:estabelecimento,servico,item_aluguel',
             'id'   => 'required|integer'
         ]);
 
         $userId = Auth::id();
-        $coluna = $request->tipo === 'estabelecimento' ? 'estabelecimento_id' : 'servico_id';
+
+        if ($request->tipo === 'estabelecimento') {
+            $coluna = 'estabelecimento_id';
+        } elseif ($request->tipo === 'item_aluguel') {
+            $coluna = 'item_aluguel_id';
+        } else {
+            $coluna = 'servico_id';
+        }
 
         $favorito = Favorito::where('usuario_id', $userId)->where($coluna, $request->id)->first();
 

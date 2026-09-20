@@ -7,7 +7,7 @@ import axios from 'axios';
 import {
     Search, MapPin, Calendar, Star, ArrowRight, ImageOff, Layers,
     Scissors, Home, Car, Laptop, PartyPopper, Store, Briefcase,
-    Tag, ChevronDown, ChevronLeft, ChevronRight, Heart,
+    Tag, ChevronDown, ChevronLeft, ChevronRight, Heart, ShoppingCart, Check,
     HeartPulse, Plane, GraduationCap, Dog, Wrench
 } from 'lucide-react';
 
@@ -28,7 +28,10 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
     
     // Estado local para otimizar a interface ao favoritar
     const [favoritosLocais, setFavoritosLocais] = useState({});
-    
+
+    // Estado local para marcar quais serviços já foram adicionados ao carrinho nesta sessão
+    const [carrinhoAdicionados, setCarrinhoAdicionados] = useState({});
+
     // Estado para exibir a mensagem na tela (Toast)
     const [toast, setToast] = useState({ show: false, message: '' });
 
@@ -172,6 +175,27 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
             }));
             showToast("Ocorreu um erro ao atualizar.");
         }
+    };
+
+    const handleAdicionarCarrinho = (e, item) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        if (carrinhoAdicionados[item.id]) return;
+        setCarrinhoAdicionados(prev => ({ ...prev, [item.id]: true }));
+
+        router.post('/carrinho/adicionar', {
+            servico_id: item.id,
+            estabelecimento_id: item.estabelecimento_id || item.estabelecimento?.id,
+        }, {
+            preserveScroll: true,
+            preserveState: true,
+            onSuccess: () => showToast('Serviço adicionado ao carrinho!'),
+            onError: () => {
+                setCarrinhoAdicionados(prev => ({ ...prev, [item.id]: false }));
+                showToast('Ocorreu um erro ao adicionar ao carrinho.');
+            },
+        });
     };
 
     const isEstabelecimentos = tipoBusca === 'estabelecimentos';
@@ -534,8 +558,23 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                                                                 </div>
                                                             </div>
                                                             
-                                                            <div className="w-10 h-10 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700 flex items-center justify-center text-zinc-400 group-hover:bg-[#FF5A00] group-hover:border-[#FF5A00] group-hover:text-white transition-all shadow-sm">
-                                                                <ArrowRight className="w-5 h-5 group-hover:translate-x-0.5 transition" />
+                                                            <div className="flex items-center gap-2">
+                                                                {tipoItem === 'servico' && (
+                                                                    <button
+                                                                        onClick={(e) => handleAdicionarCarrinho(e, item)}
+                                                                        title={carrinhoAdicionados[item.id] ? 'Adicionado ao carrinho' : 'Adicionar ao carrinho'}
+                                                                        className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-all shadow-sm ${
+                                                                            carrinhoAdicionados[item.id]
+                                                                                ? 'bg-emerald-50 border-emerald-200 text-emerald-600'
+                                                                                : 'bg-zinc-50 dark:bg-zinc-800 border-zinc-100 dark:border-zinc-700 text-zinc-400 hover:bg-[#FF5A00] hover:border-[#FF5A00] hover:text-white'
+                                                                        }`}
+                                                                    >
+                                                                        {carrinhoAdicionados[item.id] ? <Check className="w-5 h-5" /> : <ShoppingCart className="w-5 h-5" />}
+                                                                    </button>
+                                                                )}
+                                                                <div className="w-10 h-10 rounded-xl bg-zinc-50 dark:bg-zinc-800 border border-zinc-100 dark:border-zinc-700 flex items-center justify-center text-zinc-400 group-hover:bg-[#FF5A00] group-hover:border-[#FF5A00] group-hover:text-white transition-all shadow-sm">
+                                                                    <ArrowRight className="w-5 h-5 group-hover:translate-x-0.5 transition" />
+                                                                </div>
                                                             </div>
                                                         </div>
                                                     </div>

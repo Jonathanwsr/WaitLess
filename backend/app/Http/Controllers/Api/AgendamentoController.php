@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Exceptions\CarteiraAsaasNaoConfiguradaException;
 use App\Http\Controllers\Controller;
 use App\Models\Agendamento;
 use App\Models\Aluguel;
@@ -16,10 +17,13 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Carbon\Carbon;
 use Inertia\Inertia;
+use App\Services\PagamentoService;
+use Exception;
 
 class AgendamentoController extends Controller
 {
@@ -852,7 +856,18 @@ public function pularProximo($id)
         return response()->json($query->latest()->paginate(15));
     }
 
-    public function storeAluguel(Request $request)
+    /**
+     * Alias chamado a partir da página de detalhes do item (DetalhesItem.jsx,
+     * via ?open_produto=/?open_servico= de Ofertas Premium ou do Explorar):
+     * o id da reserva vem pela URL em vez do corpo da requisição.
+     */
+    public function reservarItem(Request $request, $id, PagamentoService $pagamentoService)
+    {
+        $request->merge(['item_aluguel_id' => $id]);
+        return $this->storeAluguel($request, $pagamentoService);
+    }
+
+    public function storeAluguel(Request $request, PagamentoService $pagamentoService)
     {
         $validated = $request->validate([
             'item_aluguel_id'          => 'required|integer|exists:itens_aluguel,id',
@@ -860,10 +875,12 @@ public function pularProximo($id)
             'data_fim'                 => 'required|date|after:data_inicio',
             'quantidade'               => 'required|integer|min:1',
             'forma_pagamento'          => 'required|string|in:online,presencial',
+            'metodo_pagamento'         => 'nullable|required_if:forma_pagamento,online|string|in:pix,cartao,boleto',
+            'parcelas'                 => 'nullable|integer|min:1|max:12',
             'acessorios_selecionados'  => 'nullable|array',
             'comodidades_selecionadas' => 'nullable|array',
             'pontos_utilizados'        => 'nullable|integer|min:0',
-            
+
             'tipo_servico' => [
                 'nullable',
                 'string',
@@ -1001,7 +1018,7 @@ public function pularProximo($id)
             'estabelecimento_id'         => $item->estabelecimento_id,
             'proprietario_id'            => $item->estabelecimento_id,
             'locatario_id'               => $user->id,
-            'text_periodo'               => $item->periodo_faturamento_padrao,
+            'tipo_periodo'               => $item->periodo_faturamento_padrao,
             'quantidade_periodos'        => $multiplicador,
             'data_inicio'                => $validated['data_inicio'],
             'data_fim'                   => $validated['data_fim'],
@@ -1015,7 +1032,7 @@ public function pularProximo($id)
             'valor_total'                => $totalComCaucao,
             'taxa_plataforma'            => $taxaMarketplace,
             'forma_pagamento'            => $validated['forma_pagamento'],
-            'status'                     => $validated['forma_pagamento'] === 'online' ? 'aguardando_pagamento' : 'paga',
+            'status'                     => $validated['forma_pagamento'] === 'online' ? 'aguardando_pagamento' : 'confirmado',
             'acessorios_selecionados'    => json_encode($acessoriosFinaisParaSalvar),
             'comodidades_selecionadas'   => json_encode($validated['comodidades_selecionadas'] ?? []),
             'exige_contrato'             => $item->exige_contrato,
@@ -1048,7 +1065,45 @@ public function pularProximo($id)
             $proprietario->increment('numero_reservas');
         }
 
-        return response()->json(['success' => true, 'aluguel' => $aluguel], 201);
+        // Reserva paga online: gera a cobrança no Asaas agora (mesmo padrão já
+        // usado para serviços em ClienteAgendamentoController::store) e manda
+        // o cliente para a fatura/checkout. Reserva presencial já nasce "paga"
+        // (cobrada no ato, no estabelecimento) e só confirma normalmente.
+        if ($validated['forma_pagamento'] === 'online') {
+            try {
+                $cobrancaAsaas = $pagamentoService->criarCobrancaAsaas(
+                    $aluguel,
+                    $validated['metodo_pagamento'],
+                    $user->asaas_customer_id,
+                    $validated['parcelas'] ?? 1
+                );
+            } catch (Exception $e) {
+                // Desfaz a reserva e devolve os pontos/estoque para não deixar
+                // o cliente com uma reserva pendente sem cobrança gerada.
+                if ($pontosParaAbater > 0) {
+                    $user->increment('pontos_saldo', $pontosParaAbater);
+                }
+                $aluguel->delete();
+
+                Log::error("Erro ao gerar cobrança Asaas para aluguel #{$aluguel->id}: " . $e->getMessage());
+
+                if ($e instanceof CarteiraAsaasNaoConfiguradaException) {
+                    return back()->withErrors(['error' => 'Este estabelecimento ainda não está habilitado para receber pagamentos online. Escolha pagar no local ou tente novamente mais tarde.']);
+                }
+
+                return back()->withErrors(['error' => 'Não foi possível gerar a cobrança agora. Tente novamente em instantes.']);
+            }
+
+            if (!empty($cobrancaAsaas['invoice_url'])) {
+                return Inertia::location($cobrancaAsaas['invoice_url']);
+            }
+        }
+
+        if ($request->wantsJson() && !$request->header('X-Inertia')) {
+            return response()->json(['success' => true, 'aluguel' => $aluguel], 201);
+        }
+
+        return redirect()->route('dashboard')->with('success', 'Reserva confirmada!');
     }
 
     public function showAluguel($id)
@@ -1163,7 +1218,7 @@ public function pularProximo($id)
             <h2>5. Valores, Prazos e Vigência</h2>
             <div class='dados'>
                 <strong>Período de Locação:</strong> " . \Carbon\Carbon::parse($aluguel->data_inicio)->format('d/m/Y') . " até " . \Carbon\Carbon::parse($aluguel->data_fim)->format('d/m/Y') . "<br>
-                <strong>Modalidade de Cobrança:</strong> Recorrência por {$aluguel->text_periodo}<br>
+                <strong>Modalidade de Cobrança:</strong> Recorrência por {$aluguel->tipo_periodo}<br>
                 <strong>Valor de Tabela:</strong> R$ " . number_format($aluguel->valor_unitario, 2, ',', '.') . "<br>
                 <strong>Fundo de Reserva (Caução):</strong> R$ " . number_format($aluguel->valor_caucao, 2, ',', '.') . "<br>
                 <strong>VALOR INTEGRAL CONSOLIDADO:</strong> R$ " . number_format($aluguel->valor_total, 2, ',', '.') . "
@@ -1361,6 +1416,10 @@ public function pularProximo($id)
 
         $agendamento = Agendamento::findOrFail($request->agendamento_id);
 
+        if ($agendamento->usuario_id !== Auth::id()) {
+            abort(403, 'Você só pode transmitir localização do seu próprio agendamento.');
+        }
+
         broadcast(new \App\Events\LocationUpdated(
             $agendamento->id, 
             $request->lat, 
@@ -1383,15 +1442,223 @@ public function pularProximo($id)
 
         $meusEstabelecimentosIds = $user->estabelecimentos()->pluck('estabelecimentos.id');
 
-        $agendamentosDeHoje = Agendamento::with(['usuario', 'estabelecimento'])
+        $agendamentosDeHoje = Agendamento::with(['usuario:id,name,foto_perfil', 'estabelecimento:id,nome,latitude,longitude', 'servico:id,nome'])
             ->whereIn('estabelecimento_id', $meusEstabelecimentosIds)
             ->whereDate('data_agendamento', now()->toDateString())
-            ->whereIn('status', ['pendente', 'confirmado', 'aguardando_pagamento']) 
+            ->whereIn('status', ['pendente', 'confirmado', 'aguardando_pagamento'])
             ->orderBy('hora_agendamento', 'asc')
             ->get();
+
+        if (request()->wantsJson()) {
+            return response()->json([
+                'agendamentos_ativos' => $agendamentosDeHoje->map(fn (Agendamento $agendamento) => [
+                    'id' => $agendamento->id,
+                    'status' => $agendamento->status,
+                    'hora_agendamento' => $agendamento->hora_agendamento,
+                    'usuario' => [
+                        'name' => $agendamento->usuario?->name,
+                        'foto_perfil' => $agendamento->usuario?->foto_perfil,
+                    ],
+                    'estabelecimento' => [
+                        'id' => $agendamento->estabelecimento?->id,
+                        'nome' => $agendamento->estabelecimento?->nome,
+                        'latitude' => $agendamento->estabelecimento?->latitude,
+                        'longitude' => $agendamento->estabelecimento?->longitude,
+                    ],
+                    'servico' => $agendamento->servico?->nome,
+                ]),
+            ]);
+        }
 
         return inertia('Estabelecimentos/MapaRastreamento', [
             'agendamentosAtivos' => $agendamentosDeHoje
         ]);
+    }
+
+    /* =========================================================================
+       👉 NOVOS MÉTODOS: GESTÃO DO CARRINHO (SERVIÇOS + PRODUTOS EXTRAS)
+       ========================================================================= */
+
+    /**
+     * Salva o Agendamento de Serviço e Vincula Vários Produtos Extras (via ID)
+     */
+    public function storeCarrinho(Request $request)
+    {
+        $validated = $request->validate([
+            'servico_id'         => 'required|exists:servicos,id',
+            'estabelecimento_id' => 'required|exists:estabelecimentos,id',
+            'data_agendamento'   => 'nullable|date',
+            'hora_agendamento'   => 'nullable',
+            'extras'             => 'nullable|array',
+            'extras.*'           => 'exists:produtos,id'
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $servico = Servico::findOrFail($validated['servico_id']);
+            $valorTotal = $servico->valor;
+
+            // 1. Cria o agendamento inicial (Carrinho)
+            $agendamento = Agendamento::create([
+                'usuario_id'         => Auth::id(),
+                'estabelecimento_id' => $validated['estabelecimento_id'],
+                'servico_id'         => $validated['servico_id'],
+                'data_agendamento'   => $validated['data_agendamento'],
+                'hora_agendamento'   => $validated['hora_agendamento'],
+                'status'             => 'pendente', 
+                'valor_original'     => $servico->valor,
+                'valor_final'        => $valorTotal,
+                'codigo_verificacao' => str_pad(mt_rand(1, 9999), 4, '0', STR_PAD_LEFT),
+            ]);
+
+            // 2. Vincula os Extras (Produtos) se existirem e atualiza o estoque e valor
+            if (!empty($validated['extras'])) {
+                foreach ($validated['extras'] as $produto_id) {
+                    $produto = \App\Models\Produto::findOrFail($produto_id);
+
+                    if ($produto->estoque_disponivel > 0) {
+                        $produto->decrement('estoque_disponivel', 1);
+
+                        // Certifique-se de que a coluna 'produto_id' existe na sua tabela 'itens_aluguel'
+                        DB::table('itens_aluguel')->insert([
+                            'agendamento_id'     => $agendamento->id,
+                            'produto_id'         => $produto->id,
+                            'usuario_id'         => Auth::id(),
+                            'estabelecimento_id' => $agendamento->estabelecimento_id,
+                            'servico_id'         => $agendamento->servico_id,
+                            'nome'               => $produto->nome,
+                            'categoria'          => 'produto_extra',
+                            'descricao'          => $produto->descricao,
+                            'quantidade'         => 1,
+                            'valor_diaria'       => $produto->valor_final ?? $produto->valor_normal,
+                            'created_at'         => now(),
+                            'updated_at'         => now(),
+                        ]);
+
+                        $valorTotal += ($produto->valor_final ?? $produto->valor_normal);
+                    }
+                }
+
+                $agendamento->update(['valor_final' => $valorTotal]);
+            }
+
+            DB::commit();
+
+            session(['checkout_pendente_waitless' => json_encode([
+                'agendamento_id'     => $agendamento->id,
+                'estabelecimento_id' => $agendamento->estabelecimento_id,
+                'servico_id'         => $agendamento->servico_id,
+                'data'               => $agendamento->data_agendamento,
+                'hora'               => $agendamento->hora_agendamento
+            ])]);
+
+            return redirect()->route('cliente.agendar', [
+                'estabelecimento' => $agendamento->estabelecimento_id,
+                'servico_id'      => $agendamento->servico_id,
+                'data'            => $agendamento->data_agendamento,
+                'hora'            => $agendamento->hora_agendamento,
+                'agendamento_id'  => $agendamento->id
+            ])->with('success', 'Serviço e produtos adicionados ao carrinho!');
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return redirect()->back()->withErrors(['error' => 'Erro ao processar carrinho: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Adiciona um ÚNICO Produto (Venda Avulsa) direto no Carrinho/Agendamento
+     */
+    public function storeProdutoCarrinho(Request $request)
+    {
+        $request->validate([
+            'produto_id'         => 'required|exists:produtos,id',
+            'estabelecimento_id' => 'required|exists:estabelecimentos,id',
+            'quantidade'         => 'required|integer|min:1'
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $produto = \App\Models\Produto::findOrFail($request->produto_id);
+
+            if ($produto->estoque_disponivel < $request->quantidade) {
+                return redirect()->back()->withErrors(['error' => 'Estoque insuficiente para este produto.']);
+            }
+
+            $agendamento = Agendamento::create([
+                'usuario_id'         => Auth::id(),
+                'estabelecimento_id' => $request->estabelecimento_id,
+                'status'             => 'pendente',
+                'valor_original'     => 0,
+                'valor_final'        => ($produto->valor_final ?? $produto->valor_normal) * $request->quantidade,
+                'codigo_verificacao' => str_pad(mt_rand(1, 9999), 4, '0', STR_PAD_LEFT),
+            ]);
+
+            $produto->decrement('estoque_disponivel', $request->quantidade);
+
+            DB::table('itens_aluguel')->insert([
+                'agendamento_id'     => $agendamento->id,
+                'produto_id'         => $produto->id,
+                'usuario_id'         => Auth::id(),
+                'estabelecimento_id' => $agendamento->estabelecimento_id,
+                'nome'               => $produto->nome,
+                'categoria'          => 'produto_avulso',
+                'descricao'          => $produto->descricao,
+                'quantidade'         => $request->quantidade,
+                'valor_diaria'       => $produto->valor_final ?? $produto->valor_normal,
+                'created_at'         => now(),
+                'updated_at'         => now(),
+            ]);
+
+            DB::commit();
+
+            return redirect()->route('cliente.agendar', [
+                'estabelecimento' => $agendamento->estabelecimento_id,
+                'agendamento_id'  => $agendamento->id
+            ])->with('success', 'Produto adicionado ao carrinho com sucesso!');
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return redirect()->back()->withErrors(['error' => 'Erro ao processar produto: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Remove um Produto Extra ou Avulso do Agendamento (Devolvendo Estoque)
+     */
+    public function removerProdutoDoCarrinho($item_id)
+    {
+        DB::beginTransaction();
+        try {
+            $itemPivot = DB::table('itens_aluguel')->where('id', $item_id)->first();
+            if (!$itemPivot) {
+                return redirect()->back()->withErrors(['error' => 'Item não encontrado no carrinho.']);
+            }
+
+            $agendamento = Agendamento::findOrFail($itemPivot->agendamento_id);
+            $produto = \App\Models\Produto::find($itemPivot->produto_id);
+
+            // Devolve o Estoque para a loja
+            if ($produto) {
+                $produto->increment('estoque_disponivel', $itemPivot->quantidade);
+                if (\Illuminate\Support\Facades\Schema::hasColumn('produtos', 'quantidade_vendida')) {
+                    $produto->decrement('quantidade_vendida', $itemPivot->quantidade);
+                }
+            }
+
+            // Subtrai do valor total do Agendamento
+            $valorSubtrair = $itemPivot->valor_diaria * $itemPivot->quantidade;
+            $agendamento->valor_final = max(0, $agendamento->valor_final - $valorSubtrair);
+            $agendamento->save();
+
+            // Deleta o vínculo
+            DB::table('itens_aluguel')->where('id', $item_id)->delete();
+
+            DB::commit();
+            return redirect()->back()->with('success', 'Produto removido com sucesso. O estoque foi devolvido para a loja!');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return redirect()->back()->withErrors(['error' => 'Erro ao remover produto do pedido: ' . $e->getMessage()]);
+        }
     }
 }

@@ -13,7 +13,7 @@
 
         @page {
             size: A4 portrait;
-            margin: 18px 22px;
+            margin: 0;
         }
 
         * {
@@ -24,20 +24,33 @@
         body {
             margin: 0;
             padding: 0;
-            font-family: DejaVu Sans, Arial, Helvetica, sans-serif;
-            color: #2F2F2F;
+            /* Fontes-núcleo do PDF (sempre embutidas, sem depender de cache
+               de TTF em storage/fonts): garante um sans-serif limpo mesmo em
+               negrito, em qualquer ambiente. */
+            font-family: Helvetica, Arial, sans-serif;
+            color: #334155;
             font-size: 11px;
             background: #ffffff;
         }
 
         body {
-            line-height: 1.35;
+            line-height: 1.5;
         }
 
-        .container {
+        .page {
+            padding: 28px 32px 24px;
+        }
+
+        /* =====================================================
+           FAIXA SUPERIOR DE MARCA
+        ====================================================== */
+
+        .brand-bar {
+            display: table;
             width: 100%;
-            margin: 0;
-            padding: 0;
+            background: #FF5A00;
+            padding: 3px 0;
+            margin: -28px -32px 22px;
         }
 
         /* =====================================================
@@ -47,105 +60,130 @@
         .header {
             display: table;
             width: 100%;
-            padding-bottom: 10px;
-            margin-bottom: 13px;
-            border-bottom: 2px solid #C9826A;
+            padding-bottom: 16px;
+            margin-bottom: 18px;
+            border-bottom: 1px solid #E5E7EB;
         }
 
         .brand {
             display: table-cell;
-            width: 60%;
+            width: 58%;
             vertical-align: middle;
         }
 
-        /*
-         * LOGO REMOVIDA PROPOSITALMENTE
-         * Para evitar processamento de imagem pelo Dompdf/GD.
-         */
-
         .logo-text {
             display: block;
-            font-size: 22px;
+            font-size: 23px;
             font-weight: bold;
-            color: #C9826A;
-            letter-spacing: 1px;
+            color: #16181D;
+            letter-spacing: -0.3px;
             line-height: 1;
+        }
+
+        .logo-text span {
+            color: #FF5A00;
         }
 
         .tagline {
             margin-top: 5px;
             font-size: 9px;
-            color: #777777;
+            color: #94A3B8;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
         }
 
         .reservation-code {
             display: table-cell;
-            width: 40%;
+            width: 42%;
             text-align: right;
             vertical-align: middle;
         }
 
         .reservation-code span {
             display: block;
-            font-size: 8px;
-            color: #888888;
+            font-size: 9px;
+            color: #94A3B8;
             text-transform: uppercase;
+            font-weight: bold;
+            letter-spacing: 0.6px;
         }
 
         .reservation-code strong {
             display: block;
-            margin-top: 2px;
-            font-size: 14px;
-            color: #2F2F2F;
+            margin-top: 4px;
+            font-size: 17px;
+            color: #16181D;
+            font-weight: bold;
+            letter-spacing: 0.5px;
         }
 
         /* =====================================================
-           TÍTULO
+           TÍTULO + BADGE DE STATUS
         ====================================================== */
 
-        .title {
-            margin-bottom: 12px;
+        .title-row {
+            display: table;
+            width: 100%;
+            margin-bottom: 18px;
         }
 
-        .title h1 {
+        .title-col {
+            display: table-cell;
+            vertical-align: middle;
+        }
+
+        .title-col h1 {
             margin: 0;
-            font-size: 17px;
-            color: #2F2F2F;
+            font-size: 19px;
+            color: #16181D;
+            font-weight: bold;
+            letter-spacing: -0.3px;
         }
 
-        .title p {
-            margin: 3px 0 0;
-            color: #888888;
-            font-size: 9px;
+        .title-col p {
+            margin: 4px 0 0;
+            color: #94A3B8;
+            font-size: 10px;
+        }
+
+        .badge-col {
+            display: table-cell;
+            width: 150px;
+            text-align: right;
+            vertical-align: middle;
         }
 
         /* =====================================================
-           CARDS
+           CARDS / SEÇÕES
         ====================================================== */
 
         .section {
-            margin-bottom: 11px;
-            border: 1px solid #E9E4E1;
-            border-radius: 6px;
-            overflow: hidden;
+            margin-bottom: 12px;
+            border: 1px solid #EDF0F4;
+            border-radius: 10px;
+            background-color: #FFFFFF;
         }
 
         .section-header {
-            padding: 7px 9px;
-            background: #F8F3EF;
-            border-bottom: 1px solid #E9E4E1;
-            color: #C9826A;
-            font-size: 10px;
+            padding: 9px 14px;
+            background: #FAFBFC;
+            border-bottom: 1px solid #EDF0F4;
+            color: #64748B;
+            font-size: 9.5px;
             font-weight: bold;
             text-transform: uppercase;
+            letter-spacing: 0.6px;
+            border-top-left-radius: 10px;
+            border-top-right-radius: 10px;
         }
 
         .section-body {
-            padding: 5px 9px;
+            padding: 4px 14px 8px;
         }
 
         /* =====================================================
-           TABELAS
+           TABELAS DE DADOS
         ====================================================== */
 
         .data-table {
@@ -158,42 +196,43 @@
         }
 
         .data-table td {
-            padding: 5px 3px;
-            border-bottom: 1px solid #F0EEEE;
-            vertical-align: top;
+            padding: 8px 4px;
+            border-bottom: 1px solid #F1F4F8;
+            vertical-align: middle;
         }
 
         .label {
-            width: 34%;
-            color: #888888;
-            font-size: 9px;
+            width: 38%;
+            color: #94A3B8;
+            font-size: 10px;
+            font-weight: 600;
         }
 
         .value {
-            color: #2F2F2F;
-            font-size: 10px;
-            font-weight: 500;
+            color: #16181D;
+            font-size: 11.5px;
+            font-weight: bold;
         }
 
         /* =====================================================
-           RESUMO DA RESERVA
+           RESUMO DA RESERVA (TICKET)
         ====================================================== */
 
         .reservation-box {
             display: table;
             width: 100%;
-            background: #FCF8F5;
-            border: 1px solid #E6B8A2;
-            border-radius: 6px;
-            margin-bottom: 11px;
+            background: #FFF5EF;
+            border: 1px solid #FFDCC4;
+            border-radius: 10px;
+            margin-bottom: 14px;
         }
 
         .reservation-item {
             display: table-cell;
             width: 33.33%;
-            padding: 9px;
+            padding: 14px 10px;
             text-align: center;
-            border-right: 1px solid #E6B8A2;
+            border-right: 1px dashed #FFD2B0;
         }
 
         .reservation-item:last-child {
@@ -202,29 +241,33 @@
 
         .reservation-item span.label-small {
             display: block;
-            font-size: 8px;
-            color: #888888;
+            font-size: 8.5px;
+            color: #C2703F;
             text-transform: uppercase;
-            margin-bottom: 3px;
+            font-weight: bold;
+            margin-bottom: 5px;
+            letter-spacing: 0.6px;
         }
 
         .reservation-item strong {
             display: block;
-            font-size: 11px;
-            color: #2F2F2F;
+            font-size: 14px;
+            color: #16181D;
+            font-weight: bold;
         }
 
         /* =====================================================
-           STATUS
+           BADGES DE STATUS
         ====================================================== */
 
         .badge {
             display: inline-block;
-            padding: 3px 8px;
-            border-radius: 10px;
-            font-size: 8px;
+            padding: 5px 12px;
+            border-radius: 100px;
+            font-size: 9.5px;
             font-weight: bold;
             text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
         .badge-pendente {
@@ -243,27 +286,39 @@
         }
 
         .badge-default {
-            background: #E5E7EB;
-            color: #374151;
+            background: #F1F4F8;
+            color: #475569;
         }
 
         /* =====================================================
-           STATUS PAGAMENTO
+           STATUS DE PAGAMENTO
         ====================================================== */
 
         .paid {
-            color: #059669;
+            color: #065F46;
             font-weight: bold;
+            background: #D1FAE5;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 10px;
         }
 
         .pending {
-            color: #D97706;
+            color: #92400E;
             font-weight: bold;
+            background: #FEF3C7;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 10px;
         }
 
         .refunded {
-            color: #DC2626;
+            color: #991B1B;
             font-weight: bold;
+            background: #FEE2E2;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 10px;
         }
 
         /* =====================================================
@@ -271,25 +326,37 @@
         ====================================================== */
 
         .total {
+            display: table;
             width: 100%;
-            margin-top: 5px;
-            padding: 10px 12px;
-            background: #F8F3EF;
-            border-radius: 6px;
+            margin-top: 10px;
+            padding: 14px 16px;
+            background: #16181D;
+            border-radius: 10px;
+        }
+
+        .total-label-cell {
+            display: table-cell;
+            vertical-align: middle;
+        }
+
+        .total-value-cell {
+            display: table-cell;
+            vertical-align: middle;
             text-align: right;
         }
 
         .total-label {
-            font-size: 8px;
-            color: #888888;
+            font-size: 9.5px;
+            color: #94A3B8;
             text-transform: uppercase;
+            font-weight: bold;
+            letter-spacing: 0.6px;
         }
 
         .total-value {
-            margin-top: 2px;
-            font-size: 19px;
+            font-size: 24px;
             font-weight: bold;
-            color: #C9826A;
+            color: #FFFFFF;
         }
 
         /* =====================================================
@@ -297,34 +364,36 @@
         ====================================================== */
 
         .checkin {
-            margin-top: 11px;
-            padding: 10px;
+            margin-top: 4px;
+            margin-bottom: 12px;
+            padding: 16px;
             text-align: center;
-            border: 1.5px dashed #C9826A;
-            border-radius: 6px;
-            background: #FCF8F5;
+            border: 2px dashed #FF5A00;
+            border-radius: 10px;
+            background: #FFF5EF;
         }
 
         .checkin-title {
             margin: 0;
-            color: #777777;
-            font-size: 8px;
+            color: #FF5A00;
+            font-size: 10px;
             font-weight: bold;
             text-transform: uppercase;
+            letter-spacing: 1.2px;
         }
 
         .checkin-code {
-            margin-top: 4px;
-            font-size: 23px;
+            margin-top: 8px;
+            font-size: 30px;
             font-weight: bold;
-            letter-spacing: 5px;
-            color: #2F2F2F;
+            letter-spacing: 10px;
+            color: #16181D;
         }
 
         .checkin-text {
-            margin: 3px 0 0;
-            font-size: 8px;
-            color: #888888;
+            margin: 8px 0 0;
+            font-size: 9.5px;
+            color: #94A3B8;
         }
 
         /* =====================================================
@@ -332,24 +401,25 @@
         ====================================================== */
 
         .lokyva-info {
-            margin-top: 11px;
-            padding: 9px 11px;
-            background: #F8F3EF;
-            border-radius: 6px;
+            margin-top: 12px;
+            padding: 12px 14px;
+            background: #FAFBFC;
+            border: 1px solid #EDF0F4;
+            border-radius: 10px;
             text-align: center;
         }
 
         .lokyva-info-title {
-            font-size: 9px;
+            font-size: 10.5px;
             font-weight: bold;
-            color: #C9826A;
+            color: #475569;
         }
 
         .lokyva-info-text {
-            margin-top: 3px;
-            font-size: 8px;
-            color: #777777;
-            line-height: 1.4;
+            margin-top: 4px;
+            font-size: 9px;
+            color: #94A3B8;
+            line-height: 1.5;
         }
 
         /* =====================================================
@@ -357,17 +427,18 @@
         ====================================================== */
 
         .footer {
-            margin-top: 13px;
-            padding-top: 8px;
-            border-top: 1px solid #E9E4E1;
+            margin-top: 16px;
+            padding-top: 10px;
+            border-top: 1px solid #EDF0F4;
             text-align: center;
-            color: #999999;
-            font-size: 7.5px;
-            line-height: 1.4;
+            color: #B4BDC9;
+            font-size: 8px;
+            line-height: 1.6;
         }
 
         .footer strong {
-            color: #C9826A;
+            color: #64748B;
+            font-weight: bold;
         }
 
         /* =====================================================
@@ -384,7 +455,13 @@
 
 <body>
 
-<div class="container">
+<div class="page">
+
+    {{-- =====================================================
+         FAIXA DE MARCA
+    ====================================================== --}}
+
+    <div class="brand-bar">&nbsp;</div>
 
     {{-- =====================================================
          CABEÇALHO
@@ -394,13 +471,12 @@
 
         <div class="brand">
 
-            {{-- LOGO REMOVIDA --}}
             <div class="logo-text">
-                LOKYVA
+                LOK<span>Y</span>VA
             </div>
 
             <div class="tagline">
-                Reservas, serviços, hospedagens e locações em um só lugar
+                Reservas, serviços, hospedagens e locações
             </div>
 
         </div>
@@ -421,23 +497,6 @@
 
 
     {{-- =====================================================
-         TÍTULO
-    ====================================================== --}}
-
-    <div class="title">
-
-        <h1>
-            Comprovante de Reserva
-        </h1>
-
-        <p>
-            Documento eletrônico referente à reserva realizada através do Lokyva.
-        </p>
-
-    </div>
-
-
-    {{-- =====================================================
          PREPARAÇÃO DOS STATUS
     ====================================================== --}}
 
@@ -451,11 +510,11 @@
 
         $badgeClass = 'badge-default';
 
-        if (str_contains($statusStr, 'CONCLU')) {
+        if (str_contains($statusStr, 'CONCLU') || str_contains($statusStr, 'FINALIZ')) {
 
             $badgeClass = 'badge-concluido';
 
-        } elseif (str_contains($statusStr, 'PEND')) {
+        } elseif (str_contains($statusStr, 'PEND') || str_contains($statusStr, 'AGUARD')) {
 
             $badgeClass = 'badge-pendente';
 
@@ -488,6 +547,26 @@
             ?? 0;
 
     @endphp
+
+
+    {{-- =====================================================
+         TÍTULO + STATUS
+    ====================================================== --}}
+
+    <div class="title-row">
+
+        <div class="title-col">
+            <h1>Comprovante de Reserva</h1>
+            <p>Documento eletrônico referente à reserva realizada através do Lokyva.</p>
+        </div>
+
+        <div class="badge-col">
+            <span class="badge {{ $badgeClass }}">
+                {{ str_replace('_', ' ', $statusStr) }}
+            </span>
+        </div>
+
+    </div>
 
 
     {{-- =====================================================
@@ -530,8 +609,8 @@
             <strong>
 
                 {{ $agendamento->hora_agendamento
-                    ?? $agendamento->horario_inicio
-                    ?? '--:--' }}
+                    ? \Illuminate\Support\Str::of($agendamento->hora_agendamento)->substr(0, 5)
+                    : ($agendamento->horario_inicio ?? '--:--') }}
 
             </strong>
 
@@ -541,14 +620,12 @@
         <div class="reservation-item">
 
             <span class="label-small">
-                Status
+                Cliente
             </span>
 
             <strong>
 
-                <span class="badge {{ $badgeClass }}">
-                    {{ str_replace('_', ' ', $statusStr) }}
-                </span>
+                {{ $agendamento->usuario->name ?? 'Usuário' }}
 
             </strong>
 
@@ -678,24 +755,6 @@
         <div class="section-body">
 
             <table class="data-table">
-
-                {{-- CLIENTE --}}
-
-                <tr>
-
-                    <td class="label">
-                        Cliente
-                    </td>
-
-                    <td class="value">
-
-                        {{ $agendamento->usuario->name
-                            ?? 'Usuário' }}
-
-                    </td>
-
-                </tr>
-
 
                 {{-- SERVIÇO --}}
 
@@ -828,7 +887,7 @@
                         )
 
                             <span class="paid">
-                                PAGAMENTO CONFIRMADO
+                                CONFIRMADO
                             </span>
 
                         @elseif(
@@ -843,13 +902,13 @@
                         )
 
                             <span class="refunded">
-                                PAGAMENTO ESTORNADO
+                                ESTORNADO
                             </span>
 
                         @else
 
                             <span class="pending">
-                                PAGAMENTO PENDENTE
+                                PENDENTE
                             </span>
 
                         @endif
@@ -864,23 +923,20 @@
             {{-- TOTAL --}}
 
             <div class="total">
-
-                <div class="total-label">
-                    Valor total da reserva
+                <div class="total-label-cell">
+                    <div class="total-label">Valor total da reserva</div>
                 </div>
-
-                <div class="total-value">
-
-                    R$
-                    {{ number_format(
-                        $valorTotal,
-                        2,
-                        ',',
-                        '.'
-                    ) }}
-
+                <div class="total-value-cell">
+                    <div class="total-value">
+                        R$
+                        {{ number_format(
+                            $valorTotal,
+                            2,
+                            ',',
+                            '.'
+                        ) }}
+                    </div>
                 </div>
-
             </div>
 
         </div>
@@ -889,7 +945,7 @@
 
 
     {{-- =====================================================
-         CHECK-IN
+         CHECK-IN (MODIFICADO COM REGRA DE ROLE)
     ====================================================== --}}
 
     @if(
@@ -901,6 +957,8 @@
             ),
             'CANC'
         )
+        &&
+        (auth()->check() && auth()->user()->papel === 'user')
     )
 
         <div class="checkin avoid-break">

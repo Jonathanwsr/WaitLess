@@ -40,6 +40,11 @@ class Estabelecimento extends Model
         return $this->hasMany(Agendamento::class);
     }
 
+    public function itensAluguel()
+    {
+        return $this->hasMany(ItemAluguel::class);
+    }
+
     public function produtos()
 {
     // Se estiver 'promocao', mude para 'is_promocao'
@@ -63,6 +68,14 @@ class Estabelecimento extends Model
     { return $this->hasMany(Cupom::class); 
     }
 
+
+    public function getEnderecoCompletoAttribute(): ?string
+    {
+        $linhaRua = collect([$this->rua, $this->numero])->filter()->implode(', ');
+        $cidadeEstado = collect([$this->cidade, $this->estado])->filter()->implode('/');
+
+        return collect([$linhaRua, $this->bairro, $cidadeEstado])->filter()->implode(' - ') ?: null;
+    }
 
     public function scopeWithinDistance($query, $lat, $lng, $radius)
     {

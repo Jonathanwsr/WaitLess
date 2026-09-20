@@ -22,7 +22,11 @@ import {
   BriefcaseIcon,
   CheckCircleIcon,
   InformationCircleIcon,
-  FunnelIcon
+  FunnelIcon,
+  QuestionMarkCircleIcon,
+  SparklesIcon,
+  ArrowRightIcon,
+  ArrowLeftIcon
 } from '@heroicons/react/24/solid';
 
 export default function ProdutoManager({ auth, estabelecimentoId, estabelecimentos = [], listaServicos = [] }) {
@@ -36,6 +40,10 @@ export default function ProdutoManager({ auth, estabelecimentoId, estabeleciment
   const [categoriaFiltro, setCategoriaFiltro] = useState('Todas');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
+
+  // Estados do Tutorial Animado
+  const [showTutorial, setShowTutorial] = useState(false);
+  const [tutorialStep, setTutorialStep] = useState(0);
 
   // Gerenciamento das 5 fotos em quadrados
   const [quadradosFotosProduto, setQuadradosFotosProduto] = useState([null, null, null, null, null]);
@@ -65,6 +73,12 @@ export default function ProdutoManager({ auth, estabelecimentoId, estabeleciment
     fetchProdutos();
     if (servicosDisponiveis.length === 0) {
       fetchServicos();
+    }
+
+    // Verifica se é o primeiro acesso para mostrar o tutorial
+    const tutorialConcluido = localStorage.getItem('lokyva_produtos_tutorial');
+    if (!tutorialConcluido) {
+      setShowTutorial(true);
     }
   }, []);
 
@@ -144,7 +158,7 @@ export default function ProdutoManager({ auth, estabelecimentoId, estabeleciment
     } catch (error) {
       console.error("Erro ao salvar produto:", error);
       if (error.response?.status === 419) {
-        alert('Sessão expirada. Recarregue a página (F5) e tente novamente.');
+        alert('Sessão expirada. Recarregue a página e tente novamente.');
       } else {
         alert(error.response?.data?.error || error.response?.data?.message || 'Erro ao processar o formulário. Verifique os dados inseridos.');
       }
@@ -225,6 +239,35 @@ export default function ProdutoManager({ auth, estabelecimentoId, estabeleciment
     }
   };
 
+  const finalizarTutorial = () => {
+    localStorage.setItem('lokyva_produtos_tutorial', 'true');
+    setShowTutorial(false);
+    setTutorialStep(0);
+  };
+
+  const tutorialContent = [
+    {
+      title: "Gestão de Produtos e Extras",
+      description: "Aqui você gerencia todo o seu catálogo. Venda produtos físicos avulsos ou ofereça-os como serviços adicionais.",
+      icon: <SparklesIcon className="w-12 h-12 text-indigo-500" />
+    },
+    {
+      title: "Organização Inteligente",
+      description: "Cadastre seus itens informando categoria, sub-categoria, tamanho e cor. O sistema cria filtros automáticos para facilitar a busca.",
+      icon: <FolderIcon className="w-12 h-12 text-blue-500" />
+    },
+    {
+      title: "Vínculos com Serviços",
+      description: "Você pode atrelar produtos a serviços! Assim, o cliente poderá comprar um item como 'Extra' logo após selecionar um agendamento.",
+      icon: <LinkIcon className="w-12 h-12 text-[#FF5A00]" />
+    },
+    {
+      title: "Promoções e Estoque",
+      description: "Reponha o estoque em um clique direto na vitrine e ative preços promocionais para aumentar suas vendas rapidamente.",
+      icon: <FireIcon className="w-12 h-12 text-red-500" />
+    }
+  ];
+
   // --- LÓGICA DE FILTROS E PAGINAÇÃO ---
   const categoriasUnicas = ['Todas', ...new Set(produtos.map(p => p.categoria || 'Outros').filter(Boolean))];
   
@@ -246,13 +289,74 @@ export default function ProdutoManager({ auth, estabelecimentoId, estabeleciment
     <AuthenticatedLayout
       user={auth?.user}
       header={
-        <h2 className="font-semibold text-xl text-gray-800 leading-tight flex items-center gap-2">
-          <ShoppingBagIcon className="w-6 h-6 text-[#FF5A00]" />
-          Gestão de Produtos
-        </h2>
+        <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+          <h2 className="font-semibold text-xl text-gray-800 leading-tight flex items-center gap-2">
+            <ShoppingBagIcon className="w-6 h-6 text-[#FF5A00]" />
+            Gestão de Produtos
+          </h2>
+          <button 
+            onClick={() => { setTutorialStep(0); setShowTutorial(true); }}
+            className="flex items-center gap-2 text-sm font-bold text-gray-500 hover:text-indigo-600 transition-colors bg-white px-3 py-1.5 rounded-lg border shadow-sm w-fit"
+          >
+            <QuestionMarkCircleIcon className="w-5 h-5" />
+            Ver Tutorial
+          </button>
+        </div>
       }
     >
       <Head title="Meus Produtos" />
+
+      {/* MODAL DO TUTORIAL ANIMADO */}
+      {showTutorial && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="bg-white rounded-[2rem] shadow-2xl max-w-md w-full overflow-hidden flex flex-col relative animate-in zoom-in-95 duration-500">
+            <button onClick={finalizarTutorial} className="absolute top-4 right-4 text-gray-400 hover:text-gray-700 bg-gray-100 rounded-full p-1.5 transition-colors">
+              <XMarkIcon className="w-5 h-5" />
+            </button>
+            
+            <div className="p-8 text-center flex flex-col items-center">
+              <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mb-6 shadow-inner border border-gray-100">
+                {tutorialContent[tutorialStep].icon}
+              </div>
+              <h3 className="text-2xl font-black text-gray-900 mb-3">{tutorialContent[tutorialStep].title}</h3>
+              <p className="text-gray-500 text-sm leading-relaxed mb-8">
+                {tutorialContent[tutorialStep].description}
+              </p>
+              
+              <div className="flex gap-2 mb-8">
+                {tutorialContent.map((_, idx) => (
+                  <div key={idx} className={`h-2 rounded-full transition-all duration-300 ${idx === tutorialStep ? 'w-8 bg-indigo-600' : 'w-2 bg-gray-200'}`} />
+                ))}
+              </div>
+
+              <div className="w-full flex gap-3">
+                {tutorialStep > 0 && (
+                  <button onClick={() => setTutorialStep(prev => prev - 1)} className="flex-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold py-3 rounded-xl transition-colors flex justify-center items-center gap-2">
+                    <ArrowLeftIcon className="w-4 h-4" /> Voltar
+                  </button>
+                )}
+                
+                <button 
+                  onClick={() => {
+                    if (tutorialStep < tutorialContent.length - 1) {
+                      setTutorialStep(prev => prev + 1);
+                    } else {
+                      finalizarTutorial();
+                    }
+                  }} 
+                  className="flex-1 bg-[#FF5A00] hover:bg-orange-600 text-white font-bold py-3 rounded-xl shadow-lg transition-transform active:scale-95 flex justify-center items-center gap-2"
+                >
+                  {tutorialStep === tutorialContent.length - 1 ? (
+                    <>Começar a Usar <CheckCircleIcon className="w-5 h-5" /></>
+                  ) : (
+                    <>Avançar <ArrowRightIcon className="w-4 h-4" /></>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="py-8 bg-gray-50 min-h-screen">
         <div className="max-w-7xl mx-auto sm:px-6 lg:px-8">
@@ -323,9 +427,115 @@ export default function ProdutoManager({ auth, estabelecimentoId, estabeleciment
                     <input required type="number" min="0" max="99999" name="estoque_disponivel" value={formData.estoque_disponivel} onChange={handleInputChange} className="w-full border-gray-200 rounded-xl p-3.5 text-sm focus:border-[#FF5A00] focus:ring-[#FF5A00] shadow-sm transition-shadow outline-none" placeholder="0" />
                   </div>
 
+                  {/* Categoria com Datalist */}
                   <div>
-                    <label className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-2"><SwatchIcon className="w-4 h-4 text-gray-400" /> Cor (Opcional)</label>
-                    <input type="text" name="cor" maxLength={30} value={formData.cor} onChange={handleInputChange} className="w-full border-gray-200 rounded-xl p-3.5 text-sm focus:border-[#FF5A00] focus:ring-[#FF5A00] shadow-sm transition-shadow outline-none" placeholder="Ex: Preto, Azul" />
+                    <label className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-2"><FolderIcon className="w-4 h-4 text-gray-400" /> Categoria principal</label>
+                    <input 
+                      type="text" 
+                      list="lista-categorias" 
+                      name="categoria" 
+                      maxLength={50} 
+                      value={formData.categoria} 
+                      onChange={handleInputChange} 
+                      className="w-full border-gray-200 rounded-xl p-3.5 text-sm focus:border-[#FF5A00] focus:ring-[#FF5A00] shadow-sm transition-shadow outline-none" 
+                      placeholder="Ex: Cosméticos, Fitness..." 
+                    />
+                    <datalist id="lista-categorias">
+                      <option value="Cosméticos e Beleza" />
+                      <option value="Automotivo" />
+                      <option value="Fitness e Esportes" />
+                      <option value="Casa, Mesa e Banho" />
+                      <option value="Moda e Vestuário" />
+                      <option value="Alimentos e Bebidas" />
+                      <option value="Eletrônicos" />
+                      <option value="Pet Shop" />
+                      <option value="Informática" />
+                      <option value="Games e Videogames" />
+                      <option value="Bebês e Crianças" />
+                      <option value="Brinquedos e Jogos" />
+                      <option value="Ferramentas" />
+                      <option value="Construção e Materiais" />
+                      <option value="Jardinagem" />
+                      <option value="Papelaria e Escritório" />
+                      <option value="Livros e Educação" />
+                      <option value="Instrumentos Musicais" />
+                      <option value="Fotografia e Vídeo" />
+                      <option value="Artesanato e Hobbies" />
+                      <option value="Produtos para Empresas" />
+                      <option value="Equipamentos Profissionais" />
+                      <option value="Produtos Naturais" />
+                      <option value="Produtos Artesanais" />
+                      <option value="Lazer e Entretenimento" />
+                      <option value="Viagem e Turismo" />
+                      <option value="Segurança e Proteção" />
+                      <option value="Energia e Iluminação" />
+                      <option value="Materiais Elétricos" />
+                      <option value="Outros" />
+                    </datalist>
+                  </div>
+
+                  {/* Sub Categoria com Datalist */}
+                  <div>
+                    <label className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-2"><FolderIcon className="w-4 h-4 text-gray-400" /> Sub-categoria</label>
+                    <input 
+                      type="text" 
+                      list="lista-subcategorias" 
+                      name="sub_categoria" 
+                      maxLength={50} 
+                      value={formData.sub_categoria} 
+                      onChange={handleInputChange} 
+                      className="w-full border-gray-200 rounded-xl p-3.5 text-sm focus:border-[#FF5A00] focus:ring-[#FF5A00] shadow-sm transition-shadow outline-none" 
+                      placeholder="Ex: Cabelo, Limpeza..." 
+                    />
+                    <datalist id="lista-subcategorias">
+                      <option value="Cabelo" />
+                      <option value="Barbearia" />
+                      <option value="Pele" />
+                      <option value="Maquiagem" />
+                      <option value="Unhas" />
+                      <option value="Perfumaria" />
+                      <option value="Higiene Pessoal" />
+                      <option value="Cosméticos" />
+                      <option value="Suplementos" />
+                      <option value="Roupas" />
+                      <option value="Calçados" />
+                      <option value="Acessórios" />
+                      <option value="Joias e Bijuterias" />
+                      <option value="Bolsas e Carteiras" />
+                      <option value="Eletrônicos" />
+                      <option value="Celulares e Acessórios" />
+                      <option value="Informática" />
+                      <option value="Casa e Decoração" />
+                      <option value="Cama e Banho" />
+                      <option value="Cozinha" />
+                      <option value="Eletrodomésticos" />
+                      <option value="Ferramentas" />
+                      <option value="Construção" />
+                      <option value="Jardinagem" />
+                      <option value="Automotivo" />
+                      <option value="Limpeza Automotiva" />
+                      <option value="Peças Automotivas" />
+                      <option value="Esportes" />
+                      <option value="Fitness" />
+                      <option value="Brinquedos e Jogos" />
+                      <option value="Bebês e Crianças" />
+                      <option value="Pet Shop" />
+                      <option value="Produtos para Animais" />
+                      <option value="Papelaria" />
+                      <option value="Material de Escritório" />
+                      <option value="Artesanato" />
+                      <option value="Instrumentos Musicais" />
+                      <option value="Livros" />
+                      <option value="Alimentos" />
+                      <option value="Bebidas" />
+                      <option value="Produtos Naturais" />
+                      <option value="Produtos Artesanais" />
+                      <option value="Utensílios" />
+                      <option value="Equipamentos Profissionais" />
+                      <option value="Materiais Profissionais" />
+                      <option value="Produtos para Empresas" />
+                      <option value="Outros" />
+                    </datalist>
                   </div>
 
                   <div>
@@ -334,13 +544,13 @@ export default function ProdutoManager({ auth, estabelecimentoId, estabeleciment
                   </div>
 
                   <div>
-                    <label className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-2"><FolderIcon className="w-4 h-4 text-gray-400" /> Categoria</label>
-                    <input type="text" name="categoria" maxLength={50} value={formData.categoria} onChange={handleInputChange} className="w-full border-gray-200 rounded-xl p-3.5 text-sm focus:border-[#FF5A00] focus:ring-[#FF5A00] shadow-sm transition-shadow outline-none" placeholder="Ex: Cosméticos, Bebidas" />
+                    <label className="text-sm font-bold text-gray-700 mb-2 flex items-center gap-2"><SwatchIcon className="w-4 h-4 text-gray-400" /> Cor (Opcional)</label>
+                    <input type="text" name="cor" maxLength={30} value={formData.cor} onChange={handleInputChange} className="w-full border-gray-200 rounded-xl p-3.5 text-sm focus:border-[#FF5A00] focus:ring-[#FF5A00] shadow-sm transition-shadow outline-none" placeholder="Ex: Preto, Azul" />
                   </div>
 
-                  <div className="md:col-span-3">
+                  <div className="md:col-span-2">
                     <label className="block text-sm font-bold text-gray-700 mb-2">Descrição Completa</label>
-                    <textarea name="descricao" maxLength={500} rows="3" value={formData.descricao} onChange={handleInputChange} className="w-full border-gray-200 rounded-xl p-3.5 text-sm focus:border-[#FF5A00] focus:ring-[#FF5A00] shadow-sm transition-shadow outline-none resize-none" placeholder="Detalhes, ingredientes ou instruções do produto..."></textarea>
+                    <textarea name="descricao" maxLength={500} rows="2" value={formData.descricao} onChange={handleInputChange} className="w-full border-gray-200 rounded-xl p-3.5 text-sm focus:border-[#FF5A00] focus:ring-[#FF5A00] shadow-sm transition-shadow outline-none resize-none" placeholder="Detalhes, ingredientes ou instruções do produto..."></textarea>
                   </div>
                 </div>
 
@@ -514,6 +724,9 @@ export default function ProdutoManager({ auth, estabelecimentoId, estabeleciment
                   }
                 }
 
+                // Identifica se está atrelado a algum serviço
+                const servicoVinculado = produto.servico_id && servicosDisponiveis.find(s => s.id === produto.servico_id);
+
                 return (
                   <div key={produto.id} className="bg-white border border-gray-100 rounded-[1.5rem] overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col group relative">
 
@@ -527,7 +740,7 @@ export default function ProdutoManager({ auth, estabelecimentoId, estabeleciment
                         </div>
                       )}
 
-                      {/* Tags Dinâmicas */}
+                      {/* Tags Dinâmicas Superiores */}
                       <div className="absolute top-3 left-3 flex flex-col gap-2 items-start">
                         {(produto.promocao == 1 || produto.is_promocao == 1) && (
                           <span className="bg-red-500 text-white text-[10px] font-black uppercase px-2.5 py-1 rounded-md shadow-md flex items-center gap-1.5"><FireIcon className="w-3 h-3"/> Oferta</span>
@@ -535,8 +748,14 @@ export default function ProdutoManager({ auth, estabelecimentoId, estabeleciment
                         {produto.somente_premium == 1 && (
                           <span className="bg-amber-500 text-white text-[10px] font-black uppercase px-2.5 py-1 rounded-md shadow-md flex items-center gap-1.5"><StarIcon className="w-3 h-3"/> Premium</span>
                         )}
+                        {servicoVinculado && (
+                           <span className="bg-indigo-600 text-white text-[10px] font-black uppercase px-2.5 py-1 rounded-md shadow-md flex items-center gap-1.5" title={`Venda casada com: ${servicoVinculado.nome}`}>
+                             <BriefcaseIcon className="w-3 h-3"/> Venda Casada
+                           </span>
+                        )}
                       </div>
 
+                      {/* Tag de Estoque */}
                       <div className="absolute top-3 right-3">
                         {produto.estoque_disponivel <= 0 ? (
                           <span className="bg-red-600/90 backdrop-blur text-white text-[10px] font-black uppercase px-2.5 py-1.5 rounded-md shadow-sm flex items-center gap-1.5 border border-red-500"><ExclamationCircleIcon className="w-3.5 h-3.5"/> Esgotado</span>
@@ -548,11 +767,18 @@ export default function ProdutoManager({ auth, estabelecimentoId, estabeleciment
 
                     <div className="p-5 flex-1 flex flex-col">
                       <h3 className="font-black text-gray-900 mb-1 text-lg leading-tight line-clamp-2">{produto.nome}</h3>
-                      <p className="text-[11px] font-bold text-gray-400 mb-4 line-clamp-1 uppercase tracking-wider">
-                        {produto.categoria} {produto.tamanho ? `• ${produto.tamanho}` : ''} {produto.cor ? `• ${produto.cor}` : ''}
+                      <p className="text-[11px] font-bold text-gray-400 mb-2 line-clamp-1 uppercase tracking-wider">
+                        {produto.categoria} {produto.sub_categoria ? `• ${produto.sub_categoria}` : ''} {produto.tamanho ? `• ${produto.tamanho}` : ''}
                       </p>
 
-                      <div className="mt-auto pt-2 border-t border-gray-50">
+                      {/* Indicação clara do serviço vinculado caso exista */}
+                      {servicoVinculado && (
+                        <div className="mt-1 mb-2 text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1.5 rounded-md border border-indigo-100 flex items-center gap-1.5 w-fit">
+                          <LinkIcon className="w-3 h-3"/> Atrelado a: {servicoVinculado.nome}
+                        </div>
+                      )}
+
+                      <div className="mt-auto pt-3 border-t border-gray-50">
                         {(produto.promocao == 1 || produto.is_promocao == 1) ? (
                           <div className="flex flex-col">
                             <span className="text-xs text-gray-400 line-through">R$ {Number(produto.valor_normal).toFixed(2).replace('.', ',')}</span>
@@ -561,7 +787,7 @@ export default function ProdutoManager({ auth, estabelecimentoId, estabeleciment
                             </p>
                           </div>
                         ) : (
-                          <p className="text-2xl font-black text-gray-800 tracking-tight mt-4">
+                          <p className="text-2xl font-black text-gray-800 tracking-tight mt-3">
                             R$ {Number(produto.valor_normal || produto.valor_final).toFixed(2).replace('.', ',')}
                           </p>
                         )}

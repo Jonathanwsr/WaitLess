@@ -1,10 +1,10 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { Head, useForm, router } from '@inertiajs/react';
+import { Head, Link, useForm, router } from '@inertiajs/react';
 import { useState, useEffect } from 'react';
-import { 
-    BanknotesIcon, 
-    CommandLineIcon, 
-    ExclamationTriangleIcon, 
+import {
+    BanknotesIcon,
+    CommandLineIcon,
+    ExclamationTriangleIcon,
     EnvelopeIcon,
     PaperAirplaneIcon,
     ArrowPathIcon,
@@ -15,14 +15,34 @@ import {
     BuildingOfficeIcon,
     BriefcaseIcon,
     UsersIcon,
-    StarIcon
+    StarIcon,
+    BoltIcon,
+    CheckCircleIcon,
+    ClipboardDocumentListIcon
 } from '@heroicons/react/24/outline';
 
-export default function FinanceiroMaster({ auth, provedores = [], filaJobs = [], filaFalhados = [], ultimasTransacoes = [], proximoRepasse }) {
-    
+// Mapeia o nome completo do Artisan command para a chave curta aceita pela rota de disparo manual
+const COMANDO_PARA_CHAVE = {
+    'financeiro:repassar-semanal': 'repassar-semanal',
+    'estornos:processar-vencidos': 'estornos-vencidos',
+    'financeiro:processar-diario': 'processar-diario',
+};
+
+export default function FinanceiroMaster({ auth, provedores = [], filaJobs = [], filaFalhados = [], ultimasTransacoes = [], proximoRepasse, robos = [] }) {
+
     // Controles de Modais
     const [abrirPainelEmail, setAbrirPainelEmail] = useState(false);
     const [modalRepasse, setModalRepasse] = useState({ open: false, provider: null, valor: '' });
+    const [rodandoRobo, setRodandoRobo] = useState(null);
+
+    const rodarRoboAgora = (comando, label) => {
+        if (!window.confirm(`Rodar "${label}" agora, sem esperar o horário agendado?`)) return;
+        setRodandoRobo(comando);
+        router.post(route('admin.financeiro.robos.rodar', COMANDO_PARA_CHAVE[comando]), {}, {
+            preserveScroll: true,
+            onFinish: () => setRodandoRobo(null),
+        });
+    };
 
     // === NOVOS ESTADOS PARA INTEGRAR OS DADOS GERAIS DO ADMIN ===
     const [loadingGerais, setLoadingGerais] = useState(false);
@@ -154,12 +174,20 @@ export default function FinanceiroMaster({ auth, provedores = [], filaJobs = [],
                             Monitoramento contábil e repasses da plataforma.
                         </p>
                     </div>
-                    {/* Badge do Próximo Repasse Automático */}
-                    <div className="bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-100 dark:border-emerald-800 rounded-xl px-4 py-2 flex items-center gap-3">
-                        <CalendarDaysIcon className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-                        <div>
-                            <p className="text-[10px] font-bold text-emerald-600/70 dark:text-emerald-400/70 uppercase tracking-wider">Próximo Repasse Automático</p>
-                            <p className="text-sm font-bold text-emerald-700 dark:text-emerald-300">{proximoRepasse || 'Sem data'}</p>
+                    <div className="flex items-center gap-3 flex-wrap">
+                        <Link href={route('admin.financeiro.pagamentos')} className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-bold text-gray-700 hover:bg-gray-50">
+                            <BanknotesIcon className="w-4 h-4" /> Todos os Pagamentos
+                        </Link>
+                        <Link href={route('admin.agendamentos.index')} className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm font-bold text-gray-700 hover:bg-gray-50">
+                            <ClipboardDocumentListIcon className="w-4 h-4" /> Agendamentos
+                        </Link>
+                        {/* Badge do Próximo Repasse Automático */}
+                        <div className="bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-100 dark:border-emerald-800 rounded-xl px-4 py-2 flex items-center gap-3">
+                            <CalendarDaysIcon className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                            <div>
+                                <p className="text-[10px] font-bold text-emerald-600/70 dark:text-emerald-400/70 uppercase tracking-wider">Próximo Repasse Automático</p>
+                                <p className="text-sm font-bold text-emerald-700 dark:text-emerald-300">{proximoRepasse || 'Sem data'}</p>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -190,7 +218,8 @@ export default function FinanceiroMaster({ auth, provedores = [], filaJobs = [],
                                     <th className="px-6 py-4">ID</th>
                                     <th className="px-6 py-4">Proprietário</th>
                                     <th className="px-6 py-4">Chave PIX</th>
-                                    <th className="px-6 py-4">Saldo Acumulado</th>
+                                    <th className="px-6 py-4">Saldo Interno (a repassar)</th>
+                                    <th className="px-6 py-4">Saldo Real na Carteira Asaas</th>
                                     <th className="px-6 py-4 text-center">Ações</th>
                                 </tr>
                             </thead>
@@ -207,6 +236,17 @@ export default function FinanceiroMaster({ auth, provedores = [], filaJobs = [],
                                         </td>
                                         <td className="px-6 py-4 font-black text-gray-900 dark:text-white">
                                             R$ {Number(prov.saldo).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            {prov.saldo_asaas_real !== null && prov.saldo_asaas_real !== undefined ? (
+                                                <span className="font-black text-indigo-600">
+                                                    R$ {Number(prov.saldo_asaas_real).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                                                </span>
+                                            ) : prov.saldo_asaas_indisponivel ? (
+                                                <span className="text-xs text-rose-500 font-semibold">Indisponível agora</span>
+                                            ) : (
+                                                <span className="text-xs text-gray-300">Sem carteira Asaas</span>
+                                            )}
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap">
                                             <div className="flex items-center justify-center gap-2">
@@ -229,6 +269,58 @@ export default function FinanceiroMaster({ auth, provedores = [], filaJobs = [],
                                 ))}
                             </tbody>
                         </table>
+                    </div>
+                </div>
+
+                {/* --- SEÇÃO 1.5: ROBÔS AUTOMÁTICOS (REPASSE, ESTORNOS VENCIDOS, DIÁRIO) --- */}
+                <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-2xl shadow-sm overflow-hidden">
+                    <div className="p-6 border-b border-gray-50 dark:border-gray-700 flex items-center gap-3">
+                        <div className="p-2.5 bg-amber-50 rounded-xl text-amber-600">
+                            <BoltIcon className="w-6 h-6" />
+                        </div>
+                        <div>
+                            <h3 className="text-lg font-bold text-gray-900 dark:text-white">Robôs Automáticos</h3>
+                            <p className="text-xs text-gray-400">Rotinas agendadas (repasse semanal, estornos vencidos e verificação diária) e última execução de cada uma.</p>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 divide-y md:divide-y-0 md:divide-x divide-gray-50 dark:divide-gray-700">
+                        {robos.map((robo) => {
+                            const ultima = robo.ultima_execucao;
+                            const rodando = rodandoRobo === robo.comando;
+                            return (
+                                <div key={robo.comando} className="p-6">
+                                    <p className="font-bold text-gray-900 dark:text-white text-sm mb-2">{robo.label}</p>
+
+                                    {ultima ? (
+                                        <>
+                                            <div className="flex items-center gap-2 mb-1">
+                                                {ultima.sucesso === null ? (
+                                                    <span className="text-xs font-bold text-gray-400">Em andamento...</span>
+                                                ) : ultima.sucesso ? (
+                                                    <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600"><CheckCircleIcon className="w-4 h-4" /> Sucesso</span>
+                                                ) : (
+                                                    <span className="inline-flex items-center gap-1 text-xs font-bold text-rose-600"><ExclamationTriangleIcon className="w-4 h-4" /> Falhou</span>
+                                                )}
+                                                <span className="text-[10px] uppercase font-bold text-gray-300">{ultima.disparado_por}</span>
+                                            </div>
+                                            <p className="text-xs text-gray-500">{new Date(ultima.iniciado_em).toLocaleString('pt-BR')}</p>
+                                            {ultima.mensagem && <p className="text-xs text-gray-400 mt-1">{ultima.mensagem}</p>}
+                                        </>
+                                    ) : (
+                                        <p className="text-xs text-gray-400 mb-2">Ainda não rodou nesta instância.</p>
+                                    )}
+
+                                    <button
+                                        onClick={() => rodarRoboAgora(robo.comando, robo.label)}
+                                        disabled={rodando}
+                                        className="mt-4 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-gray-900 hover:bg-black text-white disabled:opacity-40"
+                                    >
+                                        <BoltIcon className="w-3.5 h-3.5" /> {rodando ? 'Rodando...' : 'Rodar agora'}
+                                    </button>
+                                </div>
+                            );
+                        })}
                     </div>
                 </div>
 

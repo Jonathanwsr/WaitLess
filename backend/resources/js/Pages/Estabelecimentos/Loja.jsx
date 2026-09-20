@@ -1,6 +1,6 @@
-import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import React, { useState, useEffect } from 'react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { useState, useEffect } from 'react';
+import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { 
     StarIcon, 
     ClockIcon, 
@@ -21,7 +21,8 @@ import {
     CheckCircleIcon,
     ShoppingBagIcon,
     TagIcon,
-    FireIcon
+    FireIcon,
+    PlusIcon
 } from '@heroicons/react/24/solid';
 
 export default function Loja({ auth, estabelecimento, servicosPaginados }) {
@@ -35,9 +36,10 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
     const [produtoSelecionado, setProdutoSelecionado] = useState(null);
     const [fotoAtualIndex, setFotoAtualIndex] = useState(0);
 
-    // Estados de Agendamento/Carrinho
+    // Estados de Agendamento/Carrinho e Extras
     const [dataSelecionada, setDataSelecionada] = useState('');
     const [horaSelecionada, setHoraSelecionada] = useState('');
+    const [extrasSelecionados, setExtrasSelecionados] = useState([]); // Array de produtos extras
     const [adicionandoAoCarrinho, setAdicionandoAoCarrinho] = useState(false);
 
     const servicos = servicosPaginados.data;
@@ -66,9 +68,24 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
             if (serv) abrirDetalhes(serv);
         }
 
-        // Buscar produtos ao carregar a página
         fetchProdutosDisponiveis();
     }, [servicos, estabelecimento.id]);
+
+    // Deep-link vindo da tela de Ofertas Premium (?open_produto=ID): assim que
+    // os produtos terminam de carregar (fetch assíncrono acima), abre direto
+    // os detalhes do produto indicado na URL.
+    useEffect(() => {
+        if (produtos.length === 0) return;
+        const urlParams = new URLSearchParams(window.location.search);
+        const openProdutoId = urlParams.get('open_produto');
+        if (openProdutoId) {
+            const produto = produtos.find(p => p.id.toString() === openProdutoId);
+            if (produto) {
+                setAbaAtiva('produtos');
+                abrirDetalhesProduto(produto);
+            }
+        }
+    }, [produtos]);
 
     const fetchProdutosDisponiveis = async () => {
         setCarregandoProdutos(true);
@@ -110,7 +127,8 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
                 estabelecimento: checkoutPendente.estabelecimento_id,
                 servico_id: checkoutPendente.servico_id,
                 data: checkoutPendente.data,
-                hora: checkoutPendente.hora
+                hora: checkoutPendente.hora,
+                agendamento_id: checkoutPendente.agendamento_id
             }));
         }
     };
@@ -121,6 +139,7 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
         setFotoAtualIndex(0);
         setDataSelecionada(''); 
         setHoraSelecionada('');
+        setExtrasSelecionados([]); // Reseta os extras ao trocar de serviço
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
@@ -134,6 +153,7 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
     const fecharDetalhes = () => {
         setServicoSelecionado(null);
         setProdutoSelecionado(null);
+        setExtrasSelecionados([]);
     };
 
     const proximaFoto = (totalFotos) => setFotoAtualIndex((prev) => (prev + 1) % totalFotos);
@@ -178,30 +198,43 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
     };
 
     const adicionarAoCarrinho = () => {
-        if (!servicoSelecionado && !produtoSelecionado) return;
+        if (!produtoSelecionado) return;
         setAdicionandoAoCarrinho(true);
 
-        if (servicoSelecionado) {
-            router.post(route('cliente.carrinho.store'), {
-                servico_id: servicoSelecionado.id,
-                estabelecimento_id: estabelecimento.id,
-                data_agendamento: dataSelecionada || null,
-                hora_agendamento: horaSelecionada || null,
-            }, {
-                preserveScroll: true,
-                onFinish: () => setAdicionandoAoCarrinho(false),
-            });
-        } else if (produtoSelecionado) {
-            router.post(route('cliente.carrinho.store_produto'), {
-                produto_id: produtoSelecionado.id,
-                estabelecimento_id: estabelecimento.id,
-                quantidade: 1
-            }, {
-                preserveScroll: true,
-                onFinish: () => setAdicionandoAoCarrinho(false),
-            });
-        }
+        router.post(route('cliente.carrinho.store_produto'), {
+            produto_id: produtoSelecionado.id,
+            estabelecimento_id: estabelecimento.id,
+            quantidade: 1
+        }, {
+            preserveScroll: true,
+            onFinish: () => setAdicionandoAoCarrinho(false),
+        });
     };
+
+    const toggleExtra = (extra) => {
+        setExtrasSelecionados(prev => {
+            const isSelected = prev.some(e => e.id === extra.id);
+            if (isSelected) return prev.filter(e => e.id !== extra.id);
+            return [...prev, extra];
+        });
+    };
+
+    const calcularTotalServico = () => {
+        if (!servicoSelecionado) return 0;
+        const valorBase = Number(servicoSelecionado.valor || 0);
+        const valorExtras = extrasSelecionados.reduce((acc, extra) => {
+            return acc + Number(extra.valor_promocional || extra.valor_final || extra.valor_normal || 0);
+        }, 0);
+        return valorBase + valorExtras;
+    };
+
+    const produtosExtras = servicoSelecionado 
+        ? produtos.filter(p => 
+            (p.atrelado_reservas == 1 || p.atrelado_reservas === true) && 
+            p.estoque_disponivel > 0 &&
+            (!p.servico_id || p.servico_id === servicoSelecionado.id)
+          )
+        : [];
 
     const servicosOutros = servicoSelecionado 
         ? servicos.filter(s => s.id !== servicoSelecionado.id).slice(0, 4) 
@@ -494,7 +527,7 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
                                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 animate-in fade-in duration-300">
                                         {produtos.map((produto) => {
                                             const fotos = parseJSONSeguro(produto.fotos);
-                                            const fotoCapa = fotos.length > 0 ? fotos[0] : 'https://placehold.co/400x300/e2e8f0/828ea8?text=Sem+Imagem';
+                                            const fotoCapa = fotos.length > 0 ? (fotos[0].startsWith('http') ? fotos[0] : `/storage/${fotos[0]}`) : 'https://placehold.co/400x300/e2e8f0/828ea8?text=Sem+Imagem';
 
                                             return (
                                                 <div 
@@ -510,7 +543,7 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
                                                         />
                                                         
                                                         <div className="absolute top-3 left-3 flex flex-col gap-2">
-                                                            {produto.promocao == 1 && (
+                                                            {(produto.promocao == 1 || produto.is_promocao == 1) && (
                                                                 <span className="bg-red-600 text-white text-[10px] font-black uppercase px-2 py-1 rounded-md shadow-sm flex items-center gap-1">
                                                                     <FireIcon className="w-3 h-3"/> Oferta
                                                                 </span>
@@ -545,7 +578,7 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
                                                         </div>
 
                                                         <div className="mt-4 pt-4 border-t border-gray-100 flex flex-col">
-                                                            {produto.promocao == 1 ? (
+                                                            {(produto.promocao == 1 || produto.is_promocao == 1) ? (
                                                                 <div className="flex flex-col">
                                                                     <span className="text-xs text-gray-400 line-through">R$ {Number(produto.valor_normal).toFixed(2).replace('.', ',')}</span>
                                                                     <p className="text-xl font-black text-green-600 tracking-tight flex items-baseline">
@@ -621,21 +654,6 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
                                     <h1 className="text-3xl md:text-5xl font-extrabold text-gray-900 tracking-tight leading-tight">
                                         {servicoSelecionado.nome}
                                     </h1>
-                                    
-                                    {!isAdminOuGerente && (
-                                        <button 
-                                            onClick={adicionarAoCarrinho}
-                                            disabled={adicionandoAoCarrinho}
-                                            title="Adicionar ao Carrinho"
-                                            className="flex-shrink-0 flex h-12 w-12 sm:h-14 sm:w-14 items-center justify-center bg-white hover:bg-orange-50 text-gray-700 hover:text-[#FF5A00] border-2 border-gray-100 hover:border-orange-200 rounded-2xl transition-all disabled:opacity-50 shadow-sm"
-                                        >
-                                            {adicionandoAoCarrinho ? (
-                                                <svg className="animate-spin h-5 w-5 sm:h-6 sm:w-6" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                                            ) : (
-                                                <ShoppingCartIcon className="w-5 h-5 sm:w-6 sm:h-6" />
-                                            )}
-                                        </button>
-                                    )}
                                 </div>
 
                                 <div className="flex flex-wrap items-center gap-x-6 gap-y-4 border-b border-gray-100 pb-6 mb-6">
@@ -725,6 +743,57 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
                                                     {getTextoPagamento(config.tipo_pagamento)}
                                                 </span>
                                             </div>
+
+                                            {/* 👉 NOVO BLOCO: PRODUTOS EXTRAS / VINCULADOS AO SERVIÇO */}
+                                            {produtosExtras.length > 0 && (
+                                                <div className="mt-8 pt-8 border-t border-gray-100 animate-in fade-in slide-in-from-bottom-2">
+                                                    <h4 className="text-lg font-bold text-gray-900 mb-1 flex items-center gap-2">
+                                                        <ShoppingBagIcon className="w-5 h-5 text-[#FF5A00]" /> 
+                                                        Turbine seu agendamento
+                                                    </h4>
+                                                    <p className="text-sm text-gray-500 mb-6">Adicione produtos recomendados para retirar no dia do serviço.</p>
+                                                    
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                                        {produtosExtras.map(extra => {
+                                                            let fotoCapa = 'https://placehold.co/100x100/e2e8f0/828ea8?text=Sem+Foto';
+                                                            try {
+                                                                const parsed = JSON.parse(extra.fotos);
+                                                                if (parsed.length > 0) fotoCapa = parsed[0].startsWith('http') ? parsed[0] : `/storage/${parsed[0]}`;
+                                                            } catch(e) {}
+
+                                                            const valorProduto = Number(extra.valor_promocional || extra.valor_final || extra.valor_normal);
+                                                            const isSelected = extrasSelecionados.some(e => e.id === extra.id);
+
+                                                            return (
+                                                                <div 
+                                                                    key={extra.id} 
+                                                                    onClick={() => toggleExtra(extra)}
+                                                                    className={`flex items-center gap-4 bg-white border p-3 rounded-2xl shadow-sm cursor-pointer transition-colors ${isSelected ? 'border-[#FF5A00] bg-orange-50/30' : 'border-gray-200 hover:border-orange-300'}`}
+                                                                >
+                                                                    <div className="w-16 h-16 bg-gray-100 rounded-xl overflow-hidden shrink-0 border border-gray-100 relative">
+                                                                        <img src={fotoCapa} alt={extra.nome} className="w-full h-full object-cover" />
+                                                                        {isSelected && (
+                                                                            <div className="absolute inset-0 bg-[#FF5A00]/20 flex items-center justify-center">
+                                                                                <CheckCircleIcon className="w-8 h-8 text-[#FF5A00] bg-white rounded-full" />
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <h5 className="font-bold text-gray-900 text-sm truncate">{extra.nome}</h5>
+                                                                        <p className="text-xs text-gray-500 truncate mb-1">{extra.categoria} {extra.tamanho ? `• ${extra.tamanho}` : ''}</p>
+                                                                        <div className="font-black text-[#FF5A00] text-sm">
+                                                                            + R$ {valorProduto.toFixed(2).replace('.', ',')}
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors shrink-0 ${isSelected ? 'bg-[#FF5A00] text-white' : 'bg-gray-100 text-gray-400'}`}>
+                                                                        {isSelected ? <CheckIcon className="w-5 h-5" /> : <PlusIcon className="w-5 h-5" />}
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            )}
                                         </>
                                     );
                                 })()}
@@ -737,22 +806,26 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
                                 <span className="text-[11px] sm:text-xs text-gray-500 font-bold uppercase tracking-wider block mb-0.5">Total</span>
                                 <div className="text-2xl sm:text-4xl font-black text-gray-900 leading-none flex items-baseline">
                                     <span className="text-sm sm:text-xl font-bold mr-1 text-gray-500">R$</span>
-                                    {Number(servicoSelecionado.valor).toFixed(2).replace('.', ',')}
+                                    {calcularTotalServico().toFixed(2).replace('.', ',')}
                                 </div>
                             </div>
                             
                             {!isAdminOuGerente && (
                                 <div className="flex items-center gap-3 w-full sm:w-auto">
+                                    {/* 👇 NOVO: BOTÃO AGORA É UM LINK QUE PASSA OS DADOS PELA URL */}
                                     <Link 
                                         href={route('cliente.agendar', { 
                                             estabelecimento: estabelecimento.id, 
                                             servico_id: servicoSelecionado.id,
                                             data: dataSelecionada || undefined,
-                                            hora: horaSelecionada || undefined
+                                            hora: horaSelecionada || undefined,
+                                            extras_ids: extrasSelecionados.map(e => e.id).join(',') || undefined,
+                                            valor_extras: extrasSelecionados.reduce((acc, e) => acc + Number(e.valor_promocional || e.valor_final || e.valor_normal), 0) || undefined,
+                                            nomes_extras: extrasSelecionados.map(e => e.nome).join(', ') || undefined
                                         })}
-                                        className={`flex-1 sm:flex-none text-center font-bold py-3.5 sm:py-4 px-6 sm:px-10 rounded-2xl shadow-lg transition-all text-sm sm:text-base w-full ${(!dataSelecionada || !horaSelecionada) ? 'bg-gray-900 text-white hover:bg-black shadow-gray-900/20' : 'bg-green-600 text-white hover:bg-green-700 hover:scale-[1.02] shadow-green-600/30'}`}
+                                        className={`flex-1 sm:flex-none text-center font-bold py-3.5 sm:py-4 px-6 sm:px-10 rounded-2xl shadow-lg transition-all text-sm sm:text-base w-full ${(!dataSelecionada || !horaSelecionada) ? 'bg-gray-900 text-white hover:bg-black shadow-gray-900/20 pointer-events-none opacity-50' : 'bg-green-600 text-white hover:bg-green-700 hover:scale-[1.02] shadow-green-600/30'}`}
                                     >
-                                        {dataSelecionada && horaSelecionada ? 'Avançar para Pagamento' : 'Agendar agora'}
+                                        {dataSelecionada && horaSelecionada ? 'Avançar para Pagamento' : 'Escolha Data e Hora'}
                                     </Link>
                                 </div>
                             )}
@@ -801,7 +874,7 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
                     </div>
                 )}
 
-                {/* TELA DE DETALHES DO PRODUTO */}
+                {/* TELA DE DETALHES DO PRODUTO (VENDA AVULSA) */}
                 {produtoSelecionado && (
                     <div className="bg-white rounded-3xl p-6 md:p-8 lg:p-10 border border-gray-100 shadow-xl shadow-gray-200/40 animate-in fade-in duration-500 slide-in-from-bottom-4">
                         
@@ -824,7 +897,7 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
                                     
                                     return (
                                         <>
-                                            <img src={hasFotos ? fotosProduto[fotoAtualIndex] : 'https://placehold.co/600x600/e2e8f0/828ea8?text=Imagem+do+Produto'} alt={produtoSelecionado.nome} className="w-full h-full object-cover transition-transform duration-700 hover:scale-105" />
+                                            <img src={hasFotos ? (fotosProduto[fotoAtualIndex].startsWith('http') ? fotosProduto[fotoAtualIndex] : `/storage/${fotosProduto[fotoAtualIndex]}`) : 'https://placehold.co/600x600/e2e8f0/828ea8?text=Imagem+do+Produto'} alt={produtoSelecionado.nome} className="w-full h-full object-cover transition-transform duration-700 hover:scale-105" />
                                             
                                             {totalFotos > 1 && (
                                                 <>
@@ -888,7 +961,7 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
                             </div>
                         </div>
 
-                        {/* Barra fixa no mobile (Sticky Bottom Bar) / Bloco final no Desktop para Produto */}
+                        {/* Barra fixa no mobile (Sticky Bottom Bar) / Bloco final no Desktop para Produto Avulso */}
                         <div className="fixed sm:relative bottom-0 left-0 right-0 sm:bottom-auto sm:left-auto sm:right-auto bg-white sm:bg-transparent border-t sm:border-t-0 border-gray-200 sm:border-transparent p-4 sm:p-0 sm:pt-8 sm:mt-8 flex flex-row items-center justify-between gap-4 z-50 sm:z-auto shadow-[0_-10px_20px_-10px_rgba(0,0,0,0.1)] sm:shadow-none">
                             <div className="flex-1 sm:flex-none">
                                 <span className="text-[11px] sm:text-xs text-gray-500 font-bold uppercase tracking-wider block mb-0.5">Valor do Produto</span>
@@ -922,7 +995,7 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
                                         ) : (
                                             <>
                                                 <ShoppingCartIcon className="w-5 h-5" />
-                                                Adicionar ao Carrinho
+                                                Reservar
                                             </>
                                         )}
                                     </button>
@@ -936,7 +1009,7 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                                     {produtosOutros.map((outroProduto) => {
                                         const fotosO = parseJSONSeguro(outroProduto.fotos);
-                                        const fotoCapaO = fotosO.length > 0 ? fotosO[0] : 'https://placehold.co/400x300/e2e8f0/828ea8?text=Sem+Imagem';
+                                        const fotoCapaO = fotosO.length > 0 ? (fotosO[0].startsWith('http') ? fotosO[0] : `/storage/${fotosO[0]}`) : 'https://placehold.co/400x300/e2e8f0/828ea8?text=Sem+Imagem';
 
                                         return (
                                             <div 

@@ -25,6 +25,24 @@ class Produto extends Model
         'atrelado_reservas' => 'boolean',
     ];
 
+    /**
+     * Decodifica a coluna "fotos" com tolerância a registros antigos que
+     * ficaram com o JSON gravado duas vezes (bug já corrigido em
+     * ProdutoController::store, mas que corrompeu produtos criados antes
+     * da correção) — decodifica de novo enquanto o resultado ainda for uma
+     * string.
+     */
+    public static function decodeFotos($valor): array
+    {
+        $tentativas = 0;
+        while (is_string($valor) && $tentativas < 2) {
+            $valor = json_decode($valor, true);
+            $tentativas++;
+        }
+
+        return is_array($valor) ? $valor : [];
+    }
+
     // Relações básicas
     public function estabelecimento() {
         return $this->belongsTo(Estabelecimento::class);

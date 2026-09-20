@@ -98,27 +98,28 @@ function HeaderSection({
 
       <View style={styles.searchRow}>
         <View style={styles.searchContainer}>
-          <Feather name="search" size={20} color={COLORS.gray} />
-          <TextInput 
-            style={styles.searchInput} 
-            placeholder="Buscar destinos, voos, serviços, passeios..." 
+          <View style={styles.searchIconWrap}>
+            <Feather name="search" size={16} color={COLORS.white} />
+          </View>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Buscar destinos, voos, serviços, passeios..."
             placeholderTextColor={COLORS.gray}
-            value={inputText} 
-            onChangeText={setInputText} 
+            value={inputText}
+            onChangeText={setInputText}
             onSubmitEditing={handleSearchSubmit}
             returnKeyType="search"
             autoCapitalize="none"
           />
-          {inputText.length > 0 ? (
-            <TouchableOpacity onPress={clearSearch} style={{ padding: 4, justifyContent: 'center', alignItems: 'center' }}>
+          {inputText.length > 0 && (
+            <TouchableOpacity onPress={clearSearch} style={styles.searchClearBtn}>
               <Ionicons name="close-circle" size={20} color={COLORS.gray} />
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity style={{ justifyContent: 'center', alignItems: 'center' }}>
-              <MaterialCommunityIcons name="tune" size={20} color={COLORS.secondary} />
             </TouchableOpacity>
           )}
         </View>
+        <TouchableOpacity style={styles.filterFab} activeOpacity={0.85}>
+          <MaterialCommunityIcons name="tune-variant" size={20} color={COLORS.white} />
+        </TouchableOpacity>
       </View>
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryGridContainer}>
@@ -186,7 +187,8 @@ export default function TelaExplorar() {
   
   const [userFoto, setUserFoto] = useState(null);
   const [favoritos, setFavoritos] = useState([]);
-  const [carrinhoItens, setCarrinhoItens] = useState(0); 
+  const [carrinhoItens, setCarrinhoItens] = useState(0);
+  const [itensNoCarrinho, setItensNoCarrinho] = useState([]);
 
   useEffect(() => {
     carregarUsuario();
@@ -290,18 +292,41 @@ export default function TelaExplorar() {
     try {
       const token = await AsyncStorage.getItem('@waitless_token');
       const isServico = item.tipo === 'servico' || item.tipo === 'aluguel' || item.estabelecimento_id != null;
-      const bodyParams = isServico ? { servico_id: idItem } : { estabelecimento_id: idItem };
 
       await fetch(`${API_URL}/favoritos/toggle`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(bodyParams)
+        body: JSON.stringify({ tipo: isServico ? 'servico' : 'estabelecimento', id: idItem })
       });
     } catch (error) {
       console.log('Erro ao favoritar', error);
+    }
+  };
+
+  const adicionarAoCarrinho = async (item) => {
+    if (itensNoCarrinho.includes(item.id)) return;
+
+    setItensNoCarrinho(prev => [...prev, item.id]);
+    setCarrinhoItens(prev => prev + 1);
+
+    try {
+      const token = await AsyncStorage.getItem('@waitless_token');
+      await fetch(`${API_URL}/carrinho`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          estabelecimento_id: item.estabelecimento_id,
+          servico_id: item.id,
+        })
+      });
+    } catch (error) {
+      console.log('Erro ao adicionar ao carrinho', error);
     }
   };
 
@@ -407,12 +432,27 @@ export default function TelaExplorar() {
               )}
             </View>
             
-            <TouchableOpacity 
-              style={styles.agendarBtn}
-              onPress={() => navegarParaDetalhes(item)}
-            >
-              <Text style={styles.agendarBtnText}>Detalhes</Text>
-            </TouchableOpacity>
+            <View style={styles.actionBtnsRow}>
+              {item.tipo === 'servico' && (
+                <TouchableOpacity
+                  style={styles.cartBtn}
+                  onPress={() => adicionarAoCarrinho(item)}
+                  disabled={itensNoCarrinho.includes(item.id)}
+                >
+                  {itensNoCarrinho.includes(item.id) ? (
+                    <Ionicons name="checkmark" size={18} color={COLORS.success} />
+                  ) : (
+                    <Feather name="shopping-cart" size={18} color={COLORS.primary} />
+                  )}
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={styles.agendarBtn}
+                onPress={() => navegarParaDetalhes(item)}
+              >
+                <Text style={styles.agendarBtnText}>Detalhes</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </TouchableOpacity>
@@ -481,7 +521,7 @@ export default function TelaExplorar() {
 
       {/* Menu Inferior com alinhamento centralizado perfeito */}
       <View style={styles.bottomNavContainer}>
-        <TouchableOpacity style={styles.bottomNavItem} onPress={() => router.push('/src/screens/Home')}>
+        <TouchableOpacity style={styles.bottomNavItem} onPress={() => router.push('/(tabs)/home')}>
           <Feather name="home" size={22} color={COLORS.gray} />
           <Text style={styles.bottomNavText}>Início</Text>
         </TouchableOpacity>
@@ -602,30 +642,58 @@ const styles = StyleSheet.create({
   },
 
   searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
     paddingHorizontal: 16,
     marginBottom: 16,
   },
-  searchContainer: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    backgroundColor: '#FFFFFF',
-    borderRadius: 100, 
-    paddingHorizontal: 20, 
-    height: 52,
-    borderWidth: 1,
-    borderColor: COLORS.border,
+  searchContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.lightGray,
+    borderRadius: 18,
+    paddingHorizontal: 10,
+    height: 54,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
     elevation: 1,
   },
-  searchInput: { 
-    flex: 1, 
-    marginLeft: 12, 
-    fontSize: 14, 
-    color: COLORS.textDark, 
-    fontWeight: '500' 
+  searchIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
+    backgroundColor: COLORS.secondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: COLORS.textDark,
+    fontWeight: '500'
+  },
+  searchClearBtn: {
+    padding: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  filterFab: {
+    width: 54,
+    height: 54,
+    borderRadius: 18,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 3,
   },
   
   categoryGridContainer: {
@@ -899,10 +967,25 @@ const styles = StyleSheet.create({
     fontSize: 12, 
     fontWeight: '700' 
   },
+  actionBtnsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  cartBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primaryLight,
+    borderWidth: 1,
+    borderColor: COLORS.primary,
+  },
   agendarBtn: {
     backgroundColor: COLORS.primaryLight,
     borderWidth: 1,
-    borderColor: COLORS.primary, 
+    borderColor: COLORS.primary,
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 8,

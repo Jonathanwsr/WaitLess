@@ -28,12 +28,40 @@ class ClienteAgendamentoController extends Controller
         $this->pagamentoService = $pagamentoService;
     }
 
-    public function show(Estabelecimento $estabelecimento)
+    public function show(Estabelecimento $estabelecimento, Request $request)
     {
         if (!$estabelecimento->ativo) abort(404, 'Este estabelecimento está fechado.');
+
+        // Compra avulsa de produto (via AgendamentoController::storeProdutoCarrinho):
+        // cria um Agendamento "casca" sem serviço, só com os produtos vinculados,
+        // e redireciona pra cá com o id para o cliente finalizar o pagamento.
+        $pedidoProdutoPendente = null;
+        if ($request->filled('agendamento_id')) {
+            $pendente = Agendamento::where('id', $request->agendamento_id)
+                ->where('usuario_id', Auth::id())
+                ->where('estabelecimento_id', $estabelecimento->id)
+                ->whereNull('servico_id')
+                ->whereIn('status', ['pendente', 'aguardando_pagamento'])
+                ->first();
+
+            if ($pendente) {
+                $itens = DB::table('itens_aluguel')
+                    ->where('agendamento_id', $pendente->id)
+                    ->whereNotNull('produto_id')
+                    ->get(['id', 'nome', 'quantidade', 'valor_diaria']);
+
+                $pedidoProdutoPendente = [
+                    'agendamento_id' => $pendente->id,
+                    'valor_total'    => (float) $pendente->valor_final,
+                    'itens'          => $itens,
+                ];
+            }
+        }
+
         return Inertia::render('Agendamentos/Agendar', [
             'estabelecimento' => $estabelecimento->only(['id', 'nome', 'foto_perfil', 'bairro', 'cidade', 'estado', 'telefone']),
-            'servicos' => $estabelecimento->servicos()->where('ativo', true)->get()
+            'servicos' => $estabelecimento->servicos()->where('ativo', true)->get(),
+            'pedidoProdutoPendente' => $pedidoProdutoPendente,
         ]);
     }
 

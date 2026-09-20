@@ -2,6 +2,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import InputError from '@/Components/InputError';
 import { Head, useForm, usePage, Link, router } from '@inertiajs/react'; 
 import { useState, useEffect } from 'react';
+import axios from 'axios';
 import { 
     CheckCircleIcon, 
     ClockIcon, 
@@ -15,20 +16,35 @@ import {
     UserGroupIcon,
     ShieldCheckIcon,
     LockClosedIcon,
-    BuildingStorefrontIcon
+    BuildingStorefrontIcon,
+    ShoppingBagIcon,
+    XMarkIcon
 } from '@heroicons/react/24/solid';
 
-export default function Agendar({ auth, estabelecimento, servicos = [] }) {
+export default function Agendar({ auth, estabelecimento, servicos = [], produtosExtras = [], extras_ids, pedidoProdutoPendente = null }) {
     const [servicoSelecionado, setServicoSelecionado] = useState(null);
     const [diaDaSemanaSelecionado, setDiaDaSemanaSelecionado] = useState('');
     const [editandoDataHora, setEditandoDataHora] = useState(false);
-    const [statusFinalizacao, setStatusFinalizacao] = useState(null); 
+    const [statusFinalizacao, setStatusFinalizacao] = useState(null);
+
+    // Checkout de uma compra avulsa de produto (sem serviço), vinda de
+    // AgendamentoController::storeProdutoCarrinho via ?agendamento_id=
+    const [metodoPagamentoProduto, setMetodoPagamentoProduto] = useState('pix');
+    const [processandoProduto, setProcessandoProduto] = useState(false);
+    const [erroProduto, setErroProduto] = useState(null);
     
-    // ESTADOS PARA CONTROLE DE PREÇO E CUPOM
+    // ESTADOS PARA CONTROLE DE PREÇO, CUPOM E PRODUTOS (Carrinho)
     const [qtdLocal, setQtdLocal] = useState(1); 
     const [cupomAtivo, setCupomAtivo] = useState(null); 
+    const [listaProdutosExtras, setListaProdutosExtras] = useState(produtosExtras || []);
 
     const { flash = {} } = usePage().props; 
+
+    // Calcula o valor total apenas dos produtos extras escolhidos que ainda estão na lista
+    const valorDosExtras = listaProdutosExtras.reduce((acc, produto) => {
+        const valorProduto = Number(produto.valor_promocional || produto.valor_final || produto.valor_normal || 0);
+        return acc + valorProduto;
+    }, 0);
 
     const { data, setData, post, processing, errors } = useForm({
         servico_id: '',
@@ -40,6 +56,7 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
         valor_final: 0, 
         quantidade: 1, 
         cupom_codigo: '', 
+        extras_ids: extras_ids || '' // IDs dos produtos sendo enviados pro Backend
     });
 
     const diasSemanaMap = { 0: 'domingo', 1: 'segunda', 2: 'terca', 3: 'quarta', 4: 'quinta', 5: 'sexta', 6: 'sabado' };
@@ -63,8 +80,15 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
         const urlDesconto = parametros.get('desconto');
         const urlTipoDesconto = parametros.get('tipo_desconto');
 
+        const urlExtrasIds = parametros.get('extras_ids');
+
         let newState = { ...data };
         let mudouAlgo = false;
+
+        if (urlExtrasIds) {
+            newState.extras_ids = urlExtrasIds;
+            mudouAlgo = true;
+        }
 
         if (urlCupom && urlDesconto) {
             setCupomAtivo({
@@ -84,7 +108,6 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
                 mudouAlgo = true;
 
                 const config = extrairConfiguracoes(servicoEncontrado.configuracoes);
-                // Pre-seleciona um método dependendo da configuração
                 newState.forma_pagamento = config.tipoPagamentoRaw === 'presencial' ? 'presencial' : 'online_agora';
                 newState.metodo_pagamento = config.tipoPagamentoRaw === 'presencial' ? '' : 'pix';
             }
@@ -108,6 +131,22 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
         if (mudouAlgo) setData(newState);
     }, []); 
 
+    // BUSCA OS DADOS COMPLETOS DOS PRODUTOS SE ELES ESTIVEREM NA URL
+    useEffect(() => {
+        if (data.extras_ids && listaProdutosExtras.length === 0 && estabelecimento?.id) {
+            const idsExtras = data.extras_ids.split(',').map(id => Number(id));
+            
+            axios.get(`/estabelecimentos/${estabelecimento.id}/produtos/cliente`)
+                .then(response => {
+                    if (Array.isArray(response.data)) {
+                        const produtosComprados = response.data.filter(p => idsExtras.includes(p.id));
+                        setListaProdutosExtras(produtosComprados);
+                    }
+                })
+                .catch(err => console.error("Erro ao carregar detalhes dos produtos:", err));
+        }
+    }, [data.extras_ids, estabelecimento?.id]);
+
     useEffect(() => {
         if (data.data_agendamento) {
             const [ano, mes, dia] = data.data_agendamento.split('-');
@@ -118,7 +157,8 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
 
     useEffect(() => {
         if (servicoSelecionado) {
-            let valorCalculado = (Number(servicoSelecionado.valor) || 0) * qtdLocal;
+            // SOMA O VALOR DO SERVIÇO COM O VALOR DOS EXTRAS
+            let valorCalculado = ((Number(servicoSelecionado.valor) || 0) * qtdLocal) + valorDosExtras;
 
             if (cupomAtivo) {
                 if (cupomAtivo.tipo === 'percentual') {
@@ -129,9 +169,13 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
             }
 
             if (valorCalculado < 0) valorCalculado = 0; 
-            setData(prev => ({ ...prev, valor_final: valorCalculado, quantidade: qtdLocal }));
+            setData(prev => ({ 
+                ...prev, 
+                valor_final: valorCalculado, 
+                quantidade: qtdLocal
+            }));
         }
-    }, [qtdLocal, servicoSelecionado, cupomAtivo]);
+    }, [qtdLocal, servicoSelecionado, cupomAtivo, valorDosExtras]);
 
     useEffect(() => {
         if (flash.success && flash.success.includes('PIN')) {
@@ -196,6 +240,13 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
         if (novaQtd >= 1) setQtdLocal(novaQtd);
     };
 
+    // Remove o produto extra do carrinho e da URL logicamente
+    const removerExtra = (idRemover) => {
+        const novaLista = listaProdutosExtras.filter(produto => produto.id !== idRemover);
+        setListaProdutosExtras(novaLista);
+        setData('extras_ids', novaLista.map(e => e.id).join(','));
+    };
+
     const selecionarMetodoPagamento = (forma, metodo) => {
         setData(prev => ({ ...prev, forma_pagamento: forma, metodo_pagamento: metodo }));
     };
@@ -228,9 +279,109 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
         if (fotosObj.length > 0) fotoServico = fotosObj[0];
     }
 
-    const valorOriginalBruto = servicoSelecionado ? ((Number(servicoSelecionado.valor) || 0) * qtdLocal) : 0;
+    const valorOriginalBruto = servicoSelecionado ? (((Number(servicoSelecionado.valor) || 0) * qtdLocal) + valorDosExtras) : 0;
     const valorDesconto = valorOriginalBruto - (Number(data.valor_final) || 0);
     const temDescontoVisivel = cupomAtivo && valorDesconto > 0;
+
+    // ==========================================
+    // CHECKOUT DE COMPRA AVULSA DE PRODUTO (sem serviço)
+    // ==========================================
+    const finalizarPagamentoProduto = async () => {
+        setErroProduto(null);
+
+        if (metodoPagamentoProduto !== 'local' && !auth?.user?.asaas_customer_id) {
+            setErroProduto('Não encontramos seus dados de pagamento. Complete seu perfil antes de continuar.');
+            return;
+        }
+
+        setProcessandoProduto(true);
+        try {
+            const { data: resposta } = await axios.post(route('pagamento.processar'), {
+                agendamento_id: pedidoProdutoPendente.agendamento_id,
+                metodo_pagamento: metodoPagamentoProduto,
+                asaas_customer_id: auth?.user?.asaas_customer_id,
+                parcelas: 1,
+            });
+
+            if (resposta.metodo === 'local') {
+                router.visit(route('dashboard'));
+                return;
+            }
+
+            if (resposta.invoice_url) {
+                window.location.href = resposta.invoice_url;
+                return;
+            }
+
+            setErroProduto('Não foi possível gerar a cobrança agora. Tente novamente.');
+        } catch (e) {
+            setErroProduto(e.response?.data?.error || 'Não foi possível gerar a cobrança agora. Tente novamente em instantes.');
+        } finally {
+            setProcessandoProduto(false);
+        }
+    };
+
+    if (pedidoProdutoPendente) {
+        const metodos = [
+            { id: 'pix', label: 'Pix', icone: <QrCodeIcon className="w-6 h-6" /> },
+            { id: 'cartao', label: 'Cartão', icone: <CreditCardIcon className="w-6 h-6" /> },
+            { id: 'boleto', label: 'Boleto', icone: <DocumentTextIcon className="w-6 h-6" /> },
+            { id: 'local', label: 'No local', icone: <BuildingStorefrontIcon className="w-6 h-6" /> },
+        ];
+
+        return (
+            <AuthenticatedLayout header={<h2 className="text-xl font-bold text-gray-800">Finalizar Compra</h2>}>
+                <Head title="Finalizar Compra" />
+                <div className="max-w-xl mx-auto mt-10 px-4 pb-20">
+                    <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-xl border border-gray-100">
+                        <h2 className="text-2xl font-black text-gray-900 mb-1">Revise seu pedido</h2>
+                        <p className="text-gray-500 text-sm mb-6">{estabelecimento?.nome}</p>
+
+                        <div className="border border-gray-100 rounded-2xl divide-y divide-gray-100 mb-6">
+                            {(pedidoProdutoPendente.itens || []).map((item) => (
+                                <div key={item.id} className="flex justify-between items-center px-4 py-3 text-sm">
+                                    <span className="text-gray-700 font-medium">{item.nome} {item.quantidade > 1 ? `x${item.quantidade}` : ''}</span>
+                                    <span className="text-gray-900 font-bold">R$ {Number(item.valor_diaria).toFixed(2)}</span>
+                                </div>
+                            ))}
+                            <div className="flex justify-between items-center px-4 py-3 bg-gray-50 rounded-b-2xl">
+                                <span className="font-black text-gray-900">Total</span>
+                                <span className="font-black text-[#FF5A00] text-lg">R$ {Number(pedidoProdutoPendente.valor_total).toFixed(2)}</span>
+                            </div>
+                        </div>
+
+                        <label className="block text-xs font-bold text-gray-700 uppercase mb-2">Forma de pagamento</label>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-6">
+                            {metodos.map((m) => (
+                                <button
+                                    key={m.id}
+                                    type="button"
+                                    onClick={() => setMetodoPagamentoProduto(m.id)}
+                                    className={`flex flex-col items-center gap-1.5 border-2 rounded-xl p-3 text-xs font-bold transition ${metodoPagamentoProduto === m.id ? 'border-[#FF5A00] bg-orange-50 text-[#FF5A00]' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}
+                                >
+                                    {m.icone} {m.label}
+                                </button>
+                            ))}
+                        </div>
+
+                        {erroProduto && <p className="text-red-600 text-sm font-medium mb-4">{erroProduto}</p>}
+
+                        <button
+                            onClick={finalizarPagamentoProduto}
+                            disabled={processandoProduto}
+                            className="w-full bg-[#FF5A00] hover:bg-[#e04f00] text-white py-3.5 rounded-xl font-bold transition-all shadow-md active:scale-[0.98] disabled:opacity-70"
+                        >
+                            {processandoProduto ? 'Processando...' : 'Confirmar e Pagar'}
+                        </button>
+
+                        <Link href={route('estabelecimentos.loja', estabelecimento?.id)} className="block text-center text-sm text-gray-500 hover:text-gray-700 mt-4 font-medium">
+                            Voltar para a loja
+                        </Link>
+                    </div>
+                </div>
+            </AuthenticatedLayout>
+        );
+    }
 
     // ==========================================
     // TELA DE SUCESSO / CONCLUSÃO
@@ -413,22 +564,22 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
                     {!editandoDataHora && servicoSelecionado && data.hora_agendamento && (
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 animate-in fade-in slide-in-from-bottom-8">
                             
-                            {/* COLUNA ESQUERDA: RESUMO DA RESERVA (FIXO) */}
-                            <div className="lg:col-span-4 lg:col-start-1 order-2 lg:order-1">
+                            {/* COLUNA ESQUERDA: RESUMO DA RESERVA E PRODUTOS (FIXO) */}
+                            <div className="lg:col-span-5 lg:col-start-1 order-2 lg:order-1">
                                 <div className="sticky top-24 space-y-6">
                                     <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
-                                        <div className="p-6 border-b border-gray-100">
-                                            <h3 className="text-xl font-bold text-gray-900 mb-6">Resumo da reserva</h3>
+                                        <div className="p-6 md:p-8 border-b border-gray-100">
+                                            <h3 className="text-xl font-bold text-gray-900 mb-6">Resumo do pedido</h3>
+                                            
+                                            {/* SERVIÇO PRINCIPAL */}
                                             <div className="flex gap-4 mb-6">
-                                                <div className="w-24 h-24 rounded-2xl overflow-hidden shrink-0 bg-gray-100">
+                                                <div className="w-20 h-20 rounded-2xl overflow-hidden shrink-0 bg-gray-100 border border-gray-100">
                                                     <img src={fotoServico} alt="Serviço" className="w-full h-full object-cover" />
                                                 </div>
                                                 <div className="flex flex-col justify-center">
+                                                    <span className="text-[10px] uppercase font-bold tracking-widest text-indigo-500 mb-1">Serviço Principal</span>
                                                     <h4 className="font-bold text-gray-900 text-base leading-tight mb-1">{servicoSelecionado.nome}</h4>
                                                     <p className="text-sm text-gray-500">{estabelecimento?.nome}</p>
-                                                    <div className="flex items-center gap-1 mt-2 text-xs text-gray-400 font-bold">
-                                                        <ClockIcon className="w-3.5 h-3.5" /> {servicoSelecionado.duracao_minutos} min
-                                                    </div>
                                                 </div>
                                             </div>
 
@@ -444,7 +595,7 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
                                             </div>
 
                                             {/* Controle de Quantidade Integrado */}
-                                            <div className="flex items-center justify-between pb-6">
+                                            <div className="flex items-center justify-between pb-6 border-b border-gray-100">
                                                 <div>
                                                     <p className="font-bold text-gray-900 text-sm flex items-center gap-2"><UserGroupIcon className="w-4 h-4 text-gray-400"/> Quantidade</p>
                                                     <p className="text-xs text-gray-500">Vagas / Pessoas</p>
@@ -456,16 +607,74 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
                                                 </div>
                                             </div>
 
-                                            <button type="button" onClick={() => setEditandoDataHora(true)} className="w-full py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-sm rounded-xl transition">
+                                            {/* 👉 NOVO: EXIBIÇÃO COMPLETA DOS PRODUTOS EXTRAS NO CARRINHO */}
+                                            {listaProdutosExtras.length > 0 && (
+                                                <div className="mt-6 pt-2 pb-2">
+                                                    <h4 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
+                                                        <ShoppingBagIcon className="w-5 h-5 text-[#FF5A00]" /> 
+                                                        Você também está adquirindo:
+                                                    </h4>
+                                                    <div className="space-y-4">
+                                                        {listaProdutosExtras.map(extra => {
+                                                            const valorExtra = Number(extra.valor_promocional || extra.valor_final || extra.valor_normal || 0);
+                                                            let fotoExtra = 'https://placehold.co/100x100/e2e8f0/828ea8?text=Item';
+                                                            try {
+                                                                const parsed = JSON.parse(extra.fotos);
+                                                                if (parsed && parsed.length > 0) fotoExtra = parsed[0].startsWith('http') ? parsed[0] : `/storage/${parsed[0]}`;
+                                                            } catch(e) {}
+
+                                                            return (
+                                                                <div key={extra.id} className="flex gap-4 bg-orange-50/40 border border-orange-100 p-4 rounded-2xl relative shadow-sm">
+                                                                    <div className="w-16 h-16 rounded-xl overflow-hidden shrink-0 bg-white border border-orange-100">
+                                                                        <img src={fotoExtra} alt={extra.nome} className="w-full h-full object-cover" />
+                                                                    </div>
+                                                                    <div className="flex-1 min-w-0 pr-8">
+                                                                        <h5 className="text-sm font-bold text-gray-900 truncate mb-1">{extra.nome}</h5>
+                                                                        <p className="text-[11px] text-gray-500 line-clamp-2 leading-relaxed mb-2">
+                                                                            {extra.descricao || 'Produto adicional selecionado no catálogo.'}
+                                                                        </p>
+                                                                        <div className="flex items-center justify-between mt-auto">
+                                                                            <span className="text-[10px] font-bold text-gray-500 bg-white px-2 py-0.5 rounded border border-gray-100">Qtd: 1</span>
+                                                                            <span className="text-sm font-black text-[#FF5A00]">
+                                                                                + {formatarMoeda(valorExtra)}
+                                                                            </span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <button 
+                                                                        type="button"
+                                                                        onClick={() => removerExtra(extra.id)}
+                                                                        className="absolute top-3 right-3 text-gray-400 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-colors"
+                                                                        title="Remover este produto"
+                                                                    >
+                                                                        <XMarkIcon className="w-5 h-5" />
+                                                                    </button>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            <button type="button" onClick={() => setEditandoDataHora(true)} className="w-full py-3 bg-gray-50 hover:bg-gray-100 text-gray-700 font-bold text-sm rounded-xl transition mt-6">
                                                 Alterar Data ou Serviço
                                             </button>
                                         </div>
 
-                                        <div className="p-6 bg-gray-50/50">
+                                        <div className="p-6 md:p-8 bg-gray-50/50">
                                             <div className="flex justify-between items-center text-sm text-gray-600 mb-3">
-                                                <span>Subtotal ({qtdLocal}x {formatarMoeda(servicoSelecionado.valor)})</span>
-                                                <span>{formatarMoeda(valorOriginalBruto)}</span>
+                                                <span>Subtotal do Serviço</span>
+                                                <span>{formatarMoeda((Number(servicoSelecionado.valor) || 0) * qtdLocal)}</span>
                                             </div>
+                                            
+                                            {listaProdutosExtras.length > 0 && (
+                                                <div className="flex justify-between items-center text-sm text-gray-600 mb-3">
+                                                    <span className="flex items-center gap-1.5">
+                                                        <ShoppingBagIcon className="w-4 h-4 text-gray-400"/> Adicionais ({listaProdutosExtras.length})
+                                                    </span>
+                                                    <span className="font-bold text-gray-900">+{formatarMoeda(valorDosExtras)}</span>
+                                                </div>
+                                            )}
+
                                             {temDescontoVisivel && (
                                                 <div className="flex justify-between items-center text-sm text-emerald-600 font-bold mb-3">
                                                     <span className="flex items-center gap-1"><TagIcon className="w-4 h-4"/> Cupom Aplicado</span>
@@ -473,9 +682,9 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
                                                 </div>
                                             )}
                                             <div className="border-t border-gray-200 my-4"></div>
-                                            <div className="flex justify-between items-center">
-                                                <span className="font-bold text-gray-900 text-lg">Total da reserva</span>
-                                                <span className="font-black text-2xl text-gray-900">{formatarMoeda(data.valor_final)}</span>
+                                            <div className="flex justify-between items-end">
+                                                <span className="font-bold text-gray-900 text-lg uppercase tracking-wider">Total a pagar</span>
+                                                <span className="font-black text-3xl text-orange-600">{formatarMoeda(data.valor_final)}</span>
                                             </div>
                                         </div>
                                     </div>
@@ -492,14 +701,14 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
                             </div>
 
                             {/* COLUNA DIREITA: OPÇÕES DE PAGAMENTO E CHECKOUT */}
-                            <div className="lg:col-span-8 lg:col-start-5 order-1 lg:order-2">
-                                <div className="mb-8 flex justify-between items-end">
+                            <div className="lg:col-span-7 lg:col-start-6 order-1 lg:order-2">
+                                <div className="mb-8 flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4">
                                     <div>
                                         <h2 className="text-3xl font-bold text-gray-900 tracking-tight mb-2">Confirme o pagamento</h2>
-                                        <p className="text-gray-500">Escolha como deseja pagar sua reserva de forma rápida e segura.</p>
+                                        <p className="text-gray-500">Escolha como deseja pagar seu pedido de forma rápida e segura.</p>
                                     </div>
-                                    <div className="hidden sm:block text-right">
-                                        <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Valor Total</p>
+                                    <div className="bg-orange-50 p-4 rounded-2xl border border-orange-100 sm:text-right w-full sm:w-auto">
+                                        <p className="text-xs font-bold text-orange-800 uppercase tracking-widest mb-1">Total Final</p>
                                         <p className="text-3xl font-black text-orange-600">{formatarMoeda(data.valor_final)}</p>
                                     </div>
                                 </div>
@@ -509,7 +718,7 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
 
                                 <h3 className="text-lg font-bold text-gray-900 mb-4">Escolha a forma de pagamento</h3>
                                 
-                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
                                     {/* CARD CARTÃO DE CRÉDITO */}
                                     {(tipoPagamentoAtual === 'hibrido' || tipoPagamentoAtual === 'online') && (
                                         <label className={`cursor-pointer border-2 rounded-2xl p-5 flex flex-col justify-center transition-all relative min-h-[120px] ${data.metodo_pagamento === 'cartao' ? 'border-orange-500 bg-orange-50/30 text-orange-900 ring-2 ring-orange-100 shadow-sm' : 'border-gray-200 text-gray-600 hover:border-orange-200 bg-white hover:shadow-sm'}`}>
@@ -587,7 +796,7 @@ export default function Agendar({ auth, estabelecimento, servicos = [] }) {
                                         className="w-full py-4 text-lg font-black rounded-xl shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:-translate-y-0.5 bg-[#F95E1F] hover:bg-[#E04D13] text-white flex items-center justify-center gap-3"
                                     >
                                         <LockClosedIcon className="w-5 h-5 opacity-80" />
-                                        {processing ? 'Processando ambiente seguro...' : 'Confirmar pagamento'}
+                                        {processing ? 'Processando ambiente seguro...' : 'Confirmar reserva e pagamento'}
                                     </button>
                                     <p className="text-center text-xs text-gray-500 mt-4 font-medium">Você será redirecionado para a página de confirmação.</p>
                                 </div>

@@ -33,6 +33,42 @@ class PlanoService
     ];
 
     /**
+     * Catálogo dos planos "premium" vendidos hoje via tela de assinatura
+     * (web e mobile). Fica centralizado aqui para que as duas camadas
+     * (Api\AssinaturaController e Api\Mobile\AssinaturaMobileController)
+     * nunca fiquem com regras de preço/ciclo divergentes entre si.
+     */
+    const PLANOS_PREMIUM = [
+        'socio' => [
+            'premium'             => ['valor' => 15.00,  'tipo_publico' => 'estabelecimento', 'ciclo' => 'mensal'],
+            'premium-socio'       => ['valor' => 30.00,  'tipo_publico' => 'estabelecimento', 'ciclo' => 'mensal'],
+            'premium-anual'       => ['valor' => 126.00, 'tipo_publico' => 'estabelecimento', 'ciclo' => 'anual'],
+            'premium-socio-anual' => ['valor' => 252.00, 'tipo_publico' => 'estabelecimento', 'ciclo' => 'anual'],
+        ],
+        'user' => [
+            'premium'      => ['valor' => 8.00,  'tipo_publico' => 'cliente', 'ciclo' => 'mensal'],
+            'premium-plus' => ['valor' => 14.00, 'tipo_publico' => 'cliente', 'ciclo' => 'mensal'],
+        ],
+    ];
+
+    /**
+     * Lista os planos premium que um determinado papel (socio/user) pode assinar.
+     */
+    public function planosPermitidos(string $papel): array
+    {
+        return array_keys(self::PLANOS_PREMIUM[$papel] ?? []);
+    }
+
+    /**
+     * Resolve valor, tipo de público e ciclo de um plano premium para o papel informado.
+     */
+    public function resolverDetalhesPlano(string $papel, string $plano): array
+    {
+        return self::PLANOS_PREMIUM[$papel][$plano]
+            ?? ['valor' => 0, 'tipo_publico' => 'cliente', 'ciclo' => 'mensal'];
+    }
+
+    /**
      * Adiciona os pontos ao usuário e registra no histórico de forma segura
      */
     public function distribuirPontosAssinatura(User $user, string $plano)

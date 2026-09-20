@@ -10,8 +10,11 @@ use App\Models\Servico;
 use App\Models\User;
 use App\Models\Estabelecimento;
 use App\Models\Pagamento;
+use App\Models\Produto;
 use App\Services\PagamentoService;
 use App\Events\FilaAtualizada;
+use App\Events\LocationUpdated;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -48,7 +51,7 @@ class MobileAgendamentoController extends Controller
         }
 
         $agendamento->update($dados);
-        event(new FilaAtualizada($agendamento->estabelecimento_id));
+        $this->notificarFila($agendamento->estabelecimento_id);
 
         return response()->json([
             'message' => 'Status atualizado com sucesso.',
@@ -62,7 +65,7 @@ class MobileAgendamentoController extends Controller
             'status' => 'em_atendimento',
             'adiado_ate' => null
         ]);
-        event(new FilaAtualizada($agendamento->estabelecimento_id));
+        $this->notificarFila($agendamento->estabelecimento_id);
 
         return response()->json(['message' => 'Cliente chamado para atendimento!'], 200);
     }
@@ -73,7 +76,7 @@ class MobileAgendamentoController extends Controller
             'adiado_ate' => now()->addMinutes(10),
             'status' => 'pendente'
         ]);
-        event(new FilaAtualizada($agendamento->estabelecimento_id));
+        $this->notificarFila($agendamento->estabelecimento_id);
 
         return response()->json(['message' => 'Atendimento adiado em 10 minutos.'], 200);
     }
@@ -85,9 +88,23 @@ class MobileAgendamentoController extends Controller
             'status' => 'pendente',
             'adiado_ate' => null
         ]);
-        event(new FilaAtualizada($agendamento->estabelecimento_id));
+        $this->notificarFila($agendamento->estabelecimento_id);
 
         return response()->json(['message' => 'Cliente jogado para o final da fila.'], 200);
+    }
+
+    /**
+     * Avisa a fila em tempo real sem deixar uma falha de broadcast (ex.:
+     * servidor Reverb fora do ar) mascarar uma ação que já foi concluída
+     * com sucesso no banco de dados.
+     */
+    private function notificarFila(int $estabelecimentoId): void
+    {
+        try {
+            event(new FilaAtualizada($estabelecimentoId));
+        } catch (\Throwable $e) {
+            Log::warning('Falha ao notificar fila em tempo real (estabelecimento #' . $estabelecimentoId . '): ' . $e->getMessage());
+        }
     }
 
     public function finalizarComCodigo(Request $request, $id)
@@ -122,7 +139,10 @@ class MobileAgendamentoController extends Controller
             'taxa_plataforma' => $taxaMarketplace
         ]);
 
-        event(new FilaAtualizada($agendamento->estabelecimento_id));
+        // 📊 Contador de atividade do cliente na tabela users (numero_reservas)
+        optional(User::find($agendamento->usuario_id))->increment('numero_reservas');
+
+        $this->notificarFila($agendamento->estabelecimento_id);
 
         return response()->json(['message' => 'Atendimento concluído com sucesso!'], 200);
     }
@@ -134,7 +154,7 @@ class MobileAgendamentoController extends Controller
         ]);
 
         $agendamento->update(['funcionario_id' => $validated['funcionario_id']]);
-        event(new FilaAtualizada($agendamento->estabelecimento_id));
+        $this->notificarFila($agendamento->estabelecimento_id);
 
         return response()->json(['message' => 'Funcionário atualizado com sucesso.', 'agendamento' => $agendamento], 200);
     }
@@ -212,6 +232,7 @@ class MobileAgendamentoController extends Controller
     {
         $hoje = Carbon::today()->toDateString();
         $estabelecimentoId = $request->query('estabelecimento_id');
+        $user = Auth::user();
 
         $filtros = [
             'data_inicio'      => $request->query('data_inicio', $hoje),
@@ -222,14 +243,23 @@ class MobileAgendamentoController extends Controller
             'per_page'         => $request->query('per_page', 10),
         ];
 
-        $estabelecimentos = Auth::user()->estabelecimentos()->get();
-        $estabelecimentosIdsBusca = $estabelecimentos->pluck('id')->toArray();
+        // Dono/sócio/gerente enxergam todos os locais vinculados via a tabela
+        // pivot de estabelecimentos; funcionário/atendente só o local onde tem
+        // um registro em `funcionarios` — sem este ramo, um funcionário nunca
+        // via nenhum agendamento aqui (a rota sempre voltava vazia pra ele).
+        if (in_array($user->papel, ['funcionario', 'atendente'])) {
+            $estabelecimentosIdsBusca = \App\Models\Funcionario::where('usuario_id', $user->id)
+                ->pluck('estabelecimento_id')
+                ->toArray();
+        } else {
+            $estabelecimentosIdsBusca = $user->estabelecimentos()->pluck('estabelecimentos.id')->toArray();
+        }
 
         if ($estabelecimentoId && in_array($estabelecimentoId, $estabelecimentosIdsBusca)) {
             $estabelecimentosIdsBusca = [$estabelecimentoId];
         }
 
-        $query = Agendamento::with(['usuario', 'servico'])
+        $query = Agendamento::with(['usuario:id,name,foto_perfil,telefone', 'servico:id,nome,valor', 'finalizadoPor:id,name'])
             ->whereIn('estabelecimento_id', $estabelecimentosIdsBusca)
             ->whereBetween('data_agendamento', [$filtros['data_inicio'], $filtros['data_fim']]);
 
@@ -248,7 +278,18 @@ class MobileAgendamentoController extends Controller
     public function detalheCliente($id)
     {
         $userLogado = auth()->user();
-        $estabelecimento = $userLogado->estabelecimentos()->first();
+        $papel = strtolower(trim($userLogado->papel ?? ''));
+
+        // Dono/sócio/gerente têm vínculo direto via a pivot de estabelecimentos;
+        // funcionário/atendente só aparecem na tabela `funcionarios` — sem este
+        // ramo, o histórico do cliente nunca carregava pra quem realmente
+        // atende no balcão (sempre voltava "Estabelecimento não encontrado").
+        if (in_array($papel, ['funcionario', 'atendente'])) {
+            $estabelecimentoId = \App\Models\Funcionario::where('usuario_id', $userLogado->id)->value('estabelecimento_id');
+            $estabelecimento = $estabelecimentoId ? Estabelecimento::find($estabelecimentoId) : null;
+        } else {
+            $estabelecimento = $userLogado->estabelecimentos()->first();
+        }
 
         if (!$estabelecimento) {
             return response()->json(['error' => 'Estabelecimento não encontrado.'], 404);
@@ -291,7 +332,7 @@ class MobileAgendamentoController extends Controller
             ];
         }
 
-        $historico = Agendamento::with(['servico', 'funcionario'])
+        $historico = Agendamento::with(['servico', 'funcionario', 'finalizadoPor:id,name'])
             ->where('usuario_id', $cliente->id)
             ->where('estabelecimento_id', $estabelecimento->id)
             ->orderBy('data_agendamento', 'desc')
@@ -303,6 +344,9 @@ class MobileAgendamentoController extends Controller
                     'profissional' => $agendamento->funcionario->name ?? 'Profissional',
                     'data' => Carbon::parse($agendamento->data_agendamento)->format('d/m/Y'),
                     'status' => $agendamento->status,
+                    'valor_final' => $agendamento->valor_final,
+                    'finalizado_por' => $agendamento->status === 'finalizado' ? optional($agendamento->finalizadoPor)->name : null,
+                    'hora_finalizacao' => $agendamento->hora_finalizacao,
                 ];
             });
 
@@ -421,7 +465,7 @@ class MobileAgendamentoController extends Controller
             'status' => 'pendente',
         ]);
 
-        event(new FilaAtualizada($request->estabelecimento_id));
+        $this->notificarFila($request->estabelecimento_id);
         return response()->json(['message' => 'Reagendado com sucesso!', 'agendamento' => $agendamento], 201);
     }
 
@@ -773,13 +817,17 @@ class MobileAgendamentoController extends Controller
             // OTIMIZAÇÃO: Consulta de uma vez só todos os itens para evitar Timeout (N+1 Problem)
             $idsServicos = [];
             $idsLocacoes = [];
+            $idsProdutos = [];
             foreach ($validated['itens'] as $item) {
                 if ($item['tipo'] === 'servico') $idsServicos[] = $item['id'];
                 if ($item['tipo'] === 'aluguel') $idsLocacoes[] = $item['id'];
+                if ($item['tipo'] === 'produto') $idsProdutos[] = $item['id'];
             }
 
             $servicosNoBanco = Servico::whereIn('id', $idsServicos)->get()->keyBy('id');
             $locacoesNoBanco = ItemAluguel::whereIn('id', $idsLocacoes)->get()->keyBy('id');
+            $produtosNoBanco = Produto::whereIn('id', $idsProdutos)->get()->keyBy('id');
+            $produtosParaVincular = [];
 
             foreach ($validated['itens'] as $itemReq) {
                 
@@ -790,20 +838,45 @@ class MobileAgendamentoController extends Controller
                     $valorItem = $servico->valor * $itemReq['quantidade'];
                     $valorTotalBruto += $valorItem;
 
+                    $dataAgendamento = $itemReq['data_agendamento'] ?? now()->toDateString();
+                    $horaAgendamento = $itemReq['hora_agendamento'] ?? '00:00:00';
+
+                    // 🚫 CONFLITO DE HORÁRIO: impede que dois clientes reservem o
+                    // mesmo serviço no mesmo estabelecimento na mesma data/hora.
+                    $horarioOcupado = Agendamento::where('estabelecimento_id', $estabelecimentoId)
+                        ->where('servico_id', $servico->id)
+                        ->where('data_agendamento', $dataAgendamento)
+                        ->where('hora_agendamento', $horaAgendamento)
+                        ->where('status', '!=', 'cancelado')
+                        ->exists();
+
+                    if ($horarioOcupado) {
+                        DB::rollBack();
+                        $dataFormatada = Carbon::parse($dataAgendamento)->format('d/m/Y');
+                        $horaFormatada = substr($horaAgendamento, 0, 5);
+                        return response()->json([
+                            'error' => "Vaga preenchida: já existe outro cliente agendado para {$servico->nome} às {$horaFormatada} do dia {$dataFormatada}. Escolha outro horário.",
+                            'horario_ocupado' => true,
+                        ], 409);
+                    }
+
                     for ($i = 0; $i < $itemReq['quantidade']; $i++) {
                         $agendamentosCriados[] = Agendamento::create([
                             'estabelecimento_id' => $estabelecimentoId,
                             'usuario_id'         => $user->id,
                             'servico_id'         => $servico->id,
-                            'data_agendamento'   => $itemReq['data_agendamento'] ?? now()->toDateString(),
-                            'hora_agendamento'   => $itemReq['hora_agendamento'] ?? '00:00:00',
+                            'data_agendamento'   => $dataAgendamento,
+                            'hora_agendamento'   => $horaAgendamento,
                             'status'             => 'aguardando_pagamento',
                             'status_pagamento'   => 'pendente',
                             'valor_final'        => $servico->valor,
-                            'codigo_verificacao' => $codigoReservaGrupo,
+                            // PIN de 4 dígitos apresentado ao estabelecimento para
+                            // finalizar o atendimento (ver finalizarComCodigo) — o
+                            // código do PEDIDO inteiro continua em $codigoReservaGrupo.
+                            'codigo_verificacao' => (string) mt_rand(1000, 9999),
                         ]);
                     }
-                } 
+                }
                 elseif ($itemReq['tipo'] === 'aluguel') {
                     $itemAluguel = $locacoesNoBanco->get($itemReq['id']);
                     if (!$itemAluguel) continue;
@@ -847,6 +920,38 @@ class MobileAgendamentoController extends Controller
                         'numero_entrega'      => $isDelivery ? $validated['numero_entrega'] : null,
                         'bairro_entrega'      => $isDelivery ? $validated['bairro_entrega'] : null,
                         'cidade_entrega'      => $isDelivery ? $validated['cidade_entrega'] : null,
+                    ]);
+                }
+                elseif ($itemReq['tipo'] === 'produto') {
+                    $produto = $produtosNoBanco->get($itemReq['id']);
+                    if (!$produto) continue;
+
+                    if ($produto->estoque_disponivel < $itemReq['quantidade']) {
+                        DB::rollBack();
+                        return response()->json([
+                            'error' => "'{$produto->nome}' não tem estoque suficiente. Restam apenas {$produto->estoque_disponivel} unidade(s).",
+                        ], 422);
+                    }
+
+                    $valorTotalBruto += $produto->valor_final * $itemReq['quantidade'];
+                    $produtosParaVincular[] = ['produto' => $produto, 'quantidade' => $itemReq['quantidade']];
+                }
+            }
+
+            // Vincula os produtos extras ao primeiro agendamento/aluguel do pedido
+            // (é assim que o comprovante e os e-mails de notificação já esperam
+            // encontrá-los — ver PagamentoService::enviarEmailNotificacao) e dá
+            // baixa no estoque.
+            if (!empty($produtosParaVincular)) {
+                $agendamentoPrincipalId = $agendamentosCriados[0]->id ?? null;
+                $aluguelPrincipalId = $alugueisCriados[0]->id ?? null;
+
+                foreach ($produtosParaVincular as $vinculo) {
+                    $vinculo['produto']->update([
+                        'agendamento_id' => $agendamentoPrincipalId,
+                        'aluguel_id' => $aluguelPrincipalId,
+                        'estoque_disponivel' => $vinculo['produto']->estoque_disponivel - $vinculo['quantidade'],
+                        'quantidade_vendida' => $vinculo['produto']->quantidade_vendida + $vinculo['quantidade'],
                     ]);
                 }
             }
@@ -907,11 +1012,26 @@ class MobileAgendamentoController extends Controller
                 'metodo_pagamento'   => $validated['forma_pagamento'] === 'presencial' ? 'presencial' : 'pendente_online',
             ]);
 
+            // 📊 Contador de atividade do cliente na tabela users (numero_reservas)
+            $totalReservado = count($agendamentosCriados) + count($alugueisCriados);
+            if ($totalReservado > 0) {
+                $user->increment('numero_reservas', $totalReservado);
+            }
+
             DB::commit();
 
             return response()->json([
                 'message'           => 'Pedido montado com sucesso!',
                 'codigo_pedido'     => $codigoReservaGrupo,
+                'agendamento_ids'   => collect($agendamentosCriados)->pluck('id')->values(),
+                'aluguel_ids'       => collect($alugueisCriados)->pluck('id')->values(),
+                'produtos_incluidos' => collect($produtosParaVincular)->map(fn ($v) => [
+                    'id' => $v['produto']->id,
+                    'nome' => $v['produto']->nome,
+                    'quantidade' => $v['quantidade'],
+                    'valor_unitario' => (float) $v['produto']->valor_final,
+                    'foto' => Produto::decodeFotos($v['produto']->fotos)[0] ?? null,
+                ])->values(),
                 'resumo_financeiro' => [
                     'valor_bruto'     => $valorTotalBruto,
                     'desconto_pontos' => $valorDesconto,
@@ -1015,15 +1135,124 @@ class MobileAgendamentoController extends Controller
                     'servico' => $agendamento->servico ? $agendamento->servico->nome : 'Serviço',
                     'valor' => number_format($agendamento->valor_final, 2, ',', '.'),
                     'horario_previsto' => Carbon::parse($agendamento->hora_agendamento)->format('H:i'),
+                    'data_agendamento' => $agendamento->data_agendamento,
                     'estabelecimento' => $agendamento->estabelecimento->nome,
-                    'endereco' => $agendamento->estabelecimento->endereco ?? 'Endereço não cadastrado',
-                    'pin' => str_pad($agendamento->id % 10000, 4, '0', STR_PAD_LEFT)
+                    'endereco' => $agendamento->estabelecimento->endereco_completo ?? 'Endereço não cadastrado',
+                    'latitude' => $agendamento->estabelecimento->latitude,
+                    'longitude' => $agendamento->estabelecimento->longitude,
+                    'status' => $agendamento->status,
+                    'pin' => $agendamento->codigo_verificacao,
                 ]
             ], 200);
 
         } catch (\Exception $e) {
             return response()->json(['error' => 'Erro ao calcular fila: ' . $e->getMessage()], 500);
         }
+    }
+
+    /**
+     * 📄 COMPROVANTE PDF (Mobile)
+     * Equivalente mobile de AgendamentoController::gerarComprovantePDF — mesma
+     * view (o mesmo comprovante serve para reserva pendente e para atendimento
+     * finalizado, já que reflete o status atual do agendamento), mas exposto
+     * numa rota autenticada por Sanctum e devolvendo os bytes do PDF (o app
+     * salva localmente e usa o compartilhador nativo, em vez do download do
+     * navegador usado na versão web).
+     */
+    public function comprovantePDF($id)
+    {
+        $agendamento = Agendamento::with([
+            'servico:id,nome',
+            'estabelecimento:id,nome,cidade,estado,bairro,rua,numero',
+            'funcionario:id,nome',
+            'usuario:id,name',
+        ])->findOrFail($id);
+
+        $userLogado = Auth::user();
+        $isCliente = $agendamento->usuario_id === $userLogado->id;
+        $isDonoDoLocal = $userLogado->estabelecimentos()->where('estabelecimentos.id', $agendamento->estabelecimento_id)->exists();
+
+        if (!$isCliente && !$isDonoDoLocal) {
+            abort(403, 'Acesso não autorizado. Este comprovante pertence a outra pessoa.');
+        }
+
+        $detalhesPagamento = null;
+        if ($agendamento->pagamento_id || DB::table('pagamentos')->where('agendamento_id', $agendamento->id)->exists()) {
+            $detalhesPagamento = DB::table('pagamentos')
+                ->where('id', $agendamento->pagamento_id)
+                ->orWhere('agendamento_id', $agendamento->id)
+                ->first(['status', 'metodo_pagamento', 'data_pagamento', 'valor_total', 'valor_estornado']);
+        }
+
+        $pdf = Pdf::loadView('pdfs.comprovante', [
+            'agendamento' => $agendamento,
+            'pagamento' => $detalhesPagamento,
+        ]);
+
+        return response($pdf->output(), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => "inline; filename=\"Comprovante_Lokyva_{$agendamento->id}.pdf\"",
+        ]);
+    }
+
+    /**
+     * 📋 MEUS AGENDAMENTOS (Cliente)
+     * Alimenta a tela backend/mobile/app/src/screens/MeusAgendamentos.tsx e o
+     * card de "próximo compromisso" da Home — histórico completo do usuário
+     * logado, incluindo serviços e itens de aluguel reservados.
+     */
+    public function meusAgendamentos(Request $request)
+    {
+        $agendamentos = Agendamento::with(['servico', 'itemAluguel', 'estabelecimento:id,nome,cidade,foto_perfil'])
+            ->where('usuario_id', Auth::id())
+            ->orderBy('data_agendamento', 'desc')
+            ->orderBy('hora_agendamento', 'desc')
+            ->get()
+            ->map(function (Agendamento $agendamento) {
+                if ($agendamento->servico) {
+                    $fotos = is_string($agendamento->servico->fotos) ? json_decode($agendamento->servico->fotos, true) : $agendamento->servico->fotos;
+                    $agendamento->servico->foto = !empty($fotos) ? $fotos[0] : null;
+                }
+
+                if ($agendamento->itemAluguel) {
+                    $fotos = is_string($agendamento->itemAluguel->fotos) ? json_decode($agendamento->itemAluguel->fotos, true) : $agendamento->itemAluguel->fotos;
+                    $agendamento->itemAluguel->fotos = is_array($fotos) ? $fotos : [];
+                }
+
+                return $agendamento;
+            });
+
+        return response()->json(['status' => 'success', 'data' => $agendamentos]);
+    }
+
+    /**
+     * ❌ CANCELAMENTO PELO CLIENTE (com estorno automático se já estava pago)
+     * Mesma regra do web: grátis até 30 min antes do horário, 2% de taxa depois disso.
+     */
+    public function cancelarCliente($id)
+    {
+        $agendamento = Agendamento::where('id', $id)->where('usuario_id', Auth::id())->firstOrFail();
+
+        if (!in_array($agendamento->status, ['pendente', 'confirmado', 'aguardando_pagamento'])) {
+            return response()->json(['error' => 'Este agendamento não pode mais ser cancelado.'], 422);
+        }
+
+        try {
+            $resultado = $this->pagamentoService->processarCancelamentoAgendamento($agendamento);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 422);
+        }
+
+        // O cancelamento/estorno já foi concluído com sucesso acima — uma falha
+        // ao avisar a fila em tempo real (ex.: servidor de broadcast fora do ar)
+        // não pode transformar essa resposta em erro para o cliente.
+        try {
+            event(new FilaAtualizada($agendamento->estabelecimento_id));
+        } catch (\Throwable $e) {
+            Log::warning('Falha ao notificar fila em tempo real após cancelamento #' . $agendamento->id . ': ' . $e->getMessage());
+        }
+
+        return response()->json(['message' => $resultado['message'], 'estornado' => $resultado['estornado']]);
     }
 
     public function sairDaFila($id)
@@ -1034,5 +1263,37 @@ class MobileAgendamentoController extends Controller
         event(new FilaAtualizada($agendamento->estabelecimento_id));
 
         return response()->json(['success' => true, 'message' => 'Você saiu da fila.']);
+    }
+
+    /**
+     * 📍 RASTREAMENTO EM TEMPO REAL (Cliente a caminho do estabelecimento)
+     * Recebe as coordenadas enviadas pela tarefa em segundo plano do app
+     * (services/rastreamentoTask.ts) e as retransmite via broadcast para
+     * o mapa do proprietário acompanhar a chegada do cliente ao vivo.
+     */
+    public function rastrearLocalizacao(Request $request)
+    {
+        $request->validate([
+            'agendamento_id' => 'required|exists:agendamentos,id',
+            'lat'            => 'required|numeric',
+            'lng'            => 'required|numeric',
+        ]);
+
+        $agendamento = Agendamento::findOrFail($request->agendamento_id);
+
+        if ($agendamento->usuario_id !== Auth::id()) {
+            abort(403, 'Você só pode transmitir localização do seu próprio agendamento.');
+        }
+
+        broadcast(new LocationUpdated(
+            $agendamento->id,
+            $request->lat,
+            $request->lng
+        ));
+
+        return response()->json([
+            'status'  => 'sucesso',
+            'message' => 'Coordenadas transmitidas ao estabelecimento.',
+        ], 200);
     }
 }

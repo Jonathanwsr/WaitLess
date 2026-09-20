@@ -1,11 +1,11 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link, useForm } from '@inertiajs/react';
 import { useState } from 'react';
-import { 
-    Share, Heart, Users, BedDouble, Bath, Wifi, Wind, MapPin, 
+import {
+    Share, Heart, Users, BedDouble, Bath, Wifi, Wind, MapPin,
     ImageOff, ChevronRight, CheckCircle2, ChevronDown, Calendar,
     Award, ShieldCheck, Map, Clock, Ban, Dog, Star, Car, Tv,
-    Coffee, Flame, Fan
+    Coffee, Flame, Fan, CreditCard, QrCode, FileText, Store
 } from 'lucide-react';
 
 export default function DetalhesItem({ auth, item }) {
@@ -16,11 +16,15 @@ export default function DetalhesItem({ auth, item }) {
     const today = new Date().toISOString().split('T')[0];
     const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
 
+    const aceitaOnline = item.permitir_pagamento !== 'presencial';
+    const aceitaPresencial = item.permitir_pagamento !== 'online';
+
     const { data, setData, post, processing, errors } = useForm({
         data_inicio: today,
         data_fim: tomorrow,
         hospedes: 1,
-        forma_pagamento: 'online', // Default
+        forma_pagamento: aceitaOnline ? 'online' : 'presencial', // Default
+        metodo_pagamento: aceitaOnline ? 'pix' : '',
         pontos_utilizados: 0,
     });
 
@@ -57,15 +61,18 @@ export default function DetalhesItem({ auth, item }) {
 
     // --- FUNÇÕES DE SUBMIT DA RESERVA ---
     const realizarReserva = (usarPontos = false) => {
-        let payload = { ...data };
-        
+        let payload = {
+            ...data,
+            quantidade: data.hospedes,
+            metodo_pagamento: data.forma_pagamento === 'online' ? data.metodo_pagamento : null,
+        };
+
         if (usarPontos && podeUsarPontos) {
             payload.pontos_utilizados = pontosNecessarios10Porcento;
         } else {
             payload.pontos_utilizados = 0;
         }
 
-        // Chama a rota criada no backend
         post(route('itens.reservar', item.id), {
             data: payload,
             preserveScroll: true,
@@ -443,6 +450,51 @@ export default function DetalhesItem({ auth, item }) {
                                             {errors.hospedes && <span className="text-red-500 text-xs">{errors.hospedes}</span>}
                                         </div>
                                     </div>
+
+                                    {/* --- FORMA DE PAGAMENTO --- */}
+                                    {(aceitaOnline || aceitaPresencial) && (
+                                        <div className="mb-4">
+                                            <label className="block text-[10px] font-bold text-gray-800 uppercase mb-2">Forma de pagamento</label>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                {aceitaOnline && (
+                                                    <>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => { setData('forma_pagamento', 'online'); setData('metodo_pagamento', 'pix'); }}
+                                                            className={`flex items-center gap-2 border rounded-lg p-2.5 text-xs font-bold transition ${data.forma_pagamento === 'online' && data.metodo_pagamento === 'pix' ? 'border-[#FF5A00] bg-orange-50 text-[#FF5A00]' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}
+                                                        >
+                                                            <QrCode className="w-4 h-4" /> Pix
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => { setData('forma_pagamento', 'online'); setData('metodo_pagamento', 'cartao'); }}
+                                                            className={`flex items-center gap-2 border rounded-lg p-2.5 text-xs font-bold transition ${data.forma_pagamento === 'online' && data.metodo_pagamento === 'cartao' ? 'border-[#FF5A00] bg-orange-50 text-[#FF5A00]' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}
+                                                        >
+                                                            <CreditCard className="w-4 h-4" /> Cartão
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => { setData('forma_pagamento', 'online'); setData('metodo_pagamento', 'boleto'); }}
+                                                            className={`flex items-center gap-2 border rounded-lg p-2.5 text-xs font-bold transition ${data.forma_pagamento === 'online' && data.metodo_pagamento === 'boleto' ? 'border-[#FF5A00] bg-orange-50 text-[#FF5A00]' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}
+                                                        >
+                                                            <FileText className="w-4 h-4" /> Boleto
+                                                        </button>
+                                                    </>
+                                                )}
+                                                {aceitaPresencial && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => { setData('forma_pagamento', 'presencial'); setData('metodo_pagamento', ''); }}
+                                                        className={`flex items-center gap-2 border rounded-lg p-2.5 text-xs font-bold transition ${data.forma_pagamento === 'presencial' ? 'border-[#FF5A00] bg-orange-50 text-[#FF5A00]' : 'border-gray-200 text-gray-600 hover:border-gray-300'}`}
+                                                    >
+                                                        <Store className="w-4 h-4" /> No local
+                                                    </button>
+                                                )}
+                                            </div>
+                                            {errors.metodo_pagamento && <span className="text-red-500 text-xs block mt-1">{errors.metodo_pagamento}</span>}
+                                            {errors.forma_pagamento && <span className="text-red-500 text-xs block mt-1">{errors.forma_pagamento}</span>}
+                                        </div>
+                                    )}
 
                                     {/* Resumo dinâmico do Total */}
                                     <div className="flex justify-between items-center mb-6 text-gray-600 font-medium">

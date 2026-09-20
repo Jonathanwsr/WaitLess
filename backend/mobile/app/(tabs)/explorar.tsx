@@ -31,10 +31,16 @@ const COLORS = {
   success: '#10B981',
 };
 
-// Tratamento seguro da URL para evitar barras duplicadas e erros de rota
+// Tratamento seguro da URL para evitar barras duplicadas e erros de rota — o
+// .env local já define EXPO_PUBLIC_API_URL terminando em "/mobile", então
+// removemos esse sufixo antes de recompor para não virar ".../api/mobile/mobile".
 const ENV_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api';
-const cleanBaseUrl = ENV_URL.endsWith('/') ? ENV_URL.slice(0, -1) : ENV_URL;
+const cleanBaseUrl = ENV_URL.replace(/\/mobile\/?$/, '').replace(/\/+$/, '');
 const API_URL = `${cleanBaseUrl}/mobile`;
+
+// Planos de cliente considerados Premium (mesmo catálogo usado no backend,
+// em App\Services\PlanoService::PLANOS_PREMIUM['user']).
+const PLANOS_PREMIUM_CLIENTE = ['premium', 'premium-plus', 'premium_plus', 'pro'];
 
 type MaterialIconName = React.ComponentProps<typeof MaterialIcons>['name'];
 
@@ -82,13 +88,76 @@ export default function TelaExplorar() {
   
   const [carregando, setCarregando] = useState<boolean>(true);
   const [busca, setBusca] = useState<string>(params.query ? params.query.toString() : '');
-  const [tipoAtivo, setTipoAtivo] = useState<string>('estabelecimentos'); 
-  const [categoriaAtiva, setCategoriaAtiva] = useState<string>('tudo');
+  const [tipoAtivo, setTipoAtivo] = useState<string>('estabelecimentos');
+  const [categoriaAtiva, setCategoriaAtiva] = useState<string>(params.categoria ? params.categoria.toString() : 'tudo');
+  const [isPremium, setIsPremium] = useState(false);
+  const [favoritosEstab, setFavoritosEstab] = useState<Array<string | number>>([]);
+  const [favoritosServ, setFavoritosServ] = useState<Array<string | number>>([]);
+  const [favoritosAluguel, setFavoritosAluguel] = useState<Array<string | number>>([]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const userDataString = await SecureStore.getItemAsync('userData');
+        if (userDataString) {
+          const usuario = JSON.parse(userDataString);
+          setIsPremium(PLANOS_PREMIUM_CLIENTE.includes(String(usuario.plano_assinatura || '').toLowerCase()));
+        }
+      } catch (e) {
+        // segue sem marcar premium, não é crítico
+      }
+    })();
+    carregarFavoritos();
+  }, []);
+
+  const carregarFavoritos = async () => {
+    try {
+      const token = await AsyncStorage.getItem('@waitless_token');
+      const res = await fetch(`${API_URL}/favoritos`, {
+        headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' }
+      });
+      const json = await res.json();
+      setFavoritosEstab((json.estabelecimentos || []).map((e: ItemExplorar) => e.id));
+      setFavoritosServ((json.servicos || []).map((s: ItemExplorar) => s.id));
+    } catch (e) {
+      // segue sem favoritos carregados, não é crítico
+    }
+  };
+
+  const isFavorito = (item: ItemExplorar) => {
+    if (tipoAtivo === 'servicos') return favoritosServ.includes(item.id);
+    if (tipoAtivo === 'reservas') return favoritosAluguel.includes(item.id);
+    return favoritosEstab.includes(item.id);
+  };
+
+  const toggleFavorito = async (item: ItemExplorar) => {
+    const tipo = tipoAtivo === 'servicos' ? 'servico' : tipoAtivo === 'reservas' ? 'item_aluguel' : 'estabelecimento';
+    const jaFavorito = isFavorito(item);
+
+    if (tipo === 'servico') {
+      setFavoritosServ(prev => jaFavorito ? prev.filter(id => id !== item.id) : [...prev, item.id]);
+    } else if (tipo === 'item_aluguel') {
+      setFavoritosAluguel(prev => jaFavorito ? prev.filter(id => id !== item.id) : [...prev, item.id]);
+    } else {
+      setFavoritosEstab(prev => jaFavorito ? prev.filter(id => id !== item.id) : [...prev, item.id]);
+    }
+
+    try {
+      const token = await AsyncStorage.getItem('@waitless_token');
+      await fetch(`${API_URL}/favoritos/toggle`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tipo, id: item.id })
+      });
+    } catch (e) {
+      // não crítico
+    }
+  };
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
       carregarDados();
-    }, 400); 
+    }, 400);
     return () => clearTimeout(delayDebounceFn);
   }, [busca, tipoAtivo, categoriaAtiva]);
 
@@ -185,6 +254,12 @@ export default function TelaExplorar() {
             <Ionicons name="grid-outline" size={24} color={COLORS.secondary} />
           </TouchableOpacity>
 
+          {isPremium && (
+            <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/src/screens/OfertasPremium' as never)}>
+              <Ionicons name="star-outline" size={24} color={COLORS.primary} />
+            </TouchableOpacity>
+          )}
+
           <TouchableOpacity style={styles.iconBtn} onPress={() => router.push('/src/screens/FavoritosDashboard' as never)}>
             <Ionicons name="heart-outline" size={24} color={COLORS.secondary} />
           </TouchableOpacity>
@@ -205,15 +280,21 @@ export default function TelaExplorar() {
 
         {/* BARRA DE PESQUISA */}
         <View style={styles.searchContainer}>
-          <Ionicons name="search" size={20} color={COLORS.secondary} style={{ marginRight: 10 }} />
+          <View style={styles.searchIconWrap}>
+            <Ionicons name="search" size={16} color={COLORS.white} />
+          </View>
           <TextInput
             placeholder="Busque por nome, marca, modelo, flat, pet..."
             placeholderTextColor={COLORS.gray}
             style={styles.searchInput}
             value={busca}
             onChangeText={setBusca}
-            clearButtonMode="while-editing"
           />
+          {busca.length > 0 && (
+            <TouchableOpacity onPress={() => setBusca('')} style={styles.searchClearBtn}>
+              <Ionicons name="close-circle" size={20} color={COLORS.gray} />
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* FILTRO PRINCIPAL */}
@@ -298,8 +379,12 @@ export default function TelaExplorar() {
                           style={styles.imageDestaque} 
                           contentFit="cover" 
                         />
-                        <TouchableOpacity style={styles.heartBtnAbs}>
-                          <Ionicons name="heart-outline" size={20} color={COLORS.white} />
+                        <TouchableOpacity style={styles.heartBtnAbs} onPress={() => toggleFavorito(item)}>
+                          <Ionicons
+                            name={isFavorito(item) ? 'heart' : 'heart-outline'}
+                            size={20}
+                            color={isFavorito(item) ? COLORS.primary : COLORS.white}
+                          />
                         </TouchableOpacity>
                         {item.tem_promocao && (
                           <View style={styles.promoBadge}><Text style={styles.promoText}>Promoção</Text></View>
@@ -349,11 +434,15 @@ export default function TelaExplorar() {
                         style={styles.imageAirbnb} 
                         contentFit="cover" 
                       />
-                      <TouchableOpacity style={styles.heartBtnAbs}>
-                        <Ionicons name="heart-outline" size={24} color={COLORS.white} />
+                      <TouchableOpacity style={styles.heartBtnAbs} onPress={() => toggleFavorito(item)}>
+                        <Ionicons
+                          name={isFavorito(item) ? 'heart' : 'heart-outline'}
+                          size={24}
+                          color={isFavorito(item) ? COLORS.primary : COLORS.white}
+                        />
                       </TouchableOpacity>
                     </View>
-                    
+
                     <View style={styles.infoAirbnb}>
                       <View style={styles.rowBetween}>
                         <Text style={styles.titleAirbnb} numberOfLines={1}>{item.nome || item.name}</Text>
@@ -405,8 +494,10 @@ const styles = StyleSheet.create({
   badge: { position: 'absolute', top: -2, right: -4, width: 10, height: 10, borderRadius: 5, backgroundColor: COLORS.primary, borderWidth: 2, borderColor: COLORS.white },
   profileBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center' },
 
-  searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.white, marginHorizontal: 16, borderRadius: 30, paddingHorizontal: 16, height: 56, marginBottom: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12, elevation: 5 },
+  searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.lightGray, marginHorizontal: 16, borderRadius: 18, paddingHorizontal: 10, height: 56, marginBottom: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 6, elevation: 1 },
+  searchIconWrap: { width: 36, height: 36, borderRadius: 12, backgroundColor: COLORS.secondary, alignItems: 'center', justifyContent: 'center', marginRight: 10 },
   searchInput: { flex: 1, fontSize: 15, color: COLORS.secondary, fontWeight: '500' },
+  searchClearBtn: { padding: 4, justifyContent: 'center', alignItems: 'center' },
 
   typeFilterContainer: { flexDirection: 'row', backgroundColor: COLORS.lightGray, marginHorizontal: 16, borderRadius: 100, padding: 4, marginBottom: 24 },
   typeBtn: { flex: 1, paddingVertical: 12, alignItems: 'center', borderRadius: 100 },

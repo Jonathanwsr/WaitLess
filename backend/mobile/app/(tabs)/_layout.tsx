@@ -68,13 +68,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="caixa-entrada"
         options={{
-          title: 'Caixa de ent...',
-          tabBarBadge: 4, // Bolinha azul com o número "4"
-          tabBarBadgeStyle: {
-            backgroundColor: '#2563EB',
-            color: '#FFFFFF',
-            fontSize: 10
-          },
+          title: 'Mensagens',
           tabBarIcon: ({ color }) => (
             <Feather name="mail" size={24} color={color} />
           ),

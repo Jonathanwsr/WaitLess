@@ -26,6 +26,13 @@ return Application::configure(basePath: dirname(__DIR__))
             'api/providers',
         ]);
 
+        // Protege a API (usada pelo app mobile e pelo front) contra picos de
+        // requisições simultâneas — sem isso não havia NENHUM rate limit,
+        // então muitos usuários batendo na API ao mesmo tempo (ex: a fila do
+        // funcionário atualizando sozinha a cada 30s em vários aparelhos)
+        // podia sobrecarregar o servidor sem qualquer proteção.
+        $middleware->throttleApi();
+
     })
     ->withSchedule(function (Schedule $schedule) {
         $schedule->command('financeiro:processar-diario')->dailyAt('01:00');

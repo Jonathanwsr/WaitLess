@@ -44,8 +44,8 @@ class FuncionarioAreaController extends Controller
             ->where('status', 'confirmado')
             ->first();
 
-        // Busca quem delegou (finalizado_por / criado_por se houver) e os que estão aguardando
-        $filaEspera = Agendamento::with(['usuario', 'servico', 'delegador']) 
+        // Busca os que estão aguardando na fila deste profissional
+        $filaEspera = Agendamento::with(['usuario', 'servico'])
             ->whereIn('funcionario_id', $funcionarioIds)
             ->whereDate('data_agendamento', $hoje)
             ->whereIn('status', ['pendente', 'atrasado'])
@@ -67,7 +67,7 @@ class FuncionarioAreaController extends Controller
 
         $periodo = $request->get('periodo', 'hoje');
         
-        $queryHistorico = Agendamento::with(['usuario', 'servico', 'estabelecimento'])
+        $queryHistorico = Agendamento::with(['usuario', 'servico', 'estabelecimento', 'finalizadoPor:id,name'])
             ->whereIn('funcionario_id', $funcionarioIds);
 
         if ($periodo === 'hoje') {

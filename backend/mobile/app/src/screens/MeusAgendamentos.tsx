@@ -38,6 +38,7 @@ interface ItemAluguel {
 interface AgendamentoItem {
   id: number;
   status: string;
+  status_pagamento?: string;
   data_agendamento?: string;
   data_inicio?: string;
   hora_agendamento?: string;
@@ -70,6 +71,7 @@ const API_URL = process.env.EXPO_PUBLIC_API_URL;
 const TABS = [
   { id: 'todos', label: 'Todos' },
   { id: 'proximos', label: 'Próximos' },
+  { id: 'pendentes', label: 'Faltam pagar' },
   { id: 'concluidos', label: 'Concluídos' },
   { id: 'cancelados', label: 'Cancelados' },
 ];
@@ -163,6 +165,8 @@ export default function MeusAgendamentos() {
   };
 
   // Filtros dinâmicos baseados na aba e na busca
+  const qtdPendentes = lista.filter((item) => item.status === 'aguardando_pagamento' && item.status_pagamento === 'pendente').length;
+
   const dadosFiltrados = lista.filter((item) => {
     const termo = busca.toLowerCase();
     const nomeLocal = (item.estabelecimento?.nome || '').toLowerCase();
@@ -172,8 +176,11 @@ export default function MeusAgendamentos() {
       return false;
     }
 
+    const isPendenteDePagamento = item.status === 'aguardando_pagamento' && item.status_pagamento === 'pendente';
+
     if (abaAtiva === 'todos') return true;
-    if (abaAtiva === 'proximos') return ['pendente', 'confirmado', 'em_atendimento', 'aguardando_pagamento'].includes(item.status);
+    if (abaAtiva === 'pendentes') return isPendenteDePagamento;
+    if (abaAtiva === 'proximos') return ['pendente', 'confirmado', 'em_atendimento'].includes(item.status) || (item.status === 'aguardando_pagamento' && !isPendenteDePagamento);
     if (abaAtiva === 'concluidos') return ['finalizado', 'concluido'].includes(item.status);
     if (abaAtiva === 'cancelados') return ['cancelado', 'estornado', 'vencido'].includes(item.status);
     
@@ -293,6 +300,19 @@ export default function MeusAgendamentos() {
             <Text style={styles.footerText}>Ref #{item.id}</Text>
           </View>
           
+          {/* Pedido aguardando pagamento: leva direto para a tela de pagamento */}
+          {item.status === 'aguardando_pagamento' && item.status_pagamento === 'pendente' && (
+            <>
+              <View style={styles.footerDivider} />
+              <TouchableOpacity
+                style={styles.footerItemBtn}
+                onPress={() => router.push({ pathname: '/src/screens/PagamentoScreen', params: { agendamento_id: String(item.id) } })}
+              >
+                <Text style={styles.pagarText}>Pagar agora</Text>
+              </TouchableOpacity>
+            </>
+          )}
+
           {/* Botão de Cancelar se aplicável */}
           {podeCancelar && (
             <>
@@ -329,14 +349,19 @@ export default function MeusAgendamentos() {
         <View style={styles.tabsWrapper}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsContainer}>
             {TABS.map(tab => (
-              <TouchableOpacity 
-                key={tab.id} 
-                style={[styles.tabBtn, abaAtiva === tab.id && styles.tabBtnActive]}
+              <TouchableOpacity
+                key={tab.id}
+                style={[styles.tabBtn, styles.tabBtnRow, abaAtiva === tab.id && styles.tabBtnActive]}
                 onPress={() => setAbaAtiva(tab.id)}
               >
                 <Text style={[styles.tabText, abaAtiva === tab.id && styles.tabTextActive]}>
                   {tab.label}
                 </Text>
+                {tab.id === 'pendentes' && qtdPendentes > 0 && (
+                  <View style={styles.tabBadge}>
+                    <Text style={styles.tabBadgeText}>{qtdPendentes}</Text>
+                  </View>
+                )}
               </TouchableOpacity>
             ))}
           </ScrollView>
@@ -361,8 +386,9 @@ export default function MeusAgendamentos() {
         </View>
 
         <Text style={styles.sectionTitle}>
-          {abaAtiva === 'todos' ? 'Todos os agendamentos' : 
-           abaAtiva === 'proximos' ? 'Próximos agendamentos' : 
+          {abaAtiva === 'todos' ? 'Todos os agendamentos' :
+           abaAtiva === 'pendentes' ? 'Aguardando pagamento' :
+           abaAtiva === 'proximos' ? 'Próximos agendamentos' :
            abaAtiva === 'concluidos' ? 'Agendamentos concluídos' : 'Agendamentos cancelados'}
         </Text>
 
@@ -416,6 +442,9 @@ const styles = StyleSheet.create({
   tabsWrapper: { borderBottomWidth: 1, borderBottomColor: COLORS.border, marginBottom: 16 },
   tabsContainer: { paddingHorizontal: 16, gap: 16 },
   tabBtn: { paddingVertical: 12, paddingHorizontal: 8, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  tabBtnRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  tabBadge: { backgroundColor: COLORS.primary, borderRadius: 100, paddingHorizontal: 6, paddingVertical: 1, minWidth: 18, alignItems: 'center' },
+  tabBadgeText: { color: COLORS.white, fontSize: 10, fontWeight: '800' },
   tabBtnActive: { borderBottomColor: COLORS.primary },
   tabText: { fontSize: 15, fontWeight: '600', color: COLORS.gray },
   tabTextActive: { color: COLORS.primary, fontWeight: '800' },
@@ -462,6 +491,7 @@ const styles = StyleSheet.create({
   footerText: { fontSize: 12, color: COLORS.gray, fontWeight: '600' },
   footerDivider: { width: 1, height: 16, backgroundColor: COLORS.border },
   cancelText: { fontSize: 12, color: COLORS.canceledText, fontWeight: '800' },
+  pagarText: { fontSize: 12, color: COLORS.primary, fontWeight: '800' },
 
   bannerContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.white, borderRadius: 16, padding: 20, borderWidth: 1, borderColor: COLORS.border, marginTop: 10, marginBottom: 20 },
   bannerIcon: { width: 48, height: 48, backgroundColor: COLORS.primaryLight, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },

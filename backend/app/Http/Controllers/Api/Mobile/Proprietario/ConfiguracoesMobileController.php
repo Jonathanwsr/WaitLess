@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Api;
+namespace App\Http\Controllers\Api\Mobile\Proprietario;
 
 use App\Http\Controllers\Controller;
 use App\Models\Estabelecimento;
@@ -10,26 +10,85 @@ use App\Models\ItemAluguel;
 use App\Models\Aluguel;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Exception;
 
 class ConfiguracoesMobileController extends Controller
 {
+    /**
+     * Resposta padrão de erro para falhas inesperadas, sem vazar detalhes
+     * internos (stacktrace/SQL) para o app.
+     */
+    private function respostaErro(Exception $e, string $contexto): \Illuminate\Http\JsonResponse
+    {
+        Log::error("[ConfiguracoesMobileController] {$contexto}: " . $e->getMessage(), ['exception' => $e]);
+
+        return response()->json([
+            'status'  => 'error',
+            'message' => 'Não foi possível concluir a operação agora. Tente novamente em instantes.',
+        ], 500);
+    }
+
     // ==========================================
     // DADOS INICIAIS DA TELA
     // ==========================================
     public function index(Request $request)
     {
-        $estabelecimento = $request->user()->estabelecimentoAtual();
-        
-        return response()->json([
-            'estabelecimento' => $estabelecimento,
-            'meusEstabelecimentos' => $request->user()->estabelecimentos,
-            'funcionarios' => $estabelecimento ? $estabelecimento->funcionarios : [],
-            'servicos' => $estabelecimento ? $estabelecimento->servicos : [],
-            'itens_aluguel' => $estabelecimento ? $estabelecimento->itensAluguel : [],
-            'alugueis' => $estabelecimento ? Aluguel::where('estabelecimento_id', $estabelecimento->id)->get() : [],
-        ]);
+        try {
+            $estabelecimento = $request->user()->estabelecimentoAtual();
+
+            return response()->json([
+                'estabelecimento' => $estabelecimento,
+                'meusEstabelecimentos' => $request->user()->estabelecimentos,
+                'funcionarios' => $estabelecimento ? $estabelecimento->funcionarios : [],
+                'servicos' => $estabelecimento ? $estabelecimento->servicos : [],
+                'itens_aluguel' => $estabelecimento ? $estabelecimento->itensAluguel : [],
+                'produtos' => $estabelecimento ? $estabelecimento->produtos : [],
+                'alugueis' => $estabelecimento ? Aluguel::where('estabelecimento_id', $estabelecimento->id)->get() : [],
+            ]);
+        } catch (Exception $e) {
+            return $this->respostaErro($e, 'index');
+        }
+    }
+
+    /**
+     * GET /mobile/configuracoes/{estabelecimento}
+     * Usado pela tela de Configurações do app: o dono escolhe, no Dashboard,
+     * qual dos seus estabelecimentos quer editar, e o app navega passando o
+     * id explicitamente na URL (diferente de `index()`, que resolve um único
+     * "estabelecimento atual" implícito).
+     */
+    public function mostrarPorEstabelecimento(Request $request, $estabelecimentoId)
+    {
+        try {
+            $estabelecimento = Estabelecimento::find($estabelecimentoId);
+
+            if (!$estabelecimento) {
+                return response()->json(['status' => 'error', 'message' => 'Estabelecimento não encontrado.'], 404);
+            }
+
+            $temPermissao = $request->user()->estabelecimentos()
+                ->where('estabelecimentos.id', $estabelecimento->id)
+                ->exists();
+
+            if (!$temPermissao) {
+                return response()->json(['status' => 'error', 'message' => 'Você não tem permissão para editar esta loja.'], 403);
+            }
+
+            return response()->json([
+                'estabelecimento' => $estabelecimento,
+                'meusEstabelecimentos' => $request->user()->estabelecimentos,
+                'funcionarios' => $estabelecimento->funcionarios,
+                'servicos' => $estabelecimento->servicos,
+                'itens_aluguel' => $estabelecimento->itensAluguel,
+                'produtos' => $estabelecimento->produtos,
+                'alugueis' => Aluguel::where('estabelecimento_id', $estabelecimento->id)->get(),
+            ]);
+        } catch (Exception $e) {
+            return $this->respostaErro($e, 'mostrarPorEstabelecimento');
+        }
     }
 
     // ==========================================
@@ -211,8 +270,31 @@ class ConfiguracoesMobileController extends Controller
 
     public function updateServico(Request $request, Servico $servico)
     {
-        $servico->update($request->all());
-        return response()->json(['message' => 'Serviço atualizado com sucesso!', 'servico' => $servico]);
+        if (!$request->user()->estabelecimentos()->where('estabelecimentos.id', $servico->estabelecimento_id)->exists()) {
+            return response()->json(['status' => 'error', 'message' => 'Você não tem permissão para editar este serviço.'], 403);
+        }
+
+        $validated = $request->validate([
+            'nome'                      => 'sometimes|string|max:255',
+            'tipo_servico'              => 'nullable|string|max:255',
+            'descricao'                 => 'nullable|string',
+            'valor'                     => 'sometimes|numeric|min:0',
+            'duracao_minutos'           => 'sometimes|integer|min:1',
+            'ativo'                     => 'sometimes|boolean',
+            'somente_premium'           => 'sometimes|boolean',
+            'tem_promocao'              => 'sometimes|boolean',
+            'tipo_desconto'             => 'sometimes|in:percentual,fixo',
+            'valor_desconto'            => 'nullable|numeric|min:0',
+            'aceita_pontos'             => 'sometimes|boolean',
+            'maximo_pontos_permitidos'  => 'nullable|integer|min:0',
+        ]);
+
+        try {
+            $servico->update($validated);
+            return response()->json(['message' => 'Serviço atualizado com sucesso!', 'servico' => $servico]);
+        } catch (Exception $e) {
+            return $this->respostaErro($e, 'updateServico');
+        }
     }
 
     public function destroyServico(Servico $servico)
@@ -415,12 +497,30 @@ class ConfiguracoesMobileController extends Controller
 
     public function updateAluguel(Request $request, Aluguel $aluguel)
     {
-        $aluguel->update($request->all());
+        if (!$request->user()->estabelecimentos()->where('estabelecimentos.id', $aluguel->estabelecimento_id)->exists()) {
+            return response()->json(['status' => 'error', 'message' => 'Você não tem permissão para editar este aluguel.'], 403);
+        }
 
-        return response()->json([
-            'message' => 'Dados do aluguel atualizados com sucesso!',
-            'aluguel' => $aluguel
+        $validated = $request->validate([
+            'status'                => 'sometimes|in:pendente,aguardando_pagamento,aguardando_assinatura,confirmado,em_andamento,finalizado,cancelado',
+            'status_vistoria'       => 'sometimes|in:nao_realizada,aprovada,reprovada,com_ressalvas',
+            'pagamento_confirmado'  => 'sometimes|boolean',
+            'contrato_assinado'     => 'sometimes|boolean',
+            'data_inicio'           => 'sometimes|date',
+            'data_fim'              => 'sometimes|date|after_or_equal:data_inicio',
+            'observacoes'           => 'nullable|string',
         ]);
+
+        try {
+            $aluguel->update($validated);
+
+            return response()->json([
+                'message' => 'Dados do aluguel atualizados com sucesso!',
+                'aluguel' => $aluguel
+            ]);
+        } catch (Exception $e) {
+            return $this->respostaErro($e, 'updateAluguel');
+        }
     }
 
     public function destroyAluguel(Aluguel $aluguel)

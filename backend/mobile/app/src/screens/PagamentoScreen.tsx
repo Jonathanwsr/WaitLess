@@ -1,14 +1,14 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  TouchableOpacity, 
-  ScrollView, 
-  ActivityIndicator, 
-  Alert, 
-  Platform, 
-  Image 
+import React, { useCallback, useRef, useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ScrollView,
+  ActivityIndicator,
+  Alert,
+  Platform,
+  Image
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
@@ -24,8 +24,9 @@ const COLORS = {
   lightGray: '#F3F4F6', 
   white: '#FFFFFF', 
   border: '#E5E7EB', 
-  success: '#10B981', 
-  warning: '#F59E0B' 
+  success: '#10B981',
+  greenLight: '#ECFDF5',
+  warning: '#F59E0B'
 };
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api/mobile';
@@ -46,26 +47,25 @@ export default function PagamentoScreen() {
   const [processing, setProcessing] = useState(false);
   const [loadingDados, setLoadingDados] = useState(true);
   const [checkoutDados, setCheckoutDados] = useState<any>(null);
+  const abrindoGateway = useRef(false);
 
-  useEffect(() => {
-    buscarDadosCheckout();
-  }, []);
+  const pegarToken = async () => (await AsyncStorage.getItem('@waitless_token')) || (await AsyncStorage.getItem('@lokyva_token'));
 
-  const buscarDadosCheckout = async () => {
+  const buscarDadosCheckout = useCallback(async () => {
     if (!agendamento_id) {
       setLoadingDados(false);
       return;
     }
-    
+
     try {
-      const token = await AsyncStorage.getItem('@waitless_token') || await AsyncStorage.getItem('@lokyva_token');
-      const res = await fetch(`${API_URL}/pagamentos/${agendamento_id}/resumo`, { // Rota ajustada para buscar o resumo do Pagamento Mestre
-        headers: { 
-          'Authorization': `Bearer ${token}`,
-          'Accept': 'application/json'
-        }
+      const token = await pegarToken();
+      const res = await fetch(`${API_URL}/pagamentos/${agendamento_id}/resumo`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+        },
       });
-      
+
       if (res.ok) {
         const data = await res.json();
         setCheckoutDados(data);
@@ -75,53 +75,89 @@ export default function PagamentoScreen() {
     } finally {
       setLoadingDados(false);
     }
-  };
+  }, [agendamento_id]);
+
+  useEffect(() => {
+    buscarDadosCheckout();
+  }, [buscarDadosCheckout]);
+
+  // Se o cliente já pagou este pedido em outra sessão/aba, não deixa pagar de novo
+  useEffect(() => {
+    if (checkoutDados?.ja_esta_pago) {
+      router.replace({ pathname: '/src/screens/ConfirmacaoScreen', params: { id: agendamento_id } });
+    }
+  }, [checkoutDados?.ja_esta_pago]);
 
   const processarPagamento = async () => {
-    if (!agendamento_id) return Alert.alert('Erro', 'Nenhum pedido vinculado.');
-    
+    if (!agendamento_id) return Alert.alert('Ops', 'Não encontramos o pedido para pagar. Volte e tente novamente.');
+    if (abrindoGateway.current) return; // evita duplo toque abrindo duas cobranças
+
     setProcessing(true);
+    abrindoGateway.current = true;
     try {
-      const token = await AsyncStorage.getItem('@waitless_token') || await AsyncStorage.getItem('@lokyva_token');
+      const token = await pegarToken();
       const payload = {
-        pagamento_id: agendamento_id, // Enviando o ID do Pagamento Mestre
+        agendamento_id,
         metodo_pagamento: method,
         parcelas: 1,
-        asaas_customer_id: method !== 'local' ? (asaas_customer_id || 'cus_0000000000') : undefined
+        asaas_customer_id: method !== 'local' ? asaas_customer_id : undefined,
       };
 
       const res = await fetch(`${API_URL}/pagamento/processar`, {
         method: 'POST',
-        headers: { 
-          'Authorization': `Bearer ${token}`, 
+        headers: {
+          Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
-          'Accept': 'application/json'
+          Accept: 'application/json',
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
       });
-      
+
       const data = await res.json();
-      
-      if (res.ok) {
-        if (data.metodo === 'local' || method === 'pix') {
-          router.push({ 
-            pathname: '/src/screens/ConfirmacaoScreen', 
-            params: { id: agendamento_id, qr_code: data.pix_qr_code, codigo: codigo_pedido_param } 
-          });
-        } else if (data.invoice_url) {
-          await WebBrowser.openBrowserAsync(data.invoice_url);
-          router.push({ 
-            pathname: '/src/screens/ConfirmacaoScreen', 
-            params: { id: agendamento_id, codigo: codigo_pedido_param } 
-          });
+
+      if (!res.ok) {
+        if (res.status === 409) {
+          // Já pago (ex.: em outra aba) — segue direto para a confirmação
+          router.replace({ pathname: '/src/screens/ConfirmacaoScreen', params: { id: agendamento_id } });
+          return;
         }
-      } else {
-        Alert.alert('Erro', data.error || 'Falha ao processar pagamento.');
+        Alert.alert('Não foi possível continuar', data.error || data.message || 'Tente novamente em instantes.');
+        return;
+      }
+
+      if (data.metodo === 'local') {
+        router.replace({ pathname: '/src/screens/ConfirmacaoScreen', params: { id: agendamento_id, codigo: codigo_pedido_param } });
+        return;
+      }
+
+      if (data.invoice_url) {
+        // Abre o ambiente de pagamento seguro. Quando o cliente fecha essa
+        // tela, conferimos se o pagamento já foi confirmado: se sim, segue
+        // para a confirmação; se não, o pedido continua "aguardando
+        // pagamento" e ele é avisado — sem perder a reserva.
+        await WebBrowser.openBrowserAsync(data.invoice_url);
+
+        const token2 = await pegarToken();
+        const resStatus = await fetch(`${API_URL}/pagamentos/${agendamento_id}/resumo`, {
+          headers: { Authorization: `Bearer ${token2}`, Accept: 'application/json' },
+        });
+        const statusAtualizado = resStatus.ok ? await resStatus.json() : null;
+
+        if (statusAtualizado?.ja_esta_pago) {
+          router.replace({ pathname: '/src/screens/ConfirmacaoScreen', params: { id: agendamento_id, codigo: codigo_pedido_param } });
+        } else {
+          Alert.alert(
+            'Pagamento pendente',
+            'Ainda não identificamos a confirmação do seu pagamento. Sua reserva foi mantida como pendente — você pode concluir o pagamento a qualquer momento em "Meus agendamentos".',
+            [{ text: 'Entendi', onPress: () => router.replace('/(tabs)/home') }]
+          );
+        }
       }
     } catch (e) {
-      Alert.alert('Erro', 'Falha na comunicação com o servidor.');
+      Alert.alert('Sem conexão', 'Não foi possível falar com o servidor agora. Verifique sua internet e tente novamente.');
     } finally {
       setProcessing(false);
+      abrindoGateway.current = false;
     }
   };
 
@@ -199,6 +235,26 @@ export default function PagamentoScreen() {
             </View>
           )}
         </View>
+
+        {/* PRODUTOS EXTRAS INCLUÍDOS NO PEDIDO */}
+        {Array.isArray(checkoutDados?.produtos) && checkoutDados.produtos.length > 0 && (
+          <View style={styles.produtosCard}>
+            <Text style={styles.produtosTitulo}>Itens incluídos neste pedido</Text>
+            {checkoutDados.produtos.map((produto: any) => (
+              <View key={produto.id} style={styles.produtoRow}>
+                {produto.foto ? (
+                  <Image source={{ uri: produto.foto }} style={styles.produtoFoto} />
+                ) : (
+                  <View style={[styles.produtoFoto, styles.produtoFotoPlaceholder]}>
+                    <Ionicons name="cube-outline" size={18} color={COLORS.gray} />
+                  </View>
+                )}
+                <Text style={styles.produtoNome} numberOfLines={1}>{produto.nome}</Text>
+                <Text style={styles.produtoValor}>R$ {Number(produto.valor).toFixed(2).replace('.', ',')}</Text>
+              </View>
+            ))}
+          </View>
+        )}
 
         <Text style={styles.sectionTitle}>1. Como você prefere pagar?</Text>
         
@@ -298,6 +354,14 @@ const styles = StyleSheet.create({
   totalSummaryValue: { fontSize: 36, fontWeight: '900', color: COLORS.secondary },
   discountRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.greenLight, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, marginTop: 12, gap: 6 },
   discountText: { fontSize: 12, color: COLORS.success, fontWeight: '700' },
+
+  produtosCard: { backgroundColor: COLORS.white, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border, padding: 16, marginBottom: 20 },
+  produtosTitulo: { fontSize: 13, fontWeight: '800', color: COLORS.secondary, marginBottom: 12 },
+  produtoRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+  produtoFoto: { width: 36, height: 36, borderRadius: 8, backgroundColor: COLORS.lightGray },
+  produtoFotoPlaceholder: { alignItems: 'center', justifyContent: 'center' },
+  produtoNome: { flex: 1, fontSize: 13, fontWeight: '600', color: COLORS.secondary },
+  produtoValor: { fontSize: 13, fontWeight: '700', color: COLORS.gray },
 
   sectionTitle: { fontSize: 16, fontWeight: '800', color: COLORS.secondary, marginBottom: 12 },
   

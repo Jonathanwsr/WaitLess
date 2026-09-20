@@ -529,12 +529,18 @@ export default function FuncionarioDashboard({ auth, funcionarios, emAtendimento
                                                         )}
                                                     </p>
                                                     <p className="text-sm text-gray-500 font-bold mt-1 flex flex-wrap items-center gap-1.5">
-                                                        <span className="bg-gray-100 px-2 py-0.5 rounded-md">{new Date(ag.data_agendamento).toLocaleDateString('pt-BR')}</span> 
-                                                        <span>•</span> 
-                                                        <span className="text-gray-900">{ag.hora_agendamento?.substring(0,5)}</span> 
-                                                        <span>•</span> 
+                                                        <span className="bg-gray-100 px-2 py-0.5 rounded-md">{new Date(ag.data_agendamento).toLocaleDateString('pt-BR')}</span>
+                                                        <span>•</span>
+                                                        <span className="text-gray-900">{ag.hora_agendamento?.substring(0,5)}</span>
+                                                        <span>•</span>
                                                         <span className="text-gray-400 truncate max-w-[150px] sm:max-w-[300px]">{ag.servico?.nome}</span>
                                                     </p>
+                                                    {ag.status === 'finalizado' && ag.finalizado_por?.name && (
+                                                        <p className="mt-2 inline-flex items-center gap-1.5 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2.5 py-1 rounded-lg w-fit">
+                                                            <CheckCircleIcon className="w-3.5 h-3.5" />
+                                                            Finalizado por {ag.finalizado_por.name} às {ag.hora_finalizacao?.substring(0, 5)}
+                                                        </p>
+                                                    )}
                                                 </div>
                                             </div>
                                             <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between gap-3 mt-4 sm:mt-0 pt-4 sm:pt-0 border-t sm:border-0 border-gray-100">

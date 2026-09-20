@@ -15,38 +15,111 @@ use App\Models\Agendamento;
 class MobileHomeController extends Controller
 {
     /**
-     * Busca os estabelecimentos próximos.
+     * Busca os estabelecimentos próximos (raio em km, fórmula de Haversine
+     * calculada em PHP — volume de estabelecimentos ainda é pequeno o
+     * suficiente para não justificar a expressão SQL, que variaria entre
+     * MySQL/Postgres/SQLite usados em dev, teste e produção).
+     */
+    /**
+     * 👉 ESTABELECIMENTOS PARA A HOME
+     *
+     * Cascata de 3 níveis, igual ao pedido:
+     * 1) Perto de você — por localização, quando disponível.
+     * 2) Estabelecimentos de sócios/donos premium — quando não há nada perto.
+     * 3) Recomendados — aleatórios entre os ativos, como último recurso.
+     *
+     * A resposta sempre inclui "origem" para a Home saber qual título mostrar.
      */
     public function getEstabelecimentosProximos(Request $request)
     {
-        $radius = $request->input('radius', 15);
+        $radius = (float) $request->input('radius', 15);
         $lat = $request->input('lat');
         $lng = $request->input('lng');
-        $cidadeUf = $request->input('cidadeUf');
+        $user = $request->user();
 
-        // MOCK PARA TESTE MÓVEL
-        $estabelecimentos = [
-            [
-                'id' => 1,
-                'nome' => 'Barbearia do João',
-                'tipo' => 'barbearia',
-                'foto_perfil' => 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?q=80&w=400&auto=format&fit=crop',
-                'avaliacao_media' => 4.8,
-                'distance' => 2.5,
-                'fila_atual' => 3
-            ],
-            [
-                'id' => 2,
-                'nome' => 'Clínica Sorriso',
-                'tipo' => 'dentista',
-                'foto_perfil' => 'https://images.unsplash.com/photo-1606811841689-23dfddce3e95?q=80&w=400&auto=format&fit=crop',
-                'avaliacao_media' => 5.0,
-                'distance' => 5.1,
-                'fila_atual' => 0
-            ]
-        ];
+        if (!$lat || !$lng) {
+            $lat = $user?->latitude;
+            $lng = $user?->longitude;
+        }
 
-        return response()->json($estabelecimentos, 200);
+        // 1) PERTO DE VOCÊ
+        if ($lat && $lng) {
+            $proximos = $this->formatarEstabelecimentos(
+                Estabelecimento::where('ativo', true)->whereNotNull('latitude')->whereNotNull('longitude')->get(),
+                (float) $lat,
+                (float) $lng
+            )
+                ->filter(fn ($est) => $est['distance'] !== null && $est['distance'] <= $radius)
+                ->sortBy('distance')
+                ->values();
+
+            if ($proximos->isNotEmpty()) {
+                return response()->json(['origem' => 'proximidade', 'data' => $proximos->take(20)->values()], 200);
+            }
+        }
+
+        // 2) SÓCIOS/DONOS PREMIUM (sem ninguém perto — dá mais visibilidade a quem paga)
+        $planosPremium = ['premium', 'premium-socio', 'premium-anual', 'premium-socio-anual'];
+        $idsUsuariosPremium = User::whereIn('plano_assinatura', $planosPremium)->pluck('id');
+
+        if ($idsUsuariosPremium->isNotEmpty()) {
+            $estabelecimentosPremium = Estabelecimento::where('ativo', true)
+                ->whereHas('proprietarios', fn ($q) => $q->whereIn('users.id', $idsUsuariosPremium))
+                ->inRandomOrder()
+                ->limit(20)
+                ->get();
+
+            if ($estabelecimentosPremium->isNotEmpty()) {
+                $formatados = $this->formatarEstabelecimentos($estabelecimentosPremium, $lat, $lng);
+                return response()->json(['origem' => 'premium', 'data' => $formatados], 200);
+            }
+        }
+
+        // 3) RECOMENDADOS (aleatórios, último recurso)
+        $recomendados = Estabelecimento::where('ativo', true)->inRandomOrder()->limit(20)->get();
+        $formatados = $this->formatarEstabelecimentos($recomendados, $lat, $lng);
+
+        return response()->json(['origem' => 'recomendado', 'data' => $formatados], 200);
+    }
+
+    private function formatarEstabelecimentos($estabelecimentos, $lat = null, $lng = null)
+    {
+        return $estabelecimentos->map(function (Estabelecimento $est) use ($lat, $lng) {
+            $distancia = ($lat && $lng && $est->latitude && $est->longitude)
+                ? $this->calcularDistanciaKm((float) $lat, (float) $lng, (float) $est->latitude, (float) $est->longitude)
+                : null;
+
+            $filaAtual = $est->agendamentos()
+                ->whereDate('data_agendamento', now()->toDateString())
+                ->whereIn('status', ['pendente', 'confirmado'])
+                ->count();
+
+            return [
+                'id' => $est->id,
+                'nome' => $est->nome,
+                'tipo' => $est->ramo_atuacao,
+                'foto_perfil' => $est->foto_perfil,
+                'avaliacao_media' => (float) $est->avaliacao_media,
+                'total_avaliacoes' => $est->total_avaliacoes,
+                'cidade' => $est->cidade,
+                'estado' => $est->estado,
+                'distance' => $distancia !== null ? round($distancia, 1) : null,
+                'fila_atual' => $filaAtual,
+            ];
+        });
+    }
+
+    private function calcularDistanciaKm(float $lat1, float $lng1, float $lat2, float $lng2): float
+    {
+        $raioTerraKm = 6371;
+
+        $dLat = deg2rad($lat2 - $lat1);
+        $dLng = deg2rad($lng2 - $lng1);
+
+        $a = sin($dLat / 2) ** 2
+            + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLng / 2) ** 2;
+
+        return $raioTerraKm * (2 * atan2(sqrt($a), sqrt(1 - $a)));
     }
 
     /**

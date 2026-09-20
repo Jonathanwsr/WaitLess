@@ -229,7 +229,7 @@ export default function Cadastro() {
       }
 
       Alert.alert('Sucesso!', 'Conta criada com sucesso e carteira ativada.');
-      router.replace('/src/screens/Home');
+      router.replace('/(tabs)/home');
 
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Ocorreu um erro inesperado.';

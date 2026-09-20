@@ -40,6 +40,10 @@ return [
         'key' => env('ASAAS_KEY'),
         'webhook_token' => env('ASAAS_WEBHOOK_TOKEN'),
     ],
+    
+    'hive' => [
+    'key' => env('HIVE_API_KEY'),
+],
 
     'imagekit' => [
         'public_key' => env('IMAGEKIT_PUBLIC_KEY'),

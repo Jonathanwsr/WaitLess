@@ -81,10 +81,6 @@ public function agendamentos()
     return $this->hasMany(Agendamento::class, 'usuario_id');
 }
 
-public function pontos()
-{
-    return $this->hasMany(PontoUsuarioEstabelecimento::class);
-}
 
 public function estabelecimentos()
     {

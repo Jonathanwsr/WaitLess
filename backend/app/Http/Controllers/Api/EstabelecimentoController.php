@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Estabelecimento;
 use Illuminate\Http\Request;
 use App\Models\Agendamento;
+use App\Models\Produto;
 use Illuminate\Support\Facades\Auth;
 use App\Services\ImageKitService;
 use Inertia\Inertia;
@@ -141,7 +142,7 @@ class EstabelecimentoController extends Controller
                 $isLinked = $estabelecimento->proprietarios()->where('users.id', $user->id)->exists();
             } else {
                 // É funcionário/atendente deste local
-                $isLinked = \App\Models\Funcionario::where('user_id', $user->id)
+                $isLinked = \App\Models\Funcionario::where('usuario_id', $user->id)
                     ->where('estabelecimento_id', $estabelecimento->id)
                     ->exists();
             }
@@ -164,7 +165,7 @@ class EstabelecimentoController extends Controller
 
         // 3. Busca a lista de estabelecimentos do menu (trata a diferença de dono vs atendente)
         if (in_array($user->papel, ['atendente', 'funcionario'])) {
-            $est_id_vinculado = \App\Models\Funcionario::where('user_id', $user->id)->value('estabelecimento_id');
+            $est_id_vinculado = \App\Models\Funcionario::where('usuario_id', $user->id)->value('estabelecimento_id');
             $estabelecimentos = $est_id_vinculado ? Estabelecimento::where('id', $est_id_vinculado)->get() : collect();
         } else {
             $estabelecimentos = $user->estabelecimentos()->get();
@@ -188,7 +189,7 @@ class EstabelecimentoController extends Controller
             ->where('estabelecimento_id', $estabelecimento->id)
             ->get();
 
-        $query = Agendamento::with(['usuario:id,name,foto_perfil', 'servico:id,nome,valor', 'pagamento:id,agendamento_id,status'])
+        $query = Agendamento::with(['usuario:id,name,foto_perfil', 'servico:id,nome,valor', 'pagamento:id,agendamento_id,status', 'finalizadoPor:id,name'])
             ->where('estabelecimento_id', $estabelecimento->id)
             ->whereBetween('data_agendamento', [$filtros['data_inicio'], $filtros['data_fim']]);
 
@@ -226,12 +227,17 @@ class EstabelecimentoController extends Controller
         $meusEstabelecimentos = $user->estabelecimentosGerenciados()->select('estabelecimentos.id', 'nome', 'ativo', 'token_mercadopago')->get();
         $funcionarios = $estabelecimento->funcionarios()->select('id', 'nome', 'cargo', 'usuario_id', 'telefone', 'ativo')->get();
         $servicos = $estabelecimento->servicos()->latest()->get();
+        $produtos = Produto::where('estabelecimento_id', $estabelecimento->id)
+            ->select('id', 'nome', 'servico_id', 'aluguel_id', 'somente_premium', 'is_promocao', 'valor_final')
+            ->orderBy('nome')
+            ->get();
 
         return Inertia::render('Estabelecimentos/Configuracoes', [
             'estabelecimento'      => $estabelecimento,
             'meusEstabelecimentos' => $meusEstabelecimentos,
             'funcionarios'         => $funcionarios,
-            'servicos'             => $servicos
+            'servicos'             => $servicos,
+            'produtos'             => $produtos
         ]);
     }
 

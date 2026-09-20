@@ -123,7 +123,7 @@ export default function Carrinho({ auth, itensCarrinho = [] }) {
                         </p>
                         <Link 
                             href={route('cliente.explorar')} 
-                            className="bg-indigo-600 text-white px-10 py-4 rounded-xl text-lg font-bold shadow-lg hover:bg-indigo-700 transition active:scale-98"
+                            className="bg-gray-950 text-white px-10 py-4 rounded-xl text-lg font-bold shadow-lg hover:bg-gray-800 transition active:scale-98"
                         >
                             Explorar Serviços
                         </Link>

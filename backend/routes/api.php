@@ -2,6 +2,7 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Broadcast;
 
 // Importações - Web
 use App\Http\Controllers\Api\AuthController;
@@ -26,10 +27,11 @@ use App\Http\Controllers\Api\ItemAluguelController;
 // Importações - Mobile
 use App\Http\Controllers\Api\Mobile\TravelAssistantController;
 use App\Http\Controllers\Api\Mobile\CarteiraMobileController;
-use App\Http\Controllers\Api\Proprietario\ProviderMobileController;
+use App\Http\Controllers\Api\Mobile\CarrinhoMobileController;
+use App\Http\Controllers\Api\Mobile\Proprietario\ProviderMobileController;
 use App\Http\Controllers\Api\Mobile\Proprietario\CriarServicosReservasController;
+use App\Http\Controllers\Api\Mobile\Proprietario\ConfiguracoesMobileController;
 use App\Http\Controllers\Api\Mobile\Proprietario\EstabelecimentoController as MobileEstabelecimentoController;
-use App\Http\Controllers\Api\Mobile\AssinaturaMobileController;
 use App\Http\Controllers\Api\Mobile\MobileAuthController;
 use App\Http\Controllers\Api\Mobile\MobileHomeController;
 use App\Http\Controllers\Api\Mobile\MobileAgendamentoController;
@@ -40,8 +42,11 @@ use App\Http\Controllers\Api\Mobile\ClienteAgendamentoMobileController;
 use App\Http\Controllers\Api\Mobile\AnfitriaoMobileController;
 use App\Http\Controllers\Api\Mobile\CatalogoMobileController;
 use App\Http\Controllers\Api\Mobile\PagamentoMobileController; // IMPORTAÇÃO QUE FALTAVA
+use App\Http\Controllers\Api\Mobile\EstornoMobileController;
 use App\Http\Controllers\Api\Mobile\Proprietario\DashboardController as ProprietarioDashboard;
 use App\Http\Controllers\Api\Mobile\Proprietario\FuncionarioMobileController as FuncionarioMobileController;
+use App\Http\Controllers\Api\Mobile\MensagemMobileController;
+use App\Http\Controllers\Api\Mobile\AssinaturaMobileController;
 
 
 /*
@@ -52,7 +57,7 @@ use App\Http\Controllers\Api\Mobile\Proprietario\FuncionarioMobileController as 
 
 // Rotas públicas Web
 Route::post('/register', [AuthController::class, 'register']);
-Route::post('/login', [AuthController::class, 'login']);
+Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:login');
 
 
     // Rota para o Webhook do Asaas (POST)
@@ -60,7 +65,7 @@ Route::post('/login', [AuthController::class, 'login']);
 Route::post('/webhook/asaas', [PagamentoController::class, 'webhookAsaas']);
 
 // Rotas públicas Mobile
-Route::post('/mobile/login', [MobileAuthController::class, 'login']);
+Route::post('/mobile/login', [MobileAuthController::class, 'login'])->middleware('throttle:login');
 Route::post('/mobile/register', [MobileAuthController::class, 'register'])->name('mobile.register');
 Route::post('/mobile/cadastro', [MobileAuthController::class, 'register']); // Alias de compatibilidade
 
@@ -138,12 +143,22 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // --- CHECKOUT E PAGAMENTOS MOBILE ---
     Route::post('/pagamento/processar', [PagamentoMobileController::class, 'processar']);
+    Route::get('/pagamentos/{agendamento}/resumo', [PagamentoMobileController::class, 'resumoPagamento']);
+    Route::post('/pagamentos/{id}/pagar-novamente', [PagamentoMobileController::class, 'pagarNovamente']);
+
+    // --- ESTORNOS MOBILE ---
+    Route::get('/estornos', [EstornoMobileController::class, 'minhasSolicitacoes']);
+    Route::get('/estornos/elegiveis', [EstornoMobileController::class, 'elegiveis']);
+    Route::get('/estornos/{id}/detalhes', [EstornoMobileController::class, 'detalhes']);
+    Route::get('/estornos/{id}/comprovante-pdf', [EstornoMobileController::class, 'comprovantePDF']);
+    Route::post('/estornos/solicitar/{pagamento_id}', [EstornoMobileController::class, 'solicitar']);
 
     // --- ANFITRIÃO / PROPRIETÁRIO ---
     Route::put('/anfitriao/perfil', [AnfitriaoMobileController::class, 'updatePerfil']);
 
     // --- CLIENTES E TRIAGEM ---
     Route::get('/clientes/{id}/detalhes', [MobileAgendamentoController::class, 'detalheCliente']);
+    Route::get('/equipe/agenda-produtividade', [FuncionarioMobileController::class, 'agenda']);
     Route::get('/servicos/{id}/horarios', [MobileAgendamentoController::class, 'obtenerHorariosDisponiveis']);
     Route::put('/triagens/{id}/nota', [MobileAgendamentoController::class, 'salvarNotaTriagem']);
     Route::post('/checkout/misto', [App\Http\Controllers\Api\Mobile\MobileAgendamentoController::class, 'checkoutMisto']);
@@ -160,7 +175,21 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/explorar/recentes', [ClienteExplorarMobileController::class, 'recentes']);
     Route::get('/explorar/cidade/{cidade}', [ClienteExplorarMobileController::class, 'porCidade']);
     Route::get('/explorar/categorias', [ClienteExplorarMobileController::class, 'categorias']);
+    Route::get('/explorar/ofertas-premium', [ClienteExplorarMobileController::class, 'ofertasPremium']);
     Route::get('/explorar/{id}', [ClienteExplorarMobileController::class, 'show']);
+
+    // Alias sob o prefixo /mobile: a tela Explorar do app (app/(tabs)/explorar.tsx)
+    // monta suas chamadas como `${cleanBaseUrl}/mobile/explorar...`, que sem este
+    // alias não batia com nenhuma rota registrada (sempre respondia 404).
+    Route::prefix('mobile')->group(function () {
+        Route::get('/explorar', [ClienteExplorarMobileController::class, 'index']);
+        Route::get('/explorar/destaques', [ClienteExplorarMobileController::class, 'destaques']);
+        Route::get('/explorar/recentes', [ClienteExplorarMobileController::class, 'recentes']);
+        Route::get('/explorar/cidade/{cidade}', [ClienteExplorarMobileController::class, 'porCidade']);
+        Route::get('/explorar/categorias', [ClienteExplorarMobileController::class, 'categorias']);
+        Route::get('/explorar/ofertas-premium', [ClienteExplorarMobileController::class, 'ofertasPremium']);
+        Route::get('/explorar/{id}', [ClienteExplorarMobileController::class, 'show']);
+    });
 
 
     Route::post('/servicos', [CriarServicosReservasController::class, 'storeServico']);
@@ -176,6 +205,14 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/reservas-itens', [CriarServicosReservasController::class, 'storeItem']);
     Route::post('/reservas-itens/{id}', [CriarServicosReservasController::class, 'updateItem']); // Usando POST com _method=PUT para upload de imagens no mobile
     Route::delete('/reservas-itens/{id}', [CriarServicosReservasController::class, 'destroyItem']);
+
+    // Alias usado pela tela de Configurações do app (ConfiguracoesMobile.tsx chama /itens-aluguel)
+    Route::post('/itens-aluguel', [CriarServicosReservasController::class, 'storeItem']);
+    Route::post('/itens-aluguel/{id}', [CriarServicosReservasController::class, 'updateItem']);
+
+    // Carrega os dados de UM estabelecimento específico para a tela de Configurações
+    // (ConfiguracoesMobile.tsx chama /mobile/configuracoes/{id})
+    Route::get('/mobile/configuracoes/{id}', [ConfiguracoesMobileController::class, 'mostrarPorEstabelecimento']);
 
     Route::get('/v1/funcionarios', [FuncionarioMobileController::class, 'index']);
     Route::post('/v1/funcionarios', [FuncionarioMobileController::class, 'store']);
@@ -209,6 +246,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('mobile')->group(function () {
         Route::get('/favoritos', [FavoritoMobileController::class, 'index']);
         Route::post('/favoritos/toggle', [FavoritoMobileController::class, 'toggleFavorito']);
+
+        // --- MENSAGENS / CHAT (equivalente mobile de MensagemController) ---
+        Route::get('/mensagens', [MensagemMobileController::class, 'index']);
+        Route::get('/mensagens/{id}', [MensagemMobileController::class, 'show']);
+        Route::post('/mensagens/{id}/enviar', [MensagemMobileController::class, 'enviar']);
+        Route::post('/mensagens/iniciar', [MensagemMobileController::class, 'iniciar']);
         Route::get('/catalogo/servicos/{id}', [CatalogoMobileController::class, 'detalhesServico']);
    Route::get('/catalogo/estabelecimentos/{id}', [AnfitriaoMobileController::class, 'getPerfil']);
 
@@ -218,14 +261,55 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/servicos/{id}', [CatalogoMobileController::class, 'detalhesServico']);
 
     // Rotas para o fluxo de Fila em Tempo Real
+// Aliases sob /mobile: gestão da fila pelo sócio/funcionário (listar do dia,
+// chamar/adiar/pular/finalizar) só existia sem o prefixo — a tela de fila do
+// app nunca teria conseguido chamar nenhuma dessas ações.
+Route::get('/agendamentos', [MobileAgendamentoController::class, 'index']);
+Route::get('/agendamentos/{id}', [MobileAgendamentoController::class, 'show'])->whereNumber('id');
+Route::put('/agendamentos/{agendamento}/status', [MobileAgendamentoController::class, 'updateStatus']);
+Route::put('/agendamentos/{agendamento}/chamar', [MobileAgendamentoController::class, 'chamar']);
+Route::put('/agendamentos/{agendamento}/adiar', [MobileAgendamentoController::class, 'adiar']);
+Route::put('/agendamentos/{agendamento}/pular', [MobileAgendamentoController::class, 'pularProximo']);
+Route::put('/agendamentos/{agendamento}/funcionario', [MobileAgendamentoController::class, 'updateFuncionario']);
+// Alias sob /mobile: finalizar com PIN, histórico do cliente e o quadro de
+// produtividade da equipe só existiam sem o prefixo — as telas do funcionário
+// no app (Painel-funcioanario.tsx, DetalheCliente.tsx) nunca conseguiriam chamá-los.
+Route::post('/agendamentos/{id}/finalizar', [MobileAgendamentoController::class, 'finalizarComCodigo']);
+Route::get('/clientes/{id}/detalhes', [MobileAgendamentoController::class, 'detalheCliente']);
+Route::get('/equipe/agenda-produtividade', [FuncionarioMobileController::class, 'agenda']);
 Route::get('/agendamentos/{id}/fila', [MobileAgendamentoController::class, 'statusFila']);
 Route::post('/agendamentos/{id}/sair-fila', [MobileAgendamentoController::class, 'sairDaFila']);
+Route::get('/agendamentos/{id}/comprovante-pdf', [MobileAgendamentoController::class, 'comprovantePDF']);
 Route::get('/agendamentos/{id}/checkout', [App\Http\Controllers\Api\Mobile\PagamentoMobileController::class, 'detalhesCheckout']);
+
+// Aliases sob /mobile: EXPO_PUBLIC_API_URL já inclui "/mobile", então rotas de
+// pagamento/estorno registradas só sem o prefixo (mesmo problema já corrigido
+// em /checkout/misto) nunca eram alcançadas pelo app.
+Route::post('/pagamento/processar', [PagamentoMobileController::class, 'processar']);
+Route::get('/pagamentos/{agendamento}/resumo', [PagamentoMobileController::class, 'resumoPagamento']);
+Route::post('/pagamentos/{id}/pagar-novamente', [PagamentoMobileController::class, 'pagarNovamente']);
+Route::get('/estornos', [EstornoMobileController::class, 'minhasSolicitacoes']);
+Route::get('/estornos/elegiveis', [EstornoMobileController::class, 'elegiveis']);
+Route::get('/estornos/{id}/detalhes', [EstornoMobileController::class, 'detalhes']);
+Route::get('/estornos/{id}/comprovante-pdf', [EstornoMobileController::class, 'comprovantePDF']);
+Route::post('/estornos/solicitar/{pagamento_id}', [EstornoMobileController::class, 'solicitar']);
+// Alias sob /mobile: a tela EstabelecimentoDetalhes.tsx chama '/mobile/checkout/misto',
+// mas a rota original só existia sem o prefixo (POST /checkout/misto), então o
+// checkout do app estava batendo em 404. Mantemos a rota antiga por segurança.
+Route::post('/checkout/misto', [MobileAgendamentoController::class, 'checkoutMisto']);
+// Mesmo problema: a aba Reservas chamava estas 4 rotas com o prefixo /mobile,
+// mas elas só existiam sem prefixo — o formulário nunca conseguia carregar
+// nem enviar nada.
+Route::get('/agendamentos/estabelecimento/{estabelecimento}', [ClienteAgendamentoMobileController::class, 'obterDadosAgendamento']);
+Route::get('/reservas/item/{id}', [ClienteAgendamentoMobileController::class, 'obterDadosReserva']);
+Route::post('/agendamentos/estabelecimento/{estabelecimento}/store', [ClienteAgendamentoMobileController::class, 'agendarServico']);
+Route::post('/reservas/item/{id}/store', [ClienteAgendamentoMobileController::class, 'reservarItem']);
         Route::get('/estabelecimentos/{id}', [MobileAgendamentoController::class, 'verEstabelecimento']);
         Route::post('/estabelecimentos/{id}/agendar', [MobileAgendamentoController::class, 'agendarServico']);
         Route::get('/meus-agendamentos', [MobileAgendamentoController::class, 'meusAgendamentos']);
         Route::delete('/agendamentos/{id}', [MobileAgendamentoController::class, 'cancelarCliente']);
         Route::get('/estabelecimentos/{id}/catalogo', [EstabelecimentoCatalogoMobileController::class, 'show']);
+        Route::get('/estabelecimentos/{id}/produtos', [EstabelecimentoCatalogoMobileController::class, 'listarProdutos']);
         Route::post('/pedidos/sacola', [EstabelecimentoCatalogoMobileController::class, 'criarPedidoSacola']);
 
 
@@ -302,14 +386,27 @@ Route::post('/minha-carteira/resgatar/{id}', [CarteiraMobileController::class, '
 
     Route::post('/carrinho/checkout', [CarrinhoMobileController::class, 'gerarCheckout']);
 
-Route::post('/assinaturas/assinar', [AssinaturaMobileController::class, 'assinar']);
-Route::post('/assinaturas/cancelar', [AssinaturaMobileController::class, 'cancelar']);
-Route::put('/assinaturas/dados-financeiros', [AssinaturaMobileController::class, 'atualizarDadosFinanceiros']);
+// --- ASSINATURA / PLANO (equivalente mobile de Cliente/StatusAssinatura.jsx) ---
+// Controller próprio do mobile: reaproveita apenas o PlanoService (catálogo de
+// planos/preços) para não divergir do web, mas nunca chama o controller web.
+Route::get('/assinatura/status', [AssinaturaMobileController::class, 'status']);
+Route::post('/assinatura/assinar', [AssinaturaMobileController::class, 'assinar']);
+Route::post('/assinatura/mudar-plano', [AssinaturaMobileController::class, 'mudarPlano']);
+Route::post('/assinatura/cancelar', [AssinaturaMobileController::class, 'cancelar']);
+Route::put('/assinatura/dados-financeiros', [AssinaturaMobileController::class, 'atualizarDadosFinanceiros']);
 
-Route::get('/assinaturas/status', [AssinaturaMobileController::class, 'status']);
+// --- RASTREAMENTO EM TEMPO REAL (equivalente mobile do mapa Uber-style do web) ---
+// Cliente envia sua posição enquanto está a caminho do estabelecimento.
+Route::post('/rastreamento/atualizar', [MobileAgendamentoController::class, 'rastrearLocalizacao']);
+// Sócio/gerente busca a lista de agendamentos de hoje para escolher quem rastrear.
+Route::get('/proprietario/rastreamento', [ProprietarioDashboard::class, 'rastreamento']);
 
 
     });
+
+// Autenticação de canais privados do Reverb via token Sanctum (o /broadcasting/auth
+// padrão do Laravel só reconhece sessão web; este é o equivalente para o app mobile).
+Broadcast::routes(['prefix' => 'mobile', 'middleware' => ['auth:sanctum']]);
 
     // --- ALUGUÉIS E LOCAÇÕES ---
     Route::get('/alugueis', [MobileAgendamentoController::class, 'indexAlugueis']);

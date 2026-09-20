@@ -12,6 +12,7 @@ use Exception;
 use App\Models\Servico;
 use App\Models\Funcionario;
 use App\Models\ItemAluguel;
+use App\Models\Produto;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -51,10 +52,20 @@ class ServicoController extends Controller
             'funcionario_id'       => 'nullable|exists:funcionarios,id',
             'dias_disponiveis'     => 'nullable|array',
             'horarios_disponiveis' => 'nullable|array',
-            'tipo_pagamento'       => 'required|in:hibrido,online,presencial', 
-            
-            'fotos'                => 'nullable|array|max:5', 
-            'fotos.*'              => 'image|mimes:jpeg,png,jpg,webp|max:2048', 
+            'tipo_pagamento'       => 'required|in:hibrido,online,presencial',
+
+            'fotos'                => 'nullable|array|max:5',
+            'fotos.*'              => 'image|mimes:jpeg,png,jpg,webp|max:2048',
+
+            // Oferta exclusiva para assinantes Premium
+            'somente_premium'            => 'boolean',
+            'tem_promocao'                => 'boolean',
+            'tipo_desconto'               => 'required_if:tem_promocao,true|in:percentual,fixo',
+            'valor_desconto'              => 'nullable|numeric|min:0',
+            'aceita_pontos'               => 'boolean',
+            'maximo_pontos_permitidos'    => 'nullable|integer|min:0',
+            'produtos_vinculados'         => 'nullable|array',
+            'produtos_vinculados.*'       => 'integer|exists:produtos,id',
         ]);
 
         $horarios = $validated['horarios_disponiveis'] ?? [];
@@ -66,6 +77,11 @@ class ServicoController extends Controller
                 $urlsFotos[] = ImageKitService::upload($foto, '/waitless/servicos');
             }
         }
+
+        $somentePremium = $request->boolean('somente_premium', false);
+        $temPromocao = $request->boolean('tem_promocao', false);
+        $aceitaPontos = $request->boolean('aceita_pontos', false);
+        $produtosVinculados = $validated['produtos_vinculados'] ?? [];
 
         foreach ($validated['estabelecimentos_ids'] as $est_id) {
             $funcionarioParaSalvar = null;
@@ -79,7 +95,7 @@ class ServicoController extends Controller
                 }
             }
 
-            Servico::create([
+            $servico = Servico::create([
                 'estabelecimento_id'   => $est_id,
                 'nome'                 => $validated['nome'],
                 'tipo_servico'         => $validated['tipo_servico'],
@@ -93,11 +109,38 @@ class ServicoController extends Controller
                     'tipo_pagamento'     => $validated['tipo_pagamento'],
                     'funcionario_padrao' => $funcionarioParaSalvar
                 ]),
-                'fotos'                => json_encode($urlsFotos), 
+                'fotos'                => json_encode($urlsFotos),
+                'somente_premium'          => $somentePremium,
+                'tem_promocao'             => $temPromocao,
+                'tipo_desconto'            => $validated['tipo_desconto'] ?? 'percentual',
+                'valor_desconto'           => $temPromocao ? ($validated['valor_desconto'] ?? null) : null,
+                'aceita_pontos'            => $aceitaPontos,
+                'maximo_pontos_permitidos' => $aceitaPontos ? ($validated['maximo_pontos_permitidos'] ?? null) : null,
             ]);
+
+            $this->vincularProdutosExistentes($produtosVinculados, $servico->id, $est_id);
         }
 
         return redirect()->back()->with('success', 'Serviço adicionado ao catálogo com imagens!');
+    }
+
+    /**
+     * Vincula um conjunto de produtos já cadastrados a um serviço, desvinculando
+     * os que deixaram de ser selecionados. Restrito aos produtos do mesmo
+     * estabelecimento do serviço para não permitir sequestrar produto de outra loja.
+     */
+    private function vincularProdutosExistentes(array $produtoIds, int $servicoId, int $estabelecimentoId): void
+    {
+        Produto::where('servico_id', $servicoId)
+            ->where('estabelecimento_id', $estabelecimentoId)
+            ->whereNotIn('id', $produtoIds)
+            ->update(['servico_id' => null]);
+
+        if (!empty($produtoIds)) {
+            Produto::where('estabelecimento_id', $estabelecimentoId)
+                ->whereIn('id', $produtoIds)
+                ->update(['servico_id' => $servicoId]);
+        }
     }
 
     public function update(Request $request, Servico $servico)
@@ -120,10 +163,23 @@ class ServicoController extends Controller
             'fotos_existentes.*'   => 'string',
             'fotos'                => 'nullable|array|max:5',
             'fotos.*'              => 'image|mimes:jpeg,png,jpg,webp|max:2048',
+
+            // Oferta exclusiva para assinantes Premium
+            'somente_premium'            => 'boolean',
+            'tem_promocao'                => 'boolean',
+            'tipo_desconto'               => 'required_if:tem_promocao,true|in:percentual,fixo',
+            'valor_desconto'              => 'nullable|numeric|min:0',
+            'aceita_pontos'               => 'boolean',
+            'maximo_pontos_permitidos'    => 'nullable|integer|min:0',
+            'produtos_vinculados'         => 'nullable|array',
+            'produtos_vinculados.*'       => 'integer|exists:produtos,id',
         ]);
 
         $horarios = $validated['horarios_disponiveis'] ?? [];
         $dias = $validated['dias_disponiveis'] ?? [];
+
+        $temPromocao = $request->boolean('tem_promocao', false);
+        $aceitaPontos = $request->boolean('aceita_pontos', false);
 
         $dadosParaAtualizar = [
             'nome'                 => $validated['nome'],
@@ -136,7 +192,13 @@ class ServicoController extends Controller
                 'dias_disponiveis'   => $dias,
                 'tipo_pagamento'     => $validated['tipo_pagamento'],
                 'funcionario_padrao' => $validated['funcionario_id'] ?? null
-            ])
+            ]),
+            'somente_premium'          => $request->boolean('somente_premium', false),
+            'tem_promocao'             => $temPromocao,
+            'tipo_desconto'            => $validated['tipo_desconto'] ?? 'percentual',
+            'valor_desconto'           => $temPromocao ? ($validated['valor_desconto'] ?? null) : null,
+            'aceita_pontos'            => $aceitaPontos,
+            'maximo_pontos_permitidos' => $aceitaPontos ? ($validated['maximo_pontos_permitidos'] ?? null) : null,
         ];
 
         // --- LÓGICA DE IMAGENS ---
@@ -164,6 +226,12 @@ class ServicoController extends Controller
         }
 
         $servico->update($dadosParaAtualizar);
+
+        $this->vincularProdutosExistentes(
+            $validated['produtos_vinculados'] ?? [],
+            $servico->id,
+            $servico->estabelecimento_id
+        );
 
         return redirect()->back()->with('success', 'Serviço atualizado com sucesso!');
     }

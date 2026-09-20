@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Mobile\Proprietario;
 
 use App\Http\Controllers\Controller;
+use App\Models\Agendamento;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -66,5 +67,49 @@ class DashboardController extends Controller
             Log::error('Erro no Dashboard: ' . $e->getMessage());
             return response()->json(['error' => 'Erro interno: ' . $e->getMessage()], 500);
         }
+    }
+
+    /**
+     * 📍 MAPA DE RASTREAMENTO UNIFICADO
+     * Lista os agendamentos ativos de hoje dos estabelecimentos do
+     * sócio/gerente logado, para alimentar a tela
+     * backend/mobile/app/Proprietario/MapaRastreamento.tsx (seleção de
+     * qual cliente acompanhar em tempo real no mapa).
+     */
+    public function rastreamento(Request $request)
+    {
+        $user = $request->user();
+
+        if (!in_array($user->papel, ['admin', 'socio', 'gerente'])) {
+            return response()->json(['error' => 'Acesso não autorizado para o papel: ' . $user->papel], 403);
+        }
+
+        $meusEstabelecimentosIds = $user->estabelecimentos()->pluck('estabelecimentos.id');
+
+        $agendamentosDeHoje = Agendamento::with(['usuario:id,name,foto_perfil', 'estabelecimento:id,nome,latitude,longitude', 'servico:id,nome'])
+            ->whereIn('estabelecimento_id', $meusEstabelecimentosIds)
+            ->whereDate('data_agendamento', now()->toDateString())
+            ->whereIn('status', ['pendente', 'confirmado', 'aguardando_pagamento'])
+            ->orderBy('hora_agendamento', 'asc')
+            ->get();
+
+        return response()->json([
+            'agendamentos_ativos' => $agendamentosDeHoje->map(fn (Agendamento $agendamento) => [
+                'id' => $agendamento->id,
+                'status' => $agendamento->status,
+                'hora_agendamento' => $agendamento->hora_agendamento,
+                'usuario' => [
+                    'name' => $agendamento->usuario?->name,
+                    'foto_perfil' => $agendamento->usuario?->foto_perfil,
+                ],
+                'estabelecimento' => [
+                    'id' => $agendamento->estabelecimento?->id,
+                    'nome' => $agendamento->estabelecimento?->nome,
+                    'latitude' => $agendamento->estabelecimento?->latitude,
+                    'longitude' => $agendamento->estabelecimento?->longitude,
+                ],
+                'servico' => $agendamento->servico?->nome,
+            ]),
+        ]);
     }
 }
