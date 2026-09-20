@@ -300,10 +300,13 @@ Route::get('/meus-estornos', [EstornoController::class, 'index'])->name('cliente
     // Estabelecimentos Menssagens
 
     Route::get('/mensagens', [MensagemController::class, 'index'])->name('mensagens.index');
-    
+
+    // Contagem de não lidas pro sino de notificação (precisa vir antes de /mensagens/{id})
+    Route::get('/mensagens/nao-lidas', [MensagemController::class, 'naoLidas'])->name('mensagens.nao_lidas');
+
     // 2. Inicia o chat vindo do perfil do cliente e redireciona de imediato
     Route::post('/mensagens/iniciar', [MensagemController::class, 'iniciarConversa'])->name('mensagens.iniciar');
-    
+
     // 3. Abre a tela focada em um ID específico (Alterado para {id} para evitar conflitos no Ziggy)
     Route::get('/mensagens/{id}', [MensagemController::class, 'show'])->name('mensagens.show');
     

@@ -26,13 +26,26 @@ Broadcast::channel('App.Models.User.{id}', function ($user, $id) {
 // =====================================================================
 Broadcast::channel('conversa.{conversaId}', function ($user, $conversaId) {
     $conversa = Conversa::find($conversaId);
-    
+
     if (!$conversa) {
         return false;
     }
 
-    // Autoriza se for o cliente que iniciou a conversa ou o dono do estabelecimento
-    return $user->id === $conversa->usuario_id || $user->id === $conversa->estabelecimento->user_id;
+    // Cliente dono da conversa
+    if ((int) $user->id === (int) $conversa->usuario_id) {
+        return true;
+    }
+
+    // Funcionário especificamente designado pra essa conversa
+    if ($conversa->funcionario_id && $conversa->funcionario?->usuario_id && (int) $user->id === (int) $conversa->funcionario->usuario_id) {
+        return true;
+    }
+
+    // Qualquer pessoa vinculada ao estabelecimento (sócio, gerente, atendente...)
+    return \Illuminate\Support\Facades\DB::table('estabelecimento_usuario')
+        ->where('usuario_id', $user->id)
+        ->where('estabelecimento_id', $conversa->estabelecimento_id)
+        ->exists();
 });
 
 // =====================================================================

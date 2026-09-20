@@ -26,21 +26,40 @@ class MensagemEnviada implements ShouldBroadcast
     }
 
     /**
-     * Define em quais canais o evento será transmitido.
-     * Usaremos um canal privado restrito à conversa atual.
+     * Define em quais canais o evento será transmitido: o canal da conversa
+     * (pra quem já está com a tela aberta) e o canal privado de cada
+     * destinatário (pra atualizar o sino de notificações em qualquer tela).
      */
     public function broadcastOn(): array
     {
-        return [
-            new PrivateChannel('conversa.' . $this->mensagem->conversa_id),
-        ];
+        $canais = [new PrivateChannel('conversa.' . $this->mensagem->conversa_id)];
+
+        $conversa = $this->mensagem->conversa;
+        if ($conversa) {
+            foreach ($conversa->usuariosParaNotificar((int) $this->mensagem->remetente_id) as $userId) {
+                $canais[] = new PrivateChannel('App.Models.User.' . $userId);
+            }
+        }
+
+        return $canais;
     }
 
     /**
-     * Nome do evento que o React vai ouvir no Frontend.
+     * Nome do evento que o React/RN vai ouvir no Frontend.
      */
     public function broadcastAs(): string
     {
         return 'mensagem.recebida';
+    }
+
+    public function broadcastWith(): array
+    {
+        return [
+            'id'            => $this->mensagem->id,
+            'conversa_id'   => $this->mensagem->conversa_id,
+            'conteudo'      => $this->mensagem->conteudo,
+            'remetente_id'  => $this->mensagem->remetente_id,
+            'created_at'    => $this->mensagem->created_at?->toIso8601String(),
+        ];
     }
 }

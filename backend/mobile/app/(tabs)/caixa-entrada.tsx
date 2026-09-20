@@ -36,6 +36,9 @@ interface Conversa {
   tempo: string;
   avatar?: string | null;
   iniciais: string;
+  contexto?: string | null;
+  funcionario_nome?: string | null;
+  nao_lidas?: number;
 }
 
 export default function CaixaEntrada() {
@@ -88,10 +91,24 @@ export default function CaixaEntrada() {
 
       <View style={styles.itemTextos}>
         <Text style={styles.itemNome} numberOfLines={1}>{item.nome}</Text>
+        {(item.contexto || item.funcionario_nome) ? (
+          <Text style={styles.itemContexto} numberOfLines={1}>
+            {item.contexto ? `Sobre: ${item.contexto}` : ''}
+            {item.contexto && item.funcionario_nome ? ' · ' : ''}
+            {item.funcionario_nome ? `com ${item.funcionario_nome}` : ''}
+          </Text>
+        ) : null}
         <Text style={styles.itemUltimaMensagem} numberOfLines={1}>{item.ultima_mensagem}</Text>
       </View>
 
-      {item.tempo ? <Text style={styles.itemTempo}>{item.tempo}</Text> : null}
+      <View style={{ alignItems: 'flex-end', gap: 6 }}>
+        {item.tempo ? <Text style={styles.itemTempo}>{item.tempo}</Text> : null}
+        {!!item.nao_lidas && item.nao_lidas > 0 && (
+          <View style={styles.unreadBadge}>
+            <Text style={styles.unreadBadgeText}>{item.nao_lidas}</Text>
+          </View>
+        )}
+      </View>
     </TouchableOpacity>
   );
 
@@ -220,5 +237,25 @@ const styles = StyleSheet.create({
   itemTempo: {
     fontSize: 12,
     color: COLORS.gray,
+  },
+  itemContexto: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.primary,
+    marginBottom: 2,
+  },
+  unreadBadge: {
+    minWidth: 20,
+    height: 20,
+    paddingHorizontal: 5,
+    borderRadius: 10,
+    backgroundColor: COLORS.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  unreadBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '800',
   },
 });

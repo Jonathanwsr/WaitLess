@@ -249,6 +249,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // --- MENSAGENS / CHAT (equivalente mobile de MensagemController) ---
         Route::get('/mensagens', [MensagemMobileController::class, 'index']);
+        Route::get('/mensagens/nao-lidas', [MensagemMobileController::class, 'naoLidas']);
         Route::get('/mensagens/{id}', [MensagemMobileController::class, 'show']);
         Route::post('/mensagens/{id}/enviar', [MensagemMobileController::class, 'enviar']);
         Route::post('/mensagens/iniciar', [MensagemMobileController::class, 'iniciar']);

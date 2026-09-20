@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
+import axios from 'axios';
 import Dropdown from '@/Components/Dropdown';
 import { Link, usePage, router } from '@inertiajs/react';
-import { ShieldCheckIcon, UsersIcon, UserGroupIcon, MapIcon, BanknotesIcon, ClipboardDocumentListIcon, ArrowUturnLeftIcon, StarIcon, GlobeAltIcon } from '@heroicons/react/24/solid';
+import { ShieldCheckIcon, UsersIcon, UserGroupIcon, MapIcon, BanknotesIcon, ClipboardDocumentListIcon, ArrowUturnLeftIcon, StarIcon, GlobeAltIcon, BellIcon } from '@heroicons/react/24/solid';
 
 export default function AuthenticatedLayout({ header, children }) {
     const { auth, alertaCarteiraAsaas } = usePage().props;
@@ -22,7 +23,31 @@ export default function AuthenticatedLayout({ header, children }) {
     useEffect(() => {
         localStorage.setItem('waitless_sidebar_expanded', JSON.stringify(isSidebarExpanded));
     }, [isSidebarExpanded]);
-    
+
+    // Sino de notificações: mensagens não lidas do chat (Estabelecimentos/Mensagens
+    // e Cliente, ambos passam pela mesma rota mensagens.*). Busca ao carregar,
+    // e assina o canal privado do usuário pra atualizar assim que chega mensagem nova.
+    const [naoLidas, setNaoLidas] = useState({ total: 0, conversas: [] });
+
+    const buscarNaoLidas = () => {
+        axios.get(route('mensagens.nao_lidas'))
+            .then(({ data }) => setNaoLidas(data))
+            .catch(() => {});
+    };
+
+    useEffect(() => {
+        buscarNaoLidas();
+
+        if (!user?.id || !window.Echo) return;
+
+        const canal = window.Echo.private(`App.Models.User.${user.id}`);
+        canal.listen('.mensagem.recebida', () => buscarNaoLidas());
+
+        return () => {
+            window.Echo.leave(`App.Models.User.${user.id}`);
+        };
+    }, [user?.id]);
+
     // Controle extra para mobile (onde ele esconde a tela inteira em vez de recolher)
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -413,16 +438,54 @@ export default function AuthenticatedLayout({ header, children }) {
                                     </Link>
                                 )}
 
-                                {/* Sino de Notificação */}
-                                <button className="relative p-2 text-[#4F5B67] hover:text-gray-900 transition rounded-full hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700">
-                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                                    </svg>
-                                    <span className="absolute top-2.5 right-2.5 flex h-2.5 w-2.5">
-                                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                                        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#9A423D]"></span>
-                                    </span>
-                                </button>
+                                {/* Sino de Notificação: mensagens não lidas */}
+                                <Dropdown>
+                                    <Dropdown.Trigger>
+                                        <button className="relative p-2 text-[#4F5B67] hover:text-gray-900 transition rounded-full hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700">
+                                            <BellIcon className="w-6 h-6" />
+                                            {naoLidas.total > 0 && (
+                                                <span className="absolute top-0.5 right-0.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-[#9A423D] text-white text-[10px] font-bold leading-none">
+                                                    {naoLidas.total > 9 ? '9+' : naoLidas.total}
+                                                </span>
+                                            )}
+                                        </button>
+                                    </Dropdown.Trigger>
+
+                                    <Dropdown.Content align="right" width="96" contentClasses="py-2 bg-white dark:bg-gray-800">
+                                        <div className="px-4 py-2 border-b border-gray-100 dark:border-gray-700">
+                                            <p className="text-sm font-bold text-gray-900 dark:text-gray-100">Notificações</p>
+                                        </div>
+                                        {naoLidas.conversas.length === 0 ? (
+                                            <p className="px-4 py-6 text-sm text-gray-400 text-center">Nenhuma mensagem nova.</p>
+                                        ) : (
+                                            <div className="max-h-96 overflow-y-auto">
+                                                {naoLidas.conversas.map((c) => (
+                                                    <Link
+                                                        key={c.id}
+                                                        href={route('mensagens.show', c.id)}
+                                                        className="flex items-start gap-3 px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition"
+                                                    >
+                                                        <div className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm shrink-0 bg-indigo-100 text-indigo-600">
+                                                            {c.iniciais}
+                                                        </div>
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="flex items-center justify-between gap-2">
+                                                                <span className="text-sm font-bold text-gray-900 dark:text-gray-100 truncate">{c.nome}</span>
+                                                                <span className="text-[10px] font-bold text-white bg-[#9A423D] rounded-full w-5 h-5 flex items-center justify-center shrink-0">{c.nao_lidas}</span>
+                                                            </div>
+                                                            <p className="text-xs text-gray-500 truncate">{c.ultima_mensagem}</p>
+                                                        </div>
+                                                    </Link>
+                                                ))}
+                                            </div>
+                                        )}
+                                        <div className="px-4 pt-2 border-t border-gray-100 dark:border-gray-700">
+                                            <Dropdown.Link href={route('mensagens.index')} className="text-center font-semibold text-emerald-600">
+                                                Ver todas as conversas
+                                            </Dropdown.Link>
+                                        </div>
+                                    </Dropdown.Content>
+                                </Dropdown>
 
                                 {/* Divisória Vertical (Só no PC) */}
                                 <div className="h-8 w-[1px] bg-gray-300 dark:bg-gray-600 hidden sm:block mx-1"></div>

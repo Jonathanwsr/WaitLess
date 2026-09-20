@@ -20,9 +20,8 @@ COPY . .
 RUN composer install --no-dev --optimize-autoloader
 RUN npm install && npm run build
 
-# O Render vai usar a porta 10000 por padrão
+# O Render vai usar a porta 10000 por padrão, ou a variável que ele injetar
 ENV PORT=10000
 
-# Inicia o servidor do Laravel
-CMD php artisan config:clear && php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=$PORTT
-
+# Limpa o cache, roda as migrations e inicia o servidor do Laravel
+CMD sh -c "php artisan config:clear && php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=$PORT"

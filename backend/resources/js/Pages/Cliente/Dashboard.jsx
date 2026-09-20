@@ -2,9 +2,9 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { useState, useEffect } from 'react';
 import { 
-    StarIcon, ExclamationTriangleIcon, CheckCircleIcon, 
-    XCircleIcon, CalendarIcon, BellAlertIcon, 
-    MapPinIcon, ArrowPathIcon, DocumentArrowDownIcon
+    StarIcon, ExclamationTriangleIcon, CheckCircleIcon,
+    XCircleIcon, CalendarIcon, BellAlertIcon,
+    MapPinIcon, ArrowPathIcon, DocumentArrowDownIcon, ChatBubbleLeftRightIcon
 } from '@heroicons/react/24/solid';
 import { StarIcon as StarOutlineIcon } from '@heroicons/react/24/outline'; 
 import { motion, AnimatePresence } from 'framer-motion';
@@ -152,12 +152,20 @@ export default function ClienteDashboard({ auth, agendamentos = [], historico = 
                                 <span>Meus Estornos</span>
                             </Link>
 
-                            <Link 
-                                href={route('cliente.mensagens')} 
+                            <Link
+                                href={route('cliente.mensagens')}
                                 className="flex items-center justify-center gap-2 bg-white border border-gray-200 text-gray-800 font-bold py-3.5 px-6 rounded-2xl shadow-[0_4px_15px_rgba(0,0,0,0.03)] hover:shadow-lg hover:border-gray-300 transition-all text-sm w-full sm:w-auto"
                             >
                                 <BellAlertIcon className="w-5 h-5 text-[#E05D36]" />
                                 <span>Recompensas</span>
+                            </Link>
+
+                            <Link
+                                href={route('mensagens.index')}
+                                className="flex items-center justify-center gap-2 bg-white border border-gray-200 text-gray-800 font-bold py-3.5 px-6 rounded-2xl shadow-[0_4px_15px_rgba(0,0,0,0.03)] hover:shadow-lg hover:border-gray-300 transition-all text-sm w-full sm:w-auto"
+                            >
+                                <ChatBubbleLeftRightIcon className="w-5 h-5 text-emerald-600" />
+                                <span>Mensagens</span>
                             </Link>
                         </div>
                     </div>

@@ -43,6 +43,8 @@ interface ConversaAtiva {
   nome: string;
   avatar?: string | null;
   iniciais: string;
+  contexto?: string | null;
+  funcionario_nome?: string | null;
 }
 
 async function pegarToken() {
@@ -151,7 +153,16 @@ export default function ConversaScreen() {
           </View>
         )}
 
-        <Text style={styles.headerTitle} numberOfLines={1}>{conversa?.nome || 'Conversa'}</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.headerTitle} numberOfLines={1}>{conversa?.nome || 'Conversa'}</Text>
+          {(conversa?.contexto || conversa?.funcionario_nome) ? (
+            <Text style={styles.headerSubtitle} numberOfLines={1}>
+              {conversa?.contexto ? `Sobre: ${conversa.contexto}` : ''}
+              {conversa?.contexto && conversa?.funcionario_nome ? ' · ' : ''}
+              {conversa?.funcionario_nome ? `com ${conversa.funcionario_nome}` : ''}
+            </Text>
+          ) : null}
+        </View>
       </View>
 
       {loading ? (
@@ -235,7 +246,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
     color: COLORS.secondary,
-    flex: 1,
+  },
+  headerSubtitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: COLORS.primary,
+    marginTop: 1,
   },
   loadingBox: {
     flex: 1,

@@ -58,10 +58,30 @@ export default function ProprietarioDashboard() {
   // Calcula a largura dinâmica para os cards de métricas (Grid de 2 colunas)
   const metricCardWidth = (width - 56) / 2;
 
+  const [naoLidasTotal, setNaoLidasTotal] = useState(0);
+
   useEffect(() => {
     carregarUsuario();
     fetchDashboard();
+    fetchNaoLidas();
+    const intervalo = setInterval(fetchNaoLidas, 20000);
+    return () => clearInterval(intervalo);
   }, []);
+
+  const fetchNaoLidas = async () => {
+    try {
+      const token = await AsyncStorage.getItem('@waitless_token') || await AsyncStorage.getItem('@lokyva_token');
+      if (!token) return;
+      const response = await fetch(`${cleanBaseUrl}/mensagens/nao-lidas`, {
+        headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' }
+      });
+      if (!response.ok) return;
+      const json = await response.json();
+      setNaoLidasTotal(json.total || 0);
+    } catch (error) {
+      // não crítico, sino só fica sem badge
+    }
+  };
 
   const carregarUsuario = async () => {
     try {
@@ -249,9 +269,13 @@ export default function ProprietarioDashboard() {
             <Text style={styles.greetingText}>{userName}</Text>
           </View>
         </View>
-        <TouchableOpacity style={styles.notificationBtn}>
+        <TouchableOpacity style={styles.notificationBtn} onPress={() => router.push('/(tabs)/caixa-entrada' as never)}>
           <Feather name="bell" size={20} color="#64748B" />
-          <View style={styles.notificationBadge} />
+          {naoLidasTotal > 0 && (
+            <View style={styles.notificationBadge}>
+              <Text style={styles.notificationBadgeText}>{naoLidasTotal > 9 ? '9+' : naoLidasTotal}</Text>
+            </View>
+          )}
         </TouchableOpacity>
       </View>
 
@@ -406,7 +430,8 @@ const styles = StyleSheet.create({
   greetingLight: { fontSize: 12, color: '#64748B', marginBottom: 2 },
   greetingText: { fontSize: 18, fontWeight: '800', color: '#0F172A' },
   notificationBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 8, elevation: 2 },
-  notificationBadge: { position: 'absolute', top: 12, right: 12, width: 8, height: 8, borderRadius: 4, backgroundColor: '#EF4444', borderWidth: 2, borderColor: '#FFF' },
+  notificationBadge: { position: 'absolute', top: 6, right: 6, minWidth: 16, height: 16, paddingHorizontal: 3, borderRadius: 8, backgroundColor: '#EF4444', borderWidth: 2, borderColor: '#FFF', justifyContent: 'center', alignItems: 'center' },
+  notificationBadgeText: { color: '#FFF', fontSize: 9, fontWeight: '800' },
 
   container: { flex: 1 },
   
