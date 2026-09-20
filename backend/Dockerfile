@@ -20,8 +20,9 @@ COPY . .
 RUN composer install --no-dev --optimize-autoloader
 RUN npm install && npm run build
 
-# O Render vai usar a porta 10000 por padrão, ou a variável que ele injetar
+# Configura a porta do Render e a URL interna do Banco de Dados
 ENV PORT=10000
+ENV DATABASE_URL="postgresql://lokyva_byn2_user:Z2rHOXgwq2wXrVy80F4pUABmDY2fvf1Y@dpg-dao089740ujc73de4aag-a/lokyva_byn2?sslmode=require"
 
 # Limpa o cache, roda as migrations e inicia o servidor do Laravel
 CMD sh -c "php artisan config:clear && php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=$PORT"
