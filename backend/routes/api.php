@@ -356,10 +356,18 @@ Route::post('/reservas/item/{id}/store', [ClienteAgendamentoMobileController::cl
     // 4. RESERVAS / LOCAÇÕES (SAAS MÓDULO)
     // ==========================================
     // Rota GET que você usa no React via fetch('/api/catalogo/itens')
-    Route::get('/catalogo/itens', [ConfiguracoesMobileController::class, 'indexItensAluguel']); 
+    Route::get('/catalogo/itens', [ConfiguracoesMobileController::class, 'indexItensAluguel']);
     Route::post('/itens-aluguel', [ConfiguracoesMobileController::class, 'storeItemAluguel']);
     Route::put('/itens-aluguel/{item}', [ConfiguracoesMobileController::class, 'updateItemAluguel']);
     Route::delete('/itens-aluguel/{item}', [ConfiguracoesMobileController::class, 'destroyItemAluguel']);
+
+    // ==========================================
+    // 4b. LOCAÇÕES AVULSAS (sem Estabelecimento — dono aluga direto)
+    // ==========================================
+    Route::get('/locacoes-avulsas', [App\Http\Controllers\Api\Mobile\Proprietario\LocacaoAvulsaMobileController::class, 'index']);
+    Route::post('/locacoes-avulsas', [App\Http\Controllers\Api\Mobile\Proprietario\LocacaoAvulsaMobileController::class, 'store']);
+    Route::post('/locacoes-avulsas/{item}', [App\Http\Controllers\Api\Mobile\Proprietario\LocacaoAvulsaMobileController::class, 'update']);
+    Route::delete('/locacoes-avulsas/{item}', [App\Http\Controllers\Api\Mobile\Proprietario\LocacaoAvulsaMobileController::class, 'destroy']);
 });
 
 

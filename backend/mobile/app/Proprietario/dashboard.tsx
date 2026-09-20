@@ -37,9 +37,9 @@ interface DashboardData {
   };
 }
 
-const ENV_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api';
+const ENV_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api/mobile';
 const cleanBaseUrl = ENV_URL.endsWith('/') ? ENV_URL.slice(0, -1) : ENV_URL;
-const API_URL = `${cleanBaseUrl}/mobile/proprietario/dashboard`;
+const API_URL = `${cleanBaseUrl}/proprietario/dashboard`;
 
 export default function ProprietarioDashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
@@ -327,6 +327,16 @@ export default function ProprietarioDashboard() {
             <Text style={styles.btnCriarTexto}>Novo Local</Text>
           </TouchableOpacity>
 
+          <TouchableOpacity
+            style={styles.btnLocacoesAvulsas}
+            onPress={() => router.push('/Proprietario/LocacoesAvulsas' as never)}
+          >
+            <View style={styles.btnLocacoesIconBox}>
+              <Feather name="key" size={16} color="#FF5A00" />
+            </View>
+            <Text style={styles.btnLocacoesTexto}>Locações Avulsas</Text>
+          </TouchableOpacity>
+
           <TouchableOpacity style={styles.quickActionPill} onPress={() => router.push('/Proprietario/FuncionariosScreen')}>
             <Text style={styles.quickActionText}>Equipe</Text>
           </TouchableOpacity>
@@ -422,6 +432,10 @@ const styles = StyleSheet.create({
   btnCriarModerno: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#10B981', paddingLeft: 6, paddingRight: 16, paddingVertical: 6, borderRadius: 30, shadowColor: '#10B981', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 4 },
   btnCriarIconBox: { width: 28, height: 28, backgroundColor: '#FFFFFF', borderRadius: 14, justifyContent: 'center', alignItems: 'center', marginRight: 8 },
   btnCriarTexto: { fontSize: 13, fontWeight: '700', color: '#FFFFFF' },
+
+  btnLocacoesAvulsas: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', paddingLeft: 6, paddingRight: 16, paddingVertical: 6, borderRadius: 30, borderWidth: 1.5, borderColor: '#FF5A00' },
+  btnLocacoesIconBox: { width: 28, height: 28, backgroundColor: '#FFF3EC', borderRadius: 14, justifyContent: 'center', alignItems: 'center', marginRight: 8 },
+  btnLocacoesTexto: { fontSize: 13, fontWeight: '700', color: '#FF5A00' },
   
   // Pílulas normais
   quickActionPill: { backgroundColor: '#FFFFFF', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 5, elevation: 1 },

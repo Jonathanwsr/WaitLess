@@ -47,7 +47,22 @@ class ItemAluguel extends Model
         'percentual_desconto'      => 'decimal:2',
     
         'valor_final'              => 'decimal:2',
+        'fotos'                    => 'array',
 
+    ];
+
+    /**
+     * Categorias oferecidas nas telas de "Locações Avulsas" (dono aluga
+     * direto, sem estabelecimento) — subconjunto curado do enum completo
+     * de `categoria` (ver migration 2026_09_19_203535_...), agrupado por
+     * imóvel/veículo/equipamento pra montar o filtro no front-end.
+     */
+    const CATEGORIAS_LOCACAO_AVULSA = [
+        'Imóveis' => ['casa', 'apartamento', 'casa_praia', 'flat', 'chalé', 'cabana', 'kitnet', 'cobertura', 'sitio', 'chacara'],
+        'Veículos' => ['carro', 'moto', 'bicicleta', 'bicicleta_eletrica', 'patinete', 'patinete_eletrico', 'van', 'motorhome', 'trailer', 'barco', 'lancha'],
+        'Espaços' => ['sala', 'auditorio', 'espaco_eventos', 'salão_festas', 'quadra', 'quadra_futebol', 'quadra_volei', 'academia'],
+        'Equipamentos' => ['equipamento', 'ferramenta', 'gerador', 'compressor', 'camera', 'drone', 'notebook', 'projetor', 'audio_video', 'tenda'],
+        'Outros' => ['outro'],
     ];
 
     public function estabelecimento(): BelongsTo
@@ -63,6 +78,17 @@ class ItemAluguel extends Model
     public function produtosVinculados(): HasMany
     {
         return $this->hasMany(Produto::class, 'aluguel_id');
+    }
+
+    /**
+     * `itens_aluguel` também guarda linhas de carrinho (produto extra vinculado
+     * a um agendamento — ver AgendamentoController::storeCarrinho). Esse escopo
+     * filtra só os itens de catálogo de verdade (locações), excluindo essas linhas.
+     */
+    public function scopeCatalogo($query)
+    {
+        return $query->whereNull('agendamento_id')
+            ->whereNotIn('categoria', ['produto_extra', 'produto_avulso']);
     }
 
     public function getEnderecoCompletoAttribute(): ?string

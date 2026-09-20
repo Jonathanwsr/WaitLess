@@ -16,8 +16,9 @@ import {
     WalletIcon, 
     BanknotesIcon, 
     CommandLineIcon,
-    ArrowUturnLeftIcon
-} from '@heroicons/react/24/outline'; 
+    ArrowUturnLeftIcon,
+    KeyIcon
+} from '@heroicons/react/24/outline';
 
 export default function Dashboard({ auth, estabelecimentos = [], metricas = {} }) {
     return (
@@ -164,11 +165,19 @@ export default function Dashboard({ auth, estabelecimentos = [], metricas = {} }
                         </Link>
 
                         {/* 👉 NOVO BOTÃO ADICIONADO AQUI CONFORME SOLICITADO */}
-                        <Link 
-                            href="/meus-produtos" 
+                        <Link
+                            href="/meus-produtos"
                             className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 border border-transparent text-sm font-semibold text-white rounded-xl hover:bg-blue-700 transition shadow-sm"
                         >
                             Criar produtos
+                        </Link>
+
+                        <Link
+                            href={route('locacoes.avulsas.index')}
+                            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2 bg-[#FF5A00] border border-transparent text-sm font-semibold text-white rounded-xl hover:bg-orange-600 transition shadow-sm"
+                        >
+                            <KeyIcon className="w-4 h-4" />
+                            Locações Avulsas
                         </Link>
 
                         <Link 

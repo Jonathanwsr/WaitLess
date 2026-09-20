@@ -172,6 +172,7 @@ class ClienteExplorarMobileController extends Controller
             
             // Usando a mesma flexibilidade da consulta Web
             $queryItens = ItemAluguel::with(['estabelecimento'])
+                ->catalogo()
                 ->whereHas('estabelecimento');
 
             if ($busca) {
@@ -190,8 +191,22 @@ class ClienteExplorarMobileController extends Controller
 
             $itens = $queryItens->latest()->paginate($perPage);
 
+            // Donos que já têm um Estabelecimento "de negócio" de verdade — usado pra
+            // diferenciar, no card, uma locação avulsa ("direto com o dono").
+            $donosComEstabelecimento = \Illuminate\Support\Facades\DB::table('estabelecimento_usuario')->pluck('usuario_id')->unique();
+
+            // Nível premium do cliente logado, pra travar itens "somente_premium".
+            $usuarioLogado = Auth::user();
+            $planoService = new PlanoService();
+            $planosPremiumCliente = $planoService->planosPermitidos('user');
+            $clienteEhPremium = $usuarioLogado && in_array($usuarioLogado->plano_assinatura, $planosPremiumCliente, true);
+
             // Formatação Idêntica à Versão Web (Incluindo cálculos de promoção)
-            $itens->getCollection()->transform(function ($item) {
+            $itens->getCollection()->transform(function ($item) use ($donosComEstabelecimento, $clienteEhPremium) {
+                // Locação avulsa: dono aluga direto, sem um Estabelecimento cadastrado.
+                $item->direto_dono = !$donosComEstabelecimento->contains($item->estabelecimento_id);
+                $item->bloqueado = (bool) $item->somente_premium && !$clienteEhPremium;
+
                 // Fotos seguras
                 $fotosDecodificadas = is_string($item->fotos) ? json_decode($item->fotos, true) : $item->fotos;
                 $item->fotos = is_array($fotosDecodificadas) ? $fotosDecodificadas : [];

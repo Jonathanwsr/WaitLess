@@ -8,7 +8,7 @@ import {
     Search, MapPin, Calendar, Star, ArrowRight, ImageOff, Layers,
     Scissors, Home, Car, Laptop, PartyPopper, Store, Briefcase,
     Tag, ChevronDown, ChevronLeft, ChevronRight, Heart, ShoppingCart, Check,
-    HeartPulse, Plane, GraduationCap, Dog, Wrench
+    HeartPulse, Plane, GraduationCap, Dog, Wrench, UserRound, Lock
 } from 'lucide-react';
 
 export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtros = {} }) {
@@ -457,9 +457,11 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                                         
                                         const key = `${tipoItem}-${item.id}`;
                                         
-                                        const linkRoute = isEstabelecimentos
-                                            ? route('estabelecimentos.loja', item.id)
-                                            : route('itens.detalhes', item.id);
+                                        const linkRoute = item.bloqueado
+                                            ? route('assinatura.status')
+                                            : (isEstabelecimentos
+                                                ? route('estabelecimentos.loja', item.id)
+                                                : route('itens.detalhes', item.id));
 
                                         // ✅ AQUI LIGAMOS AS AVALIAÇÕES PARA SEREM VISTAS DO EXPLORAR!
                                         const routeAvaliacoes = route('explorar.avaliacoes', { id: item.id, tipo: tipoItem });
@@ -529,11 +531,27 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                                                                 PROMO
                                                             </div>
                                                         )}
+
+                                                        {tipoItem === 'item_aluguel' && item.direto_dono && (
+                                                            <div className="absolute bottom-4 right-4 bg-zinc-900/90 text-white text-[10px] font-bold px-3 py-1.5 rounded-2xl tracking-wider shadow-sm z-10 flex items-center gap-1.5">
+                                                                <UserRound className="w-3.5 h-3.5" /> DIRETO COM O DONO
+                                                            </div>
+                                                        )}
+
+                                                        {item.bloqueado && (
+                                                            <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center text-white text-center px-4 z-10">
+                                                                <Lock className="w-7 h-7 mb-2" />
+                                                                <span className="text-xs font-black uppercase tracking-wider">Exclusivo Premium</span>
+                                                                <span className="text-[10px] text-white/80 mt-1">Toque para assinar</span>
+                                                            </div>
+                                                        )}
                                                     </div>
 
                                                     <div className="p-6">
                                                         <p className="text-xs font-bold text-zinc-400 dark:text-zinc-500 uppercase tracking-widest mb-1.5">
-                                                            {isEstabelecimentos ? item.ramo_atuacao : item.estabelecimento?.nome}
+                                                            {isEstabelecimentos
+                                                                ? item.ramo_atuacao
+                                                                : (item.direto_dono ? `Com ${item.estabelecimento?.name || 'o dono'}` : item.estabelecimento?.name)}
                                                         </p>
                                                         
                                                         <h3 className="font-semibold text-lg text-zinc-900 dark:text-white leading-tight mb-3 line-clamp-2 group-hover:text-[#FF5A00] transition-colors">

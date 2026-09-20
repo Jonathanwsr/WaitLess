@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Head, Link, useForm } from '@inertiajs/react';
 // Importação do Layout Anticare adicionada aqui
-import AnticareLayout from '@/Layouts/AnticareLayout'; 
+import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout'; 
 import { 
     ArrowLeftIcon, 
     CalendarIcon, 
@@ -136,7 +136,7 @@ export default function DetalheCliente({ auth, estabelecimento, paciente, triage
     }) || [];
 
     return (
-        <AnticareLayout user={auth.user}>
+        <AuthenticatedLayout user={auth.user}>
             <Head title={`Detalhes - ${paciente?.nome || 'Cliente'}`} />
 
             <div className="min-h-screen bg-slate-50/60 font-sans pb-16">
@@ -574,6 +574,6 @@ export default function DetalheCliente({ auth, estabelecimento, paciente, triage
                     </div>
                 )}
             </div>
-        </AnticareLayout>
+        </AuthenticatedLayout>
     );
 }

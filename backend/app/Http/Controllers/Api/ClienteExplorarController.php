@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Estabelecimento;
 use App\Models\Avaliacao;
 use App\Models\ItemAluguel;
+use App\Services\PlanoService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth; // Adicionado para pegar o ID do usuário logado
@@ -230,7 +231,7 @@ class ClienteExplorarController extends Controller
 
                 }
 
-            ])->whereHas('estabelecimento');
+            ])->catalogo()->whereHas('estabelecimento');
 
 
 
@@ -452,6 +453,18 @@ class ClienteExplorarController extends Controller
 
             $itens = $queryItens->paginate($perPage)->withQueryString();
 
+            // Donos que já têm um Estabelecimento "de negócio" de verdade — usado pra
+            // diferenciar, no card, uma locação avulsa ("direto com o dono") de um item
+            // de um estabelecimento cadastrado.
+            $donosComEstabelecimento = DB::table('estabelecimento_usuario')->pluck('usuario_id')->unique();
+
+            // Nível premium do cliente logado, pra travar itens "somente_premium"
+            // (mesmo critério usado em OfertaPremiumController).
+            $usuarioLogado = Auth::user();
+            $planoService = new PlanoService();
+            $planosPremiumCliente = $planoService->planosPermitidos('user');
+            $clienteEhPremium = $usuarioLogado && in_array($usuarioLogado->plano_assinatura, $planosPremiumCliente, true);
+
 
 
             // ============================================================================
@@ -460,13 +473,17 @@ class ClienteExplorarController extends Controller
 
             // ============================================================================
 
-            $itens->getCollection()->transform(function ($item) use ($dataDesejada, $favItensAluguel, $favServicos) {
+            $itens->getCollection()->transform(function ($item) use ($dataDesejada, $favItensAluguel, $favServicos, $donosComEstabelecimento, $clienteEhPremium) {
 
                
 
                 // MÁGICA DOS FAVORITOS: Checa em ambas as listas (caso seja serviço ou aluguel)
 
                 $item->is_favorito = in_array($item->id, $favItensAluguel) || in_array($item->id, $favServicos);
+
+                // Locação avulsa: dono aluga direto, sem um Estabelecimento cadastrado.
+                $item->direto_dono = !$donosComEstabelecimento->contains($item->estabelecimento_id);
+                $item->bloqueado = (bool) $item->somente_premium && !$clienteEhPremium;
 
 
 

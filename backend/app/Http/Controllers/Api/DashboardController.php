@@ -19,7 +19,7 @@ class DashboardController extends Controller
         // ====================================================
         // 1. DASHBOARD DO DONO / GERENTE
         // ====================================================
-        if (in_array($user->papel, ['admin', 'socio', 'gerente'])) {
+        if (in_array(mb_strtolower((string) $user->papel), ['admin', 'socio', 'sócio', 'gerente', 'proprietario', 'proprietário'])) {
             $estabelecimentos = $user->estabelecimentosGerenciados()
                 ->select('estabelecimentos.id', 'nome', 'foto_perfil', 'avaliacao_media', 'arrecadacao_total', 'ativo')
                 ->withCount([

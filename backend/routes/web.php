@@ -89,8 +89,15 @@ Route::post('/assinaturas/nova', [App\Http\Controllers\Api\AssinaturaController:
 
 
     Route::get('/financeiro/conta', function () {
-    return Inertia::render('Estabelecimentos/FinanceiroConta'); 
+    return Inertia::render('Estabelecimentos/FinanceiroConta');
 })->name('financeiro.conta');
+
+    // Locações avulsas: sócio/proprietário aluga imóveis/veículos direto,
+    // sem precisar cadastrar um Estabelecimento antes.
+    Route::get('/minhas-locacoes', [App\Http\Controllers\Api\LocacaoAvulsaController::class, 'index'])->name('locacoes.avulsas.index');
+    Route::post('/minhas-locacoes', [App\Http\Controllers\Api\LocacaoAvulsaController::class, 'store'])->name('locacoes.avulsas.store');
+    Route::post('/minhas-locacoes/{item}', [App\Http\Controllers\Api\LocacaoAvulsaController::class, 'update'])->name('locacoes.avulsas.update');
+    Route::delete('/minhas-locacoes/{item}', [App\Http\Controllers\Api\LocacaoAvulsaController::class, 'destroy'])->name('locacoes.avulsas.destroy');
 
 
 

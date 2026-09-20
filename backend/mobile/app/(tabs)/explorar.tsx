@@ -76,6 +76,8 @@ interface ItemExplorar {
   modelo?: string;
   distancia?: string | number;
   duracao_minutos?: string | number;
+  direto_dono?: boolean;
+  bloqueado?: boolean;
 }
 
 export default function TelaExplorar() {
@@ -222,13 +224,17 @@ export default function TelaExplorar() {
     }
   };
 
-  const irParaDetalhes = (id: string | number) => {
-    router.push({ 
-      pathname: '/src/screens/ExplorarDetalhes' as never, 
-      params: { 
-        id: id.toString(), 
-        tipo: tipoAtivo 
-      } 
+  const irParaDetalhes = (item: ItemExplorar) => {
+    if (item.bloqueado) {
+      router.push('/assinatura' as never);
+      return;
+    }
+    router.push({
+      pathname: '/src/screens/ExplorarDetalhes' as never,
+      params: {
+        id: item.id.toString(),
+        tipo: tipoAtivo
+      }
     });
   };
 
@@ -370,7 +376,7 @@ export default function TelaExplorar() {
                     <TouchableOpacity 
                       key={index} 
                       style={[styles.cardDestaque, { width: width * 0.75 }]} // Largura baseada no tamanho da tela
-                      onPress={() => irParaDetalhes(item.id)}
+                      onPress={() => irParaDetalhes(item)}
                       activeOpacity={0.9}
                     >
                       <View style={styles.imageDestaqueContainer}>
@@ -425,14 +431,14 @@ export default function TelaExplorar() {
                   <TouchableOpacity 
                     key={index} 
                     style={styles.cardAirbnb}
-                    onPress={() => irParaDetalhes(item.id)}
+                    onPress={() => irParaDetalhes(item)}
                     activeOpacity={0.9}
                   >
                     <View style={styles.imageAirbnbContainer}>
-                      <Image 
-                        source={{ uri: item.foto_perfil || item.fotos?.[0] || 'https://via.placeholder.com/400x300' }} 
-                        style={styles.imageAirbnb} 
-                        contentFit="cover" 
+                      <Image
+                        source={{ uri: item.foto_perfil || item.fotos?.[0] || 'https://via.placeholder.com/400x300' }}
+                        style={[styles.imageAirbnb, item.bloqueado && { opacity: 0.4 }]}
+                        contentFit="cover"
                       />
                       <TouchableOpacity style={styles.heartBtnAbs} onPress={() => toggleFavorito(item)}>
                         <Ionicons
@@ -441,6 +447,18 @@ export default function TelaExplorar() {
                           color={isFavorito(item) ? COLORS.primary : COLORS.white}
                         />
                       </TouchableOpacity>
+                      {tipoAtivo === 'reservas' && item.direto_dono && (
+                        <View style={styles.donoBadge}>
+                          <Ionicons name="person" size={11} color={COLORS.white} />
+                          <Text style={styles.donoBadgeText}>Direto com o dono</Text>
+                        </View>
+                      )}
+                      {item.bloqueado && (
+                        <View style={styles.lockOverlay}>
+                          <Ionicons name="lock-closed" size={22} color={COLORS.white} />
+                          <Text style={styles.lockText}>Exclusivo Premium</Text>
+                        </View>
+                      )}
                     </View>
 
                     <View style={styles.infoAirbnb}>
@@ -529,7 +547,11 @@ const styles = StyleSheet.create({
   imageAirbnbContainer: { width: '100%', height: 280, borderRadius: 16, overflow: 'hidden', marginBottom: 12, position: 'relative' },
   imageAirbnb: { width: '100%', height: '100%', backgroundColor: COLORS.lightGray },
   heartBtnAbs: { position: 'absolute', top: 12, right: 12, width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(0,0,0,0.25)', alignItems: 'center', justifyContent: 'center' },
-  
+  donoBadge: { position: 'absolute', bottom: 12, right: 12, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(15,23,42,0.85)', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14 },
+  donoBadgeText: { color: COLORS.white, fontSize: 10, fontWeight: '800' },
+  lockOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center' },
+  lockText: { color: COLORS.white, fontSize: 11, fontWeight: '800', marginTop: 6, textTransform: 'uppercase' },
+
   infoAirbnb: { paddingHorizontal: 4 },
   titleAirbnb: { fontSize: 18, fontWeight: '700', color: COLORS.secondary, flex: 1, marginRight: 8 },
   subTitleAirbnb: { fontSize: 15, color: COLORS.gray, marginTop: 2 },
