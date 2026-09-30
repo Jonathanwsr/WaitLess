@@ -1,418 +1,521 @@
-
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
     <title>Comprovante de Estorno - {{ $estorno->codigo_estorno }}</title>
 
-    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
     <style>
-        @media print {
-            @page {
-                size: A4;
-                margin: 12mm;
-            }
+        :root {
+            --primary: #FF5A00;
+            --primary-light: #FFF5EF;
+            --primary-border: #FFDCC4;
+            --text-main: #1E293B;
+            --text-muted: #64748B;
+            --text-light: #94A3B8;
+            --bg-body: #F1F5F9;
+            --bg-paper: #FFFFFF;
+            --border-color: #E2E8F0;
+            --success-bg: #D1FAE5;
+            --success-text: #065F46;
+            --success-border: #A7F3D0;
+        }
 
-            body {
-                background: white !important;
-                padding: 0 !important;
-            }
-
-            .no-print {
-                display: none !important;
-            }
-
-            .receipt {
-                box-shadow: none !important;
-                border: none !important;
-                max-width: 100% !important;
-            }
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
         }
 
         body {
-            font-family: Inter, ui-sans-serif, system-ui, -apple-system,
-                BlinkMacSystemFont, "Segoe UI", sans-serif;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-body);
+            color: var(--text-main);
+            line-height: 1.5;
+            font-size: 12px;
+            display: flex;
+            justify-content: center;
+            padding: 20px;
         }
 
-        .receipt {
-            max-width: 760px;
+        /* Container que simula a folha A4 na tela */
+        .a4-container {
+            background: var(--bg-paper);
+            width: 100%;
+            max-width: 210mm;
+            min-height: 297mm;
+            margin: 0 auto;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
+            border-radius: 8px;
+            overflow: hidden;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .brand-bar {
+            height: 8px;
+            width: 100%;
+            background: var(--primary);
+        }
+
+        .page-content {
+            padding: 40px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            padding-bottom: 24px;
+            margin-bottom: 24px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .brand .logo-text {
+            font-size: 28px;
+            font-weight: 800;
+            color: var(--text-main);
+            letter-spacing: -0.5px;
+            line-height: 1;
+        }
+
+        .brand .logo-text span {
+            color: var(--primary);
+        }
+
+        .brand .tagline {
+            margin-top: 6px;
+            font-size: 10px;
+            color: var(--text-light);
+            font-weight: 500;
+            max-width: 280px;
+            line-height: 1.4;
+        }
+
+        .status-container {
+            text-align: right;
+        }
+
+        .badge-success {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 14px;
+            background-color: var(--success-bg);
+            border: 1px solid var(--success-border);
+            border-radius: 100px;
+            color: var(--success-text);
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .badge-success .dot {
+            width: 6px;
+            height: 6px;
+            background-color: #10B981;
+            border-radius: 50%;
+        }
+
+        .status-container p {
+            margin-top: 8px;
+            font-size: 10px;
+            color: var(--text-light);
+        }
+
+        /* Protocol Box */
+        .protocol-box {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: #F8FAFC;
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 16px 20px;
+            margin-bottom: 24px;
+        }
+
+        .protocol-item {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .protocol-item.right {
+            text-align: right;
+        }
+
+        .label-small {
+            font-size: 10px;
+            color: var(--text-light);
+            text-transform: uppercase;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+
+        .protocol-value {
+            font-family: monospace;
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        .protocol-value.muted {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        /* Value Box */
+        .value-box {
+            background-color: var(--primary-light);
+            border: 1px solid var(--primary-border);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 32px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+        }
+
+        .value-left .currency {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-muted);
+        }
+
+        .value-left .amount {
+            font-size: 32px;
+            font-weight: 800;
+            color: var(--text-main);
+            letter-spacing: -0.5px;
+            line-height: 1.1;
+            margin-top: 4px;
+        }
+
+        .value-right {
+            text-align: right;
+        }
+
+        .value-right .status-text {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--success-text);
+            margin-top: 4px;
+        }
+
+        /* Details Section */
+        .section-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .section-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            background-color: #F1F5F9;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-muted);
+            font-weight: 700;
+            font-size: 12px;
+        }
+
+        .section-title h2 {
+            font-size: 15px;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        .section-title p {
+            font-size: 11px;
+            color: var(--text-light);
+        }
+
+        .details-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            margin-bottom: 32px;
+        }
+
+        .detail-item .value {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-main);
+            margin-top: 2px;
+        }
+
+        .detail-item .sub-value {
+            font-size: 10px;
+            color: var(--text-light);
+            margin-top: 2px;
+        }
+
+        /* Divider */
+        .divider {
+            border-top: 1px dashed var(--border-color);
+            margin: 0 0 32px 0;
+        }
+
+        /* Info Box */
+        .info-box {
+            display: flex;
+            gap: 16px;
+            padding: 20px;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            margin-bottom: auto; /* Empurra o footer para baixo */
+        }
+
+        .info-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            background-color: var(--success-bg);
+            color: var(--success-text);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            font-weight: 900;
+            flex-shrink: 0;
+        }
+
+        .info-text h3 {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-main);
+            margin-bottom: 4px;
+        }
+
+        .info-text p {
+            font-size: 11px;
+            color: var(--text-muted);
+            line-height: 1.6;
+        }
+
+        /* Footer */
+        .footer {
+            margin-top: 40px;
+            padding-top: 24px;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            gap: 24px;
+        }
+
+        .footer-disclaimer {
+            max-width: 400px;
+        }
+
+        .footer-disclaimer p {
+            font-size: 9px;
+            color: var(--text-light);
+            line-height: 1.5;
+            margin-bottom: 8px;
+        }
+        
+        .footer-disclaimer p:last-child {
+            margin-bottom: 0;
+        }
+
+        .footer-meta {
+            text-align: right;
+            flex-shrink: 0;
+        }
+
+        .footer-meta .date {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        .footer-bottom {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 24px;
+            padding-top: 16px;
+            border-top: 1px solid #F1F5F9;
+            font-size: 9px;
+            color: var(--text-light);
+        }
+
+        /* Responsividade para Celulares */
+        @media (max-width: 600px) {
+            body { padding: 0; background: var(--bg-paper); }
+            .a4-container { box-shadow: none; border-radius: 0; min-height: 100vh; }
+            .page-content { padding: 24px; }
+            .header { flex-direction: column; gap: 20px; }
+            .status-container { text-align: left; }
+            .protocol-box { flex-direction: column; align-items: flex-start; gap: 16px; }
+            .protocol-item.right { text-align: left; }
+            .value-box { flex-direction: column; align-items: flex-start; gap: 16px; }
+            .value-right { text-align: left; }
+            .details-grid { grid-template-columns: 1fr; gap: 20px; }
+            .footer { flex-direction: column; align-items: flex-start; }
+            .footer-meta { text-align: left; }
+        }
+
+        /* Regras de Impressão (Print/PDF) */
+        @page {
+            size: A4 portrait;
+            margin: 0;
+        }
+
+        @media print {
+            body { padding: 0; background: white; }
+            .a4-container { box-shadow: none; border-radius: 0; max-width: 100%; min-height: 297mm; }
+            .page-content { padding: 15mm; }
         }
     </style>
 </head>
+<body onload="window.print()">
 
-<body class="bg-[#f5f6f8] text-[#252525] p-6 md:p-10" onload="window.print()">
+<div class="a4-container">
+    <div class="brand-bar"></div>
 
-    <div class="receipt mx-auto bg-white rounded-2xl shadow-xl overflow-hidden">
-
-        <!-- ========================================= -->
+    <div class="page-content">
+        
         <!-- CABEÇALHO -->
-        <!-- ========================================= -->
-
-        <div class="px-8 pt-8 pb-6">
-
-            <div class="flex items-start justify-between gap-6">
-
-                <!-- Marca -->
-                <div>
-                    <div class="flex items-center gap-3">
-
-                        <div class="w-11 h-11 rounded-xl bg-[#C9826A]
-                                    flex items-center justify-center
-                                    text-white font-black text-lg">
-                            W
-                        </div>
-
-                        <div>
-                            <h1 class="text-2xl font-black tracking-tight text-[#252525]">
-                                LOKYVA
-                            </h1>
-
-                           
-<p class="text-xs text-gray-500 mt-0.5">
-    Plataforma digital de serviços, reservas e agendamentos,
-    conectando clientes e estabelecimentos de forma simples,
-    rápida e segura.
-</p>
-```
-
-                        </div>
-
-                    </div>
+        <div class="header">
+            <div class="brand">
+                <div class="logo-text">LOK<span>Y</span>VA</div>
+                <div class="tagline">
+                    Plataforma digital de serviços, reservas e agendamentos, conectando clientes e estabelecimentos de forma simples, rápida e segura.
                 </div>
-
-                <!-- Status -->
-                <div class="text-right">
-
-                    <div class="inline-flex items-center gap-2
-                                px-3 py-1.5 rounded-full
-                                bg-green-50 border border-green-100">
-
-                        <span class="w-2 h-2 rounded-full bg-green-500"></span>
-
-                        <span class="text-xs font-bold text-green-700">
-                            ESTORNO PROCESSADO
-                        </span>
-
-                    </div>
-
-                    <p class="text-[11px] text-gray-400 mt-2">
-                        Comprovante oficial
-                    </p>
-
-                </div>
-
             </div>
-
+            
+            <div class="status-container">
+                <div class="badge-success">
+                    <span class="dot"></span>
+                    ESTORNO PROCESSADO
+                </div>
+                <p>Comprovante oficial</p>
+            </div>
         </div>
 
-
-        <!-- ========================================= -->
         <!-- PROTOCOLO -->
-        <!-- ========================================= -->
-
-        <div class="mx-8 mb-7 rounded-xl border border-gray-200 bg-gray-50 px-5 py-4">
-
-            <div class="flex items-center justify-between gap-4">
-
-                <div>
-                    <p class="text-[10px] uppercase tracking-wider
-                              font-bold text-gray-400">
-                        Protocolo do estorno
-                    </p>
-
-                    <p class="font-mono text-sm font-bold text-gray-800 mt-1">
-                        {{ $estorno->codigo_estorno }}
-                    </p>
-                </div>
-
-                <div class="text-right">
-                    <p class="text-[10px] uppercase tracking-wider
-                              font-bold text-gray-400">
-                        ID do Gateway
-                    </p>
-
-                    <p class="font-mono text-xs text-gray-600 mt-1">
-                        {{ $estorno->id_estorno_asaas ?? $estorno->id_transacao_asaas ?? 'N/A' }}
-                    </p>
-                </div>
-
+        <div class="protocol-box">
+            <div class="protocol-item">
+                <span class="label-small">Protocolo do estorno</span>
+                <span class="protocol-value">{{ $estorno->codigo_estorno }}</span>
             </div>
-
+            
+            <div class="protocol-item right">
+                <span class="label-small">ID do Gateway</span>
+                <span class="protocol-value muted">{{ $estorno->id_estorno_asaas ?? $estorno->id_transacao_asaas ?? 'N/A' }}</span>
+            </div>
         </div>
 
-
-        <!-- ========================================= -->
         <!-- VALOR -->
-        <!-- ========================================= -->
-
-        <div class="mx-8 mb-8">
-
-            <div class="rounded-2xl bg-[#fcf7f5]
-                        border border-[#f0ddd7]
-                        p-6">
-
-                <p class="text-xs font-semibold text-gray-500">
-                    Valor total reembolsado
-                </p>
-
-                <div class="flex items-end justify-between gap-4 mt-2">
-
-                    <div>
-                        <span class="text-sm font-medium text-gray-500">
-                            BRL
-                        </span>
-
-                        <div class="text-4xl font-black tracking-tight
-                                    text-[#252525]">
-                            R$
-                            {{ number_format($estorno->valor_estornado, 2, ',', '.') }}
-                        </div>
-                    </div>
-
-                    <div class="text-right">
-                        <p class="text-[10px] uppercase tracking-wider
-                                  font-bold text-gray-400">
-                            Status financeiro
-                        </p>
-
-                        <p class="text-sm font-bold text-green-600 mt-1">
-                            Valor devolvido
-                        </p>
-                    </div>
-
+        <div class="value-box">
+            <div class="value-left">
+                <div class="label-small">Valor total reembolsado</div>
+                <div class="amount">
+                    <span class="currency">R$</span> 
+                    {{ number_format($estorno->valor_estornado, 2, ',', '.') }}
                 </div>
-
             </div>
-
+            
+            <div class="value-right">
+                <div class="label-small">Status financeiro</div>
+                <div class="status-text">Valor devolvido</div>
+            </div>
         </div>
 
-
-        <!-- ========================================= -->
         <!-- DETALHES DA TRANSAÇÃO -->
-        <!-- ========================================= -->
-
-        <div class="px-8">
-
-            <div class="flex items-center gap-3 mb-5">
-
-                <div class="w-8 h-8 rounded-lg bg-gray-100
-                            flex items-center justify-center
-                            text-gray-600 font-bold text-sm">
-                    01
-                </div>
-
-                <div>
-                    <h2 class="text-base font-bold text-gray-800">
-                        Detalhes da transação
-                    </h2>
-
-                    <p class="text-xs text-gray-400">
-                        Informações relacionadas ao pagamento original
-                    </p>
-                </div>
-
+        <div class="section-title">
+            <div class="section-icon">01</div>
+            <div>
+                <h2>Detalhes da transação</h2>
+                <p>Informações relacionadas ao pagamento original e devolução</p>
             </div>
-
-
-            <div class="grid grid-cols-2 gap-x-8 gap-y-6">
-
-                <!-- Estabelecimento -->
-                <div>
-                    <p class="text-[10px] uppercase tracking-wider
-                              font-bold text-gray-400 mb-1">
-                        Estabelecimento
-                    </p>
-
-                    <p class="text-sm font-semibold text-gray-800">
-                        {{ $estorno->estabelecimento->nome ?? 'N/A' }}
-                    </p>
-                </div>
-
-
-                <!-- Cliente -->
-                <div>
-                    <p class="text-[10px] uppercase tracking-wider
-                              font-bold text-gray-400 mb-1">
-                        Cliente
-                    </p>
-
-                    <p class="text-sm font-semibold text-gray-800">
-                        {{ $estorno->cliente->name ?? 'N/A' }}
-                    </p>
-                </div>
-
-
-                <!-- Pagamento -->
-                <div>
-                    <p class="text-[10px] uppercase tracking-wider
-                              font-bold text-gray-400 mb-1">
-                        Pagamento original
-                    </p>
-
-                    <p class="text-sm font-semibold text-gray-800">
-                        {{ \Carbon\Carbon::parse($estorno->data_pagamento)->format('d/m/Y H:i') }}
-                    </p>
-                </div>
-
-
-                <!-- Estorno -->
-                <div>
-                    <p class="text-[10px] uppercase tracking-wider
-                              font-bold text-gray-400 mb-1">
-                        Estorno realizado
-                    </p>
-
-                    <p class="text-sm font-semibold text-gray-800">
-                        {{ \Carbon\Carbon::parse($estorno->data_estorno)->format('d/m/Y H:i') }}
-                    </p>
-                </div>
-
-
-                <!-- Método -->
-                <div>
-                    <p class="text-[10px] uppercase tracking-wider
-                              font-bold text-gray-400 mb-1">
-                        Método de devolução
-                    </p>
-
-                    <p class="text-sm font-semibold text-gray-800">
-                        {{ $estorno->forma_pagamento }}
-                    </p>
-
-                    <p class="text-[11px] text-gray-400 mt-0.5">
-                        Processamento automático via gateway
-                    </p>
-                </div>
-
-
-                <!-- Motivo -->
-                <div>
-                    <p class="text-[10px] uppercase tracking-wider
-                              font-bold text-gray-400 mb-1">
-                        Motivo do estorno
-                    </p>
-
-                    <p class="text-sm font-semibold text-gray-800">
-                        {{ $estorno->motivo }}
-                    </p>
-                </div>
-
-            </div>
-
         </div>
 
+        <div class="details-grid">
+            <div class="detail-item">
+                <div class="label-small">Estabelecimento</div>
+                <div class="value">{{ $estorno->estabelecimento->nome ?? 'N/A' }}</div>
+            </div>
 
-        <!-- ========================================= -->
-        <!-- DIVISOR -->
-        <!-- ========================================= -->
+            <div class="detail-item">
+                <div class="label-small">Cliente</div>
+                <div class="value">{{ $estorno->cliente->name ?? 'N/A' }}</div>
+            </div>
 
-        <div class="mx-8 my-8 border-t border-dashed border-gray-200"></div>
+            <div class="detail-item">
+                <div class="label-small">Pagamento original</div>
+                <div class="value">{{ \Carbon\Carbon::parse($estorno->data_pagamento)->format('d/m/Y H:i') }}</div>
+            </div>
 
+            <div class="detail-item">
+                <div class="label-small">Estorno realizado</div>
+                <div class="value">{{ \Carbon\Carbon::parse($estorno->data_estorno)->format('d/m/Y H:i') }}</div>
+            </div>
 
-        <!-- ========================================= -->
+            <div class="detail-item">
+                <div class="label-small">Método de devolução</div>
+                <div class="value">{{ $estorno->forma_pagamento }}</div>
+                <div class="sub-value">Processamento automático via gateway</div>
+            </div>
+
+            <div class="detail-item">
+                <div class="label-small">Motivo do estorno</div>
+                <div class="value">{{ $estorno->motivo }}</div>
+            </div>
+        </div>
+
+        <div class="divider"></div>
+
         <!-- INFORMAÇÃO DO REEMBOLSO -->
-        <!-- ========================================= -->
-
-        <div class="mx-8 mb-8">
-
-            <div class="rounded-xl border border-gray-200 p-5">
-
-                <div class="flex gap-4">
-
-                    <div class="w-9 h-9 flex-shrink-0 rounded-lg
-                                bg-green-50
-                                flex items-center justify-center">
-
-                        <span class="text-green-600 font-bold">
-                            ✓
-                        </span>
-
-                    </div>
-
-                    <div>
-
-                        <h3 class="text-sm font-bold text-gray-800">
-                            Reembolso confirmado
-                        </h3>
-
-                        <p class="text-xs leading-5 text-gray-500 mt-1">
-                            O estorno foi processado e o valor foi encaminhado
-                            para o meio de pagamento utilizado na transação.
-                        </p>
-
-                    </div>
-
-                </div>
-
+        <div class="info-box">
+            <div class="info-icon">✓</div>
+            <div class="info-text">
+                <h3>Reembolso confirmado</h3>
+                <p>O estorno foi processado com sucesso na plataforma e o valor foi encaminhado para o meio de pagamento utilizado na transação original.</p>
             </div>
-
         </div>
 
-
-        <!-- ========================================= -->
         <!-- RODAPÉ -->
-        <!-- ========================================= -->
-
-        <div class="bg-[#fafafa] border-t border-gray-100 px-8 py-6">
-
-            <div class="flex justify-between items-start gap-6">
-
-                <div class="max-w-lg">
-
-                    <p class="text-[10px] uppercase tracking-wider
-                              font-bold text-gray-400 mb-2">
-                        Informações importantes
-                    </p>
-
-                    <p class="text-[10px] leading-4 text-gray-400">
-                        Este documento confirma o processamento do estorno
-                        registrado na plataforma Lokyva. O prazo para
-                        visualização do valor pode variar conforme a instituição
-                        financeira, banco ou emissor do cartão.
-                    </p>
-
-                    <p class="text-[10px] leading-4 text-gray-400 mt-2">
-                        Em alguns casos, o valor pode aparecer em até 72 horas
-                        úteis ou em até duas faturas, dependendo do meio de
-                        pagamento.
-                    </p>
-
-                </div>
-
-                <div class="text-right flex-shrink-0">
-
-                    <p class="text-[10px] text-gray-400">
-                        Documento gerado em
-                    </p>
-
-                    <p class="text-[11px] font-semibold text-gray-600 mt-1">
-                        {{ now()->format('d/m/Y H:i') }}
-                    </p>
-
-                </div>
-
+        <div class="footer">
+            <div class="footer-disclaimer">
+                <div class="label-small">Informações importantes</div>
+                <p>Este documento confirma o processamento do estorno registrado na plataforma Lokyva. O prazo para visualização do valor pode variar conforme a instituição financeira, banco ou emissor do cartão.</p>
+                <p>Em alguns casos, o valor pode aparecer em até 72 horas úteis ou em até duas faturas, dependendo do meio de pagamento e fechamento da fatura.</p>
             </div>
-
-            <div class="mt-5 pt-4 border-t border-gray-200
-                        flex justify-between items-center">
-
-                <p class="text-[10px] text-gray-400">
-                    Lokyva · Comprovante de Estorno
-                </p>
-
-                <p class="text-[10px] font-mono text-gray-400">
-                    {{ $estorno->codigo_estorno }}
-                </p>
-
+            
+            <div class="footer-meta">
+                <div class="label-small">Documento gerado em</div>
+                <div class="date">{{ now()->format('d/m/Y H:i') }}</div>
             </div>
+        </div>
 
+        <div class="footer-bottom">
+            <span>Lokyva · Comprovante de Estorno</span>
+            <span style="font-family: monospace;">{{ $estorno->codigo_estorno }}</span>
         </div>
 
     </div>
+</div>
 
 </body>
 </html>
-

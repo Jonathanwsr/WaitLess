@@ -22,7 +22,12 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Carbon\Carbon;
 use Inertia\Inertia;
+use App\Services\CupomService;
+use App\Services\Locacao\DisponibilidadeService;
 use App\Services\PagamentoService;
+use App\Services\PontosService;
+use App\Services\PrecificacaoService;
+use App\Services\AtividadeEquipeService;
 use Exception;
 
 class AgendamentoController extends Controller
@@ -45,17 +50,39 @@ class AgendamentoController extends Controller
         }
 
         $agendamento->update($dados);
+        $this->registrarAtividade($request->user(), $agendamento, 'status_atualizado', match ($validated['status']) {
+            'confirmado' => 'confirmou',
+            'em_atendimento' => 'colocou em atendimento',
+            'cancelado' => 'cancelou',
+            default => 'moveu para pendente',
+        });
         return redirect()->back();
+    }
+
+    /** Alimenta o painel de "atividade da equipe" do sócio/gerente em tempo real. */
+    private function registrarAtividade(?User $ator, Agendamento $agendamento, string $acao, string $verbo): void
+    {
+        if (!$ator || !$agendamento->estabelecimento_id) {
+            return;
+        }
+
+        $agendamento->loadMissing(['usuario', 'servico']);
+        $cliente = $agendamento->usuario->name ?? 'um cliente';
+        $servico = $agendamento->servico->nome ?? null;
+        $descricao = "{$ator->name} {$verbo} {$cliente}" . ($servico ? " ({$servico})" : '');
+
+        AtividadeEquipeService::registrar($agendamento->estabelecimento_id, $ator, $acao, $descricao, $agendamento->id);
     }
 
 public function chamar($id)
     {
         $agendamento = Agendamento::with(['usuario', 'estabelecimento', 'servico'])->findOrFail($id);
-        
+
         $agendamento->update([
             'status' => 'confirmado', // Em atendimento
-            'adiado_ate' => null 
+            'adiado_ate' => null
         ]);
+        $this->registrarAtividade(Auth::user(), $agendamento, 'chamou', 'chamou para atendimento');
 
         // DISPARO DE E-MAIL PARA O CLIENTE
         if ($agendamento->usuario && $agendamento->usuario->email) {
@@ -73,10 +100,9 @@ public function chamar($id)
                            . "Por favor, dirija-se ao local imediatamente e apresente seu PIN de segurança ao finalizar o serviço.\n\n"
                            . "Atenciosamente,\nEquipe Lokyva.";
 
-            \Illuminate\Support\Facades\Mail::raw($mensagemEmail, function ($message) use ($agendamento) {
-                $message->to($agendamento->usuario->email)
-                        ->subject('Sua vez chegou! - Lokyva');
-            });
+            // Na fila: chamar o próximo cliente não pode ficar esperando o e-mail sair.
+            \Illuminate\Support\Facades\Mail::to($agendamento->usuario->email)
+                ->queue(new \App\Mail\NotificacaoTexto('Sua vez chegou! - Lokyva', $mensagemEmail));
         }
 
         return redirect()->back()->with('success', 'Cliente chamado para atendimento! Um e-mail foi enviado para ele.');
@@ -150,10 +176,8 @@ public function pularProximo($id)
                            . "Por favor, acompanhe o andamento pelo aplicativo para não perder sua vez novamente!\n\n"
                            . "Atenciosamente,\nEquipe Lokyva.";
 
-            \Illuminate\Support\Facades\Mail::raw($mensagemEmail, function ($message) use ($agendamento) {
-                $message->to($agendamento->usuario->email)
-                        ->subject('Sua vez passou! Você foi para o final da fila - Lokyva');
-            });
+            \Illuminate\Support\Facades\Mail::to($agendamento->usuario->email)
+                ->queue(new \App\Mail\NotificacaoTexto('Sua vez passou! Você foi para o final da fila - Lokyva', $mensagemEmail));
         }
 
         return redirect()->back()->with('error', "Cliente perdeu a vez e foi realocado para o final da fila (Novo horário: " . substr($novaHora, 0, 5) . "). O E-mail de aviso foi disparado.");
@@ -187,7 +211,7 @@ public function pularProximo($id)
             }
 
             $valorFinal = $valorOriginal - $desconto;
-            $taxaMarketplace = $valorFinal * 0.12; 
+            $taxaMarketplace = \App\Support\Taxas::sobre($valorFinal); 
             $estabelecimento = Estabelecimento::find($agendamento->estabelecimento_id);
 
             // Processamento do Pagamento (Registrando Físico ou Confirmando Online)
@@ -276,6 +300,7 @@ public function pularProximo($id)
             ]);
 
             DB::commit();
+            $this->registrarAtividade($request->user(), $agendamento, 'finalizou', 'finalizou o atendimento de');
             return back()->with('success', 'Finalizado com Sucesso! ' . $pontosGanhos . ' pontos transferidos ao cliente.');
 
         } catch (\Exception $e) {
@@ -511,6 +536,27 @@ public function pularProximo($id)
         ]);
     }
 
+    /**
+     * Horários com vaga livre de um serviço num dia — usado pelo dono ao marcar uma reserva pelo
+     * painel (Estabelecimentos/DetalheCliente.jsx). Cada horário só some da lista quando as vagas
+     * dele realmente acabam (ver VagasServicoService), não assim que o primeiro cliente agenda.
+     */
+    public function obterHorariosDisponiveis(Request $request, $id, \App\Services\Agendamento\VagasServicoService $vagasServico)
+    {
+        $data = $request->query('data');
+        if (!$data) {
+            return response()->json([]);
+        }
+
+        $servico = Servico::findOrFail($id);
+        $horarios = is_string($servico->horarios_disponiveis) ? json_decode($servico->horarios_disponiveis, true) : ($servico->horarios_disponiveis ?? []);
+        $horarios = is_array($horarios) ? $horarios : [];
+
+        $livres = array_values(array_filter($horarios, fn ($hora) => $vagasServico->vagasLivres($servico, $data, $hora) > 0));
+
+        return response()->json($livres);
+    }
+
     public function detalheCliente($id)
     {
         $userLogado = auth()->user();
@@ -554,7 +600,14 @@ public function pularProximo($id)
 
         $servicosDisponiveis = DB::table('servicos')
             ->where('estabelecimento_id', $estabelecimento->id)
-            ->get(['id', 'nome', 'valor']);
+            ->where('ativo', true)
+            ->get(['id', 'nome', 'valor', 'configuracoes'])
+            ->map(function ($s) {
+                $config = json_decode((string) $s->configuracoes, true) ?? [];
+                $s->max_pessoas = max(1, (int) ($config['max_pessoas'] ?? 1));
+                unset($s->configuracoes);
+                return $s;
+            });
 
         $historico = Agendamento::with(['servico', 'funcionario'])
             ->where('usuario_id', $cliente->id)
@@ -670,6 +723,23 @@ public function pularProximo($id)
         return $pdf->download("Comprovante_Lokyva_#{$agendamento->id}.pdf");
     }
 
+    public function gerarComprovantePDFAluguel($id)
+    {
+        $aluguel = Aluguel::with(['item', 'locatario:id,name', 'proprietario:id,name'])->findOrFail($id);
+
+        $userLogado = auth()->user();
+        $isLocatario = ($aluguel->locatario_id === $userLogado->id);
+        $isProprietario = ($aluguel->proprietario_id === $userLogado->id);
+
+        if (!$isLocatario && !$isProprietario) {
+            abort(403, 'Acesso não autorizado. Este comprovante pertence a outra pessoa.');
+        }
+
+        $pdf = Pdf::loadView('pdfs.comprovante_aluguel', ['aluguel' => $aluguel]);
+
+        return $pdf->download("Comprovante_Lokyva_Locacao_#{$aluguel->id}.pdf");
+    }
+
     public function obtenerHorariosDisponiveis(Request $request, $id)
     {
         $data = $request->query('data');
@@ -700,35 +770,61 @@ public function pularProximo($id)
     {
         $request->validate(['observacoes' => 'required|string']);
 
-        DB::table('triagens')->where('id', $id)->update([
-            'observacoes' => $request->observacoes,
-            'updated_at' => now()
-        ]);
+        $triagem = \App\Models\Triagem::findOrFail($id);
+        abort_unless(app(\App\Services\TriagemService::class)->podeAnalisar($request->user(), $triagem), 403, 'Você não tem acesso a essa ficha.');
 
-        return back()->with('success', 'Nota updated!');
+        $triagem->update(['observacoes' => $request->observacoes]);
+
+        return back()->with('success', 'Nota atualizada!');
     }
 
-    public function remarcarServico(Request $request)
+    /**
+     * O dono/equipe agenda (ou remarca) um horário em nome de um cliente — mesma regra de vagas e
+     * preço por pessoa usada quando o próprio cliente reserva (ver VagasServicoService e
+     * PrecificacaoService::servico), só que o pagamento fica sempre como presencial.
+     */
+    public function remarcarServico(Request $request, \App\Services\Agendamento\VagasServicoService $vagasServico)
     {
-        $request->validate([
-            'cliente_id' => 'required',
-            'estabelecimento_id' => 'required',
-            'servico_id' => 'required',
-            'data' => 'required|date',
-            'hora' => 'required'
+        $validated = $request->validate([
+            'cliente_id' => 'required|exists:users,id',
+            'estabelecimento_id' => 'required|exists:estabelecimentos,id',
+            'servico_id' => 'required|exists:servicos,id',
+            'data' => 'required|date|after_or_equal:today',
+            'hora' => 'required',
+            'pessoas' => 'nullable|integer|min:1',
         ]);
 
-        $agendamento = Agendamento::create([
-            'usuario_id' => $request->cliente_id,
-            'estabelecimento_id' => $request->estabelecimento_id,
-            'servico_id' => $request->servico_id,
-            'data_agendamento' => $request->data,
-            'hora_agendamento' => $request->hora,
+        // Só quem gerencia este estabelecimento pode marcar reservas nele.
+        $estabelecimento = Auth::user()->estabelecimentosGerenciados()->where('estabelecimentos.id', $validated['estabelecimento_id'])->firstOrFail();
+        $servico = $estabelecimento->servicos()->findOrFail($validated['servico_id']);
+
+        if (Carbon::parse($validated['data'] . ' ' . $validated['hora'])->isPast()) {
+            return back()->withErrors(['hora' => 'Não é possível agendar em um horário que já passou.']);
+        }
+
+        try {
+            $vagasServico->verificar($servico, $validated['data'], $validated['hora']);
+            $precificacao = app(PrecificacaoService::class)->servico($servico, (int) ($validated['pessoas'] ?? 1));
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return back()->withErrors($e->errors());
+        } catch (\InvalidArgumentException $e) {
+            return back()->withErrors(['pessoas' => $e->getMessage()]);
+        }
+
+        Agendamento::create([
+            'usuario_id' => $validated['cliente_id'],
+            'estabelecimento_id' => $estabelecimento->id,
+            'servico_id' => $servico->id,
+            'data_agendamento' => $validated['data'],
+            'hora_agendamento' => $validated['hora'],
+            'quantidade_pessoas' => $precificacao['pessoas'],
+            'valor_final' => $precificacao['subtotal'],
             'status' => 'pendente',
-            'codigo_verificacao' => str_pad(mt_rand(1, 9999), 4, '0', STR_PAD_LEFT), // Gera o PIN para o Reagendamento
+            'status_pagamento' => 'presencial',
+            'codigo_verificacao' => str_pad((string) mt_rand(1, 9999), 4, '0', STR_PAD_LEFT),
         ]);
 
-        return back()->with('success', 'Reagendado com sucesso! E-mail enviado ao cliente.');
+        return back()->with('success', 'Agendado com sucesso!');
     }
 
     public function detalhesAgendamento(Request $request, $id)
@@ -773,6 +869,23 @@ public function pularProximo($id)
     }
 
     public function detalhesReservaAluguel(Request $request, $id)
+    {
+        return response()->json($this->montarDadosTelaAluguel($id));
+    }
+
+    /**
+     * Versão Inertia de detalhesReservaAluguel() — mesma tela genérica de
+     * detalhe (Cliente/DetalheAgendamento.jsx) usada pelo agendamento comum,
+     * só que alimentada com os dados de uma locação avulsa (Aluguel).
+     */
+    public function paginaDetalhesAluguel($id)
+    {
+        return Inertia::render('Cliente/DetalheAgendamento', [
+            'dados' => $this->montarDadosTelaAluguel($id),
+        ]);
+    }
+
+    private function montarDadosTelaAluguel($id): array
     {
         $aluguel = Aluguel::with(['item', 'proprietario', 'contratoDocumento'])->findOrFail($id);
 
@@ -823,7 +936,7 @@ public function pularProximo($id)
             'codigo_verificacao' => substr($aluguel->codigo_reserva, -4),
         ];
 
-        return response()->json($dadosTela);
+        return $dadosTela;
     }
 
     public function indexAlugueis(Request $request)
@@ -861,25 +974,61 @@ public function pularProximo($id)
      * via ?open_produto=/?open_servico= de Ofertas Premium ou do Explorar):
      * o id da reserva vem pela URL em vez do corpo da requisição.
      */
-    public function reservarItem(Request $request, $id, PagamentoService $pagamentoService)
+    public function reservarItem(Request $request, $id, PagamentoService $pagamentoService, CupomService $cupomService)
     {
         $request->merge(['item_aluguel_id' => $id]);
-        return $this->storeAluguel($request, $pagamentoService);
+        return $this->storeAluguel($request, $pagamentoService, $cupomService);
     }
 
-    public function storeAluguel(Request $request, PagamentoService $pagamentoService)
+    /**
+     * Cotação do item (valor final + parcelamento no cartão) calculada no servidor, com a
+     * mesma regra usada ao criar a reserva — a tela nunca mostra parcelas diferentes das cobradas.
+     */
+    public function cotarItem(Request $request, $id, PagamentoService $pagamentoService, CupomService $cupomService)
+    {
+        $validated = $request->validate([
+            'data_inicio'             => 'required|date|after_or_equal:today',
+            'data_fim'                => 'required|date|after:data_inicio',
+            'quantidade'              => 'nullable|integer|min:1',
+            'pessoas'                 => 'nullable|integer|min:1',
+            'acessorios_selecionados' => 'nullable|array',
+            'pontos_utilizados'       => 'nullable|integer|min:0',
+            'cupom_codigo'            => 'nullable|string|max:60',
+        ]);
+
+        $item = ItemAluguel::findOrFail($id);
+        $cotacao = app(\App\Services\Locacao\CotacaoAluguelService::class)->cotar($item, Auth::user(), $validated, $cupomService);
+        $total = round((float) $cotacao['totalComCaucao'], 2);
+
+        return response()->json([
+            'total' => $total,
+            'subtotal' => round((float) $cotacao['precoSubtotal'], 2),
+            'caucao' => (float) ($item->valor_caucao ?? 0),
+            'parcelamento' => $pagamentoService->opcoesParcelamento($total),
+        ]);
+    }
+
+    public function storeAluguel(Request $request, PagamentoService $pagamentoService, CupomService $cupomService)
     {
         $validated = $request->validate([
             'item_aluguel_id'          => 'required|integer|exists:itens_aluguel,id',
             'data_inicio'              => 'required|date|after_or_equal:today',
             'data_fim'                 => 'required|date|after:data_inicio',
-            'quantidade'               => 'required|integer|min:1',
+            'quantidade'               => 'nullable|integer|min:1',
+            'pessoas'                  => 'nullable|integer|min:1',
             'forma_pagamento'          => 'required|string|in:online,presencial',
             'metodo_pagamento'         => 'nullable|required_if:forma_pagamento,online|string|in:pix,cartao,boleto',
             'parcelas'                 => 'nullable|integer|min:1|max:12',
+            'cartao'                   => 'nullable|required_if:metodo_pagamento,cartao|array',
+            'cartao.numero'            => 'required_with:cartao|string|min:13|max:23',
+            'cartao.titular'           => 'required_with:cartao|string|max:100',
+            'cartao.mes'               => 'required_with:cartao|integer|between:1,12',
+            'cartao.ano'               => 'required_with:cartao|integer|min:' . (int) date('y') . '|max:2099',
+            'cartao.cvv'               => 'required_with:cartao|digits_between:3,4',
             'acessorios_selecionados'  => 'nullable|array',
             'comodidades_selecionadas' => 'nullable|array',
             'pontos_utilizados'        => 'nullable|integer|min:0',
+            'cupom_codigo'             => 'nullable|string|max:60',
 
             'tipo_servico' => [
                 'nullable',
@@ -920,86 +1069,22 @@ public function pularProximo($id)
         $item = ItemAluguel::findOrFail($validated['item_aluguel_id']);
         $user = Auth::user();
 
-        $dataInicio = Carbon::parse($validated['data_inicio']);
-        $dataFim = Carbon::parse($validated['data_fim']);
-        $totalDias = $dataInicio->diffInDays($dataFim);
-        if ($totalDias === 0) $totalDias = 1;
+        $cotacao = app(\App\Services\Locacao\CotacaoAluguelService::class)->cotar($item, $user, $validated, $cupomService);
+        $validated = $cotacao['validated'];
+        $pessoas = $cotacao['pessoas'];
+        $multiplicador = $cotacao['multiplicador'];
+        $valorBasePorCiclo = $cotacao['valorBasePorCiclo'];
+        $precoSubtotal = $cotacao['precoSubtotal'];
+        $descontoPromocao = $cotacao['descontoPromocao'];
+        $descontoPontos = $cotacao['descontoPontos'];
+        $pontosParaAbater = $cotacao['pontosParaAbater'];
+        $cupomAplicado = $cotacao['cupomAplicado'];
+        $descontoCupom = $cotacao['descontoCupom'];
+        $precoFinalCliente = $cotacao['precoFinalCliente'];
+        $totalComCaucao = $cotacao['totalComCaucao'];
+        $acessoriosFinaisParaSalvar = $cotacao['acessoriosFinaisParaSalvar'];
 
-        if (!$item->sempre_disponivel) {
-            if ($item->data_inicio_disponibilidade && $dataInicio->lt(Carbon::parse($item->data_inicio_disponibilidade))) {
-                abort(422, 'Item indisponível para a data selecionada.');
-            }
-            if ($item->data_fim_disponibilidade && $dataFim->gt(Carbon::parse($item->data_fim_disponibilidade))) {
-                abort(422, 'O período ultrapassa o limite de operação estipulado do bem.');
-            }
-
-            $bloqueadas = json_decode($item->datas_bloqueadas, true) ?? [];
-            if (in_array($dataInicio->toDateString(), $bloqueadas) || in_array($dataFim->toDateString(), $bloqueadas)) {
-                abort(422, 'Este período já foi reservado ou está em manutenção.');
-            }
-        }
-
-        $valorBasePorCiclo = match($item->periodo_faturamento_padrao) {
-            'diaria'  => $item->valor_diaria ?? 0,
-            'semanal' => $item->valor_semanal ?? 0,
-            'mensal'  => $item->valor_mensal ?? 0,
-            default   => $item->valor_diaria ?? 0
-        };
-
-        $multiplicador = 1;
-        if ($item->periodo_faturamento_padrao === 'diaria') {
-            $multiplicador = $totalDias;
-        } elseif ($item->periodo_faturamento_padrao === 'semanal') {
-            $multiplicador = max(1, ceil($totalDias / 7));
-        } elseif ($item->periodo_faturamento_padrao === 'mensal') {
-            $multiplicador = max(1, ceil($totalDias / 30));
-        }
-
-        $valorBrutoItens = ($valorBasePorCiclo * $multiplicador) * $validated['quantidade'];
-
-        $valorExtras = 0;
-        $acessoriosDisponiveis = json_decode($item->acessorios, true) ?? [];
-        $acessoriosFinaisParaSalvar = [];
-
-        if (!empty($validated['acessorios_selecionados'])) {
-            foreach ($validated['acessorios_selecionados'] as $nomeExtra) {
-                foreach ($acessoriosDisponiveis as $disponivel) {
-                    if ($disponivel['nome'] === $nomeExtra) {
-                        $precoExtra = floatval($disponivel['valor']);
-                        $valorExtras += ($precoExtra * $multiplicador) * $validated['quantidade'];
-                        $acessoriosFinaisParaSalvar[] = $disponivel;
-                    }
-                }
-            }
-        }
-
-        $precoSubtotal = $valorBrutoItens + $valorExtras;
-
-        $descontoPromocao = 0;
-        if ($item->tem_promocao && $item->valor_desconto > 0) {
-            if ($item->tipo_desconto === 'percentual') {
-                $descontoPromocao = $precoSubtotal * ($item->valor_desconto / 100);
-            } else {
-                $descontoPromocao = $item->valor_desconto * $validated['quantidade'];
-            }
-        }
-
-        $descontoPontos = 0;
-        $pontosParaAbater = 0;
-        if ($item->aceita_pontos && !empty($validated['pontos_utilizados'])) {
-            $maximoPermitidoItem = $item->maximo_pontos_permitidos ?? 0;
-            $pontosParaAbater = min(intval($validated['pontos_utilizados']), $maximoPermitidoItem);
-
-            if ($user->pontos_saldo < $pontosParaAbater) {
-                abort(422, 'Saldo de pontos insuficiente.');
-            }
-            $descontoPontos = $pontosParaAbater / 100;
-        }
-
-        $precoFinalCliente = max(0, $precoSubtotal - $descontoPromocao - $descontoPontos);
-        $totalComCaucao = $precoFinalCliente + ($item->valor_caucao ?? 0);
-
-        $taxaMarketplace = $precoFinalCliente * 0.12;
+        $taxaMarketplace = \App\Support\Taxas::sobre($precoFinalCliente);
 
         if ($validated['forma_pagamento'] === 'presencial') {
             $loja = Estabelecimento::find($item->estabelecimento_id);
@@ -1023,12 +1108,15 @@ public function pularProximo($id)
             'data_inicio'                => $validated['data_inicio'],
             'data_fim'                   => $validated['data_fim'],
             'quantidade'                 => $validated['quantidade'],
+            'quantidade_pessoas'         => $pessoas,
             'valor_unitario'             => $valorBasePorCiclo,
             'valor_caucao'               => $item->valor_caucao ?? 0,
             'valor_bruto'                => $precoSubtotal,
             'valor_desconto_promocional' => $descontoPromocao,
             'valor_desconto_pontos'      => $descontoPontos,
             'pontos_utilizados'          => $pontosParaAbater,
+            'cupom_id'                   => $cupomAplicado?->id,
+            'valor_desconto_cupom'       => $cupomAplicado ? $descontoCupom : null,
             'valor_total'                => $totalComCaucao,
             'taxa_plataforma'            => $taxaMarketplace,
             'forma_pagamento'            => $validated['forma_pagamento'],
@@ -1071,11 +1159,15 @@ public function pularProximo($id)
         // (cobrada no ato, no estabelecimento) e só confirma normalmente.
         if ($validated['forma_pagamento'] === 'online') {
             try {
+                $ehCartao = $validated['metodo_pagamento'] === 'cartao';
                 $cobrancaAsaas = $pagamentoService->criarCobrancaAsaas(
                     $aluguel,
                     $validated['metodo_pagamento'],
-                    $user->asaas_customer_id,
-                    $validated['parcelas'] ?? 1
+                    $pagamentoService->garantirClienteAsaas($user),
+                    $ehCartao ? (int) ($validated['parcelas'] ?? 1) : 1,
+                    $ehCartao ? ($validated['cartao'] ?? null) : null,
+                    $user,
+                    $request->ip()
                 );
             } catch (Exception $e) {
                 // Desfaz a reserva e devolve os pontos/estoque para não deixar
@@ -1091,12 +1183,30 @@ public function pularProximo($id)
                     return back()->withErrors(['error' => 'Este estabelecimento ainda não está habilitado para receber pagamentos online. Escolha pagar no local ou tente novamente mais tarde.']);
                 }
 
+                if ($e instanceof \App\Exceptions\CobrancaRecusadaException) {
+                    return back()->withErrors(['cartao' => $e->getMessage()]);
+                }
+
                 return back()->withErrors(['error' => 'Não foi possível gerar a cobrança agora. Tente novamente em instantes.']);
             }
 
+            if (!empty($cobrancaAsaas['aprovado'])) {
+                if ($cupomAplicado) {
+                    $cupomService->marcarUsado($user, $cupomAplicado);
+                }
+                return redirect()->route('dashboard')->with('success', 'Pagamento aprovado! Sua reserva está confirmada.');
+            }
+
             if (!empty($cobrancaAsaas['invoice_url'])) {
+                if ($cupomAplicado) {
+                    $cupomService->marcarUsado($user, $cupomAplicado);
+                }
                 return Inertia::location($cobrancaAsaas['invoice_url']);
             }
+        }
+
+        if ($cupomAplicado) {
+            $cupomService->marcarUsado($user, $cupomAplicado);
         }
 
         if ($request->wantsJson() && !$request->header('X-Inertia')) {
@@ -1412,6 +1522,8 @@ public function pularProximo($id)
             'agendamento_id' => 'required|exists:agendamentos,id',
             'lat'            => 'required|numeric',
             'lng'            => 'required|numeric',
+            'heading'        => 'nullable|numeric',
+            'velocidade'     => 'nullable|numeric',
         ]);
 
         $agendamento = Agendamento::findOrFail($request->agendamento_id);
@@ -1420,10 +1532,20 @@ public function pularProximo($id)
             abort(403, 'Você só pode transmitir localização do seu próprio agendamento.');
         }
 
+        $agendamento->forceFill([
+            'ultima_latitude' => $request->lat,
+            'ultima_longitude' => $request->lng,
+            'ultimo_heading' => $request->heading,
+            'ultima_velocidade' => $request->velocidade,
+            'ultima_localizacao_em' => now(),
+        ])->save();
+
         broadcast(new \App\Events\LocationUpdated(
-            $agendamento->id, 
-            $request->lat, 
-            $request->lng
+            $agendamento->id,
+            $request->lat,
+            $request->lng,
+            $request->heading,
+            $request->velocidade
         ));
 
         return response()->json([
@@ -1436,8 +1558,24 @@ public function pularProximo($id)
     {
         $user = Auth::user();
 
-        if (!in_array($user->papel, ['admin', 'socio', 'gerente'])) {
+        if (!in_array($user->papel, ['admin', 'socio', 'proprietario', 'gerente'])) {
             abort(403, 'Acesso Negado.');
+        }
+
+        // Ver os clientes a caminho do local é um recurso Premium (o admin da plataforma sempre vê).
+        $premium = $user->papel === 'admin' || $user->isPremium();
+        if (!$premium) {
+            if (request()->wantsJson() && !request()->header('X-Inertia')) {
+                return response()->json([
+                    'premium_necessario' => true,
+                    'message' => 'Seja Premium para ver seus clientes a caminho do seu local.',
+                ], 403);
+            }
+
+            return inertia('Estabelecimentos/MapaRastreamento', [
+                'agendamentosAtivos' => [],
+                'premiumNecessario' => true,
+            ]);
         }
 
         $meusEstabelecimentosIds = $user->estabelecimentos()->pluck('estabelecimentos.id');

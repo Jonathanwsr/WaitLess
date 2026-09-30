@@ -44,7 +44,7 @@ export default function StatusAssinatura({ auth, statusAssinatura }) {
                 destaque: true,
                 tema: 'from-teal-500 to-emerald-600',
                 badge: 'Máximo Retorno',
-                beneficios: ['Isenção da taxa de 12% no balcão', 'Destaque no app', 'Suporte VIP 24/7', 'Métricas avançadas']
+                beneficios: ['Isenção da taxa da plataforma no balcão', 'Destaque no app', 'Suporte VIP 24/7', 'Métricas avançadas', 'Crie gerentes e convide sócios ilimitados']
             },
             {
                 id: 'premium-anual',
@@ -67,7 +67,7 @@ export default function StatusAssinatura({ auth, statusAssinatura }) {
                 destaque: true,
                 tema: 'from-blue-600 to-indigo-700',
                 badge: 'Melhor Custo-Benefício',
-                beneficios: ['Equivale a apenas R$ 21,00/mês', 'Ganha 3600 Pontos na hora', 'Isenção da taxa de 12%', 'Suporte VIP 24/7']
+                beneficios: ['Equivale a apenas R$ 21,00/mês', 'Ganha 3600 Pontos na hora', 'Isenção da taxa da plataforma', 'Suporte VIP 24/7', 'Crie gerentes e convide sócios ilimitados']
             }
         ] 
         : [

@@ -3,12 +3,12 @@ import { Head, Link, router, usePage } from '@inertiajs/react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Heart, MapPin, Star, ImageOff, Calendar, Compass } from 'lucide-react';
 
-export default function Favoritos({ estabelecimentos = [], servicos = [], reservas = {} }) {
+export default function Favoritos({ estabelecimentos = [], servicos = [], itensAluguel = [], reservas = {} }) {
     // 1. Pegamos o auth de forma global e segura através do usePage()
     const { auth } = usePage().props;
     const [abaAtiva, setAbaAtiva] = useState('estabelecimentos');
 
-    const totalFavoritos = estabelecimentos.length + servicos.length;
+    const totalFavoritos = estabelecimentos.length + servicos.length + itensAluguel.length;
 
     const handleToggleFavorito = (tipo, id) => {
         router.post('/api/favoritos/toggle', { tipo, id }, {
@@ -37,7 +37,8 @@ export default function Favoritos({ estabelecimentos = [], servicos = [], reserv
     const abas = [
         { id: 'estabelecimentos', label: 'Estabelecimentos', count: estabelecimentos.length },
         { id: 'servicos', label: 'Serviços', count: servicos.length },
-        { id: 'reservas', label: 'Reservas', count: null },
+        { id: 'itens', label: 'Reservas', count: itensAluguel.length },
+        { id: 'reservas', label: 'Meus agendamentos', count: null },
     ];
 
     return (
@@ -182,9 +183,14 @@ export default function Favoritos({ estabelecimentos = [], servicos = [], reserv
                                                 <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide mt-1">{serv.estabelecimento.nome}</p>
                                             )}
                                             <p className="text-gray-500 text-sm mt-3 flex-grow leading-relaxed line-clamp-2">{serv.descricao}</p>
+                                            {serv.estabelecimento_id && (
+                                                <Link href={route('cliente.agendar', { estabelecimento: serv.estabelecimento_id, servico_id: serv.id })} className="mt-4 block text-center w-full bg-gray-900 text-white font-semibold py-2.5 rounded-xl hover:bg-black transition-colors">
+                                                    Agendar
+                                                </Link>
+                                            )}
                                             <button
                                                 onClick={() => handleToggleFavorito('servico', serv.id)}
-                                                className="mt-6 w-full bg-red-50 text-red-600 font-semibold py-2.5 rounded-xl hover:bg-red-500 hover:text-white transition-colors duration-300"
+                                                className="mt-3 w-full bg-red-50 text-red-600 font-semibold py-2.5 rounded-xl hover:bg-red-500 hover:text-white transition-colors duration-300"
                                             >
                                                 Remover Favorito
                                             </button>
@@ -206,10 +212,67 @@ export default function Favoritos({ estabelecimentos = [], servicos = [], reserv
                     </div>
                 )}
 
+                {abaAtiva === 'itens' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {itensAluguel.length > 0 ? (
+                            itensAluguel.map((item) => {
+                                const fotos = Array.isArray(item.fotos) ? item.fotos : [];
+                                const foto = fotos[0] || item.estabelecimento?.foto_perfil;
+                                const local = [item.cidade || item.estabelecimento?.cidade, item.estado || item.estabelecimento?.estado].filter(Boolean).join(' - ');
+                                return (
+                                    <div key={item.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col transition-all duration-300 hover:shadow-xl hover:-translate-y-1 group">
+                                        <Link href={route('itens.detalhes', item.id)} className="h-44 bg-gray-50 relative overflow-hidden block">
+                                            {foto ? (
+                                                <img src={foto.startsWith?.('http') ? foto : `/storage/${foto}`} alt={item.nome} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                                            ) : (
+                                                <div className="w-full h-full flex items-center justify-center"><ImageOff className="w-8 h-8 text-gray-300" /></div>
+                                            )}
+                                            {item.categoria && (
+                                                <span className="absolute top-3 left-3 bg-white/95 backdrop-blur px-2.5 py-1 rounded-lg text-xs font-bold capitalize shadow-sm">{String(item.categoria).replace(/_/g, ' ')}</span>
+                                            )}
+                                        </Link>
+                                        <div className="p-6 flex flex-col flex-1">
+                                            <div className="flex justify-between items-start gap-4">
+                                                <h3 className="text-lg font-bold text-gray-900 group-hover:text-orange-600 transition-colors leading-tight">{item.nome}</h3>
+                                                <span className="font-extrabold text-orange-700 bg-orange-50 px-3 py-1 rounded-lg whitespace-nowrap text-sm">
+                                                    R$ {Number(item.valor_diaria || 0).toFixed(2).replace('.', ',')}
+                                                </span>
+                                            </div>
+                                            {local && (
+                                                <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide mt-1 flex items-center gap-1"><MapPin className="w-3 h-3" /> {local}</p>
+                                            )}
+                                            <p className="text-gray-500 text-sm mt-3 flex-grow leading-relaxed line-clamp-2">{item.descricao}</p>
+                                            <Link href={route('itens.detalhes', item.id)} className="mt-4 block text-center w-full bg-gray-900 text-white font-semibold py-2.5 rounded-xl hover:bg-black transition-colors">
+                                                Ver e reservar
+                                            </Link>
+                                            <button
+                                                onClick={() => handleToggleFavorito('item_aluguel', item.id)}
+                                                className="mt-3 w-full bg-red-50 text-red-600 font-semibold py-2.5 rounded-xl hover:bg-red-500 hover:text-white transition-colors duration-300"
+                                            >
+                                                Remover Favorito
+                                            </button>
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        ) : (
+                            <div className="col-span-full bg-white rounded-2xl border border-dashed border-gray-300 p-12 text-center">
+                                <div className="mx-auto w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mb-4">
+                                    <Heart className="w-7 h-7 text-gray-300" />
+                                </div>
+                                <p className="text-gray-500 text-lg mb-6">Você ainda não tem reservas (aluguéis e hospedagens) favoritas.</p>
+                                <Link href={route('cliente.explorar', { tipo_busca: 'reservas' })} className="inline-flex items-center gap-2 px-6 py-3 bg-gray-900 text-white rounded-xl font-semibold hover:bg-black transition-colors">
+                                    <Compass className="w-4 h-4" /> Explorar reservas
+                                </Link>
+                            </div>
+                        )}
+                    </div>
+                )}
+
                 {abaAtiva === 'reservas' && (
                     <div className="space-y-8">
                         <div>
-                            <h2 className="text-2xl font-bold text-gray-800 mb-6">Próximas Reservas</h2>
+                            <h2 className="text-2xl font-bold text-gray-800 mb-6">Próximos agendamentos</h2>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                                 {reservas.proximas?.length > 0 ? (
                                     reservas.proximas.map((reserva) => (

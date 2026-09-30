@@ -13,19 +13,19 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const COLORS = {
-  primary: '#FF5A00',
-  primaryLight: '#FFF0E6',
-  secondary: '#111827',
+  primary: '#FF7A00',
+  primaryLight: '#FFF1E4',
+  secondary: '#282828',
   black: '#000000',
-  gray: '#6B7280',
-  lightGray: '#F9FAFB',
+  gray: '#6A6C72',
+  lightGray: '#F5F5F5',
   white: '#FFFFFF',
-  border: '#E5E7EB',
-  green: '#059669',
+  border: '#E6E7E9',
+  green: '#00A868',
   yellow: '#B45309',
   yellowBg: '#FFFBEB',
   error: '#DC2626',
@@ -175,7 +175,7 @@ export default function TelaCarrinho() {
         <TouchableOpacity style={styles.headerBtn} onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={22} color={COLORS.black} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Meu Carrinho</Text>
+        <View style={{ flex: 1 }} />
         <View style={styles.headerBtn} />
       </View>
 
@@ -341,20 +341,20 @@ export default function TelaCarrinho() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: COLORS.white, paddingTop: Platform.OS === 'android' ? 25 : 0 },
+  safeArea: { flex: 1, backgroundColor: '#F5F5F5', paddingTop: Platform.OS === 'android' ? 25 : 0 },
   headerBar: {
     height: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border,
+    paddingHorizontal: 16,
   },
-  headerBtn: { padding: 6, width: 34 },
-  headerTitle: { fontSize: 17, fontWeight: '900', color: COLORS.secondary },
+  headerBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
+  headerTitle: { fontSize: 17, fontWeight: '800', color: COLORS.secondary },
   loadingBox: { flex: 1, justifyContent: 'center', alignItems: 'center' },
 
   emptyStateContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 40 },
   emptyIconCircle: { width: 96, height: 96, borderRadius: 48, backgroundColor: COLORS.lightGray, alignItems: 'center', justifyContent: 'center', marginBottom: 24 },
-  emptyStateTitle: { fontSize: 19, fontWeight: '900', color: COLORS.secondary, textAlign: 'center' },
+  emptyStateTitle: { fontSize: 19, fontWeight: '800', color: COLORS.secondary, textAlign: 'center' },
   emptyStateDesc: { fontSize: 14, color: COLORS.gray, textAlign: 'center', marginTop: 10, lineHeight: 20 },
-  btnExplorar: { backgroundColor: COLORS.secondary, paddingVertical: 14, paddingHorizontal: 28, borderRadius: 14, marginTop: 24 },
+  btnExplorar: { backgroundColor: COLORS.primary, paddingVertical: 15, paddingHorizontal: 32, borderRadius: 28, marginTop: 24 },
   btnExplorarTexto: { color: COLORS.white, fontWeight: '800', fontSize: 14 },
 
   scrollContent: { padding: 16, paddingBottom: 20 },
@@ -362,8 +362,8 @@ const styles = StyleSheet.create({
   avisoBanner: { flexDirection: 'row', gap: 8, backgroundColor: COLORS.yellowBg, borderRadius: 12, padding: 12, marginBottom: 14, alignItems: 'flex-start' },
   avisoTexto: { flex: 1, fontSize: 12, color: COLORS.yellow, fontWeight: '600', lineHeight: 17 },
 
-  card: { flexDirection: 'row', gap: 12, backgroundColor: COLORS.white, borderRadius: 18, borderWidth: 1, borderColor: COLORS.border, padding: 12, marginBottom: 14 },
-  fotoContainer: { width: 96, height: 96, borderRadius: 14, overflow: 'hidden', backgroundColor: COLORS.lightGray },
+  card: { flexDirection: 'row', gap: 14, backgroundColor: COLORS.white, borderRadius: 22, padding: 14, marginBottom: 14, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  fotoContainer: { width: 100, height: 100, borderRadius: 16, overflow: 'hidden', backgroundColor: COLORS.lightGray },
   foto: { width: '100%', height: '100%' },
   fotoFallback: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   fotoBtn: { position: 'absolute', top: '50%', marginTop: -12, width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.9)', alignItems: 'center', justifyContent: 'center' },
@@ -374,25 +374,25 @@ const styles = StyleSheet.create({
   btnRemover: { position: 'absolute', top: 0, right: 0, padding: 4 },
   estabelecimentoRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 4, marginRight: 24 },
   estabelecimentoTexto: { fontSize: 11, fontWeight: '700', color: COLORS.gray, textTransform: 'uppercase' },
-  nomeServico: { fontSize: 16, fontWeight: '800', color: COLORS.secondary, marginRight: 24 },
+  nomeServico: { fontSize: 17, fontWeight: '800', color: COLORS.secondary, marginRight: 24, letterSpacing: -0.2 },
   duracaoBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: COLORS.lightGray, alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, marginTop: 6 },
   duracaoTexto: { fontSize: 11, color: COLORS.gray, fontWeight: '600' },
 
   controlesRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 },
-  quantidadeControle: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.lightGray, borderRadius: 999, borderWidth: 1, borderColor: COLORS.border },
-  quantidadeBtn: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center' },
+  quantidadeControle: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.lightGray, borderRadius: 999 },
+  quantidadeBtn: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
   quantidadeTexto: { width: 24, textAlign: 'center', fontWeight: '800', fontSize: 14, color: COLORS.secondary },
-  precoTexto: { fontSize: 18, fontWeight: '900', color: COLORS.green },
+  precoTexto: { fontSize: 20, fontWeight: '800', color: COLORS.secondary, letterSpacing: -0.4 },
 
-  resumoContainer: { borderTopWidth: 1, borderTopColor: COLORS.border, padding: 16, paddingBottom: 24, backgroundColor: COLORS.white },
+  resumoContainer: { padding: 20, paddingBottom: 28, backgroundColor: COLORS.white, borderTopLeftRadius: 28, borderTopRightRadius: 28, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 16, shadowOffset: { width: 0, height: -4 }, elevation: 12 },
   resumoRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
-  resumoLabel: { fontSize: 13, color: COLORS.gray, fontWeight: '600' },
-  resumoValor: { fontSize: 13, color: COLORS.secondary, fontWeight: '700' },
+  resumoLabel: { fontSize: 14, color: COLORS.gray, fontWeight: '500' },
+  resumoValor: { fontSize: 14, color: COLORS.secondary, fontWeight: '700' },
   divider: { height: 1, backgroundColor: COLORS.border, marginVertical: 8 },
-  totalLabel: { fontSize: 15, fontWeight: '800', color: COLORS.secondary },
-  totalValor: { fontSize: 20, fontWeight: '900', color: COLORS.primary },
+  totalLabel: { fontSize: 16, fontWeight: '800', color: COLORS.secondary },
+  totalValor: { fontSize: 26, fontWeight: '800', color: COLORS.secondary, letterSpacing: -0.6 },
 
-  btnAgendar: { backgroundColor: COLORS.secondary, borderRadius: 16, paddingVertical: 16, alignItems: 'center', marginTop: 14 },
+  btnAgendar: { backgroundColor: COLORS.primary, borderRadius: 28, paddingVertical: 17, alignItems: 'center', marginTop: 16 },
   btnAgendarTexto: { color: COLORS.white, fontSize: 16, fontWeight: '800' },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(17,24,39,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 },
@@ -401,8 +401,8 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 17, fontWeight: '800', color: COLORS.secondary, marginBottom: 8 },
   modalMessage: { fontSize: 13, color: COLORS.gray, textAlign: 'center', lineHeight: 19, marginBottom: 20 },
   modalBotoes: { flexDirection: 'row', gap: 10, width: '100%' },
-  modalBtnVoltar: { flex: 1, backgroundColor: COLORS.lightGray, paddingVertical: 13, borderRadius: 14, alignItems: 'center' },
+  modalBtnVoltar: { flex: 1, backgroundColor: COLORS.lightGray, paddingVertical: 14, borderRadius: 24, alignItems: 'center' },
   modalBtnVoltarTexto: { color: COLORS.secondary, fontWeight: '700' },
-  modalBtnRemover: { flex: 1, backgroundColor: COLORS.error, paddingVertical: 13, borderRadius: 14, alignItems: 'center' },
+  modalBtnRemover: { flex: 1, backgroundColor: COLORS.error, paddingVertical: 14, borderRadius: 24, alignItems: 'center' },
   modalBtnRemoverTexto: { color: COLORS.white, fontWeight: '700' },
 });

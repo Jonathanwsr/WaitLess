@@ -44,6 +44,7 @@ class PagamentoMobileController extends Controller
 
         return response()->json([
             'agendamento_id' => $agendamento->id,
+            'estabelecimento_id' => $agendamento->estabelecimento_id,
             'estabelecimento_nome' => $agendamento->estabelecimento->nome ?? null,
             'estabelecimento_foto' => $agendamento->estabelecimento->foto_perfil ?? null,
             'servico_nome' => $agendamento->servico->nome ?? null,
@@ -69,9 +70,15 @@ class PagamentoMobileController extends Controller
     {
         $request->validate([
             'agendamento_id'    => 'required|exists:agendamentos,id',
-            'asaas_customer_id' => 'required_unless:metodo_pagamento,local|string',
+            'asaas_customer_id' => 'nullable|string',
             'metodo_pagamento'  => 'required|in:pix,boleto,cartao,local',
             'parcelas'          => 'nullable|integer|min:1|max:12',
+            'cartao'            => 'nullable|required_if:metodo_pagamento,cartao|array',
+            'cartao.numero'     => 'required_with:cartao|string|min:13|max:23',
+            'cartao.titular'    => 'required_with:cartao|string|max:100',
+            'cartao.mes'        => 'required_with:cartao|integer|between:1,12',
+            'cartao.ano'        => 'required_with:cartao|integer|min:26|max:2099',
+            'cartao.cvv'        => 'required_with:cartao|digits_between:3,4',
         ]);
 
         $agendamento = Agendamento::with(['servico', 'estabelecimento'])->find($request->agendamento_id);
@@ -108,20 +115,27 @@ class PagamentoMobileController extends Controller
             // anterior para este mesmo agendamento antes de gerar uma nova.
             Pagamento::where('agendamento_id', $agendamento->id)->where('status', 'pendente')->delete();
 
+            $ehCartao = $request->metodo_pagamento === 'cartao';
             $resultado = $pagamentoService->criarCobrancaAsaas(
                 $agendamento,
                 $request->metodo_pagamento,
-                $request->asaas_customer_id,
-                $request->input('parcelas', 1)
+                $request->asaas_customer_id ?: $pagamentoService->garantirClienteAsaas($request->user()),
+                $ehCartao ? (int) $request->input('parcelas', 1) : 1,
+                $ehCartao ? $request->input('cartao') : null,
+                $request->user(),
+                $request->ip()
             );
 
             return response()->json([
                 'status'      => 'success',
-                'message'     => 'Cobrança gerada com sucesso!',
+                'message'     => !empty($resultado['aprovado']) ? 'Pagamento aprovado!' : 'Cobrança gerada com sucesso!',
                 'payment_id'  => $resultado['payment_id'],
                 'pix_qr_code' => $resultado['pix_qr_code'],
                 'invoice_url' => $resultado['invoice_url'],
+                'aprovado'    => (bool) ($resultado['aprovado'] ?? false),
             ], 200);
+        } catch (\App\Exceptions\CobrancaRecusadaException $e) {
+            return response()->json(['status' => 'error', 'error' => $e->getMessage(), 'message' => $e->getMessage(), 'cobranca_recusada' => true], 422);
         } catch (\Exception $e) {
             Log::error('Erro no PagamentoMobileController::processar: ' . $e->getMessage());
             return response()->json([
@@ -149,6 +163,11 @@ class PagamentoMobileController extends Controller
 
         if (in_array($agendamento->status_pagamento, ['pago', 'pago_online'])) {
             return response()->json(['error' => 'Este pedido já está pago.'], 409);
+        }
+
+        // Reserva presencial (inclusive as feitas pelo sócio para o cliente) é paga no local, nunca online.
+        if (in_array($agendamento->status_pagamento, ['presencial', 'local', 'pago_presencial'])) {
+            return response()->json(['error' => 'Esta reserva tem pagamento presencial: o valor é pago direto no estabelecimento.'], 409);
         }
 
         if ($agendamento->status === 'cancelado') {
@@ -210,5 +229,16 @@ class PagamentoMobileController extends Controller
         } catch (\Exception $e) {
             return response()->json(['error' => 'Agendamento não encontrado.'], 404);
         }
+    }
+
+    /**
+     * 💳 Opções de parcelamento no cartão para um valor (regra única do servidor: até 12x, parcela mínima R$ 20).
+     * O valor é conferido de novo no momento da cobrança.
+     */
+    public function parcelamento(Request $request, PagamentoService $pagamentoService)
+    {
+        $validated = $request->validate(['valor' => 'required|numeric|min:0.01']);
+
+        return response()->json(['parcelamento' => $pagamentoService->opcoesParcelamento((float) $validated['valor'])]);
     }
 }

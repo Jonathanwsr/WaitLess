@@ -30,6 +30,10 @@ class MensagemMobileController extends Controller
             }
         }
 
+        if ($conversa->aluguel_id && (int) $conversa->estabelecimento_id === (int) $user->id) {
+            return true;
+        }
+
         return DB::table('estabelecimento_usuario')
             ->where('usuario_id', $user->id)
             ->where('estabelecimento_id', $conversa->estabelecimento_id)
@@ -51,14 +55,14 @@ class MensagemMobileController extends Controller
     public function show($id)
     {
         $user = Auth::user();
-        $conversa = Conversa::with(['usuario', 'estabelecimento', 'funcionario', 'agendamento.servico', 'aluguel.item'])->findOrFail($id);
+        $conversa = Conversa::with(['usuario', 'estabelecimento', 'donoDireto', 'funcionario', 'agendamento.servico', 'aluguel.item'])->findOrFail($id);
 
         if (! $this->autorizado($user, $conversa)) {
             abort(403, 'Acesso não autorizado a esta conversa.');
         }
 
         $isEst = $this->ehEquipe($user, $conversa);
-        $nomeAtivo = $isEst ? $conversa->usuario->name : $conversa->estabelecimento->nome;
+        $nomeAtivo = ($isEst ? $conversa->usuario->name : $conversa->nomeContraparte()) ?? 'Usuário';
 
         $conversa->mensagens()
             ->where('remetente_id', '!=', $user->id)
@@ -82,7 +86,7 @@ class MensagemMobileController extends Controller
                 'nome' => $nomeAtivo,
                 'contexto' => $conversa->agendamento?->servico?->nome ?? $conversa->aluguel?->item?->nome ?? null,
                 'funcionario_nome' => $conversa->funcionario?->nome,
-                'avatar' => $isEst ? $conversa->usuario->foto_perfil : $conversa->estabelecimento->foto_perfil,
+                'avatar' => $isEst ? $conversa->usuario->foto_perfil : ($conversa->aluguel_id ? $conversa->donoDireto?->foto_perfil : $conversa->estabelecimento?->foto_perfil),
                 'iniciais' => strtoupper(substr($nomeAtivo, 0, 1)),
             ],
             'mensagens' => $mensagens,
@@ -122,11 +126,24 @@ class MensagemMobileController extends Controller
     public function iniciar(Request $request)
     {
         $validated = $request->validate([
-            'estabelecimento_id' => 'required|exists:estabelecimentos,id',
+            'estabelecimento_id' => 'nullable|exists:estabelecimentos,id',
             'funcionario_id'     => 'nullable|exists:funcionarios,id',
             'agendamento_id'     => 'nullable|exists:agendamentos,id',
             'aluguel_id'         => 'nullable|exists:alugueis,id',
         ]);
+
+        // Conversa sobre uma locação/aluguel: não passa por um Estabelecimento
+        // de verdade (ver Conversa::donoDireto) — o dono vem direto do
+        // aluguel, ignorando qualquer estabelecimento_id vindo do app.
+        if (!empty($validated['aluguel_id'])) {
+            $aluguel = \App\Models\Aluguel::findOrFail($validated['aluguel_id']);
+            if ((int) Auth::id() !== (int) $aluguel->locatario_id) {
+                abort(403, 'Você não tem acesso a esta locação.');
+            }
+            $validated['estabelecimento_id'] = $aluguel->estabelecimento_id;
+        } elseif (empty($validated['estabelecimento_id'])) {
+            abort(422, 'estabelecimento_id é obrigatório fora do contexto de uma locação.');
+        }
 
         $dados = array_merge($validated, ['usuario_id' => Auth::id()]);
 
@@ -169,15 +186,18 @@ class MensagemMobileController extends Controller
 
         $meusFuncionarioIds = Funcionario::where('usuario_id', $user->id)->pluck('id');
 
-        return Conversa::with(['usuario', 'estabelecimento', 'funcionario', 'agendamento.servico', 'aluguel.item', 'ultimaMensagem'])
+        return Conversa::with(['usuario', 'estabelecimento', 'donoDireto', 'funcionario', 'agendamento.servico', 'aluguel.item', 'ultimaMensagem'])
             ->where('usuario_id', $user->id)
             ->orWhereIn('estabelecimento_id', $meusEstabelecimentosIds)
             ->orWhereIn('funcionario_id', $meusFuncionarioIds)
+            ->orWhere(function ($q) use ($user) {
+                $q->whereNotNull('aluguel_id')->where('estabelecimento_id', $user->id);
+            })
             ->get()
             ->sortByDesc(fn ($c) => $c->ultimaMensagem?->created_at ?? $c->created_at)
             ->map(function (Conversa $c) use ($user) {
                 $isEst = $this->ehEquipe($user, $c);
-                $nome = $isEst ? $c->usuario->name : $c->estabelecimento->nome;
+                $nome = ($isEst ? $c->usuario->name : $c->nomeContraparte()) ?? 'Usuário';
                 $contexto = $c->agendamento?->servico?->nome ?? $c->aluguel?->item?->nome ?? null;
 
                 return [
@@ -188,7 +208,7 @@ class MensagemMobileController extends Controller
                     'ultima_mensagem' => $c->ultimaMensagem?->conteudo ?? 'Nenhuma mensagem ainda.',
                     'tempo' => $c->ultimaMensagem?->created_at?->diffForHumans() ?? '',
                     'nao_lidas' => $c->mensagensNaoLidasPara($user->id),
-                    'avatar' => $isEst ? $c->usuario->foto_perfil : $c->estabelecimento->foto_perfil,
+                    'avatar' => $isEst ? $c->usuario->foto_perfil : ($c->aluguel_id ? $c->donoDireto?->foto_perfil : $c->estabelecimento?->foto_perfil),
                     'iniciais' => strtoupper(substr($nome, 0, 1)),
                 ];
             })

@@ -63,6 +63,29 @@ export default function UpdateProfileInformation({
         }
     };
 
+    // Preenche rua, bairro, cidade e estado sozinho quando o CEP tem 8 dígitos (consulta feita direto do navegador).
+    const buscarCepAutomatico = async (valor) => {
+        const digitos = String(valor).replace(/\D/g, '').slice(0, 8);
+        const mascarado = digitos.length > 5 ? `${digitos.slice(0, 5)}-${digitos.slice(5)}` : digitos;
+        setData('cep', mascarado);
+        if (digitos.length !== 8) return;
+        try {
+            const resposta = await fetch(`https://viacep.com.br/ws/${digitos}/json/`);
+            const r = await resposta.json();
+            if (r.erro) return;
+            setData((prev) => ({
+                ...prev,
+                cep: mascarado,
+                endereco: r.logradouro || prev.endereco,
+                bairro: r.bairro || prev.bairro,
+                cidade: r.localidade || prev.cidade,
+                estado: r.uf || prev.estado,
+            }));
+        } catch (e) {
+            // sem internet ou serviço fora: o usuário preenche à mão
+        }
+    };
+
     const submit = (e) => {
         e.preventDefault();
 
@@ -226,7 +249,7 @@ export default function UpdateProfileInformation({
 
                         <div>
                             <InputLabel htmlFor="cep" value="CEP" />
-                            <TextInput id="cep" className="mt-1 block w-full disabled:bg-gray-100 disabled:text-gray-500" value={data.cep} onChange={(e) => setData('cep', e.target.value)} placeholder="00000-000" disabled={!editarEndereco} />
+                            <TextInput id="cep" className="mt-1 block w-full disabled:bg-gray-100 disabled:text-gray-500" value={data.cep} onChange={(e) => buscarCepAutomatico(e.target.value)} inputMode="numeric" maxLength={9} placeholder="00000-000" disabled={!editarEndereco} />
                             <InputError className="mt-1" message={errors.cep} />
                         </div>
 
@@ -308,7 +331,7 @@ export default function UpdateProfileInformation({
 
                 {/* BOTÃO DE SALVAR */}
                 <div className="flex items-center gap-4 pt-4 border-t border-gray-200">
-                    <PrimaryButton disabled={processing || (!editarGeral && !editarEndereco && !data.foto_perfil)} className="px-6 py-2.5">
+                    <PrimaryButton disabled={processing || (!editarGeral && !editarEndereco && !data.foto_perfil)} className="px-6 py-2.5 !bg-green-600 hover:!bg-green-700 focus:!bg-green-700 active:!bg-green-800">
                         Salvar Alterações
                     </PrimaryButton>
 

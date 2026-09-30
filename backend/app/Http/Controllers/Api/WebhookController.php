@@ -81,7 +81,8 @@ class WebhookController extends Controller
                     'plano_expira_em' => now()->addMonth()
                 ]);
 
-                Mail::to($user->email)->send(new BemVindoAssinaturaMail($user, $assinatura->nome_plano));
+                // Na fila: o gateway de pagamento espera resposta rápida do webhook.
+                Mail::to($user->email)->queue(new BemVindoAssinaturaMail($user, $assinatura->nome_plano));
                 Log::info("✅ Assinatura {$assinatura->id} ATIVADA e E-mail enviado.");
             }
             // CANCELAMENTO

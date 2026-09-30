@@ -1,21 +1,57 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, useForm, router } from '@inertiajs/react';
-import { useState } from 'react';
-import { 
-    MagnifyingGlassIcon, PlusIcon, PencilSquareIcon, TrashIcon, XMarkIcon, 
-    UserIcon, EnvelopeIcon, LockClosedIcon, BriefcaseIcon, BuildingOfficeIcon, 
-    PhoneIcon, EyeIcon, StarIcon, CurrencyDollarIcon, CalendarIcon, ChartBarIcon 
+import { useState, useEffect } from 'react';
+import {
+    MagnifyingGlassIcon, PlusIcon, PencilSquareIcon, TrashIcon, XMarkIcon,
+    UserIcon, EnvelopeIcon, LockClosedIcon, BriefcaseIcon, BuildingOfficeIcon,
+    PhoneIcon, EyeIcon, StarIcon, CurrencyDollarIcon, CalendarIcon, ChartBarIcon,
+    UserPlusIcon, SparklesIcon, BoltIcon,
 } from '@heroicons/react/24/solid';
 import PrimaryButton from '@/Components/PrimaryButton';
 import InputError from '@/Components/InputError';
 
-export default function Funcionarios({ auth, funcionarios = [], meusEstabelecimentos = [] }) {
+const ACAO_COR = {
+    chamou: 'text-blue-600 bg-blue-50',
+    finalizou: 'text-green-600 bg-green-50',
+    status_atualizado: 'text-amber-600 bg-amber-50',
+    adiou: 'text-orange-600 bg-orange-50',
+    pulou: 'text-red-600 bg-red-50',
+};
+
+export default function Funcionarios({ auth, funcionarios = [], meusEstabelecimentos = [], podeGerenciarEquipeAvancada = false, atividadesRecentes = [] }) {
     const [busca, setBusca] = useState('');
-    
+    const [atividades, setAtividades] = useState(atividadesRecentes);
+
+    // Assina o canal de cada estabelecimento pra ver em tempo real quem da
+    // equipe está fazendo o quê (chamou, finalizou, cancelou...).
+    useEffect(() => {
+        if (!window.Echo || meusEstabelecimentos.length === 0) return;
+
+        meusEstabelecimentos.forEach((est) => {
+            const canal = window.Echo.private(`atividade-equipe.${est.id}`);
+            canal.listen('.atividade.registrada', (payload) => {
+                setAtividades((atual) => [{ id: `live-${Date.now()}`, ...payload }, ...atual].slice(0, 30));
+            });
+        });
+
+        return () => {
+            meusEstabelecimentos.forEach((est) => window.Echo.leave(`atividade-equipe.${est.id}`));
+        };
+    }, [meusEstabelecimentos]);
+
+    const formatarHora = (iso) => {
+        try {
+            return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        } catch {
+            return '';
+        }
+    };
+
     // Controle dos Modais
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [modoEdicao, setModoEdicao] = useState(false);
-    
+    const [mostrarExplicacaoPapeis, setMostrarExplicacaoPapeis] = useState(false);
+
     const [isModalDetalhesOpen, setIsModalDetalhesOpen] = useState(false);
     const [funcionarioSelecionado, setFuncionarioSelecionado] = useState(null);
 
@@ -96,10 +132,15 @@ export default function Funcionarios({ auth, funcionarios = [], meusEstabelecime
         e.preventDefault();
         if (modoEdicao) {
             put(route('funcionarios.update', data.id), { onSuccess: () => fecharModais() });
+        } else if (data.cargo === 'Sócio') {
+            // Sócio não vira uma linha na tabela de funcionários — vai pro endpoint próprio de convite.
+            router.post(`/estabelecimentos/${data.estabelecimento_id}/socios`, data, {
+                onSuccess: () => fecharModais()
+            });
         } else {
             // Adicionado o router.post customizado com a URL dinâmica conforme solicitado
-            router.post(`/estabelecimentos/${data.estabelecimento_id}/funcionarios`, data, { 
-                onSuccess: () => fecharModais() 
+            router.post(`/estabelecimentos/${data.estabelecimento_id}/funcionarios`, data, {
+                onSuccess: () => fecharModais()
             });
         }
     };
@@ -116,18 +157,54 @@ export default function Funcionarios({ auth, funcionarios = [], meusEstabelecime
         >
             <Head title="Funcionários - WaitLess" />
 
+            {/* --- ATIVIDADE DA EQUIPE EM TEMPO REAL --- */}
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden mb-6">
+                <div className="p-4 md:p-6 border-b border-gray-100 flex items-center gap-2">
+                    <BoltIcon className="w-5 h-5 text-amber-500" />
+                    <h3 className="font-bold text-gray-800">Atividade da equipe em tempo real</h3>
+                    <span className="ml-auto flex items-center gap-1.5 text-xs text-green-600 font-semibold">
+                        <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" /> ao vivo
+                    </span>
+                </div>
+                <div className="max-h-64 overflow-y-auto divide-y divide-gray-50">
+                    {atividades.length === 0 ? (
+                        <p className="p-6 text-center text-sm text-gray-400">Nenhuma atividade registrada ainda. As ações da equipe na fila (chamar, finalizar, cancelar...) vão aparecer aqui.</p>
+                    ) : (
+                        atividades.map((a) => (
+                            <div key={a.id} className="p-3 px-6 flex items-center gap-3 text-sm">
+                                <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-full shrink-0 ${ACAO_COR[a.acao] || 'text-gray-600 bg-gray-100'}`}>
+                                    {a.acao?.replace('_', ' ')}
+                                </span>
+                                <span className="text-gray-700 flex-1">{a.descricao}</span>
+                                <span className="text-xs text-gray-400 shrink-0">{formatarHora(a.created_at)}</span>
+                            </div>
+                        ))
+                    )}
+                </div>
+            </div>
+
             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-                
+
                 {/* --- TOOLBAR --- */}
                 <div className="p-4 md:p-6 border-b border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-4 bg-gray-50/50">
                     
-                    <button 
-                        onClick={abrirModalNovo}
-                        className="w-full sm:w-auto flex items-center justify-center gap-2 bg-green-600 text-white px-5 py-2.5 rounded-lg font-bold hover:bg-green-700 transition shadow-sm"
-                    >
-                        <PlusIcon className="w-5 h-5" />
-                        Novo Funcionário
-                    </button>
+                    <div className="w-full sm:w-auto flex flex-col sm:flex-row gap-2">
+                        <button
+                            onClick={abrirModalNovo}
+                            className="w-full sm:w-auto flex items-center justify-center gap-2 bg-green-600 text-white px-5 py-2.5 rounded-lg font-bold hover:bg-green-700 transition shadow-sm"
+                        >
+                            <PlusIcon className="w-5 h-5" />
+                            Novo membro da equipe
+                        </button>
+
+                        <button
+                            onClick={() => setMostrarExplicacaoPapeis(true)}
+                            className="w-full sm:w-auto flex items-center justify-center gap-2 bg-white text-gray-600 border border-gray-200 px-5 py-2.5 rounded-lg font-bold hover:bg-gray-50 transition shadow-sm"
+                        >
+                            <SparklesIcon className="w-4 h-4 text-indigo-500" />
+                            Como funcionam os papéis
+                        </button>
+                    </div>
 
                     <div className="relative w-full sm:w-72">
                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -304,7 +381,7 @@ export default function Funcionarios({ auth, funcionarios = [], meusEstabelecime
                     <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
                         <div className="flex justify-between items-center p-6 border-b border-gray-100 sticky top-0 bg-white z-10">
                             <h3 className="text-xl font-bold text-gray-900">
-                                {modoEdicao ? 'Editar Funcionário' : 'Novo Funcionário'}
+                                {modoEdicao ? 'Editar Funcionário' : data.cargo === 'Sócio' ? 'Convidar sócio' : 'Novo membro da equipe'}
                             </h3>
                             <button onClick={fecharModais} className="text-gray-400 hover:text-gray-600 transition">
                                 <XMarkIcon className="w-6 h-6" />
@@ -378,20 +455,98 @@ export default function Funcionarios({ auth, funcionarios = [], meusEstabelecime
                                     </label>
                                     <select className="w-full rounded-lg border-gray-300 focus:border-indigo-500 focus:ring-indigo-500" value={data.cargo} onChange={e => setData('cargo', e.target.value)}>
                                         <option value="Atendente">Atendente</option>
-                                        <option value="Gerente">Gerente</option>
-                                        <option value="Proprietário">Proprietário</option>
+                                        <option value="Gerente" disabled={!podeGerenciarEquipeAvancada}>
+                                            Gerente{!podeGerenciarEquipeAvancada ? ' 🔒 (plano Sócio Premium)' : ''}
+                                        </option>
+                                        {!modoEdicao && (
+                                            <option value="Sócio" disabled={!podeGerenciarEquipeAvancada}>
+                                                Sócio{!podeGerenciarEquipeAvancada ? ' 🔒 (plano Sócio Premium)' : ''}
+                                            </option>
+                                        )}
                                     </select>
                                     <InputError message={errors.cargo} className="mt-1" />
+                                    {!podeGerenciarEquipeAvancada && (
+                                        <p className="text-xs text-gray-400 mt-1">Convidar gerentes e sócios é um recurso do plano Sócio Premium.</p>
+                                    )}
                                 </div>
                             </div>
 
                             <div className="flex justify-end gap-3 pt-4 border-t border-gray-100 mt-6">
                                 <button type="button" onClick={fecharModais} className="px-4 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded-lg transition">Cancelar</button>
-                                <PrimaryButton className="bg-green-600 hover:bg-green-700 px-6 py-2 rounded-lg text-white" disabled={processing}>
-                                    {processing ? 'Salvando...' : 'Salvar Funcionário'}
+                                <PrimaryButton className={`px-6 py-2 rounded-lg text-white ${data.cargo === 'Sócio' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-green-600 hover:bg-green-700'}`} disabled={processing}>
+                                    {processing ? 'Salvando...' : data.cargo === 'Sócio' ? 'Convidar sócio' : 'Salvar'}
                                 </PrimaryButton>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* --- MODAL: COMO FUNCIONAM OS PAPÉIS --- */}
+            {mostrarExplicacaoPapeis && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/70 backdrop-blur-sm animate-in fade-in">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+                        <div className="p-6 sm:p-8 border-b border-gray-100 flex justify-between items-start bg-gradient-to-br from-indigo-600 to-violet-700 rounded-t-3xl text-white">
+                            <div>
+                                <h3 className="text-2xl font-extrabold flex items-center gap-2">
+                                    <SparklesIcon className="w-6 h-6" /> Papéis na sua equipe
+                                </h3>
+                                <p className="text-indigo-100 text-sm mt-1">O que cada um pode fazer dentro da Lokyva.</p>
+                            </div>
+                            <button onClick={() => setMostrarExplicacaoPapeis(false)} className="text-white/80 hover:text-white transition">
+                                <XMarkIcon className="w-7 h-7" />
+                            </button>
+                        </div>
+
+                        <div className="p-6 sm:p-8 grid sm:grid-cols-3 gap-5">
+                            <div className="rounded-2xl border border-gray-100 p-5 bg-gray-50/60">
+                                <div className="w-11 h-11 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center mb-4">
+                                    <UserIcon className="w-6 h-6" />
+                                </div>
+                                <h4 className="font-bold text-gray-900 mb-1">Atendente</h4>
+                                <p className="text-xs text-indigo-600 font-semibold mb-3 uppercase tracking-wide">Todo plano, sem custo extra</p>
+                                <ul className="text-sm text-gray-600 space-y-2">
+                                    <li>• Atende a fila do dia a dia</li>
+                                    <li>• Chama, finaliza e adia clientes</li>
+                                    <li>• Não vê financeiro nem configurações</li>
+                                </ul>
+                            </div>
+
+                            <div className="rounded-2xl border-2 border-indigo-200 p-5 bg-indigo-50/50 relative">
+                                <span className="absolute -top-3 right-4 bg-indigo-600 text-white text-[10px] font-bold px-2.5 py-1 rounded-full">Plano Sócio Premium</span>
+                                <div className="w-11 h-11 rounded-xl bg-indigo-100 text-indigo-600 flex items-center justify-center mb-4">
+                                    <BriefcaseIcon className="w-6 h-6" />
+                                </div>
+                                <h4 className="font-bold text-gray-900 mb-1">Gerente</h4>
+                                <p className="text-xs text-indigo-600 font-semibold mb-3 uppercase tracking-wide">Quase tudo que o sócio vê</p>
+                                <ul className="text-sm text-gray-600 space-y-2">
+                                    <li>• Administra agenda, equipe e catálogo</li>
+                                    <li>• Vê relatórios, cupons e contratos</li>
+                                    <li>• <strong>Não</strong> acessa a Carteira nem a assinatura</li>
+                                </ul>
+                            </div>
+
+                            <div className="rounded-2xl border-2 border-emerald-200 p-5 bg-emerald-50/50 relative">
+                                <span className="absolute -top-3 right-4 bg-emerald-600 text-white text-[10px] font-bold px-2.5 py-1 rounded-full">Plano Sócio Premium</span>
+                                <div className="w-11 h-11 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center mb-4">
+                                    <UserPlusIcon className="w-6 h-6" />
+                                </div>
+                                <h4 className="font-bold text-gray-900 mb-1">Sócio</h4>
+                                <p className="text-xs text-emerald-600 font-semibold mb-3 uppercase tracking-wide">Acesso total, como você</p>
+                                <ul className="text-sm text-gray-600 space-y-2">
+                                    <li>• Administra tudo, sem restrições</li>
+                                    <li>• Acessa a Carteira e o dinheiro recebido</li>
+                                    <li>• Pode gerenciar a assinatura da plataforma</li>
+                                </ul>
+                            </div>
+                        </div>
+
+                        <div className="px-6 sm:px-8 pb-6 sm:pb-8">
+                            <div className="rounded-2xl bg-amber-50 border border-amber-100 p-4 text-sm text-amber-800 flex items-start gap-2">
+                                <LockClosedIcon className="w-4 h-4 mt-0.5 shrink-0" />
+                                Criar gerentes e convidar sócios é um benefício exclusivo do plano <strong>Sócio Premium</strong>{!podeGerenciarEquipeAvancada && ' — assine em Minha assinatura para liberar'}.
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}

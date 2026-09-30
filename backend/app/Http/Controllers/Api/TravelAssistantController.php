@@ -443,8 +443,10 @@ class TravelAssistantController extends Controller
         $fim = new \DateTime($dados['data_fim']);
         $dados['total_dias'] = $inicio->diff($fim)->days + 1;
 
-        // Garante a gravação em formato stringificado das matrizes dinâmicas JSON do banco
-        $dados['gastos_planejados'] = json_encode($dados['gastos_planejados'] ?? []);
+        // Não fazer json_encode aqui: o cast 'array' do model já serializa pra
+        // JSON ao salvar. Fazer os dois juntos gravava uma string JSON
+        // duplamente escapada (ex: `"[]"` em vez de `[]`), quebrando a leitura.
+        $dados['gastos_planejados'] = $dados['gastos_planejados'] ?? [];
         
         // Se a sua tabela possuir colunas extras text/json, persista-as aqui:
         if (isset($dados['detalhes_infraestrutura'])) {
@@ -483,7 +485,9 @@ class TravelAssistantController extends Controller
             ->with('membros:id,name,email')
             ->get()
             ->map(function ($viagem) {
-                $viagem->gastos_planejados = json_decode($viagem->gastos_planejados) ?? [];
+                // O cast 'array' do model já entrega isto decodificado;
+                // rodar json_decode de novo aqui quebra com TypeError.
+                $viagem->gastos_planejados = $viagem->gastos_planejados ?? [];
                 return $viagem;
             });
 

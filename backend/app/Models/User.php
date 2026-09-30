@@ -42,7 +42,63 @@ class User extends Authenticatable
     'person_type',
     'birth_date',
     'notification_disabled',
+
+    // Perfil (já enviados pelo cadastro web e mobile, mas nunca listados aqui
+    // — o Eloquent descartava esses campos em silêncio no User::create()).
+    'onde_estudei',
+    'onde_moro',
+    'idiomas',
+    'profissao',
+    'sobre_mim',
+    'foto_perfil',
+
+    // Aceite do Termo de Compromisso (colunas já existiam desde a migration
+    // de anfitrião, mas nunca tinham sido liberadas para mass-assignment —
+    // o cadastro sempre enviou esses campos e eles sempre foram descartados).
+    'termo_compromisso_aceito',
+    'termo_compromisso_aceito_em',
+    'termo_compromisso_ip',
+    'termo_compromisso_versao',
+    'termo_compromisso_user_agent',
+    'termo_compromisso_rejeitado_em',
+    'termo_compromisso_observacao',
     ];
+
+    protected $casts = [
+        'termo_compromisso_aceito' => 'boolean',
+        'termo_compromisso_aceito_em' => 'datetime',
+        'termo_compromisso_rejeitado_em' => 'datetime',
+        'plano_expira_em' => 'datetime',
+    ];
+
+    /**
+     * Verifica se o usuário tem QUALQUER plano premium ativo (premium,
+     * premium-plus, premium-socio, premium-anual, premium-socio-anual —
+     * ver App\Services\PlanoService::PLANOS_PREMIUM). Vários pontos do
+     * sistema comparavam plano_assinatura com o valor fixo 'plus', que não
+     * corresponde a nenhum plano realmente vendido — essa checagem nunca
+     * era verdadeira para um assinante de verdade.
+     */
+    public function isPremium(): bool
+    {
+        return $this->plano_assinatura
+            && str_starts_with($this->plano_assinatura, 'premium')
+            && $this->plano_expira_em
+            && $this->plano_expira_em->isFuture();
+    }
+
+    /**
+     * Só o sócio no plano premium mais alto (premium-socio ou
+     * premium-socio-anual — ver App\Services\PlanoService::PLANOS_PREMIUM)
+     * pode convidar outros sócios e criar gerentes sem limite. Planos mais
+     * básicos (premium, premium-anual) continuam só com atendente/funcionário.
+     */
+    public function podeGerenciarEquipeAvancada(): bool
+    {
+        return $this->papel === 'socio'
+            && $this->isPremium()
+            && in_array($this->plano_assinatura, ['premium-socio', 'premium-socio-anual'], true);
+    }
 
     protected $hidden = [
         'password',

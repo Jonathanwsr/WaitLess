@@ -25,11 +25,28 @@ class ServicoController extends Controller
     private function verificarPermissao()
     {
         $user = Auth::user();
-        
+
         // Bloqueia se o utilizador não tiver um destes papéis
         if (!in_array($user->papel, ['admin', 'socio', 'gerente', 'user'])) {
             abort(403, 'Acesso Negado: Você não tem permissão para gerenciar o catálogo.');
         }
+    }
+
+    /**
+     * Trava REAL de segurança: `verificarPermissao()` acima só olha o papel do
+     * usuário, e como 'user' (o papel padrão de qualquer cliente) estava na
+     * lista liberada, qualquer cliente autenticado conseguia criar, editar ou
+     * apagar o serviço de QUALQUER estabelecimento — inclusive apagar
+     * disparava estorno automático das reservas pendentes. Esta checagem
+     * confirma que o usuário de fato administra o estabelecimento em questão.
+     */
+    private function garantirQueGerenciaEstabelecimento(int $estabelecimentoId): void
+    {
+        $gerencia = Auth::user()->estabelecimentos()
+            ->where('estabelecimentos.id', $estabelecimentoId)
+            ->exists();
+
+        abort_unless($gerencia, 403, 'Você não tem permissão para gerenciar o catálogo deste estabelecimento.');
     }
 
     /* =========================================================================
@@ -47,6 +64,7 @@ class ServicoController extends Controller
             'descricao'            => 'nullable|string',
             'valor'                => 'required|numeric|min:0',
             'duracao_minutos'      => 'required|integer|min:1',
+            'vagas_por_horario'   => 'nullable|integer|min:1|max:100',
             'estabelecimentos_ids' => 'required|array|min:1', 
             'estabelecimentos_ids.*' => 'exists:estabelecimentos,id',
             'funcionario_id'       => 'nullable|exists:funcionarios,id',
@@ -68,6 +86,10 @@ class ServicoController extends Controller
             'produtos_vinculados.*'       => 'integer|exists:produtos,id',
         ]);
 
+        foreach ($validated['estabelecimentos_ids'] as $estIdParaChecar) {
+            $this->garantirQueGerenciaEstabelecimento((int) $estIdParaChecar);
+        }
+
         $horarios = $validated['horarios_disponiveis'] ?? [];
         $dias = $validated['dias_disponiveis'] ?? [];
 
@@ -79,7 +101,8 @@ class ServicoController extends Controller
         }
 
         $somentePremium = $request->boolean('somente_premium', false);
-        $temPromocao = $request->boolean('tem_promocao', false);
+        // Serviço gratuito (valor 0) não pode ter "promoção" — não tem o que descontar.
+        $temPromocao = $request->boolean('tem_promocao', false) && (float) $validated['valor'] > 0;
         $aceitaPontos = $request->boolean('aceita_pontos', false);
         $produtosVinculados = $validated['produtos_vinculados'] ?? [];
 
@@ -102,6 +125,7 @@ class ServicoController extends Controller
                 'descricao'            => $validated['descricao'] ?? null,
                 'valor'                => $validated['valor'],
                 'duracao_minutos'      => $validated['duracao_minutos'],
+                'vagas_por_horario'      => $validated['vagas_por_horario'] ?? 1,
                 'ativo'                => true,
                 'horarios_disponiveis' => json_encode($horarios),
                 'configuracoes'        => json_encode([
@@ -146,6 +170,7 @@ class ServicoController extends Controller
     public function update(Request $request, Servico $servico)
     {
         $this->verificarPermissao();
+        $this->garantirQueGerenciaEstabelecimento((int) $servico->estabelecimento_id);
 
         $validated = $request->validate([
             'nome'                 => 'required|string|max:255',
@@ -153,6 +178,7 @@ class ServicoController extends Controller
             'descricao'            => 'nullable|string',
             'valor'                => 'required|numeric|min:0',
             'duracao_minutos'      => 'required|integer|min:1',
+            'vagas_por_horario'   => 'nullable|integer|min:1|max:100',
             'funcionario_id'       => 'nullable|exists:funcionarios,id',
             'dias_disponiveis'     => 'nullable|array',
             'horarios_disponiveis' => 'nullable|array',
@@ -178,7 +204,8 @@ class ServicoController extends Controller
         $horarios = $validated['horarios_disponiveis'] ?? [];
         $dias = $validated['dias_disponiveis'] ?? [];
 
-        $temPromocao = $request->boolean('tem_promocao', false);
+        // Serviço gratuito (valor 0) não pode ter "promoção" — não tem o que descontar.
+        $temPromocao = $request->boolean('tem_promocao', false) && (float) $validated['valor'] > 0;
         $aceitaPontos = $request->boolean('aceita_pontos', false);
 
         $dadosParaAtualizar = [
@@ -187,6 +214,7 @@ class ServicoController extends Controller
             'descricao'            => $validated['descricao'] ?? null,
             'valor'                => $validated['valor'],
             'duracao_minutos'      => $validated['duracao_minutos'],
+            'vagas_por_horario'      => $validated['vagas_por_horario'] ?? $servico->vagas_por_horario ?? 1,
             'horarios_disponiveis' => json_encode($horarios),
             'configuracoes'        => json_encode([
                 'dias_disponiveis'   => $dias,
@@ -242,6 +270,7 @@ class ServicoController extends Controller
 
         try {
             $servico = Servico::findOrFail($id);
+            $this->garantirQueGerenciaEstabelecimento((int) $servico->estabelecimento_id);
             $estabelecimento = $servico->estabelecimento;
 
             $agendamentosAfetados = Agendamento::where('servico_id', $servico->id)

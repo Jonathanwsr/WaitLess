@@ -7,6 +7,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rules\Password;
+use App\Services\TrocaSenhaService;
 
 class PasswordController extends Controller
 {
@@ -20,9 +21,13 @@ class PasswordController extends Controller
             'password' => ['required', Password::defaults(), 'confirmed'],
         ]);
 
+        $trocas = app(TrocaSenhaService::class);
+        $trocas->garantirPodeTrocar($request->user());
+
         $request->user()->update([
             'password' => Hash::make($validated['password']),
         ]);
+        $trocas->registrar($request->user(), 'web_perfil', $request->ip());
 
         return back();
     }

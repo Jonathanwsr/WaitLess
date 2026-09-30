@@ -885,6 +885,7 @@ export default function Home() {
   
   const [isEditingLocation, setIsEditingLocation] = useState(false);
   const [addressData, setAddressData] = useState({
+    cep: '',
     logradouro: '',
     numero: '',
     bairro: '',
@@ -1014,6 +1015,28 @@ export default function Home() {
       sanitizedValue = value.replace(/[^0-9\s/s/nNºs/n]/g, '');
     }
     
+    // CEP: máscara e preenchimento automático do endereço (consulta direto do navegador).
+    if (name === 'cep') {
+      const digitos = value.replace(/\D/g, '').slice(0, 8);
+      const mascarado = digitos.length > 5 ? `${digitos.slice(0, 5)}-${digitos.slice(5)}` : digitos;
+      setAddressData(prev => ({ ...prev, cep: mascarado }));
+      if (digitos.length === 8) {
+        fetch(`https://viacep.com.br/ws/${digitos}/json/`)
+          .then((r) => r.json())
+          .then((r) => {
+            if (r.erro) return;
+            setAddressData(prev => ({
+              ...prev,
+              logradouro: r.logradouro || prev.logradouro,
+              bairro: r.bairro || prev.bairro,
+              cidadeUf: r.localidade ? `${r.localidade}/${r.uf}` : prev.cidadeUf,
+            }));
+          })
+          .catch(() => {});
+      }
+      return;
+    }
+
     const maxLengths = { logradouro: 255, numero: 20, bairro: 100, cidadeUf: 100 };
     if (sanitizedValue.length > (maxLengths[name] || 255)) return;
 
@@ -1272,6 +1295,19 @@ export default function Home() {
               
               <LocationFormFields onSubmit={handleSaveLocation}>
                 <label className="full-width">
+                  CEP (preenche o endereço sozinho)
+                  <input
+                    type="text"
+                    name="cep"
+                    inputMode="numeric"
+                    placeholder="00000-000"
+                    value={addressData.cep}
+                    onChange={handleAddressInputChange}
+                    autoFocus
+                  />
+                </label>
+
+                <label className="full-width">
                   Rua/Avenida *
                   <input 
                     type="text" 
@@ -1280,7 +1316,6 @@ export default function Home() {
                     value={addressData.logradouro}
                     onChange={handleAddressInputChange}
                     required
-                    autoFocus
                     className={validationErrors.logradouro ? 'error' : ''}
                   />
                   {validationErrors.logradouro && <div className="error-message">{validationErrors.logradouro}</div>}

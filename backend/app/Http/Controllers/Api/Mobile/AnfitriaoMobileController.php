@@ -108,7 +108,7 @@ class AnfitriaoMobileController extends Controller
                     'nome' => $estabelecimento->nome ?? 'Auto Reserva',
                     'subtitulo' => 'Estabelecimento • 2,9 km',
                     'foto_perfil' => $estabelecimento->foto_perfil ?? 'https://images.unsplash.com/photo-1560250097-0b93528c311a?q=80&w=256&auto=format&fit=crop', // Imagem Genérica do Rosto
-                    'capa' => $estabelecimento->foto_capa ?? 'https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?q=80&w=1000&auto=format&fit=crop', // Imagem Genérica dos Carros
+                    'capa' => $estabelecimento->foto_banner ?? 'https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?q=80&w=1000&auto=format&fit=crop', // Imagem Genérica dos Carros
                     'total_avaliacoes' => $estabelecimento->total_avaliacoes ?? 93,
                     'avaliacao_media' => $estabelecimento->avaliacao_media ?? '4,86',
                     'status' => 'Superhost',

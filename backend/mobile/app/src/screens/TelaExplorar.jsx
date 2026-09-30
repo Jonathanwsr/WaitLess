@@ -16,19 +16,20 @@ import {
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { alternarFavoritoRemoto } from '../../../services/favoritos';
 
 const { width } = Dimensions.get('window');
 
 const COLORS = {
-  primary: '#FF8C00', 
+  primary: '#FF7A00',
   primaryLight: '#FFF0E6', 
-  secondary: '#111827',
-  textDark: '#374151',
-  gray: '#6B7280',
-  lightGray: '#F9FAFB',
+  secondary: '#282828',
+  textDark: '#3A3A3A',
+  gray: '#6A6C72',
+  lightGray: '#F5F5F5',
   white: '#FFFFFF',
-  border: '#E5E7EB',
-  success: '#10B981', 
+  border: '#E6E7E9',
+  success: '#00A868', 
 };
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api/mobile';
@@ -289,20 +290,10 @@ export default function TelaExplorar() {
       prev.includes(idItem) ? prev.filter(favId => favId !== idItem) : [...prev, idItem]
     );
 
-    try {
-      const token = await AsyncStorage.getItem('@waitless_token');
-      const isServico = item.tipo === 'servico' || item.tipo === 'aluguel' || item.estabelecimento_id != null;
-
-      await fetch(`${API_URL}/favoritos/toggle`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ tipo: isServico ? 'servico' : 'estabelecimento', id: idItem })
-      });
-    } catch (error) {
-      console.log('Erro ao favoritar', error);
+    const isServico = item.tipo === 'servico' || item.tipo === 'aluguel' || item.estabelecimento_id != null;
+    const resultado = await alternarFavoritoRemoto(`${API_URL}/favoritos/toggle`, isServico ? 'servico' : 'estabelecimento', idItem);
+    if (resultado === null) {
+      setFavoritos(prev => (prev.includes(idItem) ? prev.filter(favId => favId !== idItem) : [...prev, idItem]));
     }
   };
 
@@ -593,12 +584,11 @@ const styles = StyleSheet.create({
   iconBtnCircleHeart: {
     width: 36,
     height: 36,
-    borderRadius: 18,
+    borderRadius: 20,
     backgroundColor: COLORS.white,
-    borderWidth: 1,
-    borderColor: COLORS.border,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3,
   },
   badge: { 
     position: 'absolute', 
@@ -777,7 +767,7 @@ const styles = StyleSheet.create({
   },
   bannerSubtitle: {
     fontSize: 12,
-    color: '#E5E7EB',
+    color: '#E6E7E9',
     marginTop: 6,
     fontWeight: '500',
   },
@@ -825,7 +815,7 @@ const styles = StyleSheet.create({
   imagePlaceholder: {
     width: '100%', 
     height: '100%',
-    backgroundColor: '#E5E7EB',
+    backgroundColor: '#E6E7E9',
     alignItems: 'center',
     justify: 'center'
   },

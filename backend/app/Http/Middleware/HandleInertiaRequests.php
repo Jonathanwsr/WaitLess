@@ -37,6 +37,9 @@ class HandleInertiaRequests extends Middleware
                 'user' => $request->user(),
             ],
             'alertaCarteiraAsaas' => fn () => $this->alertaCarteiraAsaas($request),
+            'menuEstabelecimentoId' => fn () => $this->menuEstabelecimentoId($request),
+            'taxaPlataforma' => \App\Support\Taxas::percentual(),
+            'menuPremium' => fn () => $request->user() ? ($request->user()->papel === 'admin' || $request->user()->isPremium()) : false,
         ];
     }
 
@@ -62,9 +65,41 @@ class HandleInertiaRequests extends Middleware
         }
 
         return [
-            'mensagem' => 'O estabelecimento não possui uma carteira Asaas configurada.',
+            'mensagem' => 'Crie sua conta para receber pagamentos online',
             'detalhe' => 'Enquanto a conta de recebimento não for cadastrada, os clientes não conseguem pagar reservas online em: ' . $estabelecimentos->pluck('nome')->implode(', ') . '.',
-            'rota' => route('financeiro.conta'),
+            'rota' => route('carteira.asaas'),
         ];
+    }
+
+    /** Primeiro estabelecimento do proprietário: alvo dos atalhos do menu lateral que exigem um local (cupons, contratos, configurações). */
+    private function menuEstabelecimentoId(Request $request): ?int
+    {
+        $user = $request->user();
+
+        if (!$user || !in_array(mb_strtolower((string) $user->papel), ['socio', 'sócio', 'proprietario', 'proprietário'], true)) {
+            return null;
+        }
+
+        // Quem tem mais de um local mantém o contexto: se a tela atual é de um local dele
+        // (Configurações, Cupons, Contratos...), o menu lateral aponta para ESSE local.
+        $doContexto = (int) ($request->route('estabelecimento') instanceof \Illuminate\Database\Eloquent\Model
+            ? $request->route('estabelecimento')->getKey()
+            : ($request->route('estabelecimento') ?? $request->route('estabelecimento_id') ?? $request->query('estabelecimento_id')));
+
+        if ($doContexto > 0) {
+            $vinculado = DB::table('estabelecimento_usuario')
+                ->where('usuario_id', $user->id)
+                ->where('estabelecimento_id', $doContexto)
+                ->exists();
+
+            if ($vinculado) {
+                return $doContexto;
+            }
+        }
+
+        return DB::table('estabelecimento_usuario')
+            ->where('usuario_id', $user->id)
+            ->orderBy('estabelecimento_id')
+            ->value('estabelecimento_id');
     }
 }

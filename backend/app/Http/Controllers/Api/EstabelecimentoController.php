@@ -77,8 +77,26 @@ class EstabelecimentoController extends Controller
         }
     }
 
+    /**
+     * Sem isso, `update()` e `toggleStatus()` não checavam dono nenhum —
+     * qualquer usuário autenticado podia editar o perfil de QUALQUER
+     * estabelecimento (inclusive sobrescrever o token_mercadopago, o que
+     * redirecionaria os pagamentos daquele negócio pro atacante) ou
+     * desativá-lo por completo.
+     */
+    private function garantirQueGerencia(Request $request, Estabelecimento $estabelecimento): void
+    {
+        $user = $request->user();
+        $gerencia = $user->papel === 'admin'
+            || $user->estabelecimentos()->where('estabelecimentos.id', $estabelecimento->id)->exists();
+
+        abort_unless($gerencia, 403, 'Você não administra este estabelecimento.');
+    }
+
     public function update(Request $request, Estabelecimento $estabelecimento)
     {
+        $this->garantirQueGerencia($request, $estabelecimento);
+
         $validated = $request->validate([
             'nome'              => 'required|string|max:255',
             'cnpj'              => 'nullable|string|max:18',
@@ -86,16 +104,16 @@ class EstabelecimentoController extends Controller
             'site'              => 'nullable|url|max:255',
             'ramo_atuacao'      => 'nullable|string|max:255',
             'telefone'          => 'nullable|string|max:20',
-            'cep'               => 'nullable|string|max:10',  
+            'cep'               => 'nullable|string|max:10',
             'rua'               => 'nullable|string|max:255',
             'numero'            => 'nullable|string|max:20',
             'complemento'       => 'nullable|string|max:255',
             'bairro'            => 'nullable|string|max:255',
             'cidade'            => 'nullable|string|max:255',
             'estado'            => 'nullable|string|size:2',
-            'foto_perfil'       => 'nullable|image|max:2048', 
-            'foto_banner'       => 'nullable|image|max:4096', 
-            'token_mercadopago' => 'nullable|string', 
+            'foto_perfil'       => 'nullable|image|max:2048',
+            'foto_banner'       => 'nullable|image|max:4096',
+            'token_mercadopago' => 'nullable|string',
             'bio'               => 'nullable|string|max:1000', // Nova coluna
             'seguidores'        => 'nullable|integer|min:0',   // Nova coluna
         ]);
@@ -103,22 +121,24 @@ class EstabelecimentoController extends Controller
         if ($request->hasFile('foto_perfil')) {
             $validated['foto_perfil'] = ImageKitService::upload($request->file('foto_perfil'), '/waitless/estabelecimentos');
         } else {
-            unset($validated['foto_perfil']); 
+            unset($validated['foto_perfil']);
         }
 
         if ($request->hasFile('foto_banner')) {
             $validated['foto_banner'] = ImageKitService::upload($request->file('foto_banner'), '/waitless/estabelecimentos/banners');
         } else {
-            unset($validated['foto_banner']); 
+            unset($validated['foto_banner']);
         }
 
         $estabelecimento->update($validated);
-        
+
         return redirect()->back()->with('success', 'Configurações atualizadas com sucesso!');
     }
 
-    public function toggleStatus(Estabelecimento $estabelecimento)
+    public function toggleStatus(Request $request, Estabelecimento $estabelecimento)
     {
+        $this->garantirQueGerencia($request, $estabelecimento);
+
         $estabelecimento->update(['ativo' => !$estabelecimento->ativo]);
         $mensagem = $estabelecimento->ativo ? 'Estabelecimento reativado!' : 'Estabelecimento desativado temporariamente.';
         return redirect()->back()->with('success', $mensagem);
@@ -136,7 +156,7 @@ class EstabelecimentoController extends Controller
         // 2. Validação se o usuário tem vínculo com ESTE estabelecimento (ignora se for admin)
         if ($user->papel !== 'admin') {
             $isLinked = false;
-            
+
             if (in_array($user->papel, ['proprietario', 'socio', 'gerente'])) {
                 // É dono ou tem vínculo na pivot
                 $isLinked = $estabelecimento->proprietarios()->where('users.id', $user->id)->exists();
@@ -153,7 +173,7 @@ class EstabelecimentoController extends Controller
         }
 
         $hoje = \Carbon\Carbon::today()->toDateString();
-        
+
         $filtros = [
             'data_inicio'      => $request->input('data_inicio', $hoje),
             'data_fim'         => $request->input('data_fim', $hoje),
@@ -173,7 +193,7 @@ class EstabelecimentoController extends Controller
 
         // 4. Aplica ImageKit no estabelecimento atual e na lista
         $imageKitBaseUrl = env('IMAGEKIT_URL', 'https://ik.imagekit.io/seu_id');
-        
+
         $estabelecimentos->transform(function ($est) use ($imageKitBaseUrl) {
             $est->foto_perfil_url = !empty($est->foto_perfil) ? rtrim($imageKitBaseUrl, '/') . '/' . ltrim($est->foto_perfil, '/') : null;
             return $est;
@@ -181,8 +201,8 @@ class EstabelecimentoController extends Controller
 
         // Prepara os dados do estabelecimento atual que vão pro frontend
         $estabelecimentoAtual = $estabelecimento->only(['id', 'nome', 'foto_perfil']);
-        $estabelecimentoAtual['foto_perfil_url'] = !empty($estabelecimentoAtual['foto_perfil']) 
-            ? rtrim($imageKitBaseUrl, '/') . '/' . ltrim($estabelecimentoAtual['foto_perfil'], '/') 
+        $estabelecimentoAtual['foto_perfil_url'] = !empty($estabelecimentoAtual['foto_perfil'])
+            ? rtrim($imageKitBaseUrl, '/') . '/' . ltrim($estabelecimentoAtual['foto_perfil'], '/')
             : null;
 
         $funcionarios = \App\Models\Funcionario::select('id', 'nome', 'cargo')
@@ -214,9 +234,9 @@ class EstabelecimentoController extends Controller
 
         return \Inertia\Inertia::render('Estabelecimentos/Fila', [
             'estabelecimento'  => $estabelecimentoAtual,
-            'estabelecimentos' => $estabelecimentos, 
+            'estabelecimentos' => $estabelecimentos,
             'agendamentos'     => $agendamentos,
-            'funcionarios'     => $funcionarios,     
+            'funcionarios'     => $funcionarios,
             'filtros'          => $filtros
         ]);
     }
@@ -237,18 +257,19 @@ class EstabelecimentoController extends Controller
             'meusEstabelecimentos' => $meusEstabelecimentos,
             'funcionarios'         => $funcionarios,
             'servicos'             => $servicos,
-            'produtos'             => $produtos
+            'produtos'             => $produtos,
+            'categoriasServicos'   => \App\Support\Categorias::servicos(),
         ]);
     }
 
     public function loja(Estabelecimento $estabelecimento)
     {
         $user = \Illuminate\Support\Facades\Auth::user();
-        
+
         $servicos = $estabelecimento->servicos()
             ->with(['agendamentos' => function ($query) {
                 $query->whereDate('data_agendamento', '>=', now()->toDateString())
-                      ->with(['usuario:id,name', 'funcionario:id,nome']); 
+                      ->with(['usuario:id,name', 'funcionario:id,nome']);
             }])
             ->paginate(12);
 
@@ -260,11 +281,13 @@ class EstabelecimentoController extends Controller
 
     public function cupons(Estabelecimento $estabelecimento)
     {
-        $cupons = $estabelecimento->cupons()->latest()->get();
-        
+        $cupons = $estabelecimento->cupons()->with(['servico:id,nome', 'itemAluguel:id,nome'])->latest()->get();
+
         return Inertia::render('Estabelecimentos/Cupons', [
             'estabelecimento' => $estabelecimento,
-            'cupons' => $cupons
+            'cupons' => $cupons,
+            'servicos' => $estabelecimento->servicos()->where('ativo', true)->orderBy('nome')->get(['id', 'nome']),
+            'reservas' => \App\Models\ItemAluguel::catalogo()->where('estabelecimento_id', \Illuminate\Support\Facades\Auth::id())->orderBy('nome')->get(['id', 'nome']),
         ]);
     }
 
@@ -286,13 +309,13 @@ class EstabelecimentoController extends Controller
             }
 
             $todasLojas = $query->get();
-            
+
             $metricas = [
                 'ativos'                  => $todasLojas->where('ativo', true)->count(),
                 'faturamento'             => 'R$ ' . number_format((float) $todasLojas->sum('arrecadacao_total'), 2, ',', '.'),
-                'crescimento_faturamento' => '+0%', 
+                'crescimento_faturamento' => '+0%',
                 'aguardando'              => $todasLojas->sum('clientes_aguardando'),
-                'funcionarios_ativos'     => 0 
+                'funcionarios_ativos'     => 0
             ];
 
             $estabelecimentos = $query->paginate(10)->through(function ($loja) {
@@ -313,11 +336,11 @@ class EstabelecimentoController extends Controller
                 return [
                     'id'          => $loja->id,
                     'nome'        => $loja->nome,
-                    'foto_perfil' => $loja->foto_perfil, 
+                    'foto_perfil' => $loja->foto_perfil,
                     'foto_perfil_url' => $fotoPerfilUrl,
                     'endereco'    => $enderecoFormatado,
                     'status'      => $loja->ativo ? 'Ativo' : 'Inativo',
-                    'horario'     => '08:00 - 18:00', 
+                    'horario'     => '08:00 - 18:00',
                     'faturamento' => 'R$ ' . number_format((float) ($loja->arrecadacao_total ?? 0), 2, ',', '.'),
                     'aguardando'  => $loja->clientes_aguardando ?? 0,
                     'funcionarios'=> $totalFuncionarios,
@@ -343,5 +366,38 @@ class EstabelecimentoController extends Controller
                 'flash' => ['error' => 'Problema ao carregar dados. Tente atualizar.']
             ]);
         }
+    }
+
+    /** Vitrine do local do jeito que o cliente vê (prévia para o sócio). */
+    /** Passo a passo para cadastrar local, serviço e reserva, com o progresso real do sócio. */
+    public function tutoriais(Request $request)
+    {
+        $user = \Illuminate\Support\Facades\Auth::user();
+        abort_unless(in_array($user->papel, ['admin', 'socio', 'proprietario', 'gerente'], true), 403);
+
+        $locais = $user->estabelecimentosGerenciados()->get(['estabelecimentos.id', 'estabelecimentos.nome']);
+
+        return Inertia::render('Estabelecimentos/Tutoriais', [
+            'locais' => $locais->map(fn ($l) => ['id' => $l->id, 'nome' => $l->nome])->values(),
+            'progresso' => [
+                'local' => $locais->count() > 0,
+                'servico' => \App\Models\Servico::whereIn('estabelecimento_id', $locais->pluck('id'))->exists(),
+                'reserva' => \App\Models\ItemAluguel::catalogo()->where('estabelecimento_id', $user->id)->exists(),
+            ],
+            'fluxoInicial' => in_array($request->query('fluxo'), ['local', 'servico', 'reserva'], true) ? $request->query('fluxo') : 'local',
+        ]);
+    }
+
+    public function vitrine(Request $request)
+    {
+        $user = \Illuminate\Support\Facades\Auth::user();
+        abort_unless(in_array($user->papel, ['admin', 'socio', 'proprietario', 'gerente'], true), 403);
+
+        return Inertia::render('Estabelecimentos/Vitrine', [
+            'vitrine' => app(\App\Services\VitrineService::class)->montar($user, $request->integer('estabelecimento_id') ?: null),
+            'divulgacao' => collect(\App\Http\Controllers\DivulgacaoController::dadosDoProprietario($user))
+                ->firstWhere('id', $request->integer('estabelecimento_id') ?: null)
+                ?? (\App\Http\Controllers\DivulgacaoController::dadosDoProprietario($user)[0] ?? null),
+        ]);
     }
 }

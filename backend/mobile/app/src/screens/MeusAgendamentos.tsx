@@ -1,24 +1,25 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  FlatList, 
-  TouchableOpacity, 
-  Alert, 
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
   TextInput,
   SafeAreaView,
   Platform,
-  ScrollView
+  ScrollView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image } from 'expo-image';
-import { Ionicons, Feather } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
+import { T } from '../../../constants/ClientTheme';
+import { HeaderCliente } from '../../../components/client/ui';
+import { alertar } from '../../../services/alertar';
+import { obterEcho } from '../../../services/echo';
 
-// --- TIPAGENS (Remove os erros de "any") ---
 interface Estabelecimento {
   nome?: string;
   cidade?: string;
@@ -37,6 +38,8 @@ interface ItemAluguel {
 
 interface AgendamentoItem {
   id: number;
+  estabelecimento_id?: number;
+  servico_id?: number;
   status: string;
   status_pagamento?: string;
   data_agendamento?: string;
@@ -50,69 +53,66 @@ interface AgendamentoItem {
   estabelecimento?: Estabelecimento;
 }
 
-// --- CONFIGURAÇÕES VISUAIS ---
-const COLORS = {
-  primary: '#FF5A00',
-  secondary: '#111827',
-  gray: '#6B7280',
-  lightGray: '#F9FAFB',
-  white: '#FFFFFF',
-  border: '#F3F4F6',
-  successBg: '#ECFDF5',
-  successText: '#059669',
-  pendingBg: '#FFF7ED',
-  pendingText: '#D97706',
-  canceledBg: '#FEF2F2',
-  canceledText: '#DC2626',
-};
-
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 const TABS = [
-  { id: 'todos', label: 'Todos' },
-  { id: 'proximos', label: 'Próximos' },
-  { id: 'pendentes', label: 'Faltam pagar' },
-  { id: 'concluidos', label: 'Concluídos' },
-  { id: 'cancelados', label: 'Cancelados' },
-];
+  { id: 'todos', label: 'Todas', icone: 'albums-outline' },
+  { id: 'proximos', label: 'Próximas', icone: 'calendar-outline' },
+  { id: 'andamento', label: 'Em andamento', icone: 'briefcase-outline' },
+  { id: 'pendentes', label: 'Faltam pagar', icone: 'card-outline' },
+  { id: 'concluidos', label: 'Concluídas', icone: 'checkmark-circle-outline' },
+  { id: 'cancelados', label: 'Canceladas', icone: 'close-circle-outline' },
+] as const;
+
+const brl = (v: unknown) => `R$ ${Number(v || 0).toFixed(2).replace('.', ',')}`;
 
 export default function MeusAgendamentos() {
   const router = useRouter();
-  
+
   const [abaAtiva, setAbaAtiva] = useState<string>('todos');
   const [busca, setBusca] = useState<string>('');
   const [lista, setLista] = useState<AgendamentoItem[]>([]);
   const [carregando, setCarregando] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
-  const [nomeUsuario, setNomeUsuario] = useState<string>('Usuário');
 
   useEffect(() => {
     carregarAgendamentos();
-    buscarNomeUsuario();
   }, []);
 
-  const buscarNomeUsuario = async () => {
-    try {
-      const userString = await AsyncStorage.getItem('@waitless_user');
-      if (userString) {
-        const user = JSON.parse(userString);
-        setNomeUsuario(user.name ? user.name.split(' ')[0] : 'Usuário');
-      }
-    } catch (e) {
-      // ignora
-    }
-  };
+  // Atualização em tempo real: quando o pagamento (PIX/boleto/cartão) é
+  // confirmado pelo webhook do gateway, o status muda no banco na hora — sem
+  // isso, a lista só atualizaria com um "puxar para atualizar" manual.
+  useEffect(() => {
+    const estabelecimentoIds = [...new Set(
+      lista.map((a) => a.estabelecimento_id).filter((id): id is number => Boolean(id))
+    )];
+    if (estabelecimentoIds.length === 0) return;
+
+    let cancelado = false;
+    const canais = estabelecimentoIds.map((id) => `fila.${id}`);
+
+    obterEcho().then((echo) => {
+      if (cancelado) return;
+      canais.forEach((canalNome) => {
+        echo.channel(canalNome).listen('.FilaAtualizada', () => {
+          carregarAgendamentos();
+        });
+      });
+    });
+
+    return () => {
+      cancelado = true;
+      obterEcho().then((echo) => canais.forEach((canalNome) => echo.leave(canalNome)));
+    };
+  }, [lista.map((a) => a.estabelecimento_id).join(',')]);
 
   const carregarAgendamentos = async () => {
     try {
       const token = await AsyncStorage.getItem('@waitless_token');
       const response = await fetch(`${API_URL}/meus-agendamentos`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Accept': 'application/json'
-        }
+        headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
       });
-      
+
       const data = await response.json();
       if (Array.isArray(data)) {
         setLista(data);
@@ -120,7 +120,7 @@ export default function MeusAgendamentos() {
         setLista(data.data);
       }
     } catch (error) {
-      Alert.alert('Erro', 'Não foi possível carregar o seu histórico.');
+      alertar('Erro', 'Não foi possível carregar o seu histórico.');
     } finally {
       setCarregando(false);
       setRefreshing(false);
@@ -132,195 +132,192 @@ export default function MeusAgendamentos() {
     carregarAgendamentos();
   };
 
-  const handleCancelar = (id: number) => {
-    Alert.alert(
-      'Cancelar Reserva',
-      'Tem certeza que deseja cancelar este agendamento?',
-      [
-        { text: 'Não', style: 'cancel' },
-        { 
-          text: 'Sim, cancelar', 
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const token = await AsyncStorage.getItem('@waitless_token');
-              const response = await fetch(`${API_URL}/agendamentos/${id}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
-              });
-              
-              if (response.ok) {
-                Alert.alert('Sucesso', 'Agendamento cancelado.');
-                carregarAgendamentos();
-              } else {
-                Alert.alert('Erro', 'Não foi possível cancelar.');
-              }
-            } catch (e) {
-              Alert.alert('Erro', 'Falha na comunicação com o servidor.');
-            }
-          }
-        }
-      ]
-    );
+  /** Abre a tela de detalhes do mesmo serviço já escolhido; sem dados suficientes, volta ao Explorar. */
+  const repetirReserva = (item: AgendamentoItem) => {
+    if (item.servico_id) {
+      router.push({
+        pathname: '/src/screens/ExplorarDetalhes' as never,
+        params: { id: String(item.servico_id) },
+      });
+    } else {
+      router.push('/(tabs)/explorar' as never);
+    }
   };
 
-  // Filtros dinâmicos baseados na aba e na busca
-  const qtdPendentes = lista.filter((item) => item.status === 'aguardando_pagamento' && item.status_pagamento === 'pendente').length;
+  const handleCancelar = (id: number) => {
+    alertar('Cancelar reserva', 'Tem certeza que deseja cancelar este agendamento?', [
+      { text: 'Não', style: 'cancel' },
+      {
+        text: 'Sim, cancelar',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            const token = await AsyncStorage.getItem('@waitless_token');
+            const response = await fetch(`${API_URL}/agendamentos/${id}`, {
+              method: 'DELETE',
+              headers: { Authorization: `Bearer ${token}` },
+            });
+
+            if (response.ok) {
+              alertar('Sucesso', 'Agendamento cancelado.');
+              carregarAgendamentos();
+            } else {
+              alertar('Erro', 'Não foi possível cancelar.');
+            }
+          } catch (e) {
+            alertar('Erro', 'Falha na comunicação com o servidor.');
+          }
+        },
+      },
+    ]);
+  };
+
+  const ehPendentePagamento = (item: AgendamentoItem) => item.status === 'aguardando_pagamento' && item.status_pagamento === 'pendente';
+
+  const filtrar = (item: AgendamentoItem, aba: string) => {
+    const pend = ehPendentePagamento(item);
+    if (aba === 'todos') return true;
+    if (aba === 'pendentes') return pend;
+    if (aba === 'andamento') return item.status === 'em_atendimento';
+    if (aba === 'proximos') return ['pendente', 'confirmado'].includes(item.status) || (item.status === 'aguardando_pagamento' && !pend);
+    if (aba === 'concluidos') return ['finalizado', 'concluido'].includes(item.status);
+    if (aba === 'cancelados') return ['cancelado', 'estornado', 'vencido'].includes(item.status);
+    return true;
+  };
 
   const dadosFiltrados = lista.filter((item) => {
     const termo = busca.toLowerCase();
     const nomeLocal = (item.estabelecimento?.nome || '').toLowerCase();
     const nomeServico = (item.servico?.nome || item.itemAluguel?.nome || '').toLowerCase();
-    
-    if (busca && !nomeLocal.includes(termo) && !nomeServico.includes(termo)) {
-      return false;
-    }
-
-    const isPendenteDePagamento = item.status === 'aguardando_pagamento' && item.status_pagamento === 'pendente';
-
-    if (abaAtiva === 'todos') return true;
-    if (abaAtiva === 'pendentes') return isPendenteDePagamento;
-    if (abaAtiva === 'proximos') return ['pendente', 'confirmado', 'em_atendimento'].includes(item.status) || (item.status === 'aguardando_pagamento' && !isPendenteDePagamento);
-    if (abaAtiva === 'concluidos') return ['finalizado', 'concluido'].includes(item.status);
-    if (abaAtiva === 'cancelados') return ['cancelado', 'estornado', 'vencido'].includes(item.status);
-    
-    return true;
+    if (busca && !nomeLocal.includes(termo) && !nomeServico.includes(termo)) return false;
+    return filtrar(item, abaAtiva);
   });
 
-  // Funções Auxiliares Visuais
-  const getStatusInfo = (status: string) => {
-    if (['confirmado', 'em_atendimento', 'finalizado', 'concluido'].includes(status)) {
-      return { label: status === 'finalizado' || status === 'concluido' ? 'Concluído' : 'Confirmado', bg: COLORS.successBg, text: COLORS.successText };
-    }
-    if (['cancelado', 'estornado', 'vencido'].includes(status)) {
-      return { label: 'Cancelado', bg: COLORS.canceledBg, text: COLORS.canceledText };
-    }
-    return { label: 'Pendente', bg: COLORS.pendingBg, text: COLORS.pendingText };
+  const contagem = (aba: string) => lista.filter((i) => filtrar(i, aba)).length;
+  const idProxima = lista.find((i) => filtrar(i, 'proximos'))?.id;
+
+  const statusInfo = (item: AgendamentoItem) => {
+    if (ehPendentePagamento(item)) return { label: 'Aguardando pagamento', bg: '#FEF3C7', cor: '#B45309' };
+    if (['finalizado', 'concluido'].includes(item.status)) return { label: 'Concluída', bg: T.successBg, cor: T.success };
+    if (['cancelado', 'estornado', 'vencido'].includes(item.status)) return { label: 'Cancelada', bg: '#FEE2E2', cor: T.danger };
+    if (item.status === 'em_atendimento') return { label: 'Em andamento', bg: '#E0F2FE', cor: '#0369A1' };
+    if (item.status === 'confirmado') return { label: 'Confirmada', bg: T.successBg, cor: T.success };
+    return { label: 'Pendente', bg: '#FEF3C7', cor: '#B45309' };
   };
 
   const formatarData = (dataStr?: string) => {
     if (!dataStr) return 'Data não definida';
     const [ano, mes, dia] = dataStr.split('T')[0].split('-');
     const meses = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
-    return `${dia} de ${meses[parseInt(mes) - 1]}, ${ano}`;
+    return `${dia} ${meses[parseInt(mes) - 1]} ${ano}`;
   };
 
-  const BannerExplorar = () => (
-    <View style={styles.bannerContainer}>
-      <View style={styles.bannerIcon}>
-        <Feather name="calendar" size={24} color={COLORS.primary} />
-      </View>
-      <View style={styles.bannerTextContainer}>
-        <Text style={styles.bannerTitle}>Precisa de algo novo?</Text>
-        <Text style={styles.bannerDesc}>Encontre e agende serviços, hospedagens e muito mais.</Text>
-      </View>
-      <TouchableOpacity style={styles.bannerBtn} onPress={() => router.push('/src/screens/TelaExplorar')}>
-        <Text style={styles.bannerBtnText}>Explorar</Text>
-        <Feather name="arrow-right" size={16} color={COLORS.white} />
-      </TouchableOpacity>
-    </View>
-  );
+  const abrirDetalhes = (item: AgendamentoItem, isAluguel: boolean) =>
+    router.push({ pathname: '/agendamentos/detalhes', params: { id: String(item.id), tipo: isAluguel ? 'aluguel' : 'servico' } });
 
-  // Renderização do Card fiel à imagem
-  const renderCard = ({ item }: { item: AgendamentoItem }) => {
+  const renderCard = (item: AgendamentoItem) => {
     const isAluguel = item.itemAluguel != null;
     const nomePrincipal = item.estabelecimento?.nome || 'Estabelecimento';
-    const tituloItem = isAluguel ? item.itemAluguel?.nome : (item.servico?.nome || 'Serviço');
-    const foto = isAluguel ? (item.itemAluguel?.fotos?.[0]) : (item.servico?.foto || item.estabelecimento?.foto_perfil);
-    
-    const statusInfo = getStatusInfo(item.status);
-    const dataFormatada = formatarData(item.data_agendamento || item.data_inicio);
-    const horaFormatada = item.hora_agendamento ? item.hora_agendamento.substring(0, 5) : '';
-    
-    const tagTexto = isAluguel ? 'Aluguel' : 'Serviço';
+    const tituloItem = isAluguel ? item.itemAluguel?.nome : item.servico?.nome || 'Serviço';
+    const foto = isAluguel ? item.itemAluguel?.fotos?.[0] : item.servico?.foto || item.estabelecimento?.foto_perfil;
+    const st = statusInfo(item);
+    const hora = item.hora_agendamento ? item.hora_agendamento.substring(0, 5) : '';
     const podeCancelar = ['pendente', 'confirmado', 'aguardando_pagamento'].includes(item.status);
+    const pend = ehPendentePagamento(item);
+    const concluido = ['finalizado', 'concluido'].includes(item.status);
+    const cancelado = ['cancelado', 'estornado', 'vencido'].includes(item.status);
 
     return (
-      <View style={styles.card}>
-        <View style={styles.cardMain}>
-          
-          {/* IMAGEM E TAG OVAL */}
-          <View style={styles.imageContainer}>
-            <Image 
-              source={{ uri: foto || 'https://via.placeholder.com/150' }} 
-              style={styles.image} 
-              contentFit="cover" 
-            />
-            <View style={styles.imageTag}>
-              <Text style={styles.imageTagText}>{tagTexto}</Text>
-            </View>
-          </View>
-
-          {/* INFORMAÇÕES À DIREITA */}
-          <View style={styles.infoContainer}>
-            <View style={styles.titleRow}>
-              <Text style={styles.titleText} numberOfLines={1}>{tituloItem}</Text>
-              <View style={[styles.badge, { backgroundColor: statusInfo.bg }]}>
-                <Text style={[styles.badgeText, { color: statusInfo.text }]}>{statusInfo.label}</Text>
-              </View>
-            </View>
-
-            <View style={styles.detailsRowLayout}>
-              <View style={styles.detailsList}>
-                <View style={styles.detailRow}>
-                  <Ionicons name="location-outline" size={14} color={COLORS.gray} />
-                  <Text style={styles.detailText} numberOfLines={1}>{nomePrincipal} • {item.estabelecimento?.cidade || 'Local'}</Text>
-                </View>
-                <View style={styles.detailRow}>
-                  <Ionicons name="calendar-outline" size={14} color={COLORS.gray} />
-                  <Text style={styles.detailText}>{dataFormatada}</Text>
-                </View>
-                <View style={styles.detailRow}>
-                  <Ionicons name="time-outline" size={14} color={COLORS.gray} />
-                  <Text style={styles.detailText}>{isAluguel ? 'Diária' : `${horaFormatada}h`}</Text>
-                </View>
-              </View>
-
-              {/* BLOCO DE PREÇO (Direita e Embaixo) */}
-              <View style={styles.priceContainer}>
-                <Text style={styles.priceLabel}>Total pago</Text>
-                <TouchableOpacity style={styles.priceValueRow} onPress={() => router.push({ pathname: '/src/screens/AgendamentoDetalhes', params: { id: item.id } })}>
-                  <Text style={styles.priceValue}>R$ {Number(item.valor_total || item.valor_final || 0).toFixed(2).replace('.', ',')}</Text>
-                  <Feather name="chevron-right" size={18} color={COLORS.secondary} style={{marginLeft: 2}} />
-                </TouchableOpacity>
-              </View>
-            </View>
+      <View key={item.id} style={s.card}>
+        <View style={s.foto}>
+          <Image source={{ uri: foto || 'https://via.placeholder.com/600x300' }} style={s.fotoImg} contentFit="cover" />
+          {item.id === idProxima && (
+            <View style={s.tagProxima}><Text style={s.tagProximaTxt}>Próxima reserva</Text></View>
+          )}
+          <View style={[s.status, { backgroundColor: st.bg }]}>
+            <Text style={[s.statusTxt, { color: st.cor }]}>{st.label}</Text>
           </View>
         </View>
 
-        {/* RODAPÉ DO CARD ESTILO IFOOD/AIRBNB */}
-        <View style={styles.cardFooter}>
-          <View style={styles.footerItem}>
-            <Ionicons name="calendar-outline" size={14} color={COLORS.gray} />
-            <Text style={styles.footerText}>{isAluguel ? 'Locação' : 'Criado'}: {formatarData(item.created_at)}</Text>
+        <View style={s.corpo}>
+          <Text style={s.titulo} numberOfLines={1}>{tituloItem}</Text>
+          <View style={s.local}>
+            <Ionicons name="location-outline" size={14} color={T.muted} />
+            <Text style={s.localTxt} numberOfLines={1}>{nomePrincipal}{item.estabelecimento?.cidade ? `, ${item.estabelecimento.cidade}` : ''}</Text>
           </View>
-          <View style={styles.footerDivider} />
-          <View style={styles.footerItem}>
-            <Ionicons name="ticket-outline" size={14} color={COLORS.gray} />
-            <Text style={styles.footerText}>Ref #{item.id}</Text>
+
+          <View style={s.grade}>
+            <View style={s.celula}>
+              <Ionicons name="calendar-outline" size={17} color={T.primary} />
+              <View>
+                <Text style={s.celulaTxt}>{formatarData(item.data_agendamento || item.data_inicio)}</Text>
+                <Text style={s.celulaSub}>{isAluguel ? 'Diária' : hora ? `às ${hora}h` : ''}</Text>
+              </View>
+            </View>
+            <View style={s.celula}>
+              <Ionicons name={isAluguel ? 'key-outline' : 'cut-outline'} size={17} color={T.primary} />
+              <View>
+                <Text style={s.celulaTxt}>{isAluguel ? 'Aluguel' : 'Serviço'}</Text>
+                <Text style={s.celulaSub}>Ref #{item.id}</Text>
+              </View>
+            </View>
+            <View style={s.celula}>
+              <Ionicons name="cash-outline" size={17} color={T.primary} />
+              <View>
+                <Text style={s.celulaTxt}>{brl(item.valor_total || item.valor_final)}</Text>
+                <Text style={s.celulaSub}>{pend ? 'a pagar' : 'total'}</Text>
+              </View>
+            </View>
+            <View style={s.celula}>
+              <Ionicons name="receipt-outline" size={17} color={T.primary} />
+              <View>
+                <Text style={s.celulaTxt}>{formatarData(item.created_at)}</Text>
+                <Text style={s.celulaSub}>criada em</Text>
+              </View>
+            </View>
           </View>
-          
-          {/* Pedido aguardando pagamento: leva direto para a tela de pagamento */}
-          {item.status === 'aguardando_pagamento' && item.status_pagamento === 'pendente' && (
-            <>
-              <View style={styles.footerDivider} />
-              <TouchableOpacity
-                style={styles.footerItemBtn}
-                onPress={() => router.push({ pathname: '/src/screens/PagamentoScreen', params: { agendamento_id: String(item.id) } })}
-              >
-                <Text style={styles.pagarText}>Pagar agora</Text>
+
+          <TouchableOpacity style={s.pontosLinha} onPress={() => router.push('/src/screens/MeusPontos' as never)} activeOpacity={0.8}>
+            <Ionicons name="gift-outline" size={14} color={T.primary} />
+            <Text style={s.pontosTxt} numberOfLines={1}>{concluido ? 'Você ganhou pontos com esta reserva' : 'Ganhe pontos ao concluir esta reserva'}</Text>
+            <Ionicons name="chevron-forward" size={14} color={T.faint} />
+          </TouchableOpacity>
+
+          <View style={s.botoes}>
+            <TouchableOpacity style={s.btnSec} onPress={() => abrirDetalhes(item, isAluguel)} activeOpacity={0.85}>
+              <Ionicons name="eye-outline" size={17} color={T.ink} />
+              <Text style={s.btnSecTxt}>Ver detalhes</Text>
+            </TouchableOpacity>
+
+            {pend ? (
+              <TouchableOpacity style={s.btnPrim} onPress={() => router.push({ pathname: '/src/screens/PagamentoScreen', params: { agendamento_id: String(item.id) } })} activeOpacity={0.85}>
+                <Ionicons name="card-outline" size={17} color="#fff" />
+                <Text style={s.btnPrimTxt}>Pagar agora</Text>
               </TouchableOpacity>
-            </>
+            ) : !cancelado && !isAluguel ? (
+              <TouchableOpacity style={s.btnPrim} onPress={() => router.push({ pathname: (concluido ? '/src/screens/AvaliarServico' : '/src/screens/AcompanhamentoFilaScreen') as never, params: { id: String(item.id) } })} activeOpacity={0.85}>
+                <Ionicons name={concluido ? 'star-outline' : 'time-outline'} size={17} color="#fff" />
+                <Text style={s.btnPrimTxt}>{concluido ? 'Avaliar' : 'Acompanhar fila'}</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity style={s.btnPrim} onPress={() => repetirReserva(item)} activeOpacity={0.85}>
+                <Ionicons name="refresh-outline" size={17} color="#fff" />
+                <Text style={s.btnPrimTxt}>Reservar de novo</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {concluido && !isAluguel && !!item.estabelecimento_id && (
+            <TouchableOpacity style={s.repetir} onPress={() => repetirReserva(item)} activeOpacity={0.85}>
+              <Ionicons name="repeat-outline" size={18} color={T.primary} />
+              <Text style={s.repetirTxt}>Repetir esta reserva{item.servico?.nome ? ` · ${item.servico.nome}` : ''}</Text>
+            </TouchableOpacity>
           )}
 
-          {/* Botão de Cancelar se aplicável */}
           {podeCancelar && (
-            <>
-              <View style={styles.footerDivider} />
-              <TouchableOpacity style={styles.footerItemBtn} onPress={() => handleCancelar(item.id)}>
-                <Text style={styles.cancelText}>Cancelar</Text>
-              </TouchableOpacity>
-            </>
+            <TouchableOpacity style={s.cancelar} onPress={() => handleCancelar(item.id)} activeOpacity={0.7}>
+              <Text style={s.cancelarTxt}>Cancelar reserva</Text>
+            </TouchableOpacity>
           )}
         </View>
       </View>
@@ -328,183 +325,128 @@ export default function MeusAgendamentos() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
-        
-        {/* HEADER TOP */}
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.greeting}>Olá, {nomeUsuario} <Text style={{fontSize: 20}}>👋</Text></Text>
-            <Text style={styles.subGreeting}>Aqui estão os seus agendamentos.</Text>
-          </View>
-          <TouchableOpacity style={styles.bellBtn}>
-            <Feather name="bell" size={24} color={COLORS.secondary} />
-            <View style={styles.bellBadge}><Text style={styles.bellBadgeText}>2</Text></View>
-          </TouchableOpacity>
-        </View>
+    <SafeAreaView style={s.safe}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 40 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={T.primary} />}
+      >
+        <HeaderCliente voltar tituloMenor titulo="Minhas reservas" subtitulo="Acompanhe seus agendamentos e experiências" />
 
-        <Text style={styles.pageTitle}>Meus Agendamentos</Text>
-
-        {/* ABAS COM LINHA INFERIOR (Estilo Imagem) */}
-        <View style={styles.tabsWrapper}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsContainer}>
-            {TABS.map(tab => (
-              <TouchableOpacity
-                key={tab.id}
-                style={[styles.tabBtn, styles.tabBtnRow, abaAtiva === tab.id && styles.tabBtnActive]}
-                onPress={() => setAbaAtiva(tab.id)}
-              >
-                <Text style={[styles.tabText, abaAtiva === tab.id && styles.tabTextActive]}>
-                  {tab.label}
-                </Text>
-                {tab.id === 'pendentes' && qtdPendentes > 0 && (
-                  <View style={styles.tabBadge}>
-                    <Text style={styles.tabBadgeText}>{qtdPendentes}</Text>
-                  </View>
+        {/* ABAS EM CARTÕES COM ÍCONE */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.abas}>
+          {TABS.map((tab) => {
+            const on = abaAtiva === tab.id;
+            const n = contagem(tab.id);
+            return (
+              <TouchableOpacity key={tab.id} style={[s.aba, on && s.abaOn]} onPress={() => setAbaAtiva(tab.id)} activeOpacity={0.85}>
+                <Ionicons name={tab.icone as never} size={20} color={on ? T.primary : T.muted} />
+                <Text style={[s.abaTxt, on && s.abaTxtOn]}>{tab.label}</Text>
+                {n > 0 && tab.id !== 'todos' && (
+                  <View style={[s.abaBadge, tab.id === 'pendentes' && { backgroundColor: T.primary }]}><Text style={s.abaBadgeTxt}>{n}</Text></View>
                 )}
               </TouchableOpacity>
-            ))}
-          </ScrollView>
+            );
+          })}
+        </ScrollView>
+
+        {/* BUSCA */}
+        <View style={s.busca}>
+          <Ionicons name="search" size={18} color={T.faint} />
+          <TextInput placeholder="Buscar reservas..." placeholderTextColor={T.faint} style={s.buscaInput} value={busca} onChangeText={setBusca} />
+          {!!busca && (
+            <TouchableOpacity onPress={() => setBusca('')}><Ionicons name="close-circle" size={18} color={T.faint} /></TouchableOpacity>
+          )}
         </View>
 
-        {/* BUSCA E FILTROS */}
-        <View style={styles.searchRow}>
-          <View style={styles.searchBar}>
-            <Feather name="search" size={18} color={COLORS.gray} style={styles.searchIcon} />
-            <TextInput 
-              placeholder="Buscar agendamentos..."
-              placeholderTextColor={COLORS.gray}
-              style={styles.searchInput}
-              value={busca}
-              onChangeText={setBusca}
-            />
-          </View>
-          <TouchableOpacity style={styles.filterBtn}>
-            <Ionicons name="options-outline" size={20} color={COLORS.secondary} />
-            <Text style={styles.filterBtnText}>Filtros</Text>
-          </TouchableOpacity>
-        </View>
-
-        <Text style={styles.sectionTitle}>
-          {abaAtiva === 'todos' ? 'Todos os agendamentos' :
-           abaAtiva === 'pendentes' ? 'Aguardando pagamento' :
-           abaAtiva === 'proximos' ? 'Próximos agendamentos' :
-           abaAtiva === 'concluidos' ? 'Agendamentos concluídos' : 'Agendamentos cancelados'}
-        </Text>
-
-        {/* LISTA DE CARDS */}
         {carregando ? (
-          <View style={styles.center}>
-            <ActivityIndicator size="large" color={COLORS.primary} />
+          <View style={s.centro}><ActivityIndicator size="large" color={T.primary} /></View>
+        ) : dadosFiltrados.length === 0 ? (
+          <View style={s.vazio}>
+            <View style={s.vazioIcone}><Ionicons name="calendar-outline" size={30} color={T.faint} /></View>
+            <Text style={s.vazioTitulo}>Nenhuma reserva</Text>
+            <Text style={s.vazioTxt}>Você não possui registros nesta categoria.</Text>
+            <TouchableOpacity style={s.btnPrimLargo} onPress={() => router.push('/(tabs)/explorar' as never)} activeOpacity={0.85}>
+              <Text style={s.btnPrimTxt}>Explorar serviços</Text>
+            </TouchableOpacity>
           </View>
         ) : (
-          <FlatList
-            data={dadosFiltrados}
-            keyExtractor={(item) => item.id.toString()}
-            renderItem={renderCard}
-            contentContainerStyle={styles.listContainer}
-            showsVerticalScrollIndicator={false}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />}
-            ListFooterComponent={dadosFiltrados.length > 0 ? <BannerExplorar /> : null}
-            ListEmptyComponent={
-              <View style={styles.emptyContainer}>
-                <Ionicons name="calendar-outline" size={60} color={COLORS.border} />
-                <Text style={styles.emptyTitle}>Nenhum agendamento</Text>
-                <Text style={styles.emptyDesc}>Você não possui registros nesta categoria.</Text>
-                
-                {/* Botão de explorar quando está vazio */}
-                <TouchableOpacity style={styles.exploreEmptyBtn} onPress={() => router.push('/src/screens/TelaExplorar')}>
-                  <Text style={styles.exploreEmptyBtnText}>Explorar Serviços</Text>
-                </TouchableOpacity>
-              </View>
-            }
-          />
+          <View style={{ paddingHorizontal: 20 }}>{dadosFiltrados.map(renderCard)}</View>
         )}
-      </View>
+
+        {/* PONTOS */}
+        {!carregando && (
+          <View style={s.bannerPontos}>
+            <View style={s.bannerPontosIcone}><Ionicons name="gift-outline" size={22} color={T.primary} /></View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.bannerPontosTitulo}>Acumule pontos em suas reservas</Text>
+              <Text style={s.bannerPontosTxt}>Use seus pontos para ganhar descontos e benefícios exclusivos.</Text>
+            </View>
+            <TouchableOpacity onPress={() => router.push('/src/screens/MeusPontos' as never)}>
+              <Text style={s.bannerPontosLink}>Ver meus pontos</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: COLORS.white, paddingTop: Platform.OS === 'android' ? 30 : 0 },
-  container: { flex: 1, backgroundColor: COLORS.white },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+const s = StyleSheet.create({
+  repetir: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 46, borderRadius: 23, backgroundColor: T.primarySoft, marginTop: 10 },
+  repetirTxt: { color: T.primary, fontWeight: '800', fontSize: 13 },
+  safe: { flex: 1, backgroundColor: T.cream, paddingTop: Platform.OS === 'android' ? 30 : 0 },
+  centro: { paddingVertical: 60, alignItems: 'center' },
 
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 10, paddingBottom: 20 },
-  greeting: { fontSize: 20, fontWeight: '800', color: COLORS.secondary },
-  subGreeting: { fontSize: 14, color: COLORS.gray, marginTop: 4, fontWeight: '500' },
-  bellBtn: { position: 'relative', padding: 4 },
-  bellBadge: { position: 'absolute', top: 0, right: 0, backgroundColor: COLORS.primary, width: 16, height: 16, borderRadius: 8, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: COLORS.white },
-  bellBadgeText: { color: COLORS.white, fontSize: 8, fontWeight: 'bold' },
+  abas: { paddingHorizontal: 20, gap: 10, paddingVertical: 12 },
+  aba: { width: 92, alignItems: 'center', gap: 6, paddingVertical: 12, borderRadius: 16, backgroundColor: T.card, borderWidth: 1, borderColor: T.line },
+  abaOn: { borderColor: T.primary, backgroundColor: T.primarySoft },
+  abaTxt: { fontSize: 11, fontWeight: '600', color: T.muted, textAlign: 'center' },
+  abaTxtOn: { color: T.primary, fontWeight: '800' },
+  abaBadge: { position: 'absolute', top: 6, right: 8, minWidth: 18, height: 18, borderRadius: 9, backgroundColor: T.muted, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  abaBadgeTxt: { color: '#fff', fontSize: 10, fontWeight: '800' },
 
-  pageTitle: { fontSize: 28, fontWeight: '900', color: COLORS.secondary, paddingHorizontal: 20, marginBottom: 16, letterSpacing: -0.5 },
+  busca: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: T.card, marginHorizontal: 20, marginBottom: 16, borderRadius: 16, paddingHorizontal: 14, height: 48, borderWidth: 1, borderColor: T.line },
+  buscaInput: { flex: 1, fontSize: 14, color: T.ink },
 
-  tabsWrapper: { borderBottomWidth: 1, borderBottomColor: COLORS.border, marginBottom: 16 },
-  tabsContainer: { paddingHorizontal: 16, gap: 16 },
-  tabBtn: { paddingVertical: 12, paddingHorizontal: 8, borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  tabBtnRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  tabBadge: { backgroundColor: COLORS.primary, borderRadius: 100, paddingHorizontal: 6, paddingVertical: 1, minWidth: 18, alignItems: 'center' },
-  tabBadgeText: { color: COLORS.white, fontSize: 10, fontWeight: '800' },
-  tabBtnActive: { borderBottomColor: COLORS.primary },
-  tabText: { fontSize: 15, fontWeight: '600', color: COLORS.gray },
-  tabTextActive: { color: COLORS.primary, fontWeight: '800' },
+  card: { backgroundColor: T.card, borderRadius: 22, marginBottom: 18, borderWidth: 1, borderColor: T.line, overflow: 'hidden', shadowColor: '#7C2D12', shadowOpacity: 0.07, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  foto: { height: 150, backgroundColor: T.line },
+  fotoImg: { width: '100%', height: '100%' },
+  tagProxima: { position: 'absolute', top: 12, left: 12, backgroundColor: '#fff', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, borderWidth: 1, borderColor: '#F8D9C8' },
+  tagProximaTxt: { color: T.primary, fontSize: 11, fontWeight: '800' },
+  status: { position: 'absolute', top: 12, right: 12, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
+  statusTxt: { fontSize: 11, fontWeight: '800' },
 
-  searchRow: { flexDirection: 'row', paddingHorizontal: 20, gap: 12, marginBottom: 24 },
-  searchBar: { flex: 1, flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, paddingHorizontal: 12, height: 44 },
-  searchIcon: { marginRight: 8 },
-  searchInput: { flex: 1, fontSize: 14, color: COLORS.secondary },
-  filterBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, height: 44, borderRadius: 12, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.white },
-  filterBtnText: { fontSize: 14, fontWeight: '700', color: COLORS.secondary },
+  corpo: { padding: 16 },
+  titulo: { fontSize: 18, fontWeight: '800', color: T.ink, letterSpacing: -0.3 },
+  local: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 },
+  localTxt: { flex: 1, fontSize: 13, color: T.muted },
 
-  sectionTitle: { fontSize: 16, fontWeight: '800', color: COLORS.secondary, paddingHorizontal: 20, marginBottom: 16 },
+  grade: { flexDirection: 'row', flexWrap: 'wrap', rowGap: 14, marginTop: 16 },
+  celula: { width: '50%', flexDirection: 'row', alignItems: 'center', gap: 8 },
+  celulaTxt: { fontSize: 13, fontWeight: '700', color: T.ink },
+  celulaSub: { fontSize: 11, color: T.muted, marginTop: 1 },
 
-  listContainer: { paddingHorizontal: 20, paddingBottom: 40 },
+  pontosLinha: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: T.primarySoft, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginTop: 16 },
+  pontosTxt: { flex: 1, fontSize: 12, color: T.primary, fontWeight: '600' },
 
-  // Card Design Exato da Imagem
-  card: { backgroundColor: COLORS.white, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border, marginBottom: 16, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 8, elevation: 2 },
-  cardMain: { flexDirection: 'row', padding: 16 },
-  
-  imageContainer: { width: 90, height: 90, position: 'relative', borderRadius: 12, overflow: 'hidden' },
-  image: { width: '100%', height: '100%', backgroundColor: COLORS.lightGray },
-  imageTag: { position: 'absolute', bottom: -2, alignSelf: 'center', backgroundColor: COLORS.white, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 100, borderWidth: 1, borderColor: COLORS.border },
-  imageTagText: { fontSize: 9, fontWeight: '900', color: COLORS.primary, textTransform: 'uppercase' },
+  botoes: { flexDirection: 'row', gap: 10, marginTop: 14 },
+  btnSec: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, height: 46, borderRadius: 20, backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  btnSecTxt: { fontSize: 13, fontWeight: '700', color: T.ink },
+  btnPrim: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, height: 46, borderRadius: 23, backgroundColor: T.primary },
+  btnPrimTxt: { fontSize: 13, fontWeight: '800', color: '#fff' },
+  btnPrimLargo: { marginTop: 18, paddingHorizontal: 24, height: 48, borderRadius: 24, backgroundColor: T.primary, alignItems: 'center', justifyContent: 'center' },
+  cancelar: { alignItems: 'center', paddingTop: 14 },
+  cancelarTxt: { fontSize: 13, fontWeight: '700', color: T.danger },
 
-  infoContainer: { flex: 1, marginLeft: 16, justifyContent: 'flex-start' },
-  titleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 },
-  titleText: { flex: 1, fontSize: 16, fontWeight: '800', color: COLORS.secondary, marginRight: 8 },
-  badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 100 },
-  badgeText: { fontSize: 10, fontWeight: '800' },
+  vazio: { alignItems: 'center', paddingVertical: 50, paddingHorizontal: 30 },
+  vazioIcone: { width: 64, height: 64, borderRadius: 32, backgroundColor: T.card, alignItems: 'center', justifyContent: 'center', marginBottom: 14, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  vazioTitulo: { fontSize: 18, fontWeight: '800', color: T.ink },
+  vazioTxt: { fontSize: 14, color: T.muted, marginTop: 6, textAlign: 'center' },
 
-  detailsRowLayout: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', flex: 1 },
-  detailsList: { flex: 1, gap: 4 },
-  detailRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  detailText: { fontSize: 12, color: COLORS.gray, fontWeight: '500' },
-
-  priceContainer: { alignItems: 'flex-end' },
-  priceLabel: { fontSize: 11, color: COLORS.gray, fontWeight: '600', marginBottom: 2 },
-  priceValueRow: { flexDirection: 'row', alignItems: 'center' },
-  priceValue: { fontSize: 16, fontWeight: '900', color: COLORS.secondary },
-
-  cardFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-evenly', backgroundColor: '#FAFAFA', paddingVertical: 12, paddingHorizontal: 16, borderTopWidth: 1, borderTopColor: COLORS.border },
-  footerItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  footerItemBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 8 },
-  footerText: { fontSize: 12, color: COLORS.gray, fontWeight: '600' },
-  footerDivider: { width: 1, height: 16, backgroundColor: COLORS.border },
-  cancelText: { fontSize: 12, color: COLORS.canceledText, fontWeight: '800' },
-  pagarText: { fontSize: 12, color: COLORS.primary, fontWeight: '800' },
-
-  bannerContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.white, borderRadius: 16, padding: 20, borderWidth: 1, borderColor: COLORS.border, marginTop: 10, marginBottom: 20 },
-  bannerIcon: { width: 48, height: 48, backgroundColor: COLORS.primaryLight, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  bannerTextContainer: { flex: 1, marginHorizontal: 16 },
-  bannerTitle: { fontSize: 15, fontWeight: '800', color: COLORS.secondary, marginBottom: 4 },
-  bannerDesc: { fontSize: 12, color: COLORS.gray, lineHeight: 16 },
-  bannerBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: COLORS.primary, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12 },
-  bannerBtnText: { color: COLORS.white, fontSize: 13, fontWeight: '800' },
-
-  // Empty State
-  emptyContainer: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
-  emptyTitle: { fontSize: 16, fontWeight: '800', color: COLORS.secondary, marginTop: 16, marginBottom: 8 },
-  emptyDesc: { fontSize: 14, color: COLORS.gray, textAlign: 'center', marginBottom: 24 },
-  exploreEmptyBtn: { backgroundColor: COLORS.primary, paddingHorizontal: 24, paddingVertical: 14, borderRadius: 12 },
-  exploreEmptyBtnText: { color: COLORS.white, fontWeight: '800', fontSize: 14 },
+  bannerPontos: { flexDirection: 'row', alignItems: 'center', gap: 12, marginHorizontal: 20, marginTop: 6, backgroundColor: T.primarySoft, borderRadius: 18, padding: 14, borderWidth: 1, borderColor: '#F8D9C8' },
+  bannerPontosIcone: { width: 44, height: 44, borderRadius: 14, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  bannerPontosTitulo: { fontSize: 13, fontWeight: '800', color: T.ink },
+  bannerPontosTxt: { fontSize: 11, color: T.muted, marginTop: 2, lineHeight: 15 },
+  bannerPontosLink: { fontSize: 12, fontWeight: '800', color: T.primary, maxWidth: 70, textAlign: 'right' },
 });

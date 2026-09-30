@@ -20,36 +20,25 @@ export default function TravelAssistant() {
     // Estado para controlar a exibição do Modal de Cadastro Completo
     const [exibirModalCadastro, setExibirModalCadastro] = useState(false);
 
-    // Estado para controle de rotação automática de destinos
-    const [indiceInicial, setIndiceInicial] = useState(0);
+    // Cards dos 27 estados com a contagem REAL de lojas, serviços e reservas do sistema
+    const [estados, setEstados] = useState([]);
+    const [carregandoEstados, setCarregandoEstados] = useState(true);
 
-    // Banco de dados interno de destinos para troca automática
-    const todosDestinos = [
-        { city: "Rio de Janeiro, RJ", tag: "Praia", desc: "Praias incríveis, cultura vibrante e paisagens deslumbrantes.", img: "https://images.unsplash.com/photo-1483729558449-99ef09a8c025?auto=format&fit=crop&w=600&q=80" },
-        { city: "São Paulo, SP", tag: "Cidade", desc: "Gastronomia, cultura e entretenimento sem igual.", img: "https://images.unsplash.com/photo-1543087903-1ac2ec7aa8c5?auto=format&fit=crop&w=600&q=80" },
-        { city: "Gramado, RS", tag: "Montanha", desc: "Clima europeu, natureza exuberante e muito charme.", img: "https://images.unsplash.com/photo-1549488344-1f9b8d2bd1f3?auto=format&fit=crop&w=600&q=80" },
-        { city: "Fernando de Noronha, PE", tag: "Praia", desc: "Um paraíso preservado de águas cristalinas.", img: "https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=600&q=80" },
-        { city: "Salvador, BA", tag: "Histórico", desc: "Energia contagiante, história viva e culinária única.", img: "https://images.unsplash.com/photo-1545128485-c400e7702796?auto=format&fit=crop&w=600&q=80" },
-        { city: "Florianópolis, SC", tag: "Praia", desc: "A ilha da magia com praias paradisíacas e muita natureza.", img: "https://images.unsplash.com/photo-1516815431888-c782a2083652?auto=format&fit=crop&w=600&q=80" }
-    ];
-
-    // Efeito para carregar dados iniciais e ativar automações
     useEffect(() => {
         carregarMinhasViagens();
         obterLocalizacaoAutomatica();
-
-        // Intervalo para trocar os lugares automaticamente a cada 4 segundos
-        const intervaloDestinos = setInterval(() => {
-            setIndiceInicial((prev) => (prev + 1) % todosDestinos.length);
-        }, 4000);
-
-        return () => clearInterval(intervaloDestinos);
+        axios.get(route('explorar.estados'))
+            .then(({ data }) => setEstados(data))
+            .catch(() => setEstados([]))
+            .finally(() => setCarregandoEstados(false));
     }, []);
 
-    // Geração da lista rotativa de 4 destinos baseada no índice atual
-    const destinosExibidos = Array.from({ length: 4 }, (_, i) => 
-        todosDestinos[(indiceInicial + i) % todosDestinos.length]
-    );
+    // Estados com resultados primeiro (mais resultados no topo), depois os demais em ordem alfabética.
+    const estadosOrdenados = [...estados].sort((a, b) => (b.total - a.total) || a.nome.localeCompare(b.nome, 'pt-BR'));
+
+    // Cada card abre o Explorar já filtrado pelo estado e na aba que tem resultados.
+    const urlExplorar = (uf, tipo) => route('cliente.explorar', { estado: uf, tipo_busca: tipo });
+    const melhorAba = (e) => (e.lojas > 0 ? 'estabelecimentos' : e.servicos > 0 ? 'servicos' : e.reservas > 0 ? 'reservas' : 'estabelecimentos');
 
     // Função nativa da janela para retornar à última tela do usuário
     const handleVoltar = () => {
@@ -306,6 +295,18 @@ export default function TravelAssistant() {
                             <button type="submit" className="flex-1 bg-orange-600 hover:bg-orange-700 text-white font-bold py-3.5 px-4 rounded-xl transition duration-200 shadow-lg shadow-orange-600/20 flex items-center justify-center">
                                 <span>Buscar lugares</span>
                             </button>
+                            <a
+                                href={route('cliente.explorar', busca ? { endereco_manual: busca, tipo_busca: 'estabelecimentos' } : { tipo_busca: 'estabelecimentos' })}
+                                className="flex-1 text-center bg-white border border-slate-200 hover:border-orange-500 hover:text-orange-600 text-slate-700 font-bold py-3.5 px-4 rounded-xl transition duration-200"
+                            >
+                                Ver lojas
+                            </a>
+                            <a
+                                href={`/viagens/nova?cidade=${encodeURIComponent(busca || '')}`}
+                                className="flex-1 text-center bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 px-4 rounded-xl transition duration-200"
+                            >
+                                Roteiro inteligente
+                            </a>
                             <button 
                                 type="button" 
                                 onClick={handleBuscaGPS} 
@@ -323,17 +324,6 @@ export default function TravelAssistant() {
                 </div>
             </div>
 
-            {/* Categorias Rápidas */}
-            <div className="max-w-7xl mx-auto px-6 mt-8">
-                <div className="flex flex-wrap gap-2 text-xs font-bold text-slate-600">
-                    {["Praias", "Montanhas", "Cidades", "Campo", "Romântico", "Família", "Luxo", "Econômico"].map((cat) => (
-                        <button key={cat} className="px-4 py-2 bg-white rounded-full border border-slate-200/80 hover:border-orange-500 hover:text-orange-600 transition duration-200 shadow-sm font-semibold">
-                            {cat}
-                        </button>
-                    ))}
-                </div>
-            </div>
-
             <div className="max-w-7xl mx-auto px-6 mt-12 space-y-12">
                 
                 {/* Loader */}
@@ -344,52 +334,35 @@ export default function TravelAssistant() {
                     </div>
                 )}
 
-                {/* Exibição Rotativa Automática dos Resultados */}
+                {/* Explore por estado (dados reais do sistema) */}
                 {!carregando && !resultado && (
                     <section className="space-y-6">
-                        <div className="flex justify-between items-center">
-                            <div>
-                                <h2 className="text-2xl font-black text-slate-900 tracking-tight">Destinos populares em destaque</h2>
-                                <p className="text-sm text-slate-400 font-medium">Lugares atualizados dinamicamente baseados nas principais tendências</p>
-                            </div>
-                            <button className="border border-slate-200 hover:border-orange-500 hover:bg-orange-50 text-slate-700 hover:text-orange-600 text-xs font-bold px-4 py-2 rounded-lg transition duration-200">
-                                Ver todos os destinos
-                            </button>
+                        <div>
+                            <h2 className="text-2xl font-black text-slate-900 tracking-tight">Explore por estado</h2>
+                            <p className="text-sm text-slate-400 font-medium">Toque em um estado para ver as lojas, serviços e reservas disponíveis lá.</p>
                         </div>
 
-                        {/* Grid dos Cards com Transições Suaves */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 transition-all duration-500">
-                            {destinosExibidos.map((item, idx) => (
-                                <div key={`${item.city}-${idx}`} className="bg-white rounded-2xl overflow-hidden shadow-sm border border-slate-100 hover:shadow-xl hover:-translate-y-1 transform transition duration-300 flex flex-col justify-between">
-                                    <div className="relative h-48 bg-slate-200">
-                                        <img src={item.img} alt={item.city} className="w-full h-full object-cover" />
-                                        <span className="absolute top-3 left-3 bg-slate-900/80 backdrop-blur-sm text-white text-[10px] font-bold px-2.5 py-1 rounded-md tracking-wider uppercase">
-                                            {item.tag}
-                                        </span>
-                                        <button className="absolute top-3 right-3 p-1.5 bg-white/80 backdrop-blur-sm rounded-full text-slate-700 hover:text-red-500 hover:bg-white transition duration-200 shadow-sm">
-                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />
-                                            </svg>
-                                        </button>
-                                    </div>
-                                    <div className="p-4 space-y-2 flex-1 flex flex-col justify-between">
-                                        <div>
-                                            <div className="flex items-center gap-1.5 text-slate-900 mb-1">
-                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-3.5 h-3.5 text-orange-600">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
-                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25s-7.5-4.108-7.5-11.25z" />
-                                                </svg>
-                                                <h4 className="font-bold tracking-tight">{item.city}</h4>
-                                            </div>
-                                            <p className="text-xs text-slate-400 line-clamp-2 leading-relaxed font-medium">{item.desc}</p>
+                        {carregandoEstados ? (
+                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+                                {Array.from({ length: 12 }).map((_, i) => <div key={i} className="h-32 rounded-2xl bg-slate-100 animate-pulse" />)}
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+                                {estadosOrdenados.map((e) => (
+                                    <div key={e.uf} className={`bg-white rounded-2xl border shadow-sm p-4 flex flex-col gap-3 transition duration-200 hover:shadow-lg hover:-translate-y-0.5 ${e.total > 0 ? 'border-slate-100' : 'border-slate-100 opacity-70'}`}>
+                                        <a href={urlExplorar(e.uf, melhorAba(e))} className="flex items-center gap-3">
+                                            <span className={`w-11 h-11 rounded-xl flex items-center justify-center font-black text-sm ${e.total > 0 ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-400'}`}>{e.uf}</span>
+                                            <span className="font-bold text-slate-900 leading-tight text-sm">{e.nome}</span>
+                                        </a>
+                                        <div className="flex flex-wrap gap-1.5 text-[11px] font-bold">
+                                            <a href={urlExplorar(e.uf, 'estabelecimentos')} className={`px-2 py-1 rounded-md ${e.lojas > 0 ? 'bg-slate-900 text-white hover:bg-slate-700' : 'bg-slate-100 text-slate-400 pointer-events-none'}`}>{e.lojas} {e.lojas === 1 ? 'loja' : 'lojas'}</a>
+                                            <a href={urlExplorar(e.uf, 'servicos')} className={`px-2 py-1 rounded-md ${e.servicos > 0 ? 'bg-orange-500 text-white hover:bg-orange-600' : 'bg-slate-100 text-slate-400 pointer-events-none'}`}>{e.servicos} {e.servicos === 1 ? 'serviço' : 'serviços'}</a>
+                                            <a href={urlExplorar(e.uf, 'reservas')} className={`px-2 py-1 rounded-md ${e.reservas > 0 ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-slate-100 text-slate-400 pointer-events-none'}`}>{e.reservas} {e.reservas === 1 ? 'reserva' : 'reservas'}</a>
                                         </div>
-                                        <button className="w-full mt-4 border border-orange-200 hover:border-orange-500 text-slate-700 hover:text-orange-600 hover:bg-orange-50 text-xs font-bold py-2.5 rounded-xl transition duration-200">
-                                            Descrição detalhada
-                                        </button>
                                     </div>
-                                </div>
-                            ))}
-                        </div>
+                                ))}
+                            </div>
+                        )}
                     </section>
                 )}
 
@@ -560,7 +533,7 @@ export default function TravelAssistant() {
 
                                 <button 
                                     type="submit" 
-                                    className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3 rounded-xl shadow-lg shadow-orange-600/20 transition duration-200"
+                                    className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl shadow-lg shadow-orange-600/20 transition duration-200"
                                 >
                                     Salvar Planejamento
                                 </button>

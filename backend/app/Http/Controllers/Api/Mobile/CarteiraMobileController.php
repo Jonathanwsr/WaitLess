@@ -21,7 +21,7 @@ class CarteiraMobileController extends Controller
     public function index()
     {
         $user = Auth::user();
-        $papel = $user->papel; 
+        $papel = $user->papel;
 
         $data = [
             'papel' => $papel,
@@ -32,7 +32,7 @@ class CarteiraMobileController extends Controller
         // =========================================================
         if ($papel === 'gerente' || $papel === 'atendente') {
             $hoje = Carbon::today()->toDateString();
-            
+
             $servicosHoje = Agendamento::where('funcionario_id', $user->id)
                 ->whereDate('data_servico', $hoje)
                 ->where('status', 'concluido')
@@ -48,7 +48,7 @@ class CarteiraMobileController extends Controller
                 ->get();
 
             $data['dadosFuncionario'] = [
-                'valorHoje' => $servicosHoje->sum('valor_total'), 
+                'valorHoje' => $servicosHoje->sum('valor_total'),
                 'qtdHoje' => $servicosHoje->count(),
                 'ganhosMes' => Pagamento::whereHas('agendamento', function($q) use ($user) {
                                     $q->where('funcionario_id', $user->id)
@@ -62,7 +62,7 @@ class CarteiraMobileController extends Controller
         }
 
         // =========================================================
-        // 2. PROPRIETÁRIO (SÓCIO) 
+        // 2. PROPRIETÁRIO (SÓCIO)
         // =========================================================
         if ($papel === 'socio' || $papel === 'proprietario') {
             $estabelecimento = $user->estabelecimento;
@@ -72,9 +72,9 @@ class CarteiraMobileController extends Controller
                     $estabelecimento = Estabelecimento::find($pivot->estabelecimento_id);
                 }
             }
-            
+
             $provider = DB::table('providers')->where('user_id', $user->id)->first();
-            
+
             $saldoDisponivel = 0.00;
             $podeSacar = false;
             $dataProximoSaque = null;
@@ -116,7 +116,7 @@ class CarteiraMobileController extends Controller
         // =========================================================
         if ($papel === 'admin') {
             $lucroPlataforma = Pagamento::sum('taxa_plataforma');
-            
+
             $extratoGlobal = Pagamento::with(['agendamento.estabelecimento'])
                                 ->orderBy('created_at', 'desc')
                                 ->take(40)
@@ -150,9 +150,9 @@ class CarteiraMobileController extends Controller
             }
 
             $estabelecimentos = Estabelecimento::select(
-                                    'estabelecimentos.id', 
-                                    'estabelecimentos.nome', 
-                                    'providers.pix_key', 
+                                    'estabelecimentos.id',
+                                    'estabelecimentos.nome',
+                                    'providers.pix_key',
                                     'providers.pix_key_type'
                                 )
                                 ->leftJoin('estabelecimento_usuario', 'estabelecimentos.id', '=', 'estabelecimento_usuario.estabelecimento_id')
@@ -167,7 +167,7 @@ class CarteiraMobileController extends Controller
             $data['dadosAdmin'] = [
                 'lucro_plataforma' => $lucroPlataforma,
                 'extrato_global' => $extratoGlobal,
-                'carteiras_asaas' => $carteirasAsaas, 
+                'carteiras_asaas' => $carteirasAsaas,
                 'estabelecimentos' => $estabelecimentos
             ];
         }
@@ -191,7 +191,7 @@ class CarteiraMobileController extends Controller
     // MÉTODOS DE AÇÃO
     // =========================================================
 
-    public function fecharDia(Request $request) 
+    public function fecharDia(Request $request)
     {
         // Lógica para marcar que o funcionário fechou o caixa hoje
         return response()->json([
@@ -200,18 +200,18 @@ class CarteiraMobileController extends Controller
         ], 200);
     }
 
-    public function solicitarSaque(Request $request) 
+    public function solicitarSaque(Request $request)
     {
         $user = Auth::user();
-        
-        $estabelecimento = $user->estabelecimento; 
+
+        $estabelecimento = $user->estabelecimento;
         if (!$estabelecimento) {
             $pivot = DB::table('estabelecimento_usuario')->where('usuario_id', $user->id)->first();
             if ($pivot) {
                 $estabelecimento = Estabelecimento::find($pivot->estabelecimento_id);
             }
         }
-        
+
         $provider = DB::table('providers')->where('user_id', $user->id)->first();
 
         if (!$provider || !$provider->asaas_api_key) {
@@ -221,7 +221,7 @@ class CarteiraMobileController extends Controller
         if (empty($provider->pix_key) || empty($provider->pix_key_type)) {
             return response()->json(['error' => 'Chave Pix não configurada na sua carteira.'], 400);
         }
-        
+
         if ($estabelecimento && $estabelecimento->data_ultimo_saque) {
             $dataProximoSaque = Carbon::parse($estabelecimento->data_ultimo_saque)->addDays(7);
             if (now()->lessThan($dataProximoSaque)) {
@@ -240,8 +240,8 @@ class CarteiraMobileController extends Controller
         $responseTransfer = Http::withHeaders(['access_token' => $provider->asaas_api_key])
             ->post(env('ASAAS_URL') . '/transfers', [
                 'value' => $saldoReal,
-                'pixAddressKey' => $provider->pix_key, 
-                'pixAddressKeyType' => $provider->pix_key_type, 
+                'pixAddressKey' => $provider->pix_key,
+                'pixAddressKeyType' => $provider->pix_key_type,
                 'description' => 'Saque via WaitLess Mobile',
             ]);
 
@@ -252,23 +252,16 @@ class CarteiraMobileController extends Controller
         if ($estabelecimento) {
             $estabelecimento->update(['data_ultimo_saque' => now()]);
         }
-        
+
         return response()->json([
             'status' => 'success',
             'message' => "Saque de R$ {$saldoReal} solicitado com sucesso!"
         ], 200);
     }
 
-    public function resgatarCupom(Request $request, $id) 
+    public function resgatarCupom(Request $request, $id)
     {
-        $cupom = Cupom::findOrFail($id);
-        
-        // Aqui vai a lógica de debitar os pontos do usuário, se aplicável.
-        
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Cupom resgatado com sucesso!'
-        ], 200);
+        return app(ClienteCupomMobileController::class)->resgatar($id);
     }
 
     public function assinarPlus(Request $request)

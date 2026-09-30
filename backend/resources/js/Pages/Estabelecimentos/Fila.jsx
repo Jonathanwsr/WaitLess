@@ -2,10 +2,10 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, router, usePage, Link } from '@inertiajs/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect } from 'react';
-import { 
-    CalendarIcon, 
-    FunnelIcon, 
-    AdjustmentsHorizontalIcon, 
+import {
+    CalendarIcon,
+    FunnelIcon,
+    AdjustmentsHorizontalIcon,
     CheckCircleIcon,
     UserIcon,
     XMarkIcon,
@@ -26,9 +26,9 @@ import { CheckCircleIcon as CheckSolid, UserCircleIcon, MegaphoneIcon } from '@h
 // ==============================================================================
 // SUB-COMPONENTE: Linha da Tabela
 // ==============================================================================
-const LinhaAgendamento = ({ item, index, currentPage, perPage, funcionarios, atribuirFuncionario, atualizarStatus, abrirModalFinalizar, abrirModalCancelar, chamarCliente, adiarCliente }) => {
+const LinhaAgendamento = ({ item, index, currentPage, perPage, funcionarios, visaoAgregada, atribuirFuncionario, atualizarStatus, abrirModalFinalizar, abrirModalCancelar, chamarCliente, adiarCliente }) => {
     const [menuOpen, setMenuOpen] = useState(false);
-    
+
     const page = currentPage || 1;
     const itemsPerPage = perPage || 10;
     const posicao = (page - 1) * itemsPerPage + index + 1;
@@ -69,18 +69,27 @@ const LinhaAgendamento = ({ item, index, currentPage, perPage, funcionarios, atr
                 </div>
             </td>
 
+            {/* COLUNA DE LOCAL — só aparece na visão agregada ("Todos os locais") */}
+            {visaoAgregada && (
+                <td className="px-4 py-4 align-top pt-5 max-w-[140px]">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-gray-100 text-gray-700 text-[11px] font-bold border border-gray-200 truncate max-w-full" title={item.estabelecimento?.nome}>
+                        {item.estabelecimento?.nome || 'Local removido'}
+                    </span>
+                </td>
+            )}
+
             {/* CÉLULA DO PACIENTE */}
             <td className="px-4 py-4 whitespace-nowrap align-top pt-5">
                 {item?.usuario?.id ? (
-                    <Link 
-                        href={route('clientes.detalhes', item.usuario.id)} 
+                    <Link
+                        href={route('clientes.detalhes', item.usuario.id)}
                         className="flex items-center gap-3 group/link hover:opacity-80 transition-opacity"
                         title="Ver histórico e serviços do cliente"
                     >
                         {item.usuario?.foto_perfil ? (
-                            <img 
-                                src={item.usuario.foto_perfil.startsWith('http') ? item.usuario.foto_perfil : `/storage/${item.usuario.foto_perfil}`} 
-                                alt={item.usuario.name || 'Cliente'} 
+                            <img
+                                src={item.usuario.foto_perfil.startsWith('http') ? item.usuario.foto_perfil : `/storage/${item.usuario.foto_perfil}`}
+                                alt={item.usuario.name || 'Cliente'}
                                 className="w-10 h-10 rounded-full object-cover shadow-sm border border-gray-200 group-hover/link:border-indigo-300 transition-colors"
                             />
                         ) : (
@@ -128,7 +137,7 @@ const LinhaAgendamento = ({ item, index, currentPage, perPage, funcionarios, atr
                     <span className="font-bold text-gray-900 text-sm">
                         {item.servico?.nome || 'Serviço Excluído'}
                     </span>
-                    
+
                     {/* 👇 NOVO BLOCO: PRODUTOS EXTRAS */}
                     {produtosExtras.length > 0 && (
                         <div className="flex flex-col gap-2 mt-3 w-full bg-gray-50/80 border border-gray-200 p-3 rounded-xl">
@@ -216,9 +225,9 @@ const LinhaAgendamento = ({ item, index, currentPage, perPage, funcionarios, atr
                     <>
                         <div className="fixed inset-0 z-[40]" onClick={() => setMenuOpen(false)}></div>
                         <div className="absolute right-6 top-12 w-64 bg-white border border-gray-100 rounded-xl shadow-xl py-2 z-[50] overflow-hidden animate-fadeIn">
-                            
+
                             {item?.usuario?.id && (
-                                <Link 
+                                <Link
                                     href={route('clientes.detalhes', item.usuario.id)}
                                     className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 hover:bg-gray-50 font-medium border-b border-gray-50 transition"
                                 >
@@ -229,8 +238,8 @@ const LinhaAgendamento = ({ item, index, currentPage, perPage, funcionarios, atr
 
                             {/* BOTÃO DE DOWNLOAD DO COMPROVANTE PDF */}
                             {['confirmado', 'concluido', 'finalizado'].includes(item.status) && (
-                                <a 
-                                    href={`/agendamentos/${item.id}/comprovante-pdf`} 
+                                <a
+                                    href={`/agendamentos/${item.id}/comprovante-pdf`}
                                     target="_blank"
                                     rel="noopener noreferrer"
                                     className="w-full flex items-center gap-3 px-4 py-3 text-sm text-indigo-600 hover:bg-indigo-50 font-medium border-b border-gray-50 transition"
@@ -251,14 +260,14 @@ const LinhaAgendamento = ({ item, index, currentPage, perPage, funcionarios, atr
                                     </button>
                                 </>
                             )}
-                            
+
                             {/* Finalizar Atendimento e Chamar o Modal com o PIN */}
                             {item.status === 'confirmado' && (
                                 <button onClick={() => { abrirModalFinalizar(item); setMenuOpen(false); }} className="w-full text-left px-4 py-3 text-sm text-emerald-600 hover:bg-emerald-50 font-bold border-b border-gray-50 flex items-center gap-3 transition">
                                     <CheckSolid className="w-4 h-4" /> Concluir com PIN
                                 </button>
                             )}
-                            
+
                             {/* Botão para Abrir Modal de Cancelamento */}
                             {['pendente', 'confirmado'].includes(item.status) && (
                                 <button onClick={() => { abrirModalCancelar(item); setMenuOpen(false); }} className="w-full text-left px-4 py-3 text-sm text-rose-600 hover:bg-rose-50 font-medium mt-1 flex items-center gap-3 transition">
@@ -276,7 +285,7 @@ const LinhaAgendamento = ({ item, index, currentPage, perPage, funcionarios, atr
 // ==============================================================================
 // COMPONENTE PRINCIPAL (FILA)
 // ==============================================================================
-export default function Fila({ auth, estabelecimento, estabelecimentos = [], agendamentos, filtros, funcionarios = [] }) {
+export default function Fila({ auth, estabelecimento, estabelecimentos = [], agendamentos, filtros, funcionarios = [], funcionariosPorEstabelecimento = {}, visaoAgregada = false }) {
     const { flash = {}, errors } = usePage().props;
     const dataHoje = new Date().toISOString().split('T')[0];
 
@@ -293,14 +302,14 @@ export default function Fila({ auth, estabelecimento, estabelecimentos = [], age
     });
 
     const [showFilters, setShowFilters] = useState(false);
-    
+
     // Estado do Modal de Finalização (PIN)
-    const [modalFinalizar, setModalFinalizar] = useState({ 
-        isOpen: false, 
-        agendamento: null, 
-        desconto: 0, 
-        formaPagamento: 'pix', 
-        codigo_pin: '', 
+    const [modalFinalizar, setModalFinalizar] = useState({
+        isOpen: false,
+        agendamento: null,
+        desconto: 0,
+        formaPagamento: 'pix',
+        codigo_pin: '',
         processando: false,
         error: null
     });
@@ -323,14 +332,36 @@ export default function Fila({ auth, estabelecimento, estabelecimentos = [], age
         }
     };
 
-    // Auto Refresh Suave (Apenas Tabela)
+    // Auto Refresh Suave (Apenas Tabela) — a cada 30s, como uma rede de
+    // segurança caso o tempo real (abaixo) esteja indisponível.
     useEffect(() => {
         const interval = setInterval(() => {
             const URL_ROTA = atualEstabelecimentoId ? route('estabelecimentos.fila', atualEstabelecimentoId) : route('fila.index');
             router.get(URL_ROTA, params, { preserveScroll: true, preserveState: true, replace: true, only: ['agendamentos'] });
-        }, 30000); 
+        }, 30000);
         return () => clearInterval(interval);
     }, [params, atualEstabelecimentoId]);
+
+    // Tempo real: assim que um pagamento (PIX/boleto/cartão) é confirmado, a
+    // fila atualiza na hora, sem esperar os até 30s do refresh automático.
+    useEffect(() => {
+        if (!window.Echo) return;
+        const idsParaOuvir = atualEstabelecimentoId
+            ? [atualEstabelecimentoId]
+            : estabelecimentos.map((e) => e.id);
+        if (idsParaOuvir.length === 0) return;
+
+        const atualizarAgora = () => {
+            const URL_ROTA = atualEstabelecimentoId ? route('estabelecimentos.fila', atualEstabelecimentoId) : route('fila.index');
+            router.get(URL_ROTA, params, { preserveScroll: true, preserveState: true, replace: true, only: ['agendamentos'] });
+        };
+
+        idsParaOuvir.forEach((id) => window.Echo.channel(`fila.${id}`).listen('.FilaAtualizada', atualizarAgora));
+
+        return () => {
+            idsParaOuvir.forEach((id) => window.Echo.leave(`fila.${id}`));
+        };
+    }, [atualEstabelecimentoId, estabelecimentos, params]);
 
     const aplicarFiltros = (novosParametros) => {
         setParams(novosParametros);
@@ -349,23 +380,23 @@ export default function Fila({ auth, estabelecimento, estabelecimentos = [], age
     };
 
     const atualizarStatus = (id, novoStatus) => {
-        router.post(route('agendamentos.update-status', id), { 
+        router.post(route('agendamentos.update-status', id), {
             _method: 'patch',
-            status: novoStatus 
+            status: novoStatus
         }, { preserveScroll: true, preserveState: true });
     };
 
     const atribuirFuncionario = (agendamentoId, funcionarioId) => {
-        router.post(route('agendamentos.update-funcionario', agendamentoId), { 
+        router.post(route('agendamentos.update-funcionario', agendamentoId), {
             _method: 'patch',
-            funcionario_id: funcionarioId 
+            funcionario_id: funcionarioId
         }, { preserveScroll: true, preserveState: true });
     };
 
     // LÓGICA DE CHAMAR ATUALIZADA COM ANIMAÇÃO GIGANTE E MODERNA
     const chamarCliente = (id) => {
-        setAlertaChamar(true); 
-        setTimeout(() => setAlertaChamar(false), 6000); 
+        setAlertaChamar(true);
+        setTimeout(() => setAlertaChamar(false), 6000);
 
         router.post(route('agendamentos.chamar', id), {}, { preserveScroll: true, preserveState: true });
     };
@@ -377,18 +408,18 @@ export default function Fila({ auth, estabelecimento, estabelecimentos = [], age
     const errorMsg = flash?.error || (Object.keys(errors).length > 0 ? Object.values(errors)[0] : null);
 
     const abrirModalFinalizar = (item) => {
-        setModalFinalizar({ 
-            isOpen: true, 
-            agendamento: item, 
-            desconto: 0, 
-            formaPagamento: 'pix', 
-            codigo_pin: '', 
+        setModalFinalizar({
+            isOpen: true,
+            agendamento: item,
+            desconto: 0,
+            formaPagamento: 'pix',
+            codigo_pin: '',
             processando: false,
             error: null
         });
     };
     const fecharModalFinalizar = () => setModalFinalizar(prev => ({ ...prev, isOpen: false, error: null }));
-    
+
     // Funções do Modal de Cancelamento
     const abrirModalCancelar = (item) => {
         setModalCancelar({ isOpen: true, agendamento: item });
@@ -405,25 +436,25 @@ export default function Fila({ auth, estabelecimento, estabelecimentos = [], age
 
     const confirmarFinalizacao = (e) => {
         e.preventDefault();
-        
+
         if (modalFinalizar.codigo_pin.length !== 4) {
             setModalFinalizar(prev => ({ ...prev, error: "O PIN deve conter exatamente 4 dígitos." }));
             return;
         }
 
         setModalFinalizar(prev => ({ ...prev, processando: true, error: null }));
-        
+
         router.post(route('agendamentos.finalizar', modalFinalizar.agendamento.id), {
             codigo_pin: modalFinalizar.codigo_pin,
-            desconto: modalFinalizar.desconto, 
+            desconto: modalFinalizar.desconto,
             forma_pagamento: modalFinalizar.formaPagamento
-        }, { 
-            preserveScroll: true, 
-            onSuccess: () => fecharModalFinalizar(), 
+        }, {
+            preserveScroll: true,
+            onSuccess: () => fecharModalFinalizar(),
             onError: (errors) => {
                 const msg = errors.error || Object.values(errors)[0] || "Erro desconhecido ao tentar finalizar.";
                 setModalFinalizar(prev => ({ ...prev, processando: false, error: msg }));
-            } 
+            }
         });
     };
 
@@ -439,33 +470,33 @@ export default function Fila({ auth, estabelecimento, estabelecimentos = [], age
             <Head title="Fila de Atendimento" />
 
             <div className="min-h-screen bg-[#FBF9F9] pb-12 pt-6 relative">
-                
+
                 {/* --- ALERTA DE CHAMADA GIGANTE E MODERNO NO CENTRO/TOPO DA TELA --- */}
                 <div className="fixed top-10 left-1/2 -translate-x-1/2 z-[100] w-full max-w-2xl px-4 pointer-events-none flex flex-col gap-3">
                     <AnimatePresence>
                         {alertaChamar && (
-                            <motion.div 
-                                initial={{ opacity: 0, y: -50, scale: 0.9 }} 
-                                animate={{ opacity: 1, y: 0, scale: 1 }} 
-                                exit={{ opacity: 0, y: -30, scale: 0.9 }} 
+                            <motion.div
+                                initial={{ opacity: 0, y: -50, scale: 0.9 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                exit={{ opacity: 0, y: -30, scale: 0.9 }}
                                 className="bg-indigo-600 border border-indigo-700 p-6 rounded-3xl flex items-center gap-6 shadow-2xl pointer-events-auto relative overflow-hidden w-full"
                             >
                                 {/* Efeito de Brilho no Fundo */}
                                 <div className="absolute inset-0 bg-gradient-to-r from-blue-400/20 to-indigo-400/20 animate-pulse"></div>
-                                
+
                                 <div className="w-16 h-16 rounded-full bg-white/20 flex items-center justify-center shrink-0 relative z-10 border border-white/30">
                                     <MegaphoneIcon className="w-8 h-8 text-white animate-bounce" />
                                 </div>
-                                
+
                                 <div className="relative z-10 flex-1">
                                     <h4 className="text-white font-black text-2xl tracking-tight mb-1">Cliente Chamado!</h4>
                                     <p className="text-indigo-100 text-base font-medium leading-tight">
                                         Uma notificação e um e-mail acabam de ser enviados solicitando a presença no balcão.
                                     </p>
                                 </div>
-                                
-                                <button 
-                                    onClick={() => setAlertaChamar(false)} 
+
+                                <button
+                                    onClick={() => setAlertaChamar(false)}
                                     className="relative z-10 p-2 bg-indigo-700/50 hover:bg-indigo-700 text-white rounded-full transition"
                                 >
                                     <XMarkIcon className="w-5 h-5" />
@@ -512,9 +543,9 @@ export default function Fila({ auth, estabelecimento, estabelecimentos = [], age
                                 <span className="text-gray-300 text-xs font-bold">até</span>
                                 <input type="date" name="data_fim" value={params.data_fim} onChange={handleChange} className="bg-transparent border-none p-0 text-xs font-bold text-gray-700 focus:ring-0 outline-none w-auto cursor-pointer" />
                             </div>
-                            
-                            <button 
-                                onClick={() => setShowFilters(!showFilters)} 
+
+                            <button
+                                onClick={() => setShowFilters(!showFilters)}
                                 className={`w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 border rounded-xl text-sm font-semibold shadow-sm transition ${showFilters ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'}`}
                             >
                                 <AdjustmentsHorizontalIcon className="w-4 h-4" />
@@ -536,15 +567,15 @@ export default function Fila({ auth, estabelecimento, estabelecimentos = [], age
                                     <ArrowPathIcon className="w-3.5 h-3.5" /> Limpar Tudo
                                 </button>
                             </div>
-                            
+
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                 <div className="flex flex-col">
                                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Status Atendimento</label>
                                     <div className="relative">
-                                        <select 
-                                            name="status" 
-                                            value={params.status} 
-                                            onChange={handleChange} 
+                                        <select
+                                            name="status"
+                                            value={params.status}
+                                            onChange={handleChange}
                                             style={{ backgroundImage: 'none' }}
                                             className="w-full appearance-none !bg-none bg-gray-50 border border-gray-200 text-gray-700 text-sm font-medium rounded-xl px-4 py-2.5 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none cursor-pointer"
                                         >
@@ -561,10 +592,10 @@ export default function Fila({ auth, estabelecimento, estabelecimentos = [], age
                                 <div className="flex flex-col">
                                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Status do Pagamento</label>
                                     <div className="relative">
-                                        <select 
-                                            name="status_pagamento" 
-                                            value={params.status_pagamento} 
-                                            onChange={handleChange} 
+                                        <select
+                                            name="status_pagamento"
+                                            value={params.status_pagamento}
+                                            onChange={handleChange}
                                             style={{ backgroundImage: 'none' }}
                                             className="w-full appearance-none !bg-none bg-gray-50 border border-gray-200 text-gray-700 text-sm font-medium rounded-xl px-4 py-2.5 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none cursor-pointer"
                                         >
@@ -579,10 +610,10 @@ export default function Fila({ auth, estabelecimento, estabelecimentos = [], age
                                 <div className="flex flex-col">
                                     <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Ordem de Exibição</label>
                                     <div className="relative">
-                                        <select 
-                                            name="ordem" 
-                                            value={params.ordem} 
-                                            onChange={handleChange} 
+                                        <select
+                                            name="ordem"
+                                            value={params.ordem}
+                                            onChange={handleChange}
                                             style={{ backgroundImage: 'none' }}
                                             className="w-full appearance-none !bg-none bg-gray-50 border border-gray-200 text-gray-700 text-sm font-medium rounded-xl px-4 py-2.5 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none cursor-pointer"
                                         >
@@ -599,10 +630,10 @@ export default function Fila({ auth, estabelecimento, estabelecimentos = [], age
 
                     {/* --- CARDS METRICAS & SELETOR DE ESTABELECIMENTOS --- */}
                     <div className="flex flex-col lg:flex-row gap-4 items-stretch">
-                        
+
                         <div className="relative bg-white border border-gray-200 rounded-2xl shadow-sm p-4 w-full lg:w-72 flex flex-col justify-center cursor-pointer hover:border-gray-300 transition">
                             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">Visão do Estabelecimento</label>
-                            <select 
+                            <select
                                 className="w-full bg-transparent border-none p-0 text-base font-bold text-gray-900 focus:ring-0 outline-none cursor-pointer appearance-none !bg-none pr-8"
                                 style={{ backgroundImage: 'none' }}
                                 value={selectValue}
@@ -664,6 +695,7 @@ export default function Fila({ auth, estabelecimento, estabelecimentos = [], age
                                 <thead>
                                     <tr className="bg-gray-50 border-b border-gray-200 text-[11px] uppercase tracking-wider text-gray-500 font-bold">
                                         <th className="px-4 py-4 text-center w-16">Pos</th>
+                                        {visaoAgregada && <th className="px-4 py-4">Local</th>}
                                         <th className="px-4 py-4">Cliente</th>
                                         <th className="px-4 py-4">Horário</th>
                                         <th className="px-4 py-4">Serviço / Extras / Delegação</th>
@@ -674,13 +706,14 @@ export default function Fila({ auth, estabelecimento, estabelecimentos = [], age
                                 <tbody className="divide-y divide-gray-100">
                                     {agendamentos?.data?.length > 0 ? (
                                         agendamentos.data.map((item, index) => (
-                                            <LinhaAgendamento 
-                                                key={item.id} 
-                                                item={item} 
+                                            <LinhaAgendamento
+                                                key={item.id}
+                                                item={item}
                                                 index={index}
                                                 currentPage={agendamentos.current_page}
                                                 perPage={agendamentos.per_page}
-                                                funcionarios={funcionarios}
+                                                funcionarios={visaoAgregada ? (funcionariosPorEstabelecimento[item.estabelecimento_id] || []) : funcionarios}
+                                                visaoAgregada={visaoAgregada}
                                                 atribuirFuncionario={atribuirFuncionario}
                                                 atualizarStatus={atualizarStatus}
                                                 abrirModalFinalizar={abrirModalFinalizar}
@@ -691,7 +724,7 @@ export default function Fila({ auth, estabelecimento, estabelecimentos = [], age
                                         ))
                                     ) : (
                                         <tr>
-                                            <td colSpan="6" className="px-6 py-20 text-center text-gray-500">
+                                            <td colSpan={visaoAgregada ? 7 : 6} className="px-6 py-20 text-center text-gray-500">
                                                 <div className="flex flex-col items-center justify-center">
                                                     <CalendarIcon className="w-12 h-12 text-gray-300 mb-3" />
                                                     <p className="text-base font-bold text-gray-700">Nenhum agendamento encontrado.</p>
@@ -712,10 +745,10 @@ export default function Fila({ auth, estabelecimento, estabelecimentos = [], age
             <AnimatePresence>
                 {modalFinalizar.isOpen && (
                     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-gray-900/60 backdrop-blur-sm px-4">
-                        <motion.div 
-                            initial={{ opacity: 0, scale: 0.95, y: 20 }} 
-                            animate={{ opacity: 1, scale: 1, y: 0 }} 
-                            exit={{ opacity: 0, scale: 0.95, y: 20 }} 
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: 20 }}
                             className="bg-white rounded-3xl p-6 sm:p-8 w-full max-w-md shadow-2xl relative"
                         >
                             <div className="flex justify-between items-start mb-6 border-b border-gray-100 pb-4">
@@ -727,7 +760,7 @@ export default function Fila({ auth, estabelecimento, estabelecimentos = [], age
                                     <XMarkIcon className="w-5 h-5" />
                                 </button>
                             </div>
-                            
+
                             {/* Exibir erro do Backend ou Validação */}
                             {modalFinalizar.error && (
                                 <div className="mb-5 bg-red-50 border border-red-100 text-red-700 px-4 py-3 rounded-xl text-sm font-semibold flex items-start gap-2">
@@ -744,8 +777,8 @@ export default function Fila({ auth, estabelecimento, estabelecimentos = [], age
                                     <label className="block text-xs font-bold text-indigo-800 uppercase tracking-widest mb-3 text-center relative z-10">
                                         Código de Segurança (PIN)
                                     </label>
-                                    <input 
-                                        type="text" 
+                                    <input
+                                        type="text"
                                         maxLength="4"
                                         required
                                         className="w-full text-center text-4xl font-black tracking-[0.5em] text-gray-900 bg-white border-2 border-indigo-200 rounded-xl px-4 py-4 focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition shadow-sm relative z-10"
@@ -761,8 +794,8 @@ export default function Fila({ auth, estabelecimento, estabelecimentos = [], age
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div>
                                         <label className="block text-xs font-bold text-gray-500 mb-1">Desconto R$ (Opcional)</label>
-                                        <input 
-                                            type="number" 
+                                        <input
+                                            type="number"
                                             min="0"
                                             step="0.01"
                                             className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition shadow-sm bg-gray-50 hover:bg-white focus:bg-white"
@@ -775,14 +808,14 @@ export default function Fila({ auth, estabelecimento, estabelecimentos = [], age
                                     <div>
                                         <label className="block text-xs font-bold text-gray-500 mb-1">Forma Pagamento</label>
                                         <div className="relative">
-                                            <select 
+                                            <select
                                                 className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition cursor-pointer shadow-sm appearance-none !bg-none bg-gray-50 hover:bg-white focus:bg-white"
                                                 style={{ backgroundImage: 'none' }}
                                                 value={modalFinalizar.formaPagamento}
                                                 onChange={(e) => setModalFinalizar({...modalFinalizar, formaPagamento: e.target.value})}
                                             >
                                                 {modalFinalizar.agendamento?.status_pagamento === 'pago_online' ? (
-                                                    <option value="online">Pago Online (Asaas)</option>
+                                                    <option value="online">Pago Online</option>
                                                 ) : (
                                                     <>
                                                         <option value="pix">Via PIX (Local)</option>
@@ -798,16 +831,16 @@ export default function Fila({ auth, estabelecimento, estabelecimentos = [], age
                                 </div>
 
                                 <div className="mt-8 pt-5 border-t border-gray-100 flex flex-col-reverse sm:flex-row justify-end gap-3">
-                                    <button 
+                                    <button
                                         type="button"
-                                        onClick={fecharModalFinalizar} 
+                                        onClick={fecharModalFinalizar}
                                         className="px-6 py-3.5 text-sm font-bold text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition shadow-sm w-full sm:w-auto"
                                     >
                                         Cancelar
                                     </button>
-                                    <button 
+                                    <button
                                         type="submit"
-                                        disabled={modalFinalizar.processando || modalFinalizar.codigo_pin.length !== 4} 
+                                        disabled={modalFinalizar.processando || modalFinalizar.codigo_pin.length !== 4}
                                         className="px-6 py-3.5 text-sm font-bold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 disabled:opacity-50 transition shadow-sm w-full sm:w-auto flex justify-center items-center gap-2"
                                     >
                                         {modalFinalizar.processando ? 'Autenticando...' : 'Autenticar PIN'}
@@ -823,10 +856,10 @@ export default function Fila({ auth, estabelecimento, estabelecimentos = [], age
             <AnimatePresence>
                 {modalCancelar.isOpen && (
                     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-gray-900/60 backdrop-blur-sm px-4">
-                        <motion.div 
-                            initial={{ opacity: 0, scale: 0.95, y: 20 }} 
-                            animate={{ opacity: 1, scale: 1, y: 0 }} 
-                            exit={{ opacity: 0, scale: 0.95, y: 20 }} 
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: 20 }}
                             className="bg-white rounded-3xl p-6 sm:p-8 w-full max-w-md shadow-2xl relative text-center"
                         >
                             <div className="flex flex-col items-center">
@@ -840,18 +873,18 @@ export default function Fila({ auth, estabelecimento, estabelecimentos = [], age
                                     Tem certeza que deseja cancelar o agendamento de <strong className="text-gray-800">{modalCancelar.agendamento?.usuario?.name || 'este cliente'}</strong>? <br className="hidden sm:block" />Esta ação notificará o cliente e os valores (se pagos) serão estornados.
                                 </p>
                             </div>
-                            
+
                             <div className="flex flex-col-reverse sm:flex-row justify-center gap-3 w-full">
-                                <button 
+                                <button
                                     type="button"
-                                    onClick={fecharModalCancelar} 
+                                    onClick={fecharModalCancelar}
                                     className="px-6 py-3.5 text-sm font-bold text-gray-600 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition shadow-sm w-full sm:w-auto"
                                 >
                                     Não, Voltar
                                 </button>
-                                <button 
+                                <button
                                     type="button"
-                                    onClick={confirmarCancelamento} 
+                                    onClick={confirmarCancelamento}
                                     className="px-6 py-3.5 text-sm font-bold text-white bg-rose-600 rounded-xl hover:bg-rose-700 transition shadow-sm w-full sm:w-auto flex justify-center items-center gap-2"
                                 >
                                     Sim, Cancelar

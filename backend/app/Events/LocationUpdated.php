@@ -11,19 +11,23 @@ use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
 // ShouldBroadcastNow garante que o evento vá para o Websocket sem passar por fila
-class LocationUpdated implements ShouldBroadcastNow 
+class LocationUpdated implements ShouldBroadcastNow
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
     public $agendamentoId;
     public $latitude;
     public $longitude;
+    public $heading;
+    public $velocidade;
 
-    public function __construct($agendamentoId, $latitude, $longitude)
+    public function __construct($agendamentoId, $latitude, $longitude, $heading = null, $velocidade = null)
     {
         $this->agendamentoId = $agendamentoId;
         $this->latitude = $latitude;
         $this->longitude = $longitude;
+        $this->heading = $heading;
+        $this->velocidade = $velocidade;
     }
 
     /**
@@ -43,5 +47,16 @@ class LocationUpdated implements ShouldBroadcastNow
     public function broadcastAs()
     {
         return 'client.moved';
+    }
+
+    public function broadcastWith(): array
+    {
+        return [
+            'latitude' => $this->latitude,
+            'longitude' => $this->longitude,
+            'heading' => $this->heading,
+            'velocidade' => $this->velocidade,
+            'timestamp' => now()->toIso8601String(),
+        ];
     }
 }

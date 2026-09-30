@@ -1,28 +1,54 @@
 // --- CORREÇÃO DO DOMEXCEPTION PARA O HERMES ---
-// --- CORREÇÃO DO DOMEXCEPTION PARA O HERMES ---
-if (typeof global.DOMException === 'undefined') {
-  global.DOMException = Error as any;
+if (typeof globalThis.DOMException === 'undefined') {
+  (globalThis as any).DOMException = Error;
 }
 // ----------------------------------------------
-import { Tabs } from 'expo-router';
-import { Feather, Ionicons } from '@expo/vector-icons';
+import type { ColorValue } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Tabs, Redirect } from 'expo-router';
+import { obterPapel, ehCliente, rotaInicialDoPapel } from '../../services/papel';
+import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+type IconeAba = React.ComponentProps<typeof Ionicons>['name'];
+
+// Ícone contornado quando inativo e preenchido quando ativo (padrão dos apps
+// de mercado); a cor ativa é a tinta escura, sem laranja de fundo.
+const aba = (ativo: IconeAba, inativo: IconeAba) => ({ color, focused }: { color: ColorValue; focused: boolean }) => (
+  <Ionicons name={focused ? ativo : inativo} size={24} color={color} />
+);
 
 export default function TabLayout() {
+  const insets = useSafeAreaInsets();
+  const [papel, setPapel] = useState<string | null>(null);
+
+  useEffect(() => {
+    obterPapel().then(setPapel);
+  }, []);
+
+  // As abas são a área do CLIENTE. Sócio/gerente, equipe e admin que caírem
+  // aqui (ex.: pós-cadastro) são mandados pra própria área.
+  if (papel === null) return null;
+  if (!ehCliente(papel)) return <Redirect href={rotaInicialDoPapel(papel) as never} />;
+
   return (
     <Tabs
       screenOptions={{
-        headerShown: false, // Esconde o cabeçalho padrão do Expo
-        tabBarActiveTintColor: '#2563EB', // Cor azul para o menu ativo
-        tabBarInactiveTintColor: '#0F172A', // Cor escura para os menus inativos
+        headerShown: false,
+        tabBarActiveTintColor: '#FF7A00',
+        tabBarInactiveTintColor: '#8E8E99',
         tabBarStyle: {
-          height: 110, // O tamanho 110 que funcionou perfeito!
-          paddingBottom: 25, // Empurra o texto e os ícones para cima dos botões do sistema
-          paddingTop: 10,
+          height: 60 + Math.max(insets.bottom, 10),
+          paddingBottom: Math.max(insets.bottom, 10),
+          paddingTop: 8,
           backgroundColor: '#FFFFFF',
           borderTopWidth: 1,
-          borderTopColor: '#E2E8F0', // Linha sutil separando a barra do app
-          elevation: 5, // Sombra suave no Android
-          shadowOpacity: 0.1, // Sombra suave no iOS
+          borderTopColor: '#EEEEF2',
+          elevation: 12,
+          shadowColor: '#000',
+          shadowOpacity: 0.06,
+          shadowRadius: 14,
+          shadowOffset: { width: 0, height: -4 },
         },
         tabBarLabelStyle: {
           fontSize: 11,
@@ -31,60 +57,12 @@ export default function TabLayout() {
         },
       }}
     >
-      {/* 1. HOME / INÍCIO (Aponta para o arquivo home.tsx) */}
-      <Tabs.Screen
-        name="home"
-        options={{
-          title: 'Início',
-          tabBarIcon: ({ color }) => (
-            <Feather name="home" size={24} color={color} />
-          ),
-        }}
-      />
-
-      {/* 2. DESCUBRA */}
-      <Tabs.Screen
-        name="explorar"
-        options={{
-          title: 'Descubra',
-          tabBarIcon: ({ color }) => (
-            <Feather name="compass" size={24} color={color} />
-          ),
-        }}
-      />
-
-      {/* 3. CARTEIRA */}
-      <Tabs.Screen
-        name="carteira"
-        options={{
-          title: 'Carteira',
-          tabBarIcon: ({ color }) => (
-            <Ionicons name="wallet-outline" size={26} color={color} />
-          ),
-        }}
-      />
-
-      {/* 4. CAIXA DE ENTRADA (COM NOTIFICAÇÃO) */}
-      <Tabs.Screen
-        name="caixa-entrada"
-        options={{
-          title: 'Mensagens',
-          tabBarIcon: ({ color }) => (
-            <Feather name="mail" size={24} color={color} />
-          ),
-        }}
-      />
-
-      {/* 5. AGENDAMENTOS / RESERVAS */}
-      <Tabs.Screen
-        name="reservas"
-        options={{
-          title: 'Reservas',
-          tabBarIcon: ({ color }) => (
-            <Feather name="calendar" size={24} color={color} />
-          ),
-        }}
-      />
+      <Tabs.Screen name="home" options={{ title: 'Início', tabBarIcon: aba('home', 'home-outline') }} />
+      <Tabs.Screen name="explorar" options={{ title: 'Descubra', tabBarIcon: aba('compass', 'compass-outline') }} />
+      <Tabs.Screen name="carteira" options={{ title: 'Carteira', tabBarIcon: aba('wallet', 'wallet-outline') }} />
+      <Tabs.Screen name="caixa-entrada" options={{ title: 'Mensagens', tabBarIcon: aba('chatbubble', 'chatbubble-outline') }} />
+      <Tabs.Screen name="reservas" options={{ title: 'Reservas', tabBarIcon: aba('calendar', 'calendar-outline') }} />
+      <Tabs.Screen name="mais" options={{ title: 'Mais', tabBarIcon: aba('menu', 'menu-outline') }} />
     </Tabs>
   );
 }

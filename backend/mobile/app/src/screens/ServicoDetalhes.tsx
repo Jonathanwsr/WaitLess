@@ -1,49 +1,56 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Image,
   ActivityIndicator,
   Platform,
-  Dimensions,
-  SafeAreaView
+  Linking,
 } from 'react-native';
-import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
+import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { T } from '../../../constants/ClientTheme';
+import { FavoriteButton } from '../../../components/client/ui';
+import { compartilharLocal } from '../../../services/compartilhar';
+import { alternarFavoritoRemoto } from '../../../services/favoritos';
 
-const { width } = Dimensions.get('window');
-
-const COLORS = {
-  primary: '#FF5A00',      // Laranja Principal
-  primaryLight: '#FFF0E6', 
-  secondary: '#111827',
-  gray: '#6B7280',
-  lightGray: '#F8F9FA',
-  cardBg: '#FFFFFF',
-  border: '#E5E7EB',
-  star: '#FF5A00',         // Estrela laranja
-  green: '#10B981',        // Verde para tags "Grátis" e descontos
-  white: '#FFFFFF',
+const C = {
+  ink: T.ink,
+  muted: T.muted,
+  faint: T.faint,
+  canvas: T.cream,
+  card: T.card,
+  line: T.line,
+  soft: '#F0F0F2',
+  accent: T.primary,
+  accentSoft: T.primarySoft,
+  star: T.star,
+  success: T.success,
+  successBg: T.successBg,
 };
 
 const DEFAULT_COVER = 'https://images.unsplash.com/photo-1521590832167-7bcbfaa6381f?q=80&w=1000&auto=format&fit=crop';
-const DEFAULT_PROFILE = 'https://via.placeholder.com/150';
 const BASE_API = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api';
 
-// TIPAGENS RÍGIDAS (SEM USO DE ANY) PARA EVITAR CRASHES
 interface Estabelecimento {
   id: number;
   nome: string;
   foto_perfil?: string;
-  foto_capa?: string;
+  foto_banner?: string;
   ramo_atuacao?: string;
   categoria?: string;
   telefone?: string;
   cidade?: string;
+  estado?: string;
+  bairro?: string;
+  rua?: string;
+  numero?: string;
+  bio?: string;
+  favoritado?: boolean;
 }
 
 interface ResumoAvaliacoes {
@@ -54,9 +61,11 @@ interface ResumoAvaliacoes {
 interface ItemRaw {
   id: number;
   nome: string;
+  descricao?: string;
   categoria?: string;
   valor?: number | string;
   valor_diaria?: number | string;
+  duracao_minutos?: number | string;
   foto_principal?: string;
   foto?: string;
   fotos?: string | string[];
@@ -66,17 +75,20 @@ interface ItemRaw {
   capacidade_pessoas?: number;
   lugares?: number;
   cambio?: string;
-  combustivel?: string;
+  somente_premium?: boolean | number;
+  aceita_pontos?: boolean | number;
 }
 
 interface ItemCatalogo extends ItemRaw {
   tipoItem: 'servico' | 'aluguel';
 }
 
+const brl = (v: number) => `R$ ${v.toFixed(2).replace('.', ',')}`;
+
 export default function ServicoDetalhes() {
   const router = useRouter();
   const searchParams = useLocalSearchParams();
-  
+
   const rawId = searchParams.id || searchParams.estabelecimentoId;
   const id = Array.isArray(rawId) ? rawId[0] : rawId;
 
@@ -84,12 +96,13 @@ export default function ServicoDetalhes() {
   const [error, setError] = useState<boolean>(false);
   const [estabelecimento, setEstabelecimento] = useState<Estabelecimento | null>(null);
   const [avaliacoes, setAvaliacoes] = useState<ResumoAvaliacoes | null>(null);
-  
   const [catalogo, setCatalogo] = useState<ItemCatalogo[]>([]);
-  const [categorias, setCategorias] = useState<string[]>(['Destaques']);
-  const [categoriaAtiva, setCategoriaAtiva] = useState<string>('Destaques');
-  
+
+  const [aba, setAba] = useState<'todos' | 'servico' | 'aluguel'>('todos');
+  const [categoriaAtiva, setCategoriaAtiva] = useState<string>('Todas');
+
   const [saldoPontos, setSaldoPontos] = useState<number>(0);
+  const [favorito, setFavorito] = useState<boolean>(false);
 
   useEffect(() => {
     if (id) {
@@ -108,31 +121,24 @@ export default function ServicoDetalhes() {
       const cleanBaseUrl = BASE_API.replace(/\/mobile\/?$/, '').replace(/\/+$/, '');
 
       const res = await fetch(`${cleanBaseUrl}/mobile/estabelecimentos/${id}`, {
-        headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' }
+        headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
       });
 
       if (!res.ok) throw new Error('Falha na API');
       const data = await res.json();
 
       setEstabelecimento(data.estabelecimento);
-      
-      const avaliacoesFormatadas: ResumoAvaliacoes = {
-        media_geral: data.avaliacoes_resumo?.media_geral ? Number(data.avaliacoes_resumo.media_geral).toFixed(1) : '4.8',
-        total: data.avaliacoes_resumo?.total || 829
-      };
-      setAvaliacoes(avaliacoesFormatadas);
+      setAvaliacoes({
+        media_geral: data.avaliacoes_resumo?.media_geral ? Number(data.avaliacoes_resumo.media_geral).toFixed(1) : 0,
+        total: data.avaliacoes_resumo?.total || 0,
+      });
+      setFavorito(!!data.estabelecimento?.favoritado);
 
-      const locacoesFormatadas: ItemCatalogo[] = (data.locacoes || []).map((loc: ItemRaw) => ({ ...loc, tipoItem: 'aluguel' }));
-      const servicosFormatados: ItemCatalogo[] = (data.servicos || []).map((ser: ItemRaw) => ({ ...ser, tipoItem: 'servico' }));
-      const todosOsItens = [...locacoesFormatadas, ...servicosFormatados];
-      
-      setCatalogo(todosOsItens);
-
-      const catsUnicas = Array.from(new Set(todosOsItens.map(i => i.categoria || 'Econômicos')));
-      setCategorias(['Destaques', ...catsUnicas as string[]]);
+      const locacoes: ItemCatalogo[] = (data.locacoes || []).map((loc: ItemRaw) => ({ ...loc, tipoItem: 'aluguel' }));
+      const servicos: ItemCatalogo[] = (data.servicos || []).map((ser: ItemRaw) => ({ ...ser, tipoItem: 'servico' }));
+      setCatalogo([...servicos, ...locacoes]);
 
       buscarSaldoPontos(cleanBaseUrl, token, String(id));
-
     } catch (e) {
       console.log('Erro ao carregar vitrine:', e);
       setError(true);
@@ -144,11 +150,11 @@ export default function ServicoDetalhes() {
   const buscarSaldoPontos = async (baseUrl: string, token: string | null, estId: string) => {
     try {
       const res = await fetch(`${baseUrl}/mobile/pontos/saldo?estabelecimento_id=${estId}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
       });
-      if(res.ok) {
-          const data = await res.json();
-          setSaldoPontos(data.saldo || 1000); 
+      if (res.ok) {
+        const data = await res.json();
+        setSaldoPontos(data.saldo ?? 0);
       }
     } catch (e) {
       console.log('Erro ao buscar saldo', e);
@@ -158,368 +164,359 @@ export default function ServicoDetalhes() {
   const getImagemUrl = (item: ItemCatalogo): string => {
     let img = item.foto_principal || item.foto;
     if (!img && item.fotos) {
-        let arr: string[] = [];
-        if (typeof item.fotos === 'string') {
-          try { arr = JSON.parse(item.fotos); } catch (e) { arr = []; }
-        } else if (Array.isArray(item.fotos)) {
-          arr = item.fotos as string[];
-        }
-        if(arr && arr.length > 0) img = arr[0];
+      let arr: string[] = [];
+      if (typeof item.fotos === 'string') {
+        try { arr = JSON.parse(item.fotos); } catch (e) { arr = []; }
+      } else if (Array.isArray(item.fotos)) {
+        arr = item.fotos as string[];
+      }
+      if (arr && arr.length > 0) img = arr[0];
     }
     return img || DEFAULT_COVER;
   };
 
-  // CÁLCULO SEGURO EVITANDO ERRO TOFIXED
   const calcularPreco = (item: ItemCatalogo) => {
     const precoBase = Number(item.valor || item.valor_diaria || 0);
     let precoComDesconto = precoBase;
-
     const temPromocao = item.tem_promocao === true || item.tem_promocao === 1 || item.tem_promocao === '1';
 
     if (temPromocao && item.valor_desconto) {
-        const valorDesc = Number(item.valor_desconto);
-        if (item.tipo_desconto === 'percentual') {
-            precoComDesconto = precoBase - (precoBase * (valorDesc / 100));
-        } else {
-            precoComDesconto = precoBase - valorDesc;
-        }
+      const valorDesc = Number(item.valor_desconto);
+      precoComDesconto = item.tipo_desconto === 'percentual' ? precoBase - precoBase * (valorDesc / 100) : precoBase - valorDesc;
     }
-    
     precoComDesconto = Math.max(0, precoComDesconto);
-    return { precoBase, precoComDesconto, temPromocao };
+    return { precoBase, precoComDesconto, temPromocao: temPromocao && precoComDesconto < precoBase };
   };
 
-  // 👉 REDIRECIONAMENTO PARA A TELA "CriarReserva" (CARRINHO)
+  const toggleFavorito = async () => {
+    if (!estabelecimento) return;
+    setFavorito((atual) => !atual);
+    const cleanBaseUrl = BASE_API.replace(/\/mobile\/?$/, '').replace(/\/+$/, '');
+    const resultado = await alternarFavoritoRemoto(`${cleanBaseUrl}/mobile/favoritos/toggle`, 'estabelecimento', estabelecimento.id);
+    if (resultado === null) setFavorito((atual) => !atual);
+  };
+
+  // Ao tocar num item do catálogo, vai direto pra tela de detalhes completa
+  // (fotos, descrição, forma de pagamento) — antes caía num carrinho/modal
+  // intermediário em vez de mostrar o item de verdade.
   const handleNavegarParaReserva = (item: ItemCatalogo) => {
     router.push({
-      pathname: '/src/screens/CriarReserva' as any,
-      params: {
-        estabelecimentoId: estabelecimento?.id,
-        servicoId: item.id,
-        tipo: item.tipoItem
-      }
+      pathname: '/src/screens/ExplorarDetalhes' as never,
+      params: { id: String(item.id), tipo: item.tipoItem === 'aluguel' ? 'reservas' : undefined },
     });
   };
 
-  const renderItemCard = (item: ItemCatalogo) => {
-    const imgUrl = getImagemUrl(item);
-    const { precoBase, precoComDesconto, temPromocao } = calcularPreco(item);
-    
-    const isDestaque = item.tipoItem === 'aluguel' || temPromocao;
-    const labelCategoria = item.categoria ? item.categoria.charAt(0).toUpperCase() + item.categoria.slice(1) : 'Econômico';
-    const labelCambio = item.cambio ? ` • ${item.cambio}` : ' • Manual';
+  const categorias = useMemo(() => {
+    const doTipo = catalogo.filter((i) => aba === 'todos' || i.tipoItem === aba);
+    return ['Todas', ...Array.from(new Set(doTipo.map((i) => i.categoria).filter(Boolean) as string[]))];
+  }, [catalogo, aba]);
 
-    return (
-      <TouchableOpacity 
-        key={`${item.tipoItem}-${item.id}`} 
-        style={styles.cardItem} 
-        activeOpacity={0.9}
-        onPress={() => handleNavegarParaReserva(item)}
-      >
-        <View style={styles.cardImageContainer}>
-          <Image source={{ uri: imgUrl }} style={styles.cardImage} />
-          {isDestaque && (
-             <View style={styles.badgeDestaque}>
-               <Text style={styles.badgeDestaqueText}>Mais reservado</Text>
-             </View>
-          )}
-          <View style={styles.addBtnContainer}>
-            <View style={styles.addBtn}>
-              <Feather name="plus" size={16} color={COLORS.primary} />
-            </View>
-          </View>
-        </View>
+  const itensExibidos = useMemo(
+    () =>
+      catalogo
+        .filter((i) => aba === 'todos' || i.tipoItem === aba)
+        .filter((i) => categoriaAtiva === 'Todas' || i.categoria === categoriaAtiva),
+    [catalogo, aba, categoriaAtiva]
+  );
 
-        <View style={styles.cardContent}>
-          <Text style={styles.cardTitle} numberOfLines={1}>{item.nome}</Text>
-          
-          <View style={styles.priceRow}>
-            <Text style={styles.priceBold}>R$ {precoComDesconto.toFixed(2).replace('.', ',')}</Text>
-            <Text style={styles.priceSuffix}> {item.tipoItem === 'aluguel' ? '/dia' : ''}</Text>
-          </View>
-          
-          {temPromocao && item.valor_desconto ? (
-            <View style={styles.oldPriceRow}>
-              <Text style={styles.oldPriceText}>R$ {precoBase.toFixed(2).replace('.', ',')}</Text>
-              <View style={styles.discountBadge}>
-                <Text style={styles.discountText}>
-                  -{item.tipo_desconto === 'percentual' ? `${item.valor_desconto}%` : `R$ ${item.valor_desconto}`}
-                </Text>
-              </View>
-            </View>
-          ) : <View style={{height: 18}} />} 
+  const totalServicos = catalogo.filter((i) => i.tipoItem === 'servico').length;
+  const totalReservas = catalogo.filter((i) => i.tipoItem === 'aluguel').length;
+  const menorPreco = catalogo.length ? Math.min(...catalogo.map((i) => calcularPreco(i).precoComDesconto)) : 0;
 
-          <Text style={styles.cardSpecs} numberOfLines={1}>
-            {labelCategoria}{labelCambio}
-          </Text>
-          
-          {(item.lugares || item.capacidade_pessoas || 5) && (
-            <View style={styles.cardFooterInfo}>
-              <Ionicons name="person-outline" size={12} color={COLORS.gray} />
-              <Text style={styles.cardFooterText}>{item.lugares || item.capacidade_pessoas || 5} lugares</Text>
-            </View>
-          )}
-        </View>
-      </TouchableOpacity>
-    );
-  };
+  const enderecoTxt = estabelecimento
+    ? [[estabelecimento.rua, estabelecimento.numero].filter(Boolean).join(', '), estabelecimento.bairro, [estabelecimento.cidade, estabelecimento.estado].filter(Boolean).join(' - ')]
+        .filter(Boolean)
+        .join(' · ')
+    : '';
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+      <View style={s.centro}>
+        <ActivityIndicator size="large" color={C.accent} />
       </View>
     );
   }
 
   if (error || !estabelecimento) {
     return (
-      <View style={styles.loadingContainer}>
-        <Ionicons name="alert-circle-outline" size={48} color={COLORS.gray} />
-        <Text style={{color: COLORS.gray, marginTop: 10}}>Não foi possível carregar a vitrine.</Text>
+      <View style={s.centro}>
+        <View style={s.erroIcone}><Ionicons name="alert-circle-outline" size={30} color={C.faint} /></View>
+        <Text style={s.erroTitulo}>Não foi possível carregar</Text>
+        <Text style={s.erroTxt}>Verifique sua conexão e tente novamente.</Text>
+        <TouchableOpacity style={s.erroBtn} onPress={carregarPerfilDaLoja} activeOpacity={0.85}>
+          <Text style={s.erroBtnTxt}>Tentar novamente</Text>
+        </TouchableOpacity>
       </View>
     );
   }
 
-  const itensExibidos = categoriaAtiva === 'Destaques' 
-      ? catalogo.slice(0, 10) 
-      : catalogo.filter(i => i.categoria === categoriaAtiva || i.categoria?.toLowerCase() === categoriaAtiva.toLowerCase());
+  const renderItem = (item: ItemCatalogo) => {
+    const { precoBase, precoComDesconto, temPromocao } = calcularPreco(item);
+    const ehAluguel = item.tipoItem === 'aluguel';
+    const label = item.categoria ? item.categoria.charAt(0).toUpperCase() + item.categoria.slice(1).replace(/_/g, ' ') : ehAluguel ? 'Reserva' : 'Serviço';
 
-  // Pegando o menor valor do catálogo para exibir na vitrine
-  const valoresCatalogo = catalogo.map(i => Number(i.valor || i.valor_diaria || 80));
-  const minValor = valoresCatalogo.length > 0 ? Math.min(...valoresCatalogo) : 80;
-
-  return (
-    <View style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
-        
-        {/* ==================================================== */}
-        {/* HEADER COVER E BOTÕES NAVEGAÇÃO */}
-        {/* ==================================================== */}
-        <View style={styles.coverContainer}>
-          <Image source={{ uri: estabelecimento.foto_capa || DEFAULT_COVER }} style={styles.coverImage} />
-          <View style={styles.coverOverlay} />
-          
-          <SafeAreaView style={styles.headerButtons}>
-            <TouchableOpacity style={styles.circleBtn} onPress={() => router.back()}>
-              <Ionicons name="arrow-back" size={20} color={COLORS.secondary} />
-            </TouchableOpacity>
-            <View style={styles.headerRightBtns}>
-              <TouchableOpacity style={styles.circleBtn}>
-                <Ionicons name="heart-outline" size={20} color={COLORS.secondary} />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.circleBtn}>
-                <Ionicons name="search" size={20} color={COLORS.secondary} />
-              </TouchableOpacity>
+    return (
+      <TouchableOpacity key={`${item.tipoItem}-${item.id}`} style={s.item} activeOpacity={0.9} onPress={() => handleNavegarParaReserva(item)}>
+        <View style={s.itemFoto}>
+          <Image source={{ uri: getImagemUrl(item) }} style={s.itemImg} contentFit="cover" />
+          {(ehAluguel || temPromocao) && (
+            <View style={s.maisReservado}><Text style={s.maisReservadoTxt}>Mais reservado</Text></View>
+          )}
+          {temPromocao && (
+            <View style={s.promo}>
+              <Text style={s.promoTxt}>
+                {item.tipo_desconto === 'percentual' ? `${Number(item.valor_desconto)}% OFF` : 'Oferta'}
+              </Text>
             </View>
-          </SafeAreaView>
-        </View>
-
-        {/* ==================================================== */}
-        {/* CARD DO ESTABELECIMENTO */}
-        {/* ==================================================== */}
-        <View style={styles.profileCard}>
-          <View style={styles.avatarWrapper}>
-            <Image source={{ uri: estabelecimento.foto_perfil || DEFAULT_PROFILE }} style={styles.avatarImage} />
-          </View>
-
-          <Text style={styles.estName}>{estabelecimento.nome}</Text>
-          <Text style={styles.estSub}>
-            {estabelecimento.ramo_atuacao || 'Locadora'} • 2.9 km • Min. R$ {minValor.toFixed(2).replace('.',',')}
-          </Text>
-
-          <View style={styles.infoRowContainer}>
-            <View style={styles.infoRow}>
-              <Ionicons name="star" size={14} color={COLORS.star} />
-              <Text style={styles.infoTextBold}>{avaliacoes?.media_geral}</Text>
-              <Text style={styles.infoTextGray}>({avaliacoes?.total} avaliações)</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color={COLORS.gray} />
-          </View>
-          
-          <View style={[styles.infoRowContainer, { borderBottomWidth: 0, paddingBottom: 0 }]}>
-            <View style={styles.infoRow}>
-              <Text style={styles.infoTextBold}>Retirada • 80-90 min • </Text>
-              <Text style={styles.infoTextGreen}>Grátis</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={16} color={COLORS.gray} />
-          </View>
-          <Text style={styles.infoDescBottom}>Mais opções disponíveis no local</Text>
-        </View>
-
-        {/* ==================================================== */}
-        {/* TABS DE CATEGORIAS */}
-        {/* ==================================================== */}
-        <View style={styles.tabsContainer}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16 }}>
-            {categorias.map(cat => (
-              <TouchableOpacity 
-                key={cat} 
-                style={[styles.tabBtn, categoriaAtiva === cat && styles.tabBtnActive]}
-                onPress={() => setCategoriaAtiva(cat)}
-              >
-                <Text style={[styles.tabText, categoriaAtiva === cat && styles.tabTextActive]}>
-                  {cat.charAt(0).toUpperCase() + cat.slice(1).replace(/_/g, ' ')}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-
-        {/* ==================================================== */}
-        {/* LISTA DE PRODUTOS / SERVIÇOS (GRID 2 COLUNAS) */}
-        {/* ==================================================== */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>{categoriaAtiva}</Text>
-          <TouchableOpacity onPress={() => setCategoriaAtiva('Destaques')}>
-            <Text style={styles.verTodosText}>Ver todos</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.gridContainer}>
-          {itensExibidos.length > 0 ? (
-            itensExibidos.map(renderItemCard)
-          ) : (
-            <Text style={{color: COLORS.gray, padding: 20}}>Nenhum item encontrado nesta categoria.</Text>
           )}
         </View>
-        
+
+        <View style={s.itemInfo}>
+          <Text style={s.itemNome} numberOfLines={2}>{item.nome}</Text>
+          <Text style={s.itemSub} numberOfLines={1}>{label}{item.cambio ? ` · ${item.cambio}` : ''}</Text>
+
+          <View style={s.itemTags}>
+            <View style={s.tag}>
+              <Ionicons name={ehAluguel ? 'key-outline' : 'time-outline'} size={11} color={C.muted} />
+              <Text style={s.tagTxt}>{ehAluguel ? 'Reserva' : `${item.duracao_minutos || 30} min`}</Text>
+            </View>
+            {!!(item.lugares || item.capacidade_pessoas) && (
+              <View style={s.tag}>
+                <Ionicons name="people-outline" size={11} color={C.muted} />
+                <Text style={s.tagTxt}>{item.lugares || item.capacidade_pessoas} lugares</Text>
+              </View>
+            )}
+            {!!item.somente_premium && (
+              <View style={[s.tag, { backgroundColor: C.accentSoft }]}>
+                <Ionicons name="star" size={10} color={C.accent} />
+                <Text style={[s.tagTxt, { color: C.accent }]}>Premium</Text>
+              </View>
+            )}
+            {!!item.aceita_pontos && (
+              <View style={s.tag}><Text style={s.tagTxt}>Aceita pontos</Text></View>
+            )}
+          </View>
+
+          <View style={s.itemRodape}>
+            <View style={{ flex: 1 }}>
+              <View style={s.precoLinha}>
+                <Text style={s.preco}>{brl(precoComDesconto)}</Text>
+                {ehAluguel && <Text style={s.precoSufixo}>/ dia</Text>}
+              </View>
+              {temPromocao && <Text style={s.precoAntigo}>{brl(precoBase)}</Text>}
+            </View>
+            <View style={s.acaoBtn}>
+              <Text style={s.acaoTxt}>{ehAluguel ? 'Reservar' : 'Agendar'}</Text>
+            </View>
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  return (
+    <View style={s.container}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: saldoPontos > 0 ? 110 : 40 }}>
+        {/* CAPA */}
+        <View style={s.capa}>
+          <Image source={{ uri: estabelecimento.foto_banner || estabelecimento.foto_perfil || DEFAULT_COVER }} style={s.capaImg} contentFit="cover" />
+          <View style={s.capaSombra} />
+          <View style={s.capaBotoes}>
+            <TouchableOpacity style={s.circulo} onPress={() => router.back()} activeOpacity={0.8}>
+              <Ionicons name="chevron-back" size={22} color={C.ink} />
+            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <FavoriteButton ativo={favorito} onPress={toggleFavorito} tamanho={42} />
+              <TouchableOpacity style={s.circulo} onPress={() => compartilharLocal({ id: estabelecimento.id, nome: estabelecimento.nome })} activeOpacity={0.8} accessibilityLabel="Compartilhar">
+                <Ionicons name="share-social-outline" size={20} color={C.ink} />
+              </TouchableOpacity>
+              <TouchableOpacity style={s.circulo} onPress={() => router.push('/(tabs)/explorar' as never)} activeOpacity={0.8}>
+                <Ionicons name="search" size={20} color={C.ink} />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+
+        {/* CARTÃO DO LOCAL */}
+        <View style={s.perfil}>
+          <View style={s.perfilTopo}>
+            <View style={s.avatar}>
+              <Image source={{ uri: estabelecimento.foto_perfil || DEFAULT_COVER }} style={s.avatarImg} contentFit="cover" />
+            </View>
+            <View style={{ flex: 1, paddingTop: 30 }}>
+              <Text style={s.nome} numberOfLines={2}>{estabelecimento.nome}</Text>
+              <Text style={s.categoria} numberOfLines={1}>{estabelecimento.ramo_atuacao || estabelecimento.categoria || 'Estabelecimento'}</Text>
+            </View>
+          </View>
+
+          <View style={s.stats}>
+            <View style={s.stat}>
+              <View style={s.statLinha}>
+                <Ionicons name="star" size={15} color={C.star} />
+                <Text style={s.statValor}>{avaliacoes && avaliacoes.total > 0 ? avaliacoes.media_geral : 'Novo'}</Text>
+              </View>
+              <Text style={s.statRotulo}>{avaliacoes && avaliacoes.total > 0 ? `${avaliacoes.total} avaliações` : 'sem avaliações'}</Text>
+            </View>
+            <View style={s.statDivisor} />
+            <View style={s.stat}>
+              <Text style={s.statValor}>{catalogo.length}</Text>
+              <Text style={s.statRotulo}>{catalogo.length === 1 ? 'opção' : 'opções'}</Text>
+            </View>
+            <View style={s.statDivisor} />
+            <View style={s.stat}>
+              <Text style={s.statValor}>{catalogo.length ? brl(menorPreco) : '-'}</Text>
+              <Text style={s.statRotulo}>a partir de</Text>
+            </View>
+          </View>
+
+          {!!enderecoTxt && (
+            <View style={s.infoLinha}>
+              <View style={s.infoIcone}><Ionicons name="location-outline" size={17} color={C.ink} /></View>
+              <Text style={s.infoTxt}>{enderecoTxt}</Text>
+            </View>
+          )}
+          {!!estabelecimento.telefone && (
+            <TouchableOpacity style={s.infoLinha} onPress={() => Linking.openURL(`tel:${estabelecimento.telefone}`)} activeOpacity={0.7}>
+              <View style={s.infoIcone}><Ionicons name="call-outline" size={17} color={C.ink} /></View>
+              <Text style={s.infoTxt}>{estabelecimento.telefone}</Text>
+              <Ionicons name="chevron-forward" size={16} color={C.faint} />
+            </TouchableOpacity>
+          )}
+          {!!estabelecimento.bio && <Text style={s.bio}>{estabelecimento.bio}</Text>}
+        </View>
+
+        {/* ABAS + CATEGORIAS */}
+        <View style={s.abas}>
+          {[
+            { id: 'todos', rotulo: `Tudo (${catalogo.length})` },
+            { id: 'servico', rotulo: `Serviços (${totalServicos})` },
+            { id: 'aluguel', rotulo: `Reservas (${totalReservas})` },
+          ].map((a) => {
+            const on = aba === a.id;
+            return (
+              <TouchableOpacity key={a.id} style={[s.aba, on && s.abaOn]} onPress={() => { setAba(a.id as typeof aba); setCategoriaAtiva('Todas'); }} activeOpacity={0.85}>
+                <Text style={[s.abaTxt, on && s.abaTxtOn]}>{a.rotulo}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {categorias.length > 2 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chips}>
+            {categorias.map((cat) => {
+              const on = categoriaAtiva === cat;
+              return (
+                <TouchableOpacity key={cat} style={[s.chip, on && s.chipOn]} onPress={() => setCategoriaAtiva(cat)} activeOpacity={0.8}>
+                  <Text style={[s.chipTxt, on && s.chipTxtOn]}>{cat === 'Todas' ? cat : cat.charAt(0).toUpperCase() + cat.slice(1).replace(/_/g, ' ')}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        )}
+
+        {/* LISTA */}
+        <View style={s.lista}>
+          {itensExibidos.length > 0 ? (
+            itensExibidos.map(renderItem)
+          ) : (
+            <View style={s.vazio}>
+              <Ionicons name="albums-outline" size={30} color={C.faint} />
+              <Text style={s.vazioTxt}>Nenhum item encontrado nesta seção.</Text>
+            </View>
+          )}
+        </View>
       </ScrollView>
 
-      {/* ==================================================== */}
-      {/* BANNER FLUTUANTE DE PONTOS */}
-      {/* ==================================================== */}
+      {/* PONTOS */}
       {saldoPontos > 0 && (
-        <View style={styles.pointsBannerContainer}>
-          <TouchableOpacity style={styles.pointsBanner} activeOpacity={0.9}>
-            <View style={styles.pointsIconBox}>
-              <MaterialCommunityIcons name="tag-outline" size={20} color={COLORS.white} />
+        <View style={s.pontosWrap}>
+          <View style={s.pontos}>
+            <View style={s.pontosIcone}><Ionicons name="gift-outline" size={20} color="#fff" /></View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.pontosTitulo}>Você tem {saldoPontos} pontos</Text>
+              <Text style={s.pontosSub}>Use no checkout para ganhar desconto.</Text>
             </View>
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={styles.pointsTitle}>Você tem {saldoPontos} pontos</Text>
-              <Text style={styles.pointsSub}>Use seus pontos e ganhe descontos!</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={COLORS.primary} />
-          </TouchableOpacity>
+          </View>
         </View>
       )}
-
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.lightGray },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.lightGray },
-  
-  coverContainer: { height: 220, width: '100%', position: 'relative' },
-  coverImage: { width: '100%', height: '100%', resizeMode: 'cover' },
-  coverOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.3)' },
-  headerButtons: { position: 'absolute', top: Platform.OS === 'ios' ? 50 : 20, left: 16, right: 16, flexDirection: 'row', justifyContent: 'space-between' },
-  headerRightBtns: { flexDirection: 'row', gap: 10 },
-  circleBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.white, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, elevation: 3 },
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: C.canvas },
+  centro: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: C.canvas, padding: 32 },
+  erroIcone: { width: 64, height: 64, borderRadius: 32, backgroundColor: C.card, alignItems: 'center', justifyContent: 'center', marginBottom: 14, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  erroTitulo: { fontSize: 18, fontWeight: '800', color: C.ink },
+  erroTxt: { fontSize: 14, color: C.muted, marginTop: 6, textAlign: 'center' },
+  erroBtn: { marginTop: 18, backgroundColor: C.accent, paddingHorizontal: 22, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center' },
+  erroBtnTxt: { color: '#fff', fontWeight: '700' },
 
-  profileCard: { 
-    backgroundColor: COLORS.white, 
-    marginTop: -40, 
-    marginHorizontal: 16, 
-    borderRadius: 24, 
-    paddingHorizontal: 20,
-    paddingBottom: 24,
-    paddingTop: 50,
-    alignItems: 'center',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 10, elevation: 5,
-    position: 'relative'
-  },
-  avatarWrapper: {
-    position: 'absolute',
-    top: -45,
-    width: 90, height: 90,
-    borderRadius: 45,
-    backgroundColor: COLORS.white,
-    padding: 4,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 4
-  },
-  avatarImage: { width: '100%', height: '100%', borderRadius: 40 },
-  
-  estName: { fontSize: 20, fontWeight: '800', color: COLORS.secondary },
-  estSub: { fontSize: 12, color: COLORS.gray, marginTop: 4, marginBottom: 16 },
-  
-  infoRowContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%', paddingVertical: 14, borderTopWidth: 1, borderTopColor: COLORS.border },
-  infoRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  infoTextBold: { fontSize: 13, fontWeight: '700', color: COLORS.secondary },
-  infoTextGray: { fontSize: 13, color: COLORS.gray },
-  infoTextGreen: { fontSize: 13, fontWeight: '800', color: COLORS.green },
-  infoDescBottom: { fontSize: 11, color: COLORS.gray, width: '100%', textAlign: 'left', marginTop: 4 },
+  capa: { height: 230, width: '100%' },
+  capaImg: { width: '100%', height: '100%', backgroundColor: C.soft },
+  capaSombra: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.14)' },
+  capaBotoes: { position: 'absolute', top: Platform.OS === 'ios' ? 54 : 40, left: 16, right: 16, flexDirection: 'row', justifyContent: 'space-between' },
+  circulo: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.16, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 4 },
 
-  tabsContainer: { marginTop: 24, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  tabBtn: { paddingVertical: 12, paddingHorizontal: 16, borderBottomWidth: 2, borderBottomColor: 'transparent' },
-  tabBtnActive: { borderBottomColor: COLORS.primary },
-  tabText: { fontSize: 14, fontWeight: '600', color: COLORS.gray },
-  tabTextActive: { color: COLORS.primary, fontWeight: '800' },
+  perfil: { backgroundColor: C.canvas, marginTop: -30, borderTopLeftRadius: 30, borderTopRightRadius: 30, paddingHorizontal: 20, paddingBottom: 20 },
+  perfilTopo: { flexDirection: 'row', gap: 14 },
+  avatar: { width: 92, height: 92, borderRadius: 28, borderWidth: 4, borderColor: C.canvas, marginTop: -38, overflow: 'hidden', backgroundColor: C.soft, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4 },
+  avatarImg: { width: '100%', height: '100%' },
+  nome: { fontSize: 24, fontWeight: '800', color: C.ink, letterSpacing: -0.6 },
+  categoria: { fontSize: 14, color: C.muted, marginTop: 2, fontWeight: '500' },
 
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingTop: 24, paddingBottom: 12 },
-  sectionTitle: { fontSize: 18, fontWeight: '900', color: COLORS.secondary },
-  verTodosText: { fontSize: 13, fontWeight: '700', color: COLORS.primary },
+  stats: { flexDirection: 'row', backgroundColor: C.card, borderRadius: 22, paddingVertical: 16, marginTop: 18, marginBottom: 16, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 2 },
+  stat: { flex: 1, alignItems: 'center', paddingHorizontal: 4 },
+  statLinha: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  statValor: { fontSize: 18, fontWeight: '800', color: C.ink },
+  statRotulo: { fontSize: 11, color: C.muted, marginTop: 3, fontWeight: '500' },
+  statDivisor: { width: 1, backgroundColor: C.line },
 
-  gridContainer: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 10, justifyContent: 'space-between' },
+  infoLinha: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 },
+  infoIcone: { width: 38, height: 38, borderRadius: 19, backgroundColor: C.accentSoft, alignItems: 'center', justifyContent: 'center' },
+  infoTxt: { flex: 1, fontSize: 14, color: C.ink, fontWeight: '500', lineHeight: 20 },
+  bio: { fontSize: 14, color: C.muted, lineHeight: 21, marginTop: 8 },
 
-  cardItem: { 
-    width: (width / 2) - 18, 
-    backgroundColor: COLORS.white, 
-    borderRadius: 16, 
-    marginBottom: 16, 
-    marginHorizontal: 4,
-    borderWidth: 1, 
-    borderColor: '#F3F4F6',
-    overflow: 'hidden',
-    padding: 8
-  },
-  cardImageContainer: { width: '100%', height: 110, position: 'relative', backgroundColor: COLORS.lightGray, borderRadius: 12 },
-  cardImage: { width: '100%', height: '100%', resizeMode: 'cover', borderRadius: 12 },
-  badgeDestaque: { position: 'absolute', top: 6, left: 6, backgroundColor: '#B94426', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6 },
-  badgeDestaqueText: { color: COLORS.white, fontSize: 8, fontWeight: '800', textTransform: 'uppercase' },
-  
-  addBtnContainer: { position: 'absolute', bottom: -12, right: 8, zIndex: 10 },
-  addBtn: { width: 28, height: 28, borderRadius: 14, backgroundColor: COLORS.white, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, elevation: 4 },
+  abas: { flexDirection: 'row', backgroundColor: '#E9E9EC', marginHorizontal: 20, marginTop: 18, borderRadius: 16, padding: 4 },
+  aba: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 12 },
+  abaOn: { backgroundColor: C.accent, shadowColor: C.accent, shadowOpacity: 0.3, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
+  abaTxt: { fontSize: 12, fontWeight: '600', color: C.muted },
+  abaTxtOn: { color: '#fff', fontWeight: '700' },
 
-  cardContent: { paddingHorizontal: 4, paddingTop: 16, paddingBottom: 4 },
-  cardTitle: { fontSize: 13, fontWeight: '800', color: COLORS.secondary, marginBottom: 6 },
-  
-  priceRow: { flexDirection: 'row', alignItems: 'baseline' },
-  priceBold: { fontSize: 16, fontWeight: '900', color: COLORS.secondary },
-  priceSuffix: { fontSize: 10, color: COLORS.gray, fontWeight: '600' },
-  
-  oldPriceRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2, gap: 6 },
-  oldPriceText: { fontSize: 10, color: COLORS.gray, textDecorationLine: 'line-through' },
-  discountBadge: { backgroundColor: COLORS.green, paddingHorizontal: 4, paddingVertical: 2, borderRadius: 4 },
-  discountText: { fontSize: 9, fontWeight: '800', color: COLORS.white },
+  chips: { paddingHorizontal: 20, gap: 8, paddingTop: 14 },
+  chip: { backgroundColor: C.card, borderWidth: 1, borderColor: C.line, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
+  chipOn: { backgroundColor: C.accent, borderColor: C.accent },
+  chipTxt: { fontSize: 13, fontWeight: '600', color: C.ink },
+  chipTxtOn: { color: '#fff' },
 
-  cardSpecs: { fontSize: 10, color: COLORS.gray, marginTop: 8, fontWeight: '500' },
-  cardFooterInfo: { flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 4 },
-  cardFooterText: { fontSize: 10, color: COLORS.gray, fontWeight: '500' },
+  lista: { paddingHorizontal: 20, paddingTop: 16 },
+  item: { flexDirection: 'row', gap: 14, backgroundColor: C.card, borderRadius: 24, padding: 12, marginBottom: 14, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  itemFoto: { width: 112, height: 132, borderRadius: 18, overflow: 'hidden', backgroundColor: C.soft },
+  itemImg: { width: '100%', height: '100%' },
+  maisReservado: { position: 'absolute', top: 8, left: 8, backgroundColor: T.tag, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 7 },
+  maisReservadoTxt: { color: '#fff', fontSize: 10, fontWeight: '800' },
+  promo: { position: 'absolute', bottom: 8, left: 8, backgroundColor: C.success, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  promoTxt: { color: '#fff', fontSize: 10, fontWeight: '800' },
+  itemInfo: { flex: 1, paddingVertical: 2 },
+  itemNome: { fontSize: 16, fontWeight: '700', color: C.ink },
+  itemSub: { fontSize: 12, color: C.muted, marginTop: 2 },
+  itemTags: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
+  tag: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: C.soft, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  tagTxt: { fontSize: 10, fontWeight: '600', color: C.muted },
+  itemRodape: { flexDirection: 'row', alignItems: 'flex-end', marginTop: 'auto', paddingTop: 8 },
+  precoLinha: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
+  preco: { fontSize: 19, fontWeight: '800', color: C.ink, letterSpacing: -0.3 },
+  precoSufixo: { fontSize: 12, color: C.muted },
+  precoAntigo: { fontSize: 12, color: C.faint, textDecorationLine: 'line-through' },
+  acaoBtn: { backgroundColor: C.accent, paddingHorizontal: 16, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
+  acaoTxt: { color: '#fff', fontSize: 12, fontWeight: '700' },
 
-  pointsBannerContainer: {
-    position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 40 : 30, 
-    left: 16, right: 16,
-    zIndex: 50
-  },
-  pointsBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFDAC1', 
-    borderWidth: 1,
-    borderColor: '#FFC8A2',
-    borderRadius: 12,
-    padding: 14,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4
-  },
-  pointsIconBox: { width: 34, height: 34, borderRadius: 8, backgroundColor: '#B94426', alignItems: 'center', justifyContent: 'center' },
-  pointsTitle: { fontSize: 13, fontWeight: '800', color: COLORS.secondary },
-  pointsSub: { fontSize: 11, color: COLORS.secondary, marginTop: 2 }
+  vazio: { alignItems: 'center', paddingVertical: 40, gap: 10 },
+  vazioTxt: { fontSize: 14, color: C.muted },
+
+  pontosWrap: { position: 'absolute', left: 16, right: 16, bottom: 24 },
+  pontos: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: C.accent, borderRadius: 22, padding: 14, shadowColor: C.accent, shadowOpacity: 0.35, shadowRadius: 14, shadowOffset: { width: 0, height: 6 }, elevation: 6 },
+  pontosIcone: { width: 42, height: 42, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.14)', alignItems: 'center', justifyContent: 'center' },
+  pontosTitulo: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  pontosSub: { color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 2 },
 });

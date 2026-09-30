@@ -69,7 +69,16 @@ class FavoritoMobileController extends Controller
                 return $fav->servico;
             });
 
-        // 3. Reservas (Separadas por status conforme solicitado)
+        // 3. Reservas (aluguéis/hospedagens) favoritas
+        $itensAluguel = Favorito::with('itemAluguel.estabelecimento:id,name,foto_perfil,cidade,estado')
+            ->where('usuario_id', $userId)
+            ->whereNotNull('item_aluguel_id')
+            ->get()
+            ->map(fn ($fav) => $fav->itemAluguel)
+            ->filter()
+            ->values();
+
+        // 4. Agendamentos (Separados por status conforme solicitado)
         $agendamentos = Agendamento::with(['servico', 'estabelecimento'])
             ->where('usuario_id', $userId)
             ->orderBy('data_agendamento', 'desc')
@@ -85,6 +94,7 @@ class FavoritoMobileController extends Controller
         return response()->json([
             'estabelecimentos' => $estabelecimentos,
             'servicos'         => $servicos,
+            'itens_aluguel'    => $itensAluguel,
             'reservas'         => $reservas
         ], 200);
     }

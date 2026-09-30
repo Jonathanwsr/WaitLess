@@ -3,6 +3,8 @@
 namespace App\Services;
 
 use App\Exceptions\CarteiraAsaasNaoConfiguradaException;
+use App\Exceptions\CobrancaRecusadaException;
+use App\Models\User;
 use App\Models\Agendamento;
 use App\Models\Pagamento;
 use Illuminate\Support\Facades\Http;
@@ -12,6 +14,67 @@ use Illuminate\Support\Facades\Mail;
 
 class PagamentoService
 {
+    /** Parcelamento no cartão sem juros para o cliente (o lojista absorve a taxa do Asaas). */
+    public const PARCELAS_MAXIMAS = 12;
+    public const PARCELA_MINIMA = 20.00;
+
+    /**
+     * Opções de parcelamento válidas para um valor: no máximo 12x e nunca uma
+     * parcela abaixo de R$ 20. É a regra única — o mesmo cálculo valida o envio da cobrança.
+     */
+    public function opcoesParcelamento(float $total): array
+    {
+        $total = round($total, 2);
+        if ($total <= 0) return [];
+
+        $maximo = (int) max(1, min(self::PARCELAS_MAXIMAS, floor($total / self::PARCELA_MINIMA)));
+
+        $opcoes = [];
+        for ($n = 1; $n <= $maximo; $n++) {
+            $opcoes[] = [
+                'parcelas' => $n,
+                'valor_parcela' => round($total / $n, 2),
+                'total' => $total,
+            ];
+        }
+        return $opcoes;
+    }
+
+    public function maximoParcelas(float $total): int
+    {
+        $opcoes = $this->opcoesParcelamento($total);
+        return $opcoes ? end($opcoes)['parcelas'] : 1;
+    }
+
+    /** Garante que o cliente exista no Asaas (contas antigas podem não ter o id salvo). */
+    public function garantirClienteAsaas(User $user): string
+    {
+        if ($user->asaas_customer_id) return $user->asaas_customer_id;
+
+        $cpf = preg_replace('/\D/', '', (string) $user->cpf_cnpj);
+        if (strlen($cpf) < 11) {
+            throw new CobrancaRecusadaException('Complete seu CPF/CNPJ no perfil para pagar online.');
+        }
+
+        $resp = Http::withHeaders(['access_token' => config('services.asaas.key')])
+            ->post(config('services.asaas.url') . '/customers', array_filter([
+                'name' => $user->name,
+                'email' => $user->email,
+                'cpfCnpj' => $cpf,
+                'mobilePhone' => preg_replace('/\D/', '', (string) $user->mobile_phone) ?: null,
+                'postalCode' => preg_replace('/\D/', '', (string) $user->postal_code) ?: null,
+                'addressNumber' => $user->address_number,
+            ]));
+
+        if ($resp->failed() || empty($resp->json('id'))) {
+            Log::error('Asaas: falha ao criar cliente', ['user' => $user->id, 'resposta' => $resp->json()]);
+            throw new CobrancaRecusadaException($resp->json('errors.0.description') ?: 'Não foi possível validar seus dados de pagamento.');
+        }
+
+        $user->forceFill(['asaas_customer_id' => $resp->json('id')])->save();
+        return $user->asaas_customer_id;
+    }
+
     /**
      * 👉 VERIFICA SE O ESTABELECIMENTO É ISENTO DA TAXA PRESENCIAL (Premium/Sócio)
      */
@@ -29,7 +92,7 @@ class PagamentoService
     }
 
     /**
-     * 👉 PROCESSA O PAGAMENTO PRESENCIAL (LOCAL) E GERA A DÍVIDA DE 12% SE APLICÁVEL
+     * 👉 PROCESSA O PAGAMENTO PRESENCIAL (LOCAL) E GERA A DÍVIDA DA TAXA DA PLATAFORMA SE APLICÁVEL
      * Chame esse método no seu Controller quando o cliente escolher "Pagar no local"
      */
     public function processarPagamentoLocal($agendamento)
@@ -40,9 +103,9 @@ class PagamentoService
 
         $pin = str_pad(mt_rand(0, 9999), 4, '0', STR_PAD_LEFT);
 
-        // Verifica se NÃO É isento. Se não for, cobra os 12%
+        // Verifica se NÃO É isento. Se não for, cobra a taxa da plataforma
         if (!$this->isIsentoTaxaPresencial($estabelecimentoId)) {
-            $taxaPlataforma = round($valorTotal * 0.12, 2);
+            $taxaPlataforma = \App\Support\Taxas::sobre($valorTotal);
             
             DB::table('estabelecimentos')
                 ->where('id', $estabelecimentoId)
@@ -75,14 +138,30 @@ class PagamentoService
             ->exists();
     }
 
-    public function criarCobrancaAsaas($agendamento, string $metodo, ?string $asaasCustomerId, int $parcelas = 1)
+    /**
+     * @param array|null $cartao  ['numero','titular','mes','ano','cvv'] — quando informado, o cartão é
+     *                            cobrado na hora pelo Asaas (sem sair da página). Os dados do cartão
+     *                            nunca são gravados aqui.
+     */
+    public function criarCobrancaAsaas($agendamento, string $metodo, ?string $asaasCustomerId, int $parcelas = 1, ?array $cartao = null, ?User $titular = null, ?string $ip = null)
     {
         $valorTotal = $agendamento->valor_total ?? $agendamento->valor_final;
 
-        $taxaPlataforma = round($valorTotal * 0.12, 2);
+        $taxaPlataforma = \App\Support\Taxas::sobre($valorTotal);
         $valorLiquidoPrestador = round($valorTotal - $taxaPlataforma, 2);
 
-        $provider = DB::table('providers')
+        // Locação avulsa (Aluguel): `estabelecimento_id` guarda o id do DONO (users.id), então a
+        // carteira é a do próprio dono. Para agendamentos, a carteira vem do vínculo com o estabelecimento.
+        $provider = null;
+        if ($agendamento instanceof \App\Models\Aluguel && $agendamento->proprietario_id) {
+            $provider = DB::table('providers')
+                ->where('user_id', $agendamento->proprietario_id)
+                ->whereNotNull('asaas_wallet_id')
+                ->select('id', 'asaas_wallet_id')
+                ->first();
+        }
+
+        $provider ??= DB::table('providers')
             ->join('users', 'providers.user_id', '=', 'users.id')
             ->join('estabelecimento_usuario', 'users.id', '=', 'estabelecimento_usuario.usuario_id')
             ->where('estabelecimento_usuario.estabelecimento_id', $agendamento->estabelecimento_id)
@@ -91,6 +170,10 @@ class PagamentoService
 
         if (!$provider || !$provider->asaas_wallet_id) {
             throw new CarteiraAsaasNaoConfiguradaException();
+        }
+
+        if ($metodo === 'cartao' && $parcelas > $this->maximoParcelas((float) $valorTotal)) {
+            throw new CobrancaRecusadaException('Parcelamento acima do permitido para este valor.');
         }
 
         $billingTypeMap = ['pix' => 'PIX', 'boleto' => 'BOLETO', 'cartao' => 'CREDIT_CARD'];
@@ -110,14 +193,35 @@ class PagamentoService
             'split' => [
                 [
                     'walletId' => $provider->asaas_wallet_id,
-                    'percentualValue' => 88.00 
+                    'percentualValue' => \App\Support\Taxas::parteDoLocalPercentual()
                 ]
             ]
         ];
 
-        if ($metodo === 'cartao') {
+        if ($metodo === 'cartao' && $parcelas > 1) {
+            // Parcelado: o Asaas quer o total + nº de parcelas (não `value`).
+            unset($payloadAsaas['value']);
             $payloadAsaas['installmentCount'] = $parcelas;
-            $payloadAsaas['installmentValue'] = round($valorTotal / $parcelas, 2); 
+            $payloadAsaas['totalValue'] = round($valorTotal, 2);
+        }
+
+        if ($metodo === 'cartao' && $cartao && $titular) {
+            $payloadAsaas['creditCard'] = [
+                'holderName' => $cartao['titular'],
+                'number' => preg_replace('/\D/', '', $cartao['numero']),
+                'expiryMonth' => str_pad((string) $cartao['mes'], 2, '0', STR_PAD_LEFT),
+                'expiryYear' => strlen((string) $cartao['ano']) === 2 ? '20' . $cartao['ano'] : (string) $cartao['ano'],
+                'ccv' => $cartao['cvv'],
+            ];
+            $payloadAsaas['creditCardHolderInfo'] = array_filter([
+                'name' => $titular->name,
+                'email' => $titular->email,
+                'cpfCnpj' => preg_replace('/\D/', '', (string) $titular->cpf_cnpj),
+                'postalCode' => preg_replace('/\D/', '', (string) $titular->postal_code),
+                'addressNumber' => $titular->address_number,
+                'mobilePhone' => preg_replace('/\D/', '', (string) $titular->mobile_phone) ?: null,
+            ]);
+            $payloadAsaas['remoteIp'] = $ip ?: request()->ip();
         }
 
         $response = Http::withHeaders([
@@ -125,16 +229,24 @@ class PagamentoService
         ])->post(config('services.asaas.url') . '/payments', $payloadAsaas);
 
         if ($response->failed()) {
-            Log::error("Erro Asaas Service", ['resposta' => $response->json()]);
+            // Nunca logar o payload: contém o cartão.
+            Log::error("Erro Asaas Service", ['resposta' => $response->json(), 'metodo' => $metodo]);
+            if ($metodo === 'cartao' && $response->status() === 400) {
+                throw new CobrancaRecusadaException($response->json('errors.0.description') ?: 'Cartão recusado. Confira os dados ou use outro cartão.');
+            }
             throw new \Exception('Falha na comunicação com o gateway de pagamento.');
         }
 
         $asaasPayment = $response->json();
+        $cartaoAprovado = $metodo === 'cartao' && $cartao && in_array($asaasPayment['status'] ?? '', ['CONFIRMED', 'RECEIVED'], true);
         $isAgendamento = $agendamento instanceof Agendamento;
 
         $novoPagamento = Pagamento::create([
             'usuario_id'           => $isAgendamento ? $agendamento->usuario_id : $agendamento->locatario_id,
-            'estabelecimento_id'   => $agendamento->estabelecimento_id,
+            // Locação avulsa: o "estabelecimento" do aluguel é o dono (users.id); só grava se ele tiver um local de verdade.
+            'estabelecimento_id'   => $isAgendamento
+                ? $agendamento->estabelecimento_id
+                : DB::table('estabelecimento_usuario')->where('usuario_id', $agendamento->proprietario_id)->value('estabelecimento_id'),
             'agendamento_id'       => $isAgendamento ? $agendamento->id : null,
             'aluguel_id'           => $isAgendamento ? null : $agendamento->id,
             'gateway_pagamento'    => 'Asaas',
@@ -142,13 +254,19 @@ class PagamentoService
             'valor'                => $valorTotal,
             'taxa'                 => $taxaPlataforma,
             'valor_liquido'        => $valorLiquidoPrestador,
-            'status'               => 'pendente',
+            'status'               => $cartaoAprovado ? 'pago' : 'pendente',
             'metodo_pagamento'     => $metodo,
         ]);
 
         $pin = str_pad(mt_rand(0, 9999), 4, '0', STR_PAD_LEFT);
 
-        if ($isAgendamento) {
+        if ($cartaoAprovado) {
+            if ($isAgendamento) {
+                $agendamento->update(['status_pagamento' => 'pago', 'status' => 'confirmado', 'codigo_verificacao' => $pin, 'pagamento_id' => $novoPagamento->id]);
+            } else {
+                $agendamento->update(['status' => 'confirmado', 'pagamento_id' => $novoPagamento->id]);
+            }
+        } elseif ($isAgendamento) {
             $agendamento->update([
                 'status_pagamento'   => 'aguardando_pagamento',
                 'codigo_verificacao' => $pin,
@@ -161,13 +279,14 @@ class PagamentoService
             ]);
         }
 
-        $this->enviarEmailNotificacao($agendamento, 'pendente', $asaasPayment['invoiceUrl'], $pin);
+        $this->enviarEmailNotificacao($agendamento, $cartaoAprovado ? 'pago' : 'pendente', $asaasPayment['invoiceUrl'], $pin);
 
         return [
             'status'      => 'success',
             'payment_id'  => $asaasPayment['id'],
             'pix_qr_code' => $asaasPayment['pixQrCode'] ?? null,
-            'invoice_url' => $asaasPayment['invoiceUrl']
+            'invoice_url' => $asaasPayment['invoiceUrl'],
+            'aprovado'    => $cartaoAprovado,
         ];
     }
 
@@ -229,9 +348,9 @@ class PagamentoService
             $taxaCancelamento = 0;
 
             if (!$isCancelamentoGratis) {
-                $taxaCancelamento = round($valorOriginal * 0.02, 2);
+                $taxaCancelamento = round($valorOriginal * \App\Support\Taxas::cancelamentoTardioPercentual() / 100, 2);
                 $valorEstorno = $valorOriginal - $taxaCancelamento;
-                $mensagem = "Cancelamento efetuado! Como foi feito a menos de 30 minutos do horário marcado, uma taxa de 2% (R$ " . number_format($taxaCancelamento, 2, ',', '.') . ") foi retida. O restante será devolvido para a forma de pagamento original.";
+                $mensagem = "Cancelamento efetuado! Como foi feito a menos de 30 minutos do horário marcado, uma taxa de " . \App\Support\Taxas::cancelamentoTardioPercentual() . "% (R$ " . number_format($taxaCancelamento, 2, ',', '.') . ") foi retida. O restante será devolvido para a forma de pagamento original.";
             } else {
                 $mensagem = 'Cancelamento gratuito efetuado com sucesso! O valor integral será devolvido para a forma de pagamento original.';
             }
@@ -308,7 +427,9 @@ class PagamentoService
                 'usuario_id'         => $agendamento->usuario_id,
                 'estabelecimento_id' => $agendamento->estabelecimento_id,
                 'agendamento_id'     => $agendamento->id,
-                'tipo'               => 'perda',
+                // historico_pontos.tipo só aceita 'ganho'/'uso' (CHECK constraint) —
+                // 'perda' não existe e derrubava todo o cancelamento com erro de banco.
+                'tipo'               => 'uso',
                 'descricao'          => 'Estorno de pontos por cancelamento do cliente',
                 'quantidade'         => $pontosGanhosNessaTransacao,
                 'created_at'         => now(),
@@ -317,86 +438,16 @@ class PagamentoService
     }
 
     /**
-     * 👉 REPASSE COM DESCONTO DO SALDO DEVEDOR
+     * Repasse com desconto do saldo devedor. A regra e o registro de cada tentativa
+     * (tabela transferencias_carteira) ficam no CarteiraService; aqui só devolvemos
+     * true quando o dinheiro foi aceito pelo Asaas e false quando não foi.
      */
-    public function repassarSaldoPixProvedor($providerId, $valorEspecifico = null)
+    public function repassarSaldoPixProvedor($providerId, $valorEspecifico = null, string $origem = 'automatico')
     {
-        $provider = DB::table('providers')->where('id', $providerId)->first();
+        $transferencia = app(\App\Services\Carteira\CarteiraService::class)
+            ->repasseSemanal((int) $providerId, $valorEspecifico !== null ? (float) $valorEspecifico : null, $origem);
 
-        if (!$provider || $provider->saldo <= 0 || !$provider->pix_key) {
-            return false; 
-        }
-
-        $valorRepasseBruto = $valorEspecifico ? (float) $valorEspecifico : $provider->saldo;
-
-        if ($valorRepasseBruto > $provider->saldo) {
-            throw new \Exception("O valor solicitado (R$ {$valorRepasseBruto}) é maior que o saldo disponível na carteira.");
-        }
-
-        // Busca o estabelecimento associado para checar a dívida
-        $estabelecimento = DB::table('estabelecimento_usuario')
-            ->join('estabelecimentos', 'estabelecimento_usuario.estabelecimento_id', '=', 'estabelecimentos.id')
-            ->where('estabelecimento_usuario.usuario_id', $provider->user_id)
-            ->select('estabelecimentos.id', 'estabelecimentos.saldo_devedor')
-            ->first();
-
-        $saldoDevedor = $estabelecimento ? (float) $estabelecimento->saldo_devedor : 0;
-        $valorLiquidoRepasse = $valorRepasseBruto;
-        $valorDescontadoDaDivida = 0;
-
-        // Calcula o desconto da dívida
-        if ($saldoDevedor > 0) {
-            if ($valorRepasseBruto >= $saldoDevedor) {
-                $valorDescontadoDaDivida = $saldoDevedor;
-                $valorLiquidoRepasse = $valorRepasseBruto - $saldoDevedor;
-            } else {
-                // Se a dívida for maior que o repasse, pega todo o repasse para pagar parte da dívida
-                $valorDescontadoDaDivida = $valorRepasseBruto;
-                $valorLiquidoRepasse = 0; 
-            }
-        }
-
-        // Só faz a transferência PIX se sobrou algum valor após descontar a dívida
-        if ($valorLiquidoRepasse > 0) {
-            $payloadTransfer = [
-                'value' => $valorLiquidoRepasse,
-                'pixAddressKey' => $provider->pix_key,
-                'pixAddressKeyType' => $provider->tipo_chave_pix ?? 'EVP', 
-                'description' => 'Repasse WaitLess - Dívidas descontadas se aplicável',
-            ];
-
-            $response = Http::withHeaders([
-                'access_token' => $provider->asaas_api_key, 
-            ])->post(config('services.asaas.url') . '/transfers', $payloadTransfer);
-
-            if (!$response->successful()) {
-                Log::error("Falha ao transferir PIX", $response->json());
-                return false;
-            }
-        }
-
-        // Atualiza os saldos no banco de dados usando Transaction para segurança
-        DB::transaction(function () use ($providerId, $valorRepasseBruto, $estabelecimento, $valorDescontadoDaDivida) {
-            // Desconta do saldo total local da carteira do provider (inclui o que foi pra divida e pro PIX)
-            DB::table('providers')->where('id', $providerId)->decrement('saldo', $valorRepasseBruto);
-            
-            // Se houve desconto de dívida, abate o valor do saldo_devedor do estabelecimento
-            if ($estabelecimento && $valorDescontadoDaDivida > 0) {
-                DB::table('estabelecimentos')
-                    ->where('id', $estabelecimento->id)
-                    ->decrement('saldo_devedor', $valorDescontadoDaDivida);
-            }
-        });
-
-        Log::info("Repasse para Provider {$providerId}. Solicitado: {$valorRepasseBruto}. Retido para dívida: {$valorDescontadoDaDivida}. Enviado PIX: {$valorLiquidoRepasse}");
-
-        /* 
-           IMPORTANTE: O valor retido ($valorDescontadoDaDivida) continua fisicamente na subconta Asaas do Lojista. 
-           Para a plataforma WaitLess realmente "pegar" esse dinheiro de volta para a conta principal, 
-           você precisará criar um script ou job futuro que faça uma transferência da Subconta para a Carteira Principal do Asaas.
-        */
-
-        return true;
+        return $transferencia !== null && $transferencia->status !== 'falhou';
     }
 
     public function enviarEmailNotificacao($agendamento, $statusPagamento, $linkAsaas = null, $pin = null)
@@ -501,14 +552,11 @@ class PagamentoService
         }
 
         try {
-            Mail::raw($mensagemCliente, function ($mail) use ($cliente, $assuntoCliente) {
-                $mail->to($cliente->email)->subject($assuntoCliente);
-            });
+            // Na fila: a confirmação de pagamento não pode ficar esperando o e-mail sair.
+            Mail::to($cliente->email)->queue(new \App\Mail\NotificacaoTexto($assuntoCliente, $mensagemCliente));
 
             if ($dono && $mensagemDono !== "") {
-                Mail::raw($mensagemDono, function ($mail) use ($dono, $assuntoDono) {
-                    $mail->to($dono->email)->subject($assuntoDono);
-                });
+                Mail::to($dono->email)->queue(new \App\Mail\NotificacaoTexto($assuntoDono, $mensagemDono));
             }
         } catch (\Exception $e) {
             Log::error("Erro ao enviar emails de notificação (Brevo): " . $e->getMessage());

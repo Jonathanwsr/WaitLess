@@ -1,12 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { Head } from '@inertiajs/react';
+import { Head, Link } from '@inertiajs/react';
 import axios from 'axios';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { 
   ArrowLeft, MapPin, Navigation, Clock, User, 
-  Phone, AlertTriangle, CheckCircle2, Car, Search
+  Phone, AlertTriangle, CheckCircle2, Car, Search, Crown
 } from 'lucide-react';
 
 // ==========================================
@@ -14,7 +14,7 @@ import {
 // ==========================================
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
 
-export default function MapaRastreamento({ auth, agendamentosAtivos }) {
+function MapaRastreamentoConteudo({ auth, agendamentosAtivos }) {
   const mapContainer = useRef(null);
   const map = useRef(null);
   const markerCliente = useRef(null);
@@ -420,4 +420,37 @@ export default function MapaRastreamento({ auth, agendamentosAtivos }) {
       `}</style>
     </AuthenticatedLayout>
   );
+}
+
+// Sem plano Premium: mostra o convite para assinar em vez do mapa.
+export default function MapaRastreamento(props) {
+  if (props.premiumNecessario) {
+    return (
+      <AuthenticatedLayout user={props.auth?.user}>
+        <Head title="Rastreamento de clientes" />
+        <div className="max-w-2xl mx-auto px-4 py-16 text-center">
+          <div className="mx-auto w-20 h-20 rounded-full bg-orange-100 flex items-center justify-center mb-6">
+            <Crown className="w-10 h-10 text-[#FF5A00]" />
+          </div>
+          <h1 className="text-3xl font-black text-gray-900 tracking-tight">Seja Premium e veja seus clientes no caminho até o seu local</h1>
+          <p className="mt-4 text-gray-500 leading-relaxed">
+            Com o plano Premium você acompanha, em tempo real no mapa, cada cliente com agendamento hoje: onde ele está, quanto falta para chegar e o horário previsto.
+          </p>
+          <ul className="mt-8 space-y-3 text-left max-w-md mx-auto text-gray-700 font-medium">
+            <li className="flex items-start gap-3"><MapPin className="w-5 h-5 text-[#FF5A00] shrink-0 mt-0.5" /> Localização do cliente a caminho, ao vivo</li>
+            <li className="flex items-start gap-3"><Clock className="w-5 h-5 text-[#FF5A00] shrink-0 mt-0.5" /> Tempo e distância até a chegada</li>
+            <li className="flex items-start gap-3"><CheckCircle2 className="w-5 h-5 text-[#FF5A00] shrink-0 mt-0.5" /> Menos atrasos e mais organização da fila</li>
+          </ul>
+          <Link
+            href={route('assinatura.status')}
+            className="mt-10 inline-flex items-center gap-2 px-8 py-4 rounded-2xl bg-[#FF5A00] hover:bg-[#e04f00] text-white font-bold shadow-lg transition"
+          >
+            <Crown className="w-5 h-5" /> Seja Premium
+          </Link>
+        </div>
+      </AuthenticatedLayout>
+    );
+  }
+
+  return <MapaRastreamentoConteudo {...props} />;
 }

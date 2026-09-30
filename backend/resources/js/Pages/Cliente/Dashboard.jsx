@@ -9,12 +9,36 @@ import {
 import { StarIcon as StarOutlineIcon } from '@heroicons/react/24/outline'; 
 import { motion, AnimatePresence } from 'framer-motion';
 
-export default function ClienteDashboard({ auth, agendamentos = [], historico = [], usuario }) {
+export default function ClienteDashboard({ auth, agendamentos = [], historico = [], alugueis = [], usuario }) {
     const [abaAtiva, setAbaAtiva] = useState('proximos'); 
     const [loadingPagar, setLoadingPagar] = useState(null); 
     const [loadingCancelar, setLoadingCancelar] = useState(null); 
     
     const { flash = {} } = usePage().props;
+
+    // Atualização em tempo real: assim que o pagamento (PIX/boleto/cartão) é
+    // confirmado pelo webhook do gateway, o status muda no banco na hora, mas
+    // sem isso o cliente só veria a mudança dando refresh manual na página.
+    useEffect(() => {
+        if (!window.Echo) return;
+
+        const estabelecimentoIds = [...new Set(
+            [...agendamentos, ...alugueis]
+                .map((a) => a.estabelecimento_id)
+                .filter(Boolean)
+        )];
+        if (estabelecimentoIds.length === 0) return;
+
+        estabelecimentoIds.forEach((id) => {
+            window.Echo.channel(`fila.${id}`).listen('.FilaAtualizada', () => {
+                router.reload({ only: ['agendamentos', 'historico', 'alugueis'], preserveScroll: true });
+            });
+        });
+
+        return () => {
+            estabelecimentoIds.forEach((id) => window.Echo.leave(`fila.${id}`));
+        };
+    }, [agendamentos, alugueis]);
 
     const formatarMoeda = (valor) => valor ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor) : 'R$ 0,00';
 
@@ -182,6 +206,9 @@ export default function ClienteDashboard({ auth, agendamentos = [], historico = 
                             <button onClick={() => setAbaAtiva('cancelados')} className={`px-5 py-3 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${abaAtiva === 'cancelados' ? 'bg-white text-[#E05D36] shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}>
                                 Cancelados
                             </button>
+                            <button onClick={() => setAbaAtiva('locacoes')} className={`px-5 py-3 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${abaAtiva === 'locacoes' ? 'bg-white text-[#E05D36] shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}>
+                                Minhas Locações
+                            </button>
                             <button onClick={() => setAbaAtiva('pendentes')} className={`flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-bold transition-all whitespace-nowrap border-2 border-transparent ${abaAtiva === 'pendentes' ? 'border-[#E05D36]/20 bg-white text-[#E05D36] shadow-sm' : 'text-gray-900 bg-white shadow-[0_2px_10px_rgba(0,0,0,0.02)]'}`}>
                                 Faltam Pagar
                                 {agsPendentes.length > 0 && (
@@ -194,7 +221,63 @@ export default function ClienteDashboard({ auth, agendamentos = [], historico = 
                     </div>
 
                     {/* GRID DE CARDS */}
-                    {agendamentosExibidos.length === 0 ? (
+                    {abaAtiva === 'locacoes' ? (
+                        alugueis.length === 0 ? (
+                            <div className="text-center py-24 bg-white/50 rounded-[2rem] border border-gray-100 border-dashed">
+                                <div className="bg-gray-100/50 w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6">
+                                    <CalendarIcon className="w-10 h-10 text-gray-300" />
+                                </div>
+                                <h4 className="text-xl font-bold text-gray-800">Nenhuma locação ainda</h4>
+                                <p className="text-gray-500 text-sm mt-2 max-w-sm mx-auto">Suas reservas de imóveis, veículos e equipamentos direto com o dono aparecem aqui.</p>
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6">
+                                {alugueis.map((aluguel) => {
+                                    const statusStr = aluguel.status;
+                                    const isCancelado = statusStr === 'cancelado';
+                                    const isFinalizado = statusStr === 'finalizado';
+                                    const isConfirmadoAluguel = ['confirmado', 'em_andamento'].includes(statusStr);
+                                    const capa = Array.isArray(aluguel.item?.fotos) ? aluguel.item.fotos[0] : null;
+
+                                    return (
+                                        <div key={aluguel.id} className="rounded-[2rem] bg-white border border-gray-100 shadow-[0_4px_25px_rgba(0,0,0,0.04)] hover:shadow-[0_8px_35px_rgba(0,0,0,0.08)] hover:-translate-y-1 transition-all duration-300 overflow-hidden flex flex-col">
+                                            <div className="aspect-[16/9] bg-gray-50 relative">
+                                                {capa ? (
+                                                    <img src={capa} alt={aluguel.item?.nome} className="w-full h-full object-cover" />
+                                                ) : (
+                                                    <div className="w-full h-full flex items-center justify-center text-gray-300">
+                                                        <MapPinIcon className="w-8 h-8" />
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="p-6 flex-1 flex flex-col">
+                                                <div className="flex-1">
+                                                    <span className={`inline-block mb-3 text-[10px] uppercase tracking-wider font-black px-3 py-1.5 rounded-lg border ${isCancelado ? 'bg-red-50 text-red-600 border-red-100' : isFinalizado ? 'bg-gray-100 text-gray-600 border-gray-200' : isConfirmadoAluguel ? 'bg-emerald-50 text-emerald-800 border-emerald-100' : 'bg-[#FFF2EE] text-[#E05D36] border-[#FADCD2]'}`}>
+                                                        {statusStr === 'aguardando_pagamento' ? 'Aguardando Pagamento' : statusStr}
+                                                    </span>
+                                                    <h4 className="text-lg font-bold text-gray-900 leading-tight mb-2">{aluguel.item?.nome || 'Locação'}</h4>
+                                                    <p className="text-sm text-gray-500 mb-4">
+                                                        {new Date(aluguel.data_inicio).toLocaleDateString('pt-BR')} até {new Date(aluguel.data_fim).toLocaleDateString('pt-BR')}
+                                                    </p>
+                                                    <span className="text-xl font-black text-gray-900">{formatarMoeda(aluguel.valor_total)}</span>
+                                                </div>
+                                                <div className="mt-4 space-y-3">
+                                                    <button onClick={() => router.get(`/meus-pedidos/aluguel/${aluguel.id}`)} className="w-full py-3 bg-gray-50 border border-gray-200 text-gray-900 rounded-2xl text-sm font-bold hover:border-gray-300 hover:bg-gray-100 transition-all">
+                                                        Ver Detalhes
+                                                    </button>
+                                                    {!isCancelado && (
+                                                        <a href={`/alugueis/${aluguel.id}/comprovante-pdf`} target="_blank" rel="noopener noreferrer" className="w-full flex justify-center items-center gap-2 py-3 bg-gray-50 border border-gray-200 text-gray-900 rounded-2xl text-sm font-bold hover:bg-gray-100 transition-all">
+                                                            <DocumentArrowDownIcon className="w-4 h-4" /> Baixar Comprovante
+                                                        </a>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )
+                    ) : agendamentosExibidos.length === 0 ? (
                         <div className="text-center py-24 bg-white/50 rounded-[2rem] border border-gray-100 border-dashed">
                             <div className="bg-gray-100/50 w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6">
                                 <CalendarIcon className="w-10 h-10 text-gray-300" />

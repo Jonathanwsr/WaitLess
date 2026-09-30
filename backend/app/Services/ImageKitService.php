@@ -5,6 +5,7 @@ namespace App\Services;
 use ImageKit\ImageKit;
 use Exception;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Http;
 
 class ImageKitService
 {
@@ -64,7 +65,49 @@ class ImageKitService
         } catch (Exception $e) {
             Log::error("Erro no Upload ImageKit: " . $e->getMessage());
             // Lança o erro para aparecer na tela do usuário (Inertia)
-            throw $e; 
+            throw $e;
+        }
+    }
+
+    /**
+     * Remove um arquivo do ImageKit a partir da URL pública salva no banco.
+     * O SDK do ImageKit não tem um endpoint "delete por URL", então a busca
+     * é feita pelo nome do arquivo (via Media API) para achar o fileId.
+     */
+    public static function delete(?string $url): void
+    {
+        if (!$url) return;
+
+        $privateKey = trim(env('IMAGEKIT_PRIVATE_KEY'));
+        if (empty($privateKey)) return;
+
+        try {
+            $nomeArquivo = basename(parse_url($url, PHP_URL_PATH));
+
+            $busca = Http::withBasicAuth($privateKey, '')
+                ->get('https://api.imagekit.io/v1/files', [
+                    'searchQuery' => 'name="' . $nomeArquivo . '"',
+                ]);
+
+            if ($busca->successful() && !empty($busca->json())) {
+                $fileId = $busca->json()[0]['fileId'] ?? null;
+                if ($fileId) {
+                    Http::withBasicAuth($privateKey, '')
+                        ->delete('https://api.imagekit.io/v1/files/' . $fileId);
+                }
+            }
+        } catch (Exception $e) {
+            Log::error('Erro ao apagar arquivo do ImageKit: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Remove vários arquivos do ImageKit de uma vez (ver delete()).
+     */
+    public static function deleteMany(?array $urls): void
+    {
+        foreach (($urls ?? []) as $url) {
+            self::delete($url);
         }
     }
 }

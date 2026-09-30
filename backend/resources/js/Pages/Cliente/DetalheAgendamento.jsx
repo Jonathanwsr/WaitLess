@@ -477,8 +477,8 @@ export default function DetalheAgendamento({ auth, dados }) {
 
               {/* Painel de Ações Operacionais */}
               <div className="space-y-3">
-                <a 
-                  href={`/agendamentos/${dados.id}/comprovante-pdf`} 
+                <a
+                  href={dados.tipo === 'aluguel' ? `/alugueis/${dados.id}/comprovante-pdf` : `/agendamentos/${dados.id}/comprovante-pdf`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="w-full flex items-center justify-center gap-2 py-3 bg-white hover:bg-slate-50 border border-gray-200 rounded-xl font-bold text-gray-700 transition-all text-sm shadow-2xs text-center"

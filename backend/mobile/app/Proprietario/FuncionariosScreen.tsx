@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,18 +8,22 @@ import {
   TextInput,
   Modal,
   ActivityIndicator,
-  Alert,
   FlatList,
   RefreshControl,
   StatusBar,
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import {
-  Ionicons,
-  MaterialCommunityIcons,
-  Feather,
-} from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { alertar } from '../../services/alertar';
+import { obterEcho } from '../../services/echo';
+
+const ENV_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api/mobile';
+const baseSemMobile = ENV_URL.replace(/\/mobile\/?$/, '').replace(/\/+$/, '');
+const cleanBaseUrl = `${baseSemMobile}/mobile`;
+const v1MobileUrl = `${baseSemMobile}/v1/mobile`;
 
 // ==========================================
 // INTERFACES TYPESCRIPT
@@ -51,144 +55,163 @@ export interface Funcionario {
   estabelecimento?: Estabelecimento;
 }
 
-export interface AusenciaPendente {
-  id: number;
-  funcionario_id: number;
-  funcionario_nome: string;
-  loja_nome: string;
-  motivo?: string;
-  data_inicio: string;
-  data_fim: string;
-  status: 'pendente' | 'aprovado' | 'recusado';
+export interface AtividadeEquipe {
+  id: number | string;
+  acao: string;
+  descricao: string;
+  nome_usuario?: string;
+  created_at: string;
 }
 
-export interface FechamentoRecente {
-  id: number;
-  funcionario_id: number;
-  funcionario_nome: string;
-  data_fechamento: string;
-  valor_total: number;
+const CARGOS: { valor: string; label: string; premium: boolean }[] = [
+  { valor: 'Atendente', label: 'Atendente', premium: false },
+  { valor: 'Gerente', label: 'Gerente', premium: true },
+  { valor: 'Sócio', label: 'Sócio', premium: true },
+];
+
+const ACAO_COR: Record<string, string> = {
+  chamou: '#2563EB',
+  finalizou: '#16A34A',
+  status_atualizado: '#D97706',
+  adiou: '#EA580C',
+  pulou: '#DC2626',
+};
+
+async function pegarToken() {
+  return (await AsyncStorage.getItem('@lokyva_token')) || (await AsyncStorage.getItem('@waitless_token'));
 }
 
-interface Props {
-  onBack?: () => void;
-  // Métodos de integração com API
-  fetchData?: () => Promise<void>;
-  onStoreFuncionario?: (data: any) => Promise<boolean>;
-  onUpdateFuncionario?: (id: number, data: any) => Promise<boolean>;
-  onDeleteFuncionario?: (id: number) => Promise<boolean>;
-  onDecidirAusencia?: (id: number, status: 'aprovado' | 'recusado') => Promise<boolean>;
-}
+export default function FuncionariosScreen() {
+  const router = useRouter();
+  const params = useLocalSearchParams();
+  const estabelecimentoIdParam = Array.isArray(params.id) ? params.id[0] : params.id;
 
-export default function FuncionariosScreen({
-  onBack,
-  fetchData,
-  onStoreFuncionario,
-  onUpdateFuncionario,
-  onDeleteFuncionario,
-  onDecidirAusencia,
-}: Props) {
-  // ==========================================
-  // ESTADOS PRINCIPAIS
-  // ==========================================
   const [activeTab, setActiveTab] = useState<'equipe' | 'folgas' | 'fechamentos'>('equipe');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [token, setToken] = useState<string | null>(null);
+  const [estabelecimentoId, setEstabelecimentoId] = useState<number | null>(
+    estabelecimentoIdParam ? Number(estabelecimentoIdParam) : null
+  );
 
-  // Dados recebidos da API ou Mocks para preview
-  const [estabelecimentos, setEstabelecimentos] = useState<Estabelecimento[]>([
-    { id: 1, nome: 'Barbearia VIP - Centro' },
-    { id: 2, nome: 'Barbearia VIP - Shopping' },
-  ]);
+  const [estabelecimentos, setEstabelecimentos] = useState<Estabelecimento[]>([]);
+  const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
+  const [ausenciasPendentes, setAusenciasPendentes] = useState<any[]>([]);
+  const [fechamentosRecentes, setFechamentosRecentes] = useState<any[]>([]);
+  const [podeGerenciarEquipeAvancada, setPodeGerenciarEquipeAvancada] = useState(false);
+  const [atividades, setAtividades] = useState<AtividadeEquipe[]>([]);
+  const [mostrarExplicacaoPapeis, setMostrarExplicacaoPapeis] = useState(false);
 
-  const [funcionarios, setFuncionarios] = useState<Funcionario[]>([
-    {
-      id: 101,
-      estabelecimento_id: 1,
-      nome: 'Carlos Eduardo',
-      cargo: 'Barbeiro Senior',
-      telefone: '(11) 98888-7777',
-      ativo: true,
-      total_atendimentos: 48,
-      faturamento_total: 2890.0,
-      avaliacao_media: 4.9,
-      estabelecimento: { id: 1, nome: 'Barbearia VIP - Centro' },
-      usuario: { id: 1, name: 'Carlos Eduardo', email: 'carlos@loja.com' },
-    },
-    {
-      id: 102,
-      estabelecimento_id: 1,
-      nome: 'Mariana Lima',
-      cargo: 'Manicure & Estética',
-      telefone: '(11) 97777-6666',
-      ativo: true,
-      total_atendimentos: 32,
-      faturamento_total: 1650.0,
-      avaliacao_media: 4.8,
-      estabelecimento: { id: 1, nome: 'Barbearia VIP - Centro' },
-      usuario: { id: 2, name: 'Mariana Lima', email: 'mariana@loja.com' },
-    },
-  ]);
+  const getHeaders = (t: string | null) => ({
+    Authorization: `Bearer ${t}`,
+    Accept: 'application/json',
+    'Content-Type': 'application/json',
+  });
 
-  const [ausenciasPendentes, setAusenciasPendentes] = useState<AusenciaPendente[]>([
-    {
-      id: 1,
-      funcionario_id: 101,
-      funcionario_nome: 'Carlos Eduardo',
-      loja_nome: 'Barbearia VIP - Centro',
-      motivo: 'Consulta médica agendada',
-      data_inicio: '15/08/2026',
-      data_fim: '15/08/2026',
-      status: 'pendente',
-    },
-  ]);
+  const carregarDados = useCallback(async () => {
+    const t = await pegarToken();
+    if (!t) {
+      router.replace('/autenticacao/login' as never);
+      return;
+    }
+    setToken(t);
 
-  const [fechamentosRecentes, setFechamentosRecentes] = useState<FechamentoRecente[]>([
-    {
-      id: 1,
-      funcionario_id: 101,
-      funcionario_nome: 'Carlos Eduardo',
-      data_fechamento: '02/08/2026',
-      valor_total: 350.0,
-    },
-    {
-      id: 2,
-      funcionario_id: 102,
-      funcionario_nome: 'Mariana Lima',
-      data_fechamento: '02/08/2026',
-      valor_total: 220.0,
-    },
-  ]);
+    try {
+      let idParaBuscar = estabelecimentoId;
+
+      // Sem id na URL: usa o estabelecimento "atual" do dono (endpoint geral).
+      if (!idParaBuscar) {
+        const resGeral = await fetch(`${cleanBaseUrl}/configuracoes`, { headers: getHeaders(t) });
+        const dataGeral = await resGeral.json();
+        idParaBuscar = dataGeral?.estabelecimento?.id || dataGeral?.meusEstabelecimentos?.[0]?.id || null;
+        if (idParaBuscar) setEstabelecimentoId(idParaBuscar);
+      }
+
+      if (!idParaBuscar) {
+        alertar('Nenhum local encontrado', 'Cadastre um estabelecimento antes de gerenciar a equipe.');
+        setLoading(false);
+        return;
+      }
+
+      const res = await fetch(`${cleanBaseUrl}/configuracoes/${idParaBuscar}`, { headers: getHeaders(t) });
+      const data = await res.json();
+
+      if (!res.ok) {
+        alertar('Erro', data?.message || 'Não foi possível carregar a equipe.');
+        setLoading(false);
+        return;
+      }
+
+      setEstabelecimentos(data.meusEstabelecimentos || []);
+      setFuncionarios((data.funcionarios || []).filter((f: Funcionario) => f.ativo !== false));
+      setPodeGerenciarEquipeAvancada(!!data.podeGerenciarEquipeAvancada);
+      setAtividades(data.atividadesRecentes || []);
+    } catch (error) {
+      console.log('Erro ao carregar equipe:', error);
+      alertar('Erro de conexão', 'Não foi possível carregar os dados agora.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [estabelecimentoId, router]);
+
+  useEffect(() => {
+    carregarDados();
+  }, []);
+
+  // Atividade da equipe em tempo real (mesmo canal usado no painel web).
+  useEffect(() => {
+    if (!estabelecimentoId) return;
+    const canalNome = `atividade-equipe.${estabelecimentoId}`;
+    let cancelado = false;
+
+    obterEcho().then((echo) => {
+      if (cancelado) return;
+      echo.private(canalNome).listen('.atividade.registrada', (payload: any) => {
+        setAtividades((atual) => [{ id: `live-${Date.now()}`, ...payload }, ...atual].slice(0, 30));
+      });
+    });
+
+    return () => {
+      cancelado = true;
+      obterEcho().then((echo) => echo.leave(canalNome));
+    };
+  }, [estabelecimentoId]);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await carregarDados();
+  };
+
+  const formatarHora = (iso: string) => {
+    try {
+      return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return '';
+    }
+  };
 
   // ==========================================
-  // ESTADOS DE MODAL (CRIAR / EDITAR)
+  // MODAL CRIAR/EDITAR
   // ==========================================
   const [modalVisible, setModalVisible] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [savingLoading, setSavingLoading] = useState(false);
 
   const [form, setForm] = useState({
-    estabelecimento_id: 1,
+    estabelecimento_id: estabelecimentoId || 0,
     nome: '',
     telefone: '',
-    cargo: '',
+    cargo: 'Atendente',
     email: '',
     password: '',
   });
 
-  // Atualizar lista
-  const handleRefresh = async () => {
-    setRefreshing(true);
-    if (fetchData) await fetchData();
-    setRefreshing(false);
-  };
-
-  // Abrir modal para Novo
   const handleOpenCreateModal = () => {
     setEditingId(null);
     setForm({
-      estabelecimento_id: estabelecimentos[0]?.id || 1,
+      estabelecimento_id: estabelecimentoId || estabelecimentos[0]?.id || 0,
       nome: '',
       telefone: '',
       cargo: 'Atendente',
@@ -198,79 +221,69 @@ export default function FuncionariosScreen({
     setModalVisible(true);
   };
 
-  // Abrir modal para Edição
   const handleOpenEditModal = (func: Funcionario) => {
     setEditingId(func.id);
     setForm({
       estabelecimento_id: func.estabelecimento_id,
       nome: func.nome,
       telefone: func.telefone || '',
-      cargo: func.cargo,
+      cargo: ['Atendente', 'Gerente'].includes(func.cargo) ? func.cargo : 'Atendente',
       email: func.usuario?.email || '',
-      password: '', // em branco se não for alterar
+      password: '',
     });
     setModalVisible(true);
   };
 
-  // Submeter formulário
   const handleSubmitForm = async () => {
     if (!form.nome || !form.cargo) {
-      Alert.alert('Atenção', 'Preencha o nome e o cargo do colaborador.');
+      alertar('Atenção', 'Preencha o nome e o cargo do colaborador.');
+      return;
+    }
+    if (!editingId && (!form.email || !form.password)) {
+      alertar('Atenção', 'E-mail e senha são obrigatórios para novo acesso.');
       return;
     }
 
     setSavingLoading(true);
-
-    if (editingId) {
-      // Atualização
-      if (onUpdateFuncionario) {
-        const success = await onUpdateFuncionario(editingId, form);
-        if (success) setModalVisible(false);
+    try {
+      let res: Response;
+      if (editingId) {
+        res = await fetch(`${v1MobileUrl}/funcionarios/${editingId}`, {
+          method: 'PUT',
+          headers: getHeaders(token),
+          body: JSON.stringify(form),
+        });
+      } else if (form.cargo === 'Sócio') {
+        res = await fetch(`${v1MobileUrl}/estabelecimentos/${form.estabelecimento_id}/socios`, {
+          method: 'POST',
+          headers: getHeaders(token),
+          body: JSON.stringify(form),
+        });
       } else {
-        // Fallback Local (mock)
-        setFuncionarios((prev) =>
-          prev.map((f) => (f.id === editingId ? { ...f, ...form } : f))
-        );
-        setModalVisible(false);
-        Alert.alert('Sucesso', 'Funcionário atualizado com sucesso!');
-      }
-    } else {
-      // Criação
-      if (!form.email || !form.password) {
-        Alert.alert('Atenção', 'E-mail e senha são obrigatórios para novo acesso.');
-        setSavingLoading(false);
-        return;
+        res = await fetch(`${v1MobileUrl}/estabelecimentos/${form.estabelecimento_id}/funcionarios`, {
+          method: 'POST',
+          headers: getHeaders(token),
+          body: JSON.stringify(form),
+        });
       }
 
-      if (onStoreFuncionario) {
-        const success = await onStoreFuncionario(form);
-        if (success) setModalVisible(false);
+      const data = await res.json();
+      if (!res.ok) {
+        alertar('Não foi possível salvar', data?.message || 'Verifique os dados e tente novamente.');
       } else {
-        // Fallback Local (mock)
-        const newFunc: Funcionario = {
-          id: Date.now(),
-          estabelecimento_id: form.estabelecimento_id,
-          nome: form.nome,
-          cargo: form.cargo,
-          telefone: form.telefone,
-          ativo: true,
-          total_atendimentos: 0,
-          faturamento_total: 0,
-          avaliacao_media: 5.0,
-          usuario: { id: Date.now(), name: form.nome, email: form.email },
-        };
-        setFuncionarios((prev) => [newFunc, ...prev]);
         setModalVisible(false);
-        Alert.alert('Sucesso', 'Funcionário cadastrado com sucesso!');
+        alertar('Sucesso', data?.message || 'Salvo com sucesso!');
+        carregarDados();
       }
+    } catch (error) {
+      alertar('Erro de conexão', 'Tente novamente em instantes.');
+    } finally {
+      setSavingLoading(false);
     }
-
-    setSavingLoading(false);
   };
 
-  // Inativar Colaborador
   const handleDelete = (func: Funcionario) => {
-    Alert.alert(
+    alertar(
       'Inativar Colaborador',
       `Deseja realmente remover ${func.nome} da equipe?`,
       [
@@ -279,11 +292,20 @@ export default function FuncionariosScreen({
           text: 'Inativar',
           style: 'destructive',
           onPress: async () => {
-            if (onDeleteFuncionario) {
-              await onDeleteFuncionario(func.id);
-            } else {
+            try {
+              const res = await fetch(`${v1MobileUrl}/funcionarios/${func.id}`, {
+                method: 'DELETE',
+                headers: getHeaders(token),
+              });
+              const data = await res.json();
+              if (!res.ok) {
+                alertar('Erro', data?.message || 'Não foi possível inativar.');
+                return;
+              }
               setFuncionarios((prev) => prev.filter((f) => f.id !== func.id));
-              Alert.alert('Concluído', 'Funcionário inativado.');
+              alertar('Concluído', 'Funcionário inativado.');
+            } catch {
+              alertar('Erro de conexão', 'Tente novamente em instantes.');
             }
           },
         },
@@ -291,52 +313,31 @@ export default function FuncionariosScreen({
     );
   };
 
-  // Decidir Ausência (Aprovar / Recusar)
-  const handleDecidirAusencia = async (id: number, status: 'aprovado' | 'recusado') => {
-    const acao = status === 'aprovado' ? 'aprovar' : 'recusar';
-
-    Alert.alert('Confirmar', `Deseja ${acao} esta solicitação de folga?`, [
-      { text: 'Voltar', style: 'cancel' },
-      {
-        text: 'Confirmar',
-        onPress: async () => {
-          if (onDecidirAusencia) {
-            await onDecidirAusencia(id, status);
-          } else {
-            setAusenciasPendentes((prev) => prev.filter((item) => item.id !== id));
-            Alert.alert('Sucesso', `Solicitação de folga ${status}!`);
-          }
-        },
-      },
-    ]);
-  };
-
-  // Filtro de funcionários na busca
   const funcionariosFiltrados = funcionarios.filter(
     (f) =>
       f.nome.toLowerCase().includes(searchQuery.toLowerCase()) ||
       f.cargo.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // Cálculos de Resumo
-  const totalFaturamentoEquipe = funcionarios.reduce(
-    (acc, item) => acc + (item.faturamento_total || 0),
-    0
-  );
-  const totalAtendimentosEquipe = funcionarios.reduce(
-    (acc, item) => acc + (item.total_atendimentos || 0),
-    0
-  );
+  const totalFaturamentoEquipe = funcionarios.reduce((acc, item) => acc + (item.faturamento_total || 0), 0);
+  const totalAtendimentosEquipe = funcionarios.reduce((acc, item) => acc + (item.total_atendimentos || 0), 0);
+
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ActivityIndicator size="large" color="#FF7A00" />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
-      {/* HEADER SUPERIOR */}
       <View style={styles.header}>
         <View style={styles.headerTop}>
-          <TouchableOpacity style={styles.backButton} onPress={onBack}>
-            <Ionicons name="chevron-back" size={20} color="#1E293B" />
+          <TouchableOpacity style={styles.backButton} onPress={() => (router.canGoBack() ? router.back() : router.replace('/Proprietario/dashboard' as never))}>
+            <Ionicons name="chevron-back" size={20} color="#3A3A3A" />
             <Text style={styles.backButtonText}>Painel</Text>
           </TouchableOpacity>
           <Text style={styles.headerTitle}>GESTAO DE EQUIPE</Text>
@@ -345,7 +346,11 @@ export default function FuncionariosScreen({
           </TouchableOpacity>
         </View>
 
-        {/* METRICAS DE CABEÇALHO */}
+        <TouchableOpacity style={styles.explicacaoBtn} onPress={() => setMostrarExplicacaoPapeis(true)}>
+          <Ionicons name="sparkles" size={13} color="#6366F1" />
+          <Text style={styles.explicacaoBtnText}>Como funcionam os papéis (Atendente, Gerente, Sócio)</Text>
+        </TouchableOpacity>
+
         <View style={styles.statsCardContainer}>
           <View style={styles.statBox}>
             <Text style={styles.statLabel}>Membros</Text>
@@ -359,40 +364,21 @@ export default function FuncionariosScreen({
           <View style={styles.statDivider} />
           <View style={styles.statBox}>
             <Text style={styles.statLabel}>Faturamento Total</Text>
-            <Text style={[styles.statValue, { color: '#10B981' }]}>
+            <Text style={[styles.statValue, { color: '#00A868' }]}>
               R$ {totalFaturamentoEquipe.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
             </Text>
           </View>
         </View>
 
-        {/* ABAS SEGMENTADAS */}
         <View style={styles.segmentedContainer}>
-          <TouchableOpacity
-            style={[styles.segmentTab, activeTab === 'equipe' && styles.segmentTabActive]}
-            onPress={() => setActiveTab('equipe')}
-          >
-            <Ionicons
-              name="people-outline"
-              size={16}
-              color={activeTab === 'equipe' ? '#FFFFFF' : '#64748B'}
-            />
-            <Text style={[styles.segmentText, activeTab === 'equipe' && styles.segmentTextActive]}>
-              Equipe
-            </Text>
+          <TouchableOpacity style={[styles.segmentTab, activeTab === 'equipe' && styles.segmentTabActive]} onPress={() => setActiveTab('equipe')}>
+            <Ionicons name="people-outline" size={16} color={activeTab === 'equipe' ? '#FFFFFF' : '#6A6C72'} />
+            <Text style={[styles.segmentText, activeTab === 'equipe' && styles.segmentTextActive]}>Equipe</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.segmentTab, activeTab === 'folgas' && styles.segmentTabActive]}
-            onPress={() => setActiveTab('folgas')}
-          >
-            <Ionicons
-              name="calendar-outline"
-              size={16}
-              color={activeTab === 'folgas' ? '#FFFFFF' : '#64748B'}
-            />
-            <Text style={[styles.segmentText, activeTab === 'folgas' && styles.segmentTextActive]}>
-              Folgas
-            </Text>
+          <TouchableOpacity style={[styles.segmentTab, activeTab === 'folgas' && styles.segmentTabActive]} onPress={() => setActiveTab('folgas')}>
+            <Ionicons name="calendar-outline" size={16} color={activeTab === 'folgas' ? '#FFFFFF' : '#6A6C72'} />
+            <Text style={[styles.segmentText, activeTab === 'folgas' && styles.segmentTextActive]}>Folgas</Text>
             {ausenciasPendentes.length > 0 && (
               <View style={styles.badgeCount}>
                 <Text style={styles.badgeText}>{ausenciasPendentes.length}</Text>
@@ -400,38 +386,50 @@ export default function FuncionariosScreen({
             )}
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.segmentTab, activeTab === 'fechamentos' && styles.segmentTabActive]}
-            onPress={() => setActiveTab('fechamentos')}
-          >
-            <Ionicons
-              name="cash-outline"
-              size={16}
-              color={activeTab === 'fechamentos' ? '#FFFFFF' : '#64748B'}
-            />
-            <Text style={[styles.segmentText, activeTab === 'fechamentos' && styles.segmentTextActive]}>
-              Produção
-            </Text>
+          <TouchableOpacity style={[styles.segmentTab, activeTab === 'fechamentos' && styles.segmentTabActive]} onPress={() => setActiveTab('fechamentos')}>
+            <Ionicons name="cash-outline" size={16} color={activeTab === 'fechamentos' ? '#FFFFFF' : '#6A6C72'} />
+            <Text style={[styles.segmentText, activeTab === 'fechamentos' && styles.segmentTextActive]}>Produção</Text>
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* CONTEÚDO DA ABA 1: EQUIPE */}
       {activeTab === 'equipe' && (
         <View style={styles.contentFlex}>
-          {/* BARRA DE PESQUISA */}
+          {/* ATIVIDADE DA EQUIPE EM TEMPO REAL */}
+          <View style={styles.atividadeCard}>
+            <View style={styles.atividadeHeader}>
+              <Ionicons name="flash" size={14} color="#F59E0B" />
+              <Text style={styles.atividadeTitulo}>Atividade em tempo real</Text>
+              <View style={styles.aoVivoDot} />
+              <Text style={styles.aoVivoText}>ao vivo</Text>
+            </View>
+            {atividades.length === 0 ? (
+              <Text style={styles.atividadeVazia}>Nenhuma atividade ainda. Ações da equipe na fila vão aparecer aqui.</Text>
+            ) : (
+              atividades.slice(0, 5).map((a) => (
+                <View key={a.id} style={styles.atividadeItem}>
+                  <View style={[styles.atividadeBadge, { backgroundColor: `${ACAO_COR[a.acao] || '#6A6C72'}1A` }]}>
+                    <Text style={[styles.atividadeBadgeText, { color: ACAO_COR[a.acao] || '#6A6C72' }]}>{a.acao?.replace('_', ' ')}</Text>
+                  </View>
+                  <Text style={styles.atividadeDescricao} numberOfLines={1}>{a.descricao}</Text>
+                  <Text style={styles.atividadeHora}>{formatarHora(a.created_at)}</Text>
+                </View>
+              ))
+            )}
+          </View>
+
           <View style={styles.searchBarContainer}>
-            <Ionicons name="search-outline" size={18} color="#94A3B8" />
+            <Ionicons name="search-outline" size={18} color="#A0A2A8" />
             <TextInput
               style={styles.searchInput}
               placeholder="Buscar colaborador ou cargo..."
-              placeholderTextColor="#94A3B8"
+              placeholderTextColor="#A0A2A8"
               value={searchQuery}
               onChangeText={setSearchQuery}
             />
             {searchQuery !== '' && (
               <TouchableOpacity onPress={() => setSearchQuery('')}>
-                <Ionicons name="close-circle" size={18} color="#94A3B8" />
+                <Ionicons name="close-circle" size={18} color="#A0A2A8" />
               </TouchableOpacity>
             )}
           </View>
@@ -443,7 +441,7 @@ export default function FuncionariosScreen({
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
-                <MaterialCommunityIcons name="account-group-outline" size={48} color="#CBD5E1" />
+                <MaterialCommunityIcons name="account-group-outline" size={48} color="#E1E2E5" />
                 <Text style={styles.emptyTitle}>Nenhum profissional encontrado</Text>
                 <Text style={styles.emptySubtitle}>Cadastre novos colaboradores no botão "+".</Text>
               </View>
@@ -457,60 +455,47 @@ export default function FuncionariosScreen({
 
                   <View style={styles.employeeInfo}>
                     <Text style={styles.employeeName}>{item.nome}</Text>
-                    <Text style={styles.employeeRole}>{item.cargo}</Text>
+                    <View style={styles.cargoRow}>
+                      <Text style={styles.employeeRole}>{item.cargo}</Text>
+                      {item.cargo === 'Gerente' && (
+                        <View style={styles.cargoBadge}><Text style={styles.cargoBadgeText}>Gerente</Text></View>
+                      )}
+                    </View>
                     {item.estabelecimento && (
                       <View style={styles.storeBadge}>
-                        <Ionicons name="business" size={10} color="#64748B" />
+                        <Ionicons name="business" size={10} color="#6A6C72" />
                         <Text style={styles.storeBadgeText}>{item.estabelecimento.nome}</Text>
                       </View>
                     )}
                   </View>
 
-                  {/* RATING */}
                   <View style={styles.ratingBox}>
                     <Ionicons name="star" size={14} color="#F59E0B" />
-                    <Text style={styles.ratingText}>
-                      {item.avaliacao_media ? item.avaliacao_media.toFixed(1) : '5.0'}
-                    </Text>
+                    <Text style={styles.ratingText}>{item.avaliacao_media ? item.avaliacao_media.toFixed(1) : '5.0'}</Text>
                   </View>
                 </View>
 
-                {/* METRICAS DO FUNCIONÁRIO */}
                 <View style={styles.employeeMetricsRow}>
                   <View style={styles.metricSubBox}>
                     <Text style={styles.metricSubLabel}>Atendimentos</Text>
                     <Text style={styles.metricSubVal}>{item.total_atendimentos || 0}</Text>
                   </View>
-
                   <View style={styles.metricSubBox}>
                     <Text style={styles.metricSubLabel}>Faturamento</Text>
-                    <Text style={[styles.metricSubVal, { color: '#059669' }]}>
-                      R$ {(item.faturamento_total || 0).toFixed(2)}
-                    </Text>
+                    <Text style={[styles.metricSubVal, { color: '#00A868' }]}>R$ {(item.faturamento_total || 0).toFixed(2)}</Text>
                   </View>
-
                   <View style={styles.metricSubBox}>
                     <Text style={styles.metricSubLabel}>E-mail</Text>
-                    <Text style={styles.metricSubValSmall} numberOfLines={1}>
-                      {item.usuario?.email || 'N/A'}
-                    </Text>
+                    <Text style={styles.metricSubValSmall} numberOfLines={1}>{item.usuario?.email || 'N/A'}</Text>
                   </View>
                 </View>
 
-                {/* AÇÕES */}
                 <View style={styles.employeeCardFooter}>
-                  <TouchableOpacity
-                    style={styles.actionBtnOutline}
-                    onPress={() => handleOpenEditModal(item)}
-                  >
-                    <Feather name="edit-2" size={14} color="#334155" />
+                  <TouchableOpacity style={styles.actionBtnOutline} onPress={() => handleOpenEditModal(item)}>
+                    <Feather name="edit-2" size={14} color="#282828" />
                     <Text style={styles.actionBtnText}>Editar</Text>
                   </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.actionBtnDanger}
-                    onPress={() => handleDelete(item)}
-                  >
+                  <TouchableOpacity style={styles.actionBtnDanger} onPress={() => handleDelete(item)}>
                     <Feather name="trash-2" size={14} color="#EF4444" />
                     <Text style={styles.actionBtnDangerText}>Inativar</Text>
                   </TouchableOpacity>
@@ -521,204 +506,172 @@ export default function FuncionariosScreen({
         </View>
       )}
 
-      {/* CONTEÚDO DA ABA 2: FOLGAS / AUSÊNCIAS */}
       {activeTab === 'folgas' && (
-        <ScrollView
-          style={styles.contentFlex}
-          contentContainerStyle={styles.listPadding}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
-        >
+        <ScrollView style={styles.contentFlex} contentContainerStyle={styles.listPadding} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}>
           <Text style={styles.sectionTitle}>Solicitações de Ausência Pendentes</Text>
-
-          {ausenciasPendentes.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <Ionicons name="checkmark-circle-outline" size={48} color="#10B981" />
-              <Text style={styles.emptyTitle}>Tudo em dia!</Text>
-              <Text style={styles.emptySubtitle}>Nenhuma solicitação de folga para aprovar.</Text>
-            </View>
-          ) : (
-            ausenciasPendentes.map((ausencia) => (
-              <View key={ausencia.id} style={styles.leaveCard}>
-                <View style={styles.leaveCardHeader}>
-                  <Ionicons name="calendar-outline" size={20} color="#F97316" />
-                  <View style={{ flex: 1, marginLeft: 10 }}>
-                    <Text style={styles.leaveEmployeeName}>{ausencia.funcionario_nome}</Text>
-                    <Text style={styles.leaveStore}>{ausencia.loja_nome}</Text>
-                  </View>
-                  <View style={styles.pendingStatusTag}>
-                    <Text style={styles.pendingStatusText}>PENDENTE</Text>
-                  </View>
-                </View>
-
-                {ausencia.motivo && (
-                  <Text style={styles.leaveReason}>
-                    Motivo: <Text style={{ fontWeight: '400', color: '#475569' }}>{ausencia.motivo}</Text>
-                  </Text>
-                )}
-
-                <View style={styles.leaveDateRow}>
-                  <Ionicons name="time-outline" size={14} color="#64748B" />
-                  <Text style={styles.leaveDateText}>
-                    Período: {ausencia.data_inicio} até {ausencia.data_fim}
-                  </Text>
-                </View>
-
-                {/* BOTOES DE APROVACAO */}
-                <View style={styles.leaveActionRow}>
-                  <TouchableOpacity
-                    style={styles.rejectBtn}
-                    onPress={() => handleDecidirAusencia(ausencia.id, 'recusado')}
-                  >
-                    <Ionicons name="close" size={16} color="#DC2626" />
-                    <Text style={styles.rejectBtnText}>Recusar</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.approveBtn}
-                    onPress={() => handleDecidirAusencia(ausencia.id, 'aprovado')}
-                  >
-                    <Ionicons name="checkmark" size={16} color="#FFFFFF" />
-                    <Text style={styles.approveBtnText}>Aprovar Folga</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ))
-          )}
+          <View style={styles.emptyContainer}>
+            <Ionicons name="checkmark-circle-outline" size={48} color="#00A868" />
+            <Text style={styles.emptyTitle}>Tudo em dia!</Text>
+            <Text style={styles.emptySubtitle}>Nenhuma solicitação de folga para aprovar.</Text>
+          </View>
         </ScrollView>
       )}
 
-      {/* CONTEÚDO DA ABA 3: FECHAMENTOS / PRODUÇÃO */}
       {activeTab === 'fechamentos' && (
-        <ScrollView
-          style={styles.contentFlex}
-          contentContainerStyle={styles.listPadding}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
-        >
+        <ScrollView style={styles.contentFlex} contentContainerStyle={styles.listPadding} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}>
           <Text style={styles.sectionTitle}>Fechamentos Diários Recentes</Text>
-
-          {fechamentosRecentes.map((f) => (
-            <View key={f.id} style={styles.closingCard}>
-              <View style={styles.closingIconBox}>
-                <Ionicons name="receipt-outline" size={20} color="#0EA5E9" />
-              </View>
-              <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={styles.closingName}>{f.funcionario_nome}</Text>
-                <Text style={styles.closingDate}>{f.data_fechamento}</Text>
-              </View>
-              <Text style={styles.closingValue}>R$ {f.valor_total.toFixed(2)}</Text>
-            </View>
-          ))}
+          <View style={styles.emptyContainer}>
+            <Ionicons name="receipt-outline" size={48} color="#E1E2E5" />
+            <Text style={styles.emptyTitle}>Nenhum fechamento ainda</Text>
+          </View>
         </ScrollView>
       )}
 
-      {/* MODAL: CADASTRAR OU EDITAR FUNCIONÁRIO */}
+      {/* MODAL: CADASTRAR OU EDITAR */}
       <Modal visible={modalVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>
-                {editingId ? 'Editar Colaborador' : 'Novo Colaborador'}
+                {editingId ? 'Editar Colaborador' : form.cargo === 'Sócio' ? 'Convidar Sócio' : 'Novo Colaborador'}
               </Text>
               <TouchableOpacity onPress={() => setModalVisible(false)}>
-                <Ionicons name="close" size={24} color="#64748B" />
+                <Ionicons name="close" size={24} color="#6A6C72" />
               </TouchableOpacity>
             </View>
 
             <ScrollView showsVerticalScrollIndicator={false}>
-              {/* SELEÇÃO DE ESTABELECIMENTO */}
               <Text style={styles.inputLabel}>Unidade / Estabelecimento *</Text>
               <View style={styles.pickerContainer}>
                 {estabelecimentos.map((est) => (
                   <TouchableOpacity
                     key={est.id}
-                    style={[
-                      styles.pickerOption,
-                      form.estabelecimento_id === est.id && styles.pickerOptionActive,
-                    ]}
+                    style={[styles.pickerOption, form.estabelecimento_id === est.id && styles.pickerOptionActive]}
                     onPress={() => setForm({ ...form, estabelecimento_id: est.id })}
                   >
-                    <Text
-                      style={[
-                        styles.pickerOptionText,
-                        form.estabelecimento_id === est.id && styles.pickerOptionTextActive,
-                      ]}
-                    >
-                      {est.nome}
-                    </Text>
+                    <Text style={[styles.pickerOptionText, form.estabelecimento_id === est.id && styles.pickerOptionTextActive]}>{est.nome}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
 
-              {/* NOME */}
               <Text style={styles.inputLabel}>Nome Completo *</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="Ex: João da Silva"
-                placeholderTextColor="#94A3B8"
-                value={form.nome}
-                onChangeText={(text) => setForm({ ...form, nome: text })}
-              />
+              <TextInput style={styles.modalInput} placeholder="Ex: João da Silva" placeholderTextColor="#A0A2A8" value={form.nome} onChangeText={(text) => setForm({ ...form, nome: text })} />
 
-              {/* CARGO */}
-              <Text style={styles.inputLabel}>Cargo / Função *</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="Ex: Barbeiro Senior, Esteticista..."
-                placeholderTextColor="#94A3B8"
-                value={form.cargo}
-                onChangeText={(text) => setForm({ ...form, cargo: text })}
-              />
+              {!editingId && (
+                <>
+                  <Text style={styles.inputLabel}>Papel *</Text>
+                  <View style={styles.pickerContainer}>
+                    {CARGOS.map(({ valor, label, premium }) => {
+                      const bloqueado = premium && !podeGerenciarEquipeAvancada;
+                      return (
+                        <TouchableOpacity
+                          key={valor}
+                          disabled={bloqueado}
+                          style={[styles.pickerOption, form.cargo === valor && styles.pickerOptionActive, bloqueado && styles.pickerOptionLocked]}
+                          onPress={() => setForm({ ...form, cargo: valor })}
+                        >
+                          {bloqueado && <Ionicons name="lock-closed" size={10} color="#A0A2A8" style={{ marginRight: 4 }} />}
+                          <Text style={[styles.pickerOptionText, form.cargo === valor && styles.pickerOptionTextActive, bloqueado && { color: '#C1C2C6' }]}>{label}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                  {!podeGerenciarEquipeAvancada && (
+                    <Text style={styles.avisoPremium}>Gerente e Sócio são exclusivos do plano Sócio Premium.</Text>
+                  )}
+                </>
+              )}
+              {editingId && (
+                <>
+                  <Text style={styles.inputLabel}>Cargo *</Text>
+                  <View style={styles.pickerContainer}>
+                    {CARGOS.filter((c) => c.valor !== 'Sócio').map(({ valor, label, premium }) => {
+                      const bloqueado = premium && !podeGerenciarEquipeAvancada;
+                      return (
+                        <TouchableOpacity
+                          key={valor}
+                          disabled={bloqueado}
+                          style={[styles.pickerOption, form.cargo === valor && styles.pickerOptionActive, bloqueado && styles.pickerOptionLocked]}
+                          onPress={() => setForm({ ...form, cargo: valor })}
+                        >
+                          {bloqueado && <Ionicons name="lock-closed" size={10} color="#A0A2A8" style={{ marginRight: 4 }} />}
+                          <Text style={[styles.pickerOptionText, form.cargo === valor && styles.pickerOptionTextActive, bloqueado && { color: '#C1C2C6' }]}>{label}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </>
+              )}
 
-              {/* TELEFONE */}
               <Text style={styles.inputLabel}>Telefone / WhatsApp</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="(00) 00000-0000"
-                placeholderTextColor="#94A3B8"
-                keyboardType="phone-pad"
-                value={form.telefone}
-                onChangeText={(text) => setForm({ ...form, telefone: text })}
-              />
+              <TextInput style={styles.modalInput} placeholder="(00) 00000-0000" placeholderTextColor="#A0A2A8" keyboardType="phone-pad" value={form.telefone} onChangeText={(text) => setForm({ ...form, telefone: text })} />
 
-              {/* EMAIL */}
               <Text style={styles.inputLabel}>E-mail de Acesso *</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="usuario@email.com"
-                placeholderTextColor="#94A3B8"
-                keyboardType="email-address"
-                autoCapitalize="none"
-                value={form.email}
-                onChangeText={(text) => setForm({ ...form, email: text })}
-              />
+              <TextInput style={styles.modalInput} placeholder="usuario@email.com" placeholderTextColor="#A0A2A8" keyboardType="email-address" autoCapitalize="none" value={form.email} onChangeText={(text) => setForm({ ...form, email: text })} />
 
-              {/* SENHA */}
-              <Text style={styles.inputLabel}>
-                {editingId ? 'Nova Senha (deixe em branco p/ manter)' : 'Senha de Acesso *'}
-              </Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="••••••••"
-                placeholderTextColor="#94A3B8"
-                secureTextEntry
-                value={form.password}
-                onChangeText={(text) => setForm({ ...form, password: text })}
-              />
+              <Text style={styles.inputLabel}>{editingId ? 'Nova Senha (deixe em branco p/ manter)' : 'Senha de Acesso *'}</Text>
+              <TextInput style={styles.modalInput} placeholder="••••••••" placeholderTextColor="#A0A2A8" secureTextEntry value={form.password} onChangeText={(text) => setForm({ ...form, password: text })} />
 
-              {/* BOTÃO SALVAR */}
-              <TouchableOpacity
-                style={styles.saveModalButton}
-                onPress={handleSubmitForm}
-                disabled={savingLoading}
-              >
+              <TouchableOpacity style={[styles.saveModalButton, form.cargo === 'Sócio' && { backgroundColor: '#4F46E5' }]} onPress={handleSubmitForm} disabled={savingLoading}>
                 {savingLoading ? (
                   <ActivityIndicator color="#FFFFFF" />
                 ) : (
                   <Text style={styles.saveModalButtonText}>
-                    {editingId ? 'SALVAR ALTERAÇÕES' : 'CADASTRAR COLABORADOR'}
+                    {editingId ? 'SALVAR ALTERAÇÕES' : form.cargo === 'Sócio' ? 'CONVIDAR SÓCIO' : 'CADASTRAR COLABORADOR'}
                   </Text>
                 )}
               </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL: COMO FUNCIONAM OS PAPÉIS */}
+      <Modal visible={mostrarExplicacaoPapeis} animationType="fade" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={[styles.modalHeader, { marginBottom: 4 }]}>
+              <Text style={styles.modalTitle}>Papéis na sua equipe</Text>
+              <TouchableOpacity onPress={() => setMostrarExplicacaoPapeis(false)}>
+                <Ionicons name="close" size={24} color="#6A6C72" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <View style={styles.papelCard}>
+                <View style={[styles.papelIconWrap, { backgroundColor: '#DBEAFE' }]}>
+                  <Ionicons name="person-outline" size={20} color="#2563EB" />
+                </View>
+                <Text style={styles.papelTitulo}>Atendente</Text>
+                <Text style={styles.papelPlano}>Todo plano, sem custo extra</Text>
+                <Text style={styles.papelDesc}>• Atende a fila do dia a dia{'\n'}• Chama, finaliza e adia clientes{'\n'}• Não vê financeiro nem configurações</Text>
+              </View>
+
+              <View style={[styles.papelCard, { borderColor: '#C7D2FE', borderWidth: 2 }]}>
+                <View style={styles.papelBadgePremium}><Text style={styles.papelBadgePremiumText}>Plano Sócio Premium</Text></View>
+                <View style={[styles.papelIconWrap, { backgroundColor: '#E0E7FF' }]}>
+                  <Ionicons name="briefcase-outline" size={20} color="#4F46E5" />
+                </View>
+                <Text style={styles.papelTitulo}>Gerente</Text>
+                <Text style={styles.papelPlano}>Quase tudo que o sócio vê</Text>
+                <Text style={styles.papelDesc}>• Administra agenda, equipe e catálogo{'\n'}• Vê relatórios, cupons e contratos{'\n'}• Não acessa a Carteira nem a assinatura</Text>
+              </View>
+
+              <View style={[styles.papelCard, { borderColor: '#A7F3D0', borderWidth: 2 }]}>
+                <View style={[styles.papelBadgePremium, { backgroundColor: '#059669' }]}><Text style={styles.papelBadgePremiumText}>Plano Sócio Premium</Text></View>
+                <View style={[styles.papelIconWrap, { backgroundColor: '#D1FAE5' }]}>
+                  <Ionicons name="person-add-outline" size={20} color="#059669" />
+                </View>
+                <Text style={styles.papelTitulo}>Sócio</Text>
+                <Text style={styles.papelPlano}>Acesso total, como você</Text>
+                <Text style={styles.papelDesc}>• Administra tudo, sem restrições{'\n'}• Acessa a Carteira e o dinheiro recebido{'\n'}• Pode gerenciar a assinatura da plataforma</Text>
+              </View>
+
+              {!podeGerenciarEquipeAvancada && (
+                <View style={styles.avisoPremiumBox}>
+                  <Ionicons name="lock-closed" size={14} color="#B45309" />
+                  <Text style={styles.avisoPremiumBoxText}>Assine o plano Sócio Premium em "Minha assinatura" para liberar Gerente e Sócio.</Text>
+                </View>
+              )}
             </ScrollView>
           </View>
         </View>
@@ -727,511 +680,106 @@ export default function FuncionariosScreen({
   );
 }
 
-// ==========================================
-// ESTILOS MODERNOS (STYLESHEET)
-// ==========================================
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
-  },
-  contentFlex: {
-    flex: 1,
-  },
-  header: {
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 12,
-  },
-  headerTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  backButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#334155',
-  },
-  headerTitle: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#0F172A',
-    letterSpacing: 0.8,
-  },
-  addButtonCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#F97316',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  container: { flex: 1, backgroundColor: '#F5F5F5', paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 },
+  contentFlex: { flex: 1 },
+  header: { backgroundColor: '#FFFFFF', borderBottomWidth: 1, borderBottomColor: '#E6E7E9', paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12 },
+  headerTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  backButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F0F0F2', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
+  backButtonText: { fontSize: 12, fontWeight: '600', color: '#282828' },
+  headerTitle: { fontSize: 12, fontWeight: '800', color: '#282828', letterSpacing: 0.8 },
+  addButtonCircle: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#FF7A00', justifyContent: 'center', alignItems: 'center' },
 
-  // CARD DE MÉTRICAS DO CABEÇALHO
-  statsCardContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#F1F5F9',
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  statBox: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  statLabel: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  statValue: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#0F172A',
-    marginTop: 2,
-  },
-  statDivider: {
-    width: 1,
-    height: 24,
-    backgroundColor: '#CBD5E1',
-  },
+  explicacaoBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', backgroundColor: '#EEF2FF', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6, marginBottom: 12 },
+  explicacaoBtnText: { fontSize: 10, fontWeight: '700', color: '#4F46E5' },
 
-  // SEGMENTED CONTROL (ABAS)
-  segmentedContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#F1F5F9',
-    borderRadius: 10,
-    padding: 3,
-  },
-  segmentTab: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-    borderRadius: 8,
-    gap: 6,
-  },
-  segmentTabActive: {
-    backgroundColor: '#0F172A',
-  },
-  segmentText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#64748B',
-  },
-  segmentTextActive: {
-    color: '#FFFFFF',
-  },
-  badgeCount: {
-    backgroundColor: '#EF4444',
-    borderRadius: 10,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-  },
-  badgeText: {
-    color: '#FFFFFF',
-    fontSize: 9,
-    fontWeight: '800',
-  },
+  statsCardContainer: { flexDirection: 'row', backgroundColor: '#F0F0F2', borderRadius: 14, paddingVertical: 10, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  statBox: { flex: 1, alignItems: 'center' },
+  statLabel: { fontSize: 10, fontWeight: '600', color: '#6A6C72' },
+  statValue: { fontSize: 13, fontWeight: '800', color: '#282828', marginTop: 2 },
+  statDivider: { width: 1, height: 24, backgroundColor: '#E1E2E5' },
 
-  // BUSCA
-  searchBarContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    marginHorizontal: 16,
-    marginTop: 12,
-    marginBottom: 4,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    height: 42,
-  },
-  searchInput: {
-    flex: 1,
-    marginLeft: 8,
-    fontSize: 12,
-    color: '#0F172A',
-  },
+  segmentedContainer: { flexDirection: 'row', backgroundColor: '#F0F0F2', borderRadius: 10, padding: 3 },
+  segmentTab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 8, borderRadius: 8, gap: 6 },
+  segmentTabActive: { backgroundColor: '#282828' },
+  segmentText: { fontSize: 11, fontWeight: '700', color: '#6A6C72' },
+  segmentTextActive: { color: '#FFFFFF' },
+  badgeCount: { backgroundColor: '#EF4444', borderRadius: 10, paddingHorizontal: 6, paddingVertical: 1 },
+  badgeText: { color: '#FFFFFF', fontSize: 9, fontWeight: '800' },
 
-  listPadding: {
-    padding: 16,
-    gap: 12,
-  },
+  atividadeCard: { backgroundColor: '#FFFFFF', borderRadius: 16, marginHorizontal: 16, marginTop: 12, padding: 12, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  atividadeHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
+  atividadeTitulo: { fontSize: 12, fontWeight: '800', color: '#282828' },
+  aoVivoDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#22C55E', marginLeft: 'auto' },
+  aoVivoText: { fontSize: 10, fontWeight: '700', color: '#16A34A' },
+  atividadeVazia: { fontSize: 11, color: '#A0A2A8' },
+  atividadeItem: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 5 },
+  atividadeBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  atividadeBadgeText: { fontSize: 9, fontWeight: '800', textTransform: 'uppercase' },
+  atividadeDescricao: { fontSize: 11, color: '#282828', flex: 1 },
+  atividadeHora: { fontSize: 10, color: '#A0A2A8' },
 
-  // CARD DE FUNCIONÁRIO
-  employeeCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  employeeHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  avatarBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: '#FFF7ED',
-    borderWidth: 1,
-    borderColor: '#FFEDD5',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  avatarText: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#F97316',
-  },
-  employeeInfo: {
-    flex: 1,
-    marginLeft: 12,
-  },
-  employeeName: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  employeeRole: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 1,
-  },
-  storeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 4,
-    gap: 3,
-  },
-  storeBadgeText: {
-    fontSize: 10,
-    color: '#64748B',
-    fontWeight: '500',
-  },
-  ratingBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FEF3C7',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    gap: 4,
-  },
-  ratingText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#B45309',
-  },
+  searchBarContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', marginHorizontal: 16, marginTop: 12, marginBottom: 4, paddingHorizontal: 12, borderRadius: 20, height: 42, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  searchInput: { flex: 1, marginLeft: 8, fontSize: 12, color: '#282828' },
 
-  employeeMetricsRow: {
-    flexDirection: 'row',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 10,
-    padding: 10,
-    marginTop: 12,
-    justifyContent: 'space-between',
-  },
-  metricSubBox: {
-    flex: 1,
-  },
-  metricSubLabel: {
-    fontSize: 9,
-    color: '#94A3B8',
-    fontWeight: '600',
-    textTransform: 'uppercase',
-  },
-  metricSubVal: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#1E293B',
-    marginTop: 2,
-  },
-  metricSubValSmall: {
-    fontSize: 10,
-    color: '#475569',
-    marginTop: 2,
-  },
+  listPadding: { padding: 16, gap: 12 },
 
-  employeeCardFooter: {
-    flexDirection: 'row',
-    marginTop: 12,
-    gap: 8,
-  },
-  actionBtnOutline: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 8,
-    paddingVertical: 8,
-    gap: 6,
-  },
-  actionBtnText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#334155',
-  },
-  actionBtnDanger: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FEF2F2',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    gap: 4,
-  },
-  actionBtnDangerText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#EF4444',
-  },
+  employeeCard: { backgroundColor: '#FFFFFF', borderRadius: 20, padding: 14, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  employeeHeader: { flexDirection: 'row', alignItems: 'center' },
+  avatarBox: { width: 44, height: 44, borderRadius: 14, backgroundColor: '#F0F0F2', borderWidth: 1, borderColor: '#FFEDD5', justifyContent: 'center', alignItems: 'center' },
+  avatarText: { fontSize: 18, fontWeight: '800', color: '#282828' },
+  employeeInfo: { flex: 1, marginLeft: 12 },
+  employeeName: { fontSize: 14, fontWeight: '700', color: '#282828' },
+  cargoRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  employeeRole: { fontSize: 11, color: '#6A6C72', marginTop: 1 },
+  cargoBadge: { backgroundColor: '#E0E7FF', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 },
+  cargoBadgeText: { fontSize: 9, fontWeight: '800', color: '#4F46E5' },
+  storeBadge: { flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 3 },
+  storeBadgeText: { fontSize: 10, color: '#6A6C72', fontWeight: '500' },
+  ratingBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FEF3C7', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, gap: 4 },
+  ratingText: { fontSize: 11, fontWeight: '700', color: '#B45309' },
 
-  // CARD DE FOLGAS
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#1E293B',
-    marginBottom: 8,
-  },
-  leaveCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginBottom: 10,
-  },
-  leaveCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  leaveEmployeeName: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  leaveStore: {
-    fontSize: 10,
-    color: '#64748B',
-  },
-  pendingStatusTag: {
-    backgroundColor: '#FEF3C7',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  pendingStatusText: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#D97706',
-  },
-  leaveReason: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#334155',
-    marginTop: 8,
-  },
-  leaveDateRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 6,
-    gap: 6,
-  },
-  leaveDateText: {
-    fontSize: 11,
-    color: '#64748B',
-  },
-  leaveActionRow: {
-    flexDirection: 'row',
-    marginTop: 12,
-    gap: 8,
-  },
-  rejectBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#FEE2E2',
-    borderRadius: 8,
-    paddingVertical: 8,
-    gap: 4,
-  },
-  rejectBtnText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#DC2626',
-  },
-  approveBtn: {
-    flex: 2,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#10B981',
-    borderRadius: 8,
-    paddingVertical: 8,
-    gap: 4,
-  },
-  approveBtnText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
+  employeeMetricsRow: { flexDirection: 'row', backgroundColor: '#F5F5F5', borderRadius: 10, padding: 10, marginTop: 12, justifyContent: 'space-between' },
+  metricSubBox: { flex: 1 },
+  metricSubLabel: { fontSize: 9, color: '#A0A2A8', fontWeight: '600', textTransform: 'uppercase' },
+  metricSubVal: { fontSize: 12, fontWeight: '700', color: '#282828', marginTop: 2 },
+  metricSubValSmall: { fontSize: 10, color: '#6A6C72', marginTop: 2 },
 
-  // CARD DE FECHAMENTO
-  closingCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginBottom: 8,
-  },
-  closingIconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: '#E0F2FE',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  closingName: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  closingDate: {
-    fontSize: 10,
-    color: '#64748B',
-  },
-  closingValue: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#059669',
-  },
+  employeeCardFooter: { flexDirection: 'row', marginTop: 12, gap: 8 },
+  actionBtnOutline: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#E1E2E5', borderRadius: 8, paddingVertical: 8, gap: 6 },
+  actionBtnText: { fontSize: 11, fontWeight: '600', color: '#282828' },
+  actionBtnDanger: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FEF2F2', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, gap: 4 },
+  actionBtnDangerText: { fontSize: 11, fontWeight: '600', color: '#EF4444' },
 
-  // EMPTY STATE
-  emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 40,
-  },
-  emptyTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#475569',
-    marginTop: 8,
-  },
-  emptySubtitle: {
-    fontSize: 11,
-    color: '#94A3B8',
-    marginTop: 2,
-  },
+  sectionTitle: { fontSize: 13, fontWeight: '700', color: '#282828', marginBottom: 8 },
 
-  // MODAL
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.6)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    maxHeight: '85%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  modalTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-    color: '#0F172A',
-  },
-  inputLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#334155',
-    marginBottom: 4,
-    marginTop: 10,
-  },
-  modalInput: {
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 12,
-    color: '#0F172A',
-  },
-  pickerContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  pickerOption: {
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: '#FFFFFF',
-  },
-  pickerOptionActive: {
-    backgroundColor: '#F97316',
-    borderColor: '#F97316',
-  },
-  pickerOptionText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#475569',
-  },
-  pickerOptionTextActive: {
-    color: '#FFFFFF',
-  },
-  saveModalButton: {
-    backgroundColor: '#0F172A',
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 20,
-    marginBottom: 10,
-  },
-  saveModalButtonText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
+  emptyContainer: { alignItems: 'center', justifyContent: 'center', paddingVertical: 40 },
+  emptyTitle: { fontSize: 14, fontWeight: '700', color: '#6A6C72', marginTop: 8 },
+  emptySubtitle: { fontSize: 11, color: '#A0A2A8', marginTop: 2 },
+
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.6)', justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: '85%' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  modalTitle: { fontSize: 16, fontWeight: '800', color: '#282828' },
+  inputLabel: { fontSize: 11, fontWeight: '700', color: '#282828', marginBottom: 4, marginTop: 10 },
+  modalInput: { backgroundColor: '#F5F5F5', borderWidth: 1, borderColor: '#E1E2E5', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 12, color: '#282828' },
+  pickerContainer: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  pickerOption: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#E1E2E5', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, backgroundColor: '#FFFFFF' },
+  pickerOptionActive: { backgroundColor: '#282828', borderColor: '#282828' },
+  pickerOptionLocked: { backgroundColor: '#F5F5F5', borderStyle: 'dashed' },
+  pickerOptionText: { fontSize: 11, fontWeight: '600', color: '#6A6C72' },
+  pickerOptionTextActive: { color: '#FFFFFF' },
+  avisoPremium: { fontSize: 10, color: '#B45309', marginTop: 6 },
+  saveModalButton: { backgroundColor: '#12A150', borderRadius: 14, paddingVertical: 14, alignItems: 'center', marginTop: 20, marginBottom: 10 },
+  saveModalButtonText: { color: '#FFFFFF', fontSize: 12, fontWeight: '800', letterSpacing: 0.5 },
+
+  papelCard: { backgroundColor: '#F9FAFB', borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: '#F0F0F2' },
+  papelIconWrap: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginBottom: 8 },
+  papelTitulo: { fontSize: 14, fontWeight: '800', color: '#282828' },
+  papelPlano: { fontSize: 10, fontWeight: '700', color: '#4F46E5', textTransform: 'uppercase', marginTop: 2, marginBottom: 8 },
+  papelDesc: { fontSize: 11, color: '#6A6C72', lineHeight: 18 },
+  papelBadgePremium: { position: 'absolute', top: -8, right: 12, backgroundColor: '#4F46E5', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
+  papelBadgePremiumText: { fontSize: 9, fontWeight: '800', color: '#FFFFFF' },
+  avisoPremiumBox: { flexDirection: 'row', gap: 6, backgroundColor: '#FEF3C7', borderRadius: 12, padding: 12, marginBottom: 10 },
+  avisoPremiumBoxText: { flex: 1, fontSize: 11, color: '#92400E' },
 });

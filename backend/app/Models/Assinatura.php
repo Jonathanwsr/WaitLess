@@ -19,6 +19,12 @@ class Assinatura extends Model
         'data_inicio',
         'data_vencimento',
         'cancelada_em',
+        // Essas 3 colunas já existem na tabela mas nunca tinham sido liberadas
+        // pra mass-assignment — qualquer Assinatura::create() com esses campos
+        // os descartava em silêncio.
+        'ciclo',
+        'metodo_pagamento',
+        'fatura_id',
     ];
 
     protected $casts = [

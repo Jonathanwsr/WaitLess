@@ -373,6 +373,7 @@ class TravelAssistantController extends Controller
         $dados = $request->validate([
             'titulo' => 'required|string|max:255',
             'destino' => 'required|string|max:255',
+            'descricao' => 'nullable|string',
             'data_inicio' => 'required|date',
             'data_fim' => 'required|date|after_or_equal:data_inicio',
             'orcamento_limite' => 'nullable|numeric',
@@ -390,7 +391,11 @@ class TravelAssistantController extends Controller
         $fim = new \DateTime($dados['data_fim']);
         $dados['total_dias'] = $inicio->diff($fim)->days + 1;
 
-        $dados['gastos_planejados'] = json_encode($dados['gastos_planejados'] ?? []);
+        // Não fazer json_encode aqui: o cast 'array' do model já serializa
+        // pra JSON ao salvar. Fazer os dois juntos gravava uma string JSON
+        // duplamente escapada (ex: `"[]"` em vez de `[]`), quebrando a
+        // leitura e qualquer append posterior de gastos.
+        $dados['gastos_planejados'] = $dados['gastos_planejados'] ?? [];
         
         if (isset($dados['detalhes_infraestrutura'])) {
             $dados['detalhes_infraestrutura'] = json_encode($dados['detalhes_infraestrutura']);
@@ -414,6 +419,146 @@ class TravelAssistantController extends Controller
         ], 210);
     }
 
+    /**
+     * Garante que o usuário logado é o criador ou um membro da viagem antes
+     * de deixar ver/editar seus dados ou gastos.
+     */
+    private function autorizarAcessoViagem(Viagem $viagem): void
+    {
+        $userId = Auth::id();
+        if ($viagem->criador_id === $userId) {
+            return;
+        }
+        if ($viagem->membros()->where('usuario_id', $userId)->exists()) {
+            return;
+        }
+        abort(403, 'Você não tem acesso a esta viagem.');
+    }
+
+    public function mostrarViagem($id)
+    {
+        $viagem = Viagem::with('membros:id,name,email')->findOrFail($id);
+        $this->autorizarAcessoViagem($viagem);
+
+        $viagem->gastos_planejados = $viagem->gastos_planejados ?? [];
+
+        return response()->json($viagem);
+    }
+
+    public function atualizarViagem(Request $request, $id)
+    {
+        $viagem = Viagem::findOrFail($id);
+        $this->autorizarAcessoViagem($viagem);
+
+        $dados = $request->validate([
+            'titulo' => 'sometimes|required|string|max:255',
+            'destino' => 'sometimes|required|string|max:255',
+            'descricao' => 'nullable|string',
+            'data_inicio' => 'sometimes|required|date',
+            'data_fim' => 'sometimes|required|date|after_or_equal:data_inicio',
+            'orcamento_limite' => 'nullable|numeric|min:0',
+            'quantidade_pessoas' => 'nullable|integer|min:1',
+        ]);
+
+        $viagem->fill($dados);
+
+        if ($viagem->isDirty('data_inicio') || $viagem->isDirty('data_fim')) {
+            $inicio = new \DateTime($viagem->data_inicio);
+            $fim = new \DateTime($viagem->data_fim);
+            $viagem->total_dias = $inicio->diff($fim)->days + 1;
+        }
+
+        $viagem->save();
+
+        return response()->json(['message' => 'Viagem atualizada com sucesso!', 'viagem' => $viagem]);
+    }
+
+    public function excluirViagem($id)
+    {
+        $viagem = Viagem::findOrFail($id);
+
+        if ($viagem->criador_id !== Auth::id()) {
+            abort(403, 'Somente quem criou a viagem pode excluí-la.');
+        }
+
+        $viagem->delete();
+
+        return response()->json(['message' => 'Viagem excluída com sucesso!']);
+    }
+
+    public function adicionarGasto(Request $request, $viagemId)
+    {
+        $viagem = Viagem::findOrFail($viagemId);
+        $this->autorizarAcessoViagem($viagem);
+
+        $dados = $request->validate([
+            'categoria' => 'required|string|max:255',
+            'descricao' => 'nullable|string|max:255',
+            'valor' => 'required|numeric|min:0',
+            'data_gasto' => 'nullable|date',
+        ]);
+
+        $gastos = $viagem->gastos_planejados ?? [];
+        $dados['id'] = (string) \Illuminate\Support\Str::uuid();
+        $gastos[] = $dados;
+
+        $viagem->gastos_planejados = $gastos;
+        $viagem->save();
+
+        return response()->json(['message' => 'Gasto adicionado!', 'gastos_planejados' => $viagem->gastos_planejados], 201);
+    }
+
+    public function atualizarGasto(Request $request, $viagemId, $gastoId)
+    {
+        $viagem = Viagem::findOrFail($viagemId);
+        $this->autorizarAcessoViagem($viagem);
+
+        $dados = $request->validate([
+            'categoria' => 'sometimes|required|string|max:255',
+            'descricao' => 'nullable|string|max:255',
+            'valor' => 'sometimes|required|numeric|min:0',
+            'data_gasto' => 'nullable|date',
+        ]);
+
+        $gastos = collect($viagem->gastos_planejados ?? []);
+        $encontrado = false;
+
+        $gastos = $gastos->map(function ($gasto) use ($gastoId, $dados, &$encontrado) {
+            if (($gasto['id'] ?? null) === $gastoId) {
+                $encontrado = true;
+                return array_merge($gasto, $dados);
+            }
+            return $gasto;
+        });
+
+        if (!$encontrado) {
+            abort(404, 'Gasto não encontrado nesta viagem.');
+        }
+
+        $viagem->gastos_planejados = $gastos->values()->all();
+        $viagem->save();
+
+        return response()->json(['message' => 'Gasto atualizado!', 'gastos_planejados' => $viagem->gastos_planejados]);
+    }
+
+    public function removerGasto($viagemId, $gastoId)
+    {
+        $viagem = Viagem::findOrFail($viagemId);
+        $this->autorizarAcessoViagem($viagem);
+
+        $gastos = collect($viagem->gastos_planejados ?? []);
+        $restantes = $gastos->filter(fn ($gasto) => ($gasto['id'] ?? null) !== $gastoId)->values();
+
+        if ($restantes->count() === $gastos->count()) {
+            abort(404, 'Gasto não encontrado nesta viagem.');
+        }
+
+        $viagem->gastos_planejados = $restantes->all();
+        $viagem->save();
+
+        return response()->json(['message' => 'Gasto removido!', 'gastos_planejados' => $viagem->gastos_planejados]);
+    }
+
     public function listarMinhasViagens()
     {
         $usuario = Auth::user();
@@ -425,7 +570,9 @@ class TravelAssistantController extends Controller
             ->with('membros:id,name,email')
             ->get()
             ->map(function ($viagem) {
-                $viagem->gastos_planejados = json_decode($viagem->gastos_planejados) ?? [];
+                // O cast 'array' do model já entrega isto decodificado;
+                // rodar json_decode de novo aqui quebra com TypeError.
+                $viagem->gastos_planejados = $viagem->gastos_planejados ?? [];
                 return $viagem;
             });
 

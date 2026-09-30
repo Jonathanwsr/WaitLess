@@ -40,6 +40,8 @@ TaskManager.defineTask(TAREFA_RASTREAMENTO, async ({ data, error }) => {
         agendamento_id: Number(agendamentoId),
         lat: ultimaPosicao.coords.latitude,
         lng: ultimaPosicao.coords.longitude,
+        heading: ultimaPosicao.coords.heading ?? null,
+        velocidade: ultimaPosicao.coords.speed ?? null,
       }),
     });
   } catch (e) {
@@ -71,9 +73,9 @@ export async function iniciarRastreamentoBackground(agendamentoId: number): Prom
   }
 
   await Location.startLocationUpdatesAsync(TAREFA_RASTREAMENTO, {
-    accuracy: Location.Accuracy.High,
-    timeInterval: 6000,
-    distanceInterval: 15,
+    accuracy: Location.Accuracy.BestForNavigation,
+    timeInterval: 4000,
+    distanceInterval: 10,
     showsBackgroundLocationIndicator: true,
     foregroundService: {
       notificationTitle: 'Compartilhando sua localização',

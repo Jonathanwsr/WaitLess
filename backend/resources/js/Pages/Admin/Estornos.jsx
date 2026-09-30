@@ -194,7 +194,12 @@ export default function Estornos({ auth }) {
             ERRO_ASAAS: 'bg-red-600 text-white',
         };
         const cor = cores[status] || 'bg-gray-100 text-gray-800';
-        return <span className={`px-2 py-1 text-xs font-bold rounded-md ${cor}`}>{status?.replace('_', ' ')}</span>;
+        // O cliente não precisa (nem deve) ver o nome do gateway de pagamento
+        // na própria tela dele — só admin/prestador enxergam o detalhe técnico.
+        const label = status === 'ERRO_ASAAS' && isCliente
+            ? 'ERRO NO PROCESSAMENTO'
+            : status?.replace('_', ' ');
+        return <span className={`px-2 py-1 text-xs font-bold rounded-md ${cor}`}>{label}</span>;
     };
 
     const formatarDinheiro = (valor) => {

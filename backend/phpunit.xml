@@ -23,8 +23,17 @@
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="null"/>
         <env name="CACHE_STORE" value="array"/>
-        <env name="DB_CONNECTION" value="sqlite"/>
-        <env name="DB_DATABASE" value=":memory:"/>
+        <!-- Sem driver pdo_sqlite disponível neste ambiente (só pdo_pgsql) — os testes
+             usam um banco Postgres PRÓPRIO e separado ("waitless_test"), nunca o banco
+             de desenvolvimento. Isso existe justamente porque um teste com
+             RefreshDatabase já rodou migrate:fresh e apagou todos os dados do banco de
+             dev uma vez — não pode acontecer de novo. NUNCA aponte isto para "waitless". -->
+        <env name="DB_CONNECTION" value="pgsql"/>
+        <env name="DB_HOST" value="127.0.0.1"/>
+        <env name="DB_PORT" value="5432"/>
+        <env name="DB_DATABASE" value="waitless_test"/>
+        <env name="DB_USERNAME" value="postgres"/>
+        <env name="DB_PASSWORD" value="admin"/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>

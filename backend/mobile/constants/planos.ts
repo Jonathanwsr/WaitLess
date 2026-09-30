@@ -25,9 +25,9 @@ export const PLANOS_SOCIO: Plano[] = [
   },
   {
     id: 'premium-socio', nome: 'Premium Sócio', preco: '30,00', ciclo: 'mensal', destaque: true,
-    badge: 'Máximo Retorno', gradiente: ['#14B8A6', '#059669'],
+    badge: 'Máximo Retorno', gradiente: ['#14B8A6', '#00A868'],
     desc: 'Destaque máximo e isenção de taxas presenciais.',
-    beneficios: ['Isenção da taxa de 12% no balcão', 'Destaque no app', 'Suporte VIP 24/7', 'Métricas avançadas'],
+    beneficios: ['Isenção da taxa da plataforma no balcão', 'Destaque no app', 'Suporte VIP 24/7', 'Métricas avançadas', 'Crie gerentes e convide sócios ilimitados'],
   },
   {
     id: 'premium-anual', nome: 'Premium Anual', preco: '126,00', precoOriginal: '180,00', ciclo: 'anual', destaque: false,
@@ -39,7 +39,7 @@ export const PLANOS_SOCIO: Plano[] = [
     id: 'premium-socio-anual', nome: 'Sócio Anual', preco: '252,00', precoOriginal: '360,00', ciclo: 'anual', destaque: true,
     badge: 'Melhor Custo-Benefício', gradiente: ['#2563EB', '#4338CA'],
     desc: 'O pacote definitivo de 1 ano com isenção total de taxas e 30% OFF.',
-    beneficios: ['Equivale a apenas R$ 21,00/mês', 'Ganha 3600 pontos na hora', 'Isenção da taxa de 12%', 'Suporte VIP 24/7'],
+    beneficios: ['Equivale a apenas R$ 21,00/mês', 'Ganha 3600 pontos na hora', 'Isenção da taxa da plataforma', 'Suporte VIP 24/7', 'Crie gerentes e convide sócios ilimitados'],
   },
 ];
 

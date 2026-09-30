@@ -39,10 +39,12 @@ export default function TelaEntrada() {
         const papelUsuario = usuario?.papel?.toLowerCase() || '';
         
         // Redirecionamento corrigido com base no papel do usuário
-        if (['socio', 'proprietario', 'gerente'].includes(papelUsuario)) {
+        if (papelUsuario === 'admin') {
+          router.replace('/src/screens/AdminUsuarios' as never);
+        } else if (['socio', 'proprietario', 'gerente'].includes(papelUsuario)) {
           // Agora envia os donos para o Dashboard correto
           router.replace('/Proprietario/dashboard');
-        } else if (['funcionario', 'admin'].includes(papelUsuario)) {
+        } else if (papelUsuario === 'funcionario') {
           router.replace('/src/funcionario/Painel-funcioanario');
         } else {
           router.replace('/(tabs)/home');
@@ -61,7 +63,7 @@ export default function TelaEntrada() {
   if (isCheckingAuth) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#FF6B35" />
+        <ActivityIndicator size="large" color="#FF7A00" />
       </View>
     );
   }
@@ -158,7 +160,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   titleHighlight: {
-    color: '#FF6B35',
+    color: '#FF7A00',
   },
   subtitleContainer: {
     alignItems: 'center',
@@ -172,7 +174,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   subtitleHighlight: {
-    color: '#FF6B35',
+    color: '#FF7A00',
     fontWeight: '600',
   },
   bottomContainer: {
@@ -183,7 +185,7 @@ const styles = StyleSheet.create({
   
   // --- ESTILOS DOS BOTÕES ATUALIZADOS PARA O FORMATO DA IMAGEM ---
   primaryButton: {
-    backgroundColor: '#FF6B35',
+    backgroundColor: '#FF7A00',
     height: 60,
     borderRadius: 30, // Metade da altura para criar o formato de pílula perfeito
     justifyContent: 'center',

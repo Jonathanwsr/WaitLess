@@ -49,8 +49,13 @@ export default function DetalheCliente({ auth, estabelecimento, paciente, triage
         estabelecimento_id: estabelecimento?.id || '',
         servico_id: '',
         data: '',
-        hora: ''
+        hora: '',
+        pessoas: 1,
     });
+
+    const servicoEscolhido = servicos?.find((s) => String(s.id) === String(servicoSelecionado));
+    const maxPessoas = servicoEscolhido?.max_pessoas || 1;
+    const valorEstimado = servicoEscolhido ? Number(servicoEscolhido.valor || 0) * (formAgendamento.data.pessoas || 1) : 0;
 
     // ==========================================
     // EFEITO: BUSCA HORÁRIOS REAIS DA API
@@ -76,6 +81,11 @@ export default function DetalheCliente({ auth, estabelecimento, paciente, triage
             setHorariosDisponiveis([]);
         }
     }, [servicoSelecionado, dataSelecionadaFormatada]);
+
+    // Volta pra 1 pessoa sempre que troca de serviço (a capacidade máxima muda junto).
+    useEffect(() => {
+        formAgendamento.setData('pessoas', 1);
+    }, [servicoSelecionado]);
 
     // ==========================================
     // LÓGICA AUXILIAR DO CALENDÁRIO NATIVO
@@ -412,7 +422,7 @@ export default function DetalheCliente({ auth, estabelecimento, paciente, triage
                                     <div className="flex justify-end">
                                         <button 
                                             type="submit" 
-                                            className="w-full sm:w-auto bg-emerald-700 hover:bg-emerald-800 active:scale-[0.98] text-white px-6 py-2.5 rounded-xl font-bold text-xs transition-all shadow-sm disabled:opacity-50" 
+                                            className="w-full sm:w-auto bg-green-600 hover:bg-green-700 active:scale-[0.98] text-white px-6 py-2.5 rounded-xl font-bold text-xs transition-all shadow-sm disabled:opacity-50" 
                                             disabled={formNota.processing}
                                         >
                                             {formNota.processing ? 'Gravando...' : 'Salvar Anotação'}
@@ -551,6 +561,32 @@ export default function DetalheCliente({ auth, estabelecimento, paciente, triage
                                             )}
                                         </div>
                                     )}
+
+                                    {/* PESSOAS E VALOR — mesma regra usada quando o cliente reserva sozinho */}
+                                    {servicoEscolhido && (
+                                        <div>
+                                            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+                                                Quantas pessoas
+                                            </label>
+                                            <div className="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl p-2">
+                                                <button type="button" disabled={formAgendamento.data.pessoas <= 1}
+                                                    onClick={() => formAgendamento.setData('pessoas', Math.max(1, formAgendamento.data.pessoas - 1))}
+                                                    className="w-9 h-9 rounded-lg bg-white border border-slate-200 font-bold text-slate-700 disabled:opacity-40">−</button>
+                                                <span className="flex-1 text-center text-sm font-black text-slate-800">{formAgendamento.data.pessoas} {formAgendamento.data.pessoas > 1 ? 'pessoas' : 'pessoa'}</span>
+                                                <button type="button" disabled={formAgendamento.data.pessoas >= maxPessoas}
+                                                    onClick={() => formAgendamento.setData('pessoas', Math.min(maxPessoas, formAgendamento.data.pessoas + 1))}
+                                                    className="w-9 h-9 rounded-lg bg-white border border-slate-200 font-bold text-slate-700 disabled:opacity-40">+</button>
+                                            </div>
+                                            {maxPessoas > 1 && <p className="text-[11px] text-slate-400 mt-1.5">Este serviço atende até {maxPessoas} pessoas por horário.</p>}
+                                            {formAgendamento.errors.pessoas && <p className="text-xs text-red-600 mt-1.5">{formAgendamento.errors.pessoas}</p>}
+
+                                            <div className="mt-3 flex items-center justify-between bg-emerald-50 border border-emerald-100 rounded-xl px-4 py-3">
+                                                <span className="text-xs font-bold text-emerald-800 uppercase tracking-wide">Valor estimado</span>
+                                                <span className="text-lg font-black text-emerald-700">{formatarMoeda(valorEstimado)}</span>
+                                            </div>
+                                        </div>
+                                    )}
+                                    {formAgendamento.errors.hora_agendamento && <p className="text-xs text-red-600">{formAgendamento.errors.hora_agendamento}</p>}
                                 </div>
 
                                 <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-2">

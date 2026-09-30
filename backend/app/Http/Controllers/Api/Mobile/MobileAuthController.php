@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\Mobile;
 
+use App\Services\TrocaSenhaService;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -93,13 +94,23 @@ class MobileAuthController extends Controller
             'name' => 'required|string|max:255',
             'email' => 'required|string|lowercase|email|max:255|unique:'.User::class,
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
-            'papel' => 'required|string|in:admin,socio,proprietario,user,gerente,atendente',
+            // Só os dois papéis que a tela de cadastro realmente oferece (Cliente/
+            // Proprietário) podem ser auto-atribuídos aqui — "admin", "gerente" e
+            // "atendente" eram aceitos por essa validação, permitindo que qualquer
+            // pessoa se cadastrasse como administrador da plataforma só mandando
+            // esse valor no corpo da requisição. Papéis internos (funcionário,
+            // gerente) só devem ser criados por um proprietário autenticado, via
+            // ConfiguracoesMobileController::storeFuncionario.
+            'papel' => 'required|string|in:user,proprietario',
             
-            // Campos Asaas
-            'cpf_cnpj' => 'required|string|max:18',
-            'mobile_phone' => 'required|string|max:20',
-            'phone' => 'nullable|string|max:20',
-            'postal_code' => 'required|string|max:10',
+            // Campos Asaas — só dígitos (e pontuação usual de máscara), pra
+            // barrar HTML/script ou texto solto nesses campos antes de ir pro
+            // gateway de pagamento (o app já filtra no teclado, mas isso é só
+            // cosmético; a validação real precisa estar aqui).
+            'cpf_cnpj' => 'required|string|max:18|regex:/^[0-9.\-\/\s]+$/',
+            'mobile_phone' => 'required|string|max:20|regex:/^[0-9()\-\s]+$/',
+            'phone' => 'nullable|string|max:20|regex:/^[0-9()\-\s]+$/',
+            'postal_code' => 'required|string|max:10|regex:/^[0-9\-\s]+$/',
             'address' => 'required|string|max:255',
             'address_number' => 'required|string|max:20',
             'complement' => 'nullable|string|max:100',
@@ -120,7 +131,8 @@ class MobileAuthController extends Controller
             'termo_compromisso_aceito' => 'required|boolean|accepted',
             'termo_compromisso_versao' => 'required|string|max:20',
             
-            'expo_push_token' => 'nullable|string'
+            'expo_push_token' => 'nullable|string',
+            'codigo_indicacao' => 'nullable|string|max:12',
         ]);
 
         // Função de Sanitização (Bloqueia scripts, tags HTML e códigos maliciosos)
@@ -193,12 +205,31 @@ class MobileAuthController extends Controller
                 'expo_push_token' => $request->expo_push_token ?? null,
 
                 // DADOS DO TERMO DE COMPROMISSO
+                // A versão gravada é sempre a atual do servidor (config/termos.php),
+                // não a que o app mandou — o app é só a UI, o backend é quem manda
+                // na verdade sobre qual texto o usuário realmente aceitou.
                 'termo_compromisso_aceito' => $request->termo_compromisso_aceito,
-                'termo_compromisso_data'   => now(),
-                'termo_compromisso_versao' => $request->termo_compromisso_versao,
+                'termo_compromisso_aceito_em' => now(),
+                'termo_compromisso_versao' => config('termos.versao_atual'),
                 'termo_compromisso_ip'     => $request->ip(),
                 'termo_compromisso_user_agent' => $request->userAgent(),
             ]);
+            // Programa de indicação: liga o novo usuário a quem o convidou (código inválido é ignorado).
+            app(\App\Services\IndicacaoService::class)->registrar($user, $request->input('codigo_indicacao'));
+
+            // Bônus de boas-vindas: todo cliente novo (papel 'user') já
+            // entra com 100 pontos de fidelidade, visíveis no histórico.
+            if ($user->papel === 'user') {
+                $user->increment('pontos_saldo', 100);
+                DB::table('historico_pontos')->insert([
+                    'usuario_id' => $user->id,
+                    'estabelecimento_id' => null,
+                    'tipo' => 'ganho',
+                    'descricao' => 'Bônus de boas-vindas - cadastro na Lokyva',
+                    'quantidade' => 100,
+                    'created_at' => now(),
+                ]);
+            }
 
             // PASSO 3: Criar Subconta/Wallet (Apenas Proprietários/Sócios)
             if (in_array($request->papel, ['admin', 'socio', 'proprietario'])) {
@@ -277,6 +308,52 @@ class MobileAuthController extends Controller
     }
 
     /**
+     * Edição do próprio perfil (qualquer papel). E-mail, CPF/CNPJ e papel
+     * ficam de fora de propósito: identificam a conta e estão ligados à
+     * cobrança (Asaas) e às permissões.
+     */
+    public function atualizarPerfil(Request $request)
+    {
+        $user = $request->user();
+
+        $validated = $request->validate([
+            'name'            => 'required|string|max:255',
+            'telefone'        => 'nullable|string|max:30',
+            'data_nascimento' => 'nullable|date|before:today',
+            'cep'             => 'nullable|string|max:12',
+            'endereco'        => 'nullable|string|max:255',
+            'numero'          => 'nullable|string|max:20',
+            'bairro'          => 'nullable|string|max:255',
+            'cidade'          => 'nullable|string|max:120',
+            'estado'          => 'nullable|string|max:2',
+            'profissao'       => 'nullable|string|max:255',
+            'idiomas'         => 'nullable|string|max:255',
+            'onde_estudei'    => 'nullable|string|max:255',
+            'onde_moro'       => 'nullable|string|max:255',
+            'sobre_mim'       => 'nullable|string|max:1000',
+        ]);
+
+        $user->update([
+            'name'          => $validated['name'],
+            'telefone'      => $validated['telefone'] ?? null,
+            'birth_date'    => $validated['data_nascimento'] ?? null,
+            'postal_code'   => $validated['cep'] ?? null,
+            'address'       => $validated['endereco'] ?? null,
+            'address_number' => $validated['numero'] ?? null,
+            'province'      => $validated['bairro'] ?? null,
+            'city'          => $validated['cidade'] ?? null,
+            'state'         => isset($validated['estado']) ? strtoupper($validated['estado']) : null,
+            'profissao'     => $validated['profissao'] ?? null,
+            'idiomas'       => $validated['idiomas'] ?? null,
+            'onde_estudei'  => $validated['onde_estudei'] ?? null,
+            'onde_moro'     => $validated['onde_moro'] ?? null,
+            'sobre_mim'     => $validated['sobre_mim'] ?? null,
+        ]);
+
+        return $this->me($request);
+    }
+
+    /**
      * Retorna os dados do perfil do usuário autenticado
      */
     public function me(Request $request)
@@ -300,7 +377,14 @@ class MobileAuthController extends Controller
                     'cpf_cnpj' => $user->cpf_cnpj,
                     'cidade' => $user->city,
                     'estado' => $user->state,
-                    
+                    'foto_perfil' => $user->foto_perfil,
+                    'data_nascimento' => $user->birth_date,
+                    'cep' => $user->postal_code,
+                    'endereco' => $user->address,
+                    'numero' => $user->address_number,
+                    'bairro' => $user->province,
+                    'membro_desde' => optional($user->created_at)->toDateString(),
+
                     // Retorno dos novos campos no perfil
                     'onde_estudei' => $user->onde_estudei,
                     'onde_moro' => $user->onde_moro,
@@ -309,13 +393,23 @@ class MobileAuthController extends Controller
                     'sobre_mim' => $user->sobre_mim,
 
                     'pontos_saldo' => (int) $totalPontos,
-                    'plano_atual' => $user->plano_atual, 
+                    // A coluna real é "plano_assinatura" — "plano_atual" não existe
+                    // na tabela e sempre voltava null, fazendo o app mostrar
+                    // "GRATUITO" pra qualquer usuário, mesmo assinantes Premium.
+                    'plano_atual' => $user->plano_assinatura ?? 'gratuito',
                     'assinatura' => $user->assinaturaAtiva ? [
                         'nome_plano' => $user->assinaturaAtiva->nome_plano,
                         'tipo_publico' => $user->assinaturaAtiva->tipo_publico,
                         'valor_mensal' => $user->assinaturaAtiva->valor_mensal,
                         'status' => $user->assinaturaAtiva->status,
                     ] : null,
+
+                    'termo_compromisso' => [
+                        'aceito' => (bool) $user->termo_compromisso_aceito,
+                        'aceito_em' => $user->termo_compromisso_aceito_em,
+                        'versao' => $user->termo_compromisso_versao,
+                        'versao_atual' => config('termos.versao_atual'),
+                    ],
                 ]
             ], 200);
 
@@ -387,6 +481,42 @@ class MobileAuthController extends Controller
             ->value('id');
 
         return $primeiroFuncionarioId !== $funcionario->id;
+    }
+
+    /**
+     * Passo 1 da recuperação de senha pelo app: envia um código de 6 dígitos por e-mail.
+     * A resposta é sempre a mesma, exista ou não a conta (não revela cadastros).
+     */
+    public function solicitarCodigoSenha(Request $request, TrocaSenhaService $senhas)
+    {
+        $dados = $request->validate(['email' => 'required|email|max:255'], [
+            'email.required' => 'Informe o e-mail da sua conta.',
+            'email.email' => 'Digite um e-mail válido.',
+        ]);
+
+        $senhas->enviarCodigo($dados['email'], $request->ip());
+
+        return response()->json([
+            'message' => 'Se esse e-mail estiver cadastrado, enviamos um código de 6 dígitos. Ele vale por ' . TrocaSenhaService::VALIDADE_CODIGO_MIN . ' minutos.',
+        ]);
+    }
+
+    /** Passo 2: confere o código e define a nova senha (máximo de 3 trocas a cada 30 dias). */
+    public function redefinirSenha(Request $request, TrocaSenhaService $senhas)
+    {
+        $dados = $request->validate([
+            'email' => 'required|email|max:255',
+            'codigo' => 'required|digits:6',
+            'password' => ['required', 'confirmed', \Illuminate\Validation\Rules\Password::min(8)],
+        ], [
+            'codigo.digits' => 'O código tem 6 números.',
+            'password.confirmed' => 'As senhas não conferem.',
+            'password.min' => 'A senha precisa ter pelo menos 8 caracteres.',
+        ]);
+
+        $senhas->redefinir($dados['email'], $dados['codigo'], $dados['password'], $request->ip());
+
+        return response()->json(['message' => 'Senha alterada! Entre com a nova senha.']);
     }
 
     /**

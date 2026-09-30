@@ -13,6 +13,7 @@ use Illuminate\Validation\Rules;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
+use App\Services\TrocaSenhaService;
 
 class NewPasswordController extends Controller
 {
@@ -46,6 +47,10 @@ class NewPasswordController extends Controller
         $status = Password::reset(
             $request->only('email', 'password', 'password_confirmation', 'token'),
             function ($user) use ($request) {
+                $trocas = app(TrocaSenhaService::class);
+                $trocas->garantirPodeTrocar($user);
+                $trocas->registrar($user, 'web_recuperacao', $request->ip());
+
                 $user->forceFill([
                     'password' => Hash::make($request->password),
                     'remember_token' => Str::random(60),

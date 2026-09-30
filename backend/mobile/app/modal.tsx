@@ -1,4 +1,4 @@
-import { Link, router } from 'expo-router';
+import { router } from 'expo-router';
 import { StyleSheet, Pressable, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -43,35 +43,35 @@ export default function ModalScreen() {
         {/* Lista de Navegação para as telas da pasta screens */}
         <View style={styles.menuContainer}>
           {/* 1. Home (Início) */}
-          <Pressable style={styles.menuItem} onPress={() => handleNavigate('/')}>
+          <Pressable style={styles.menuItem} onPress={() => handleNavigate('/(tabs)/home')}>
             <Ionicons name="home-outline" size={20} color="#000000" />
             <ThemedText style={styles.menuText}>Início / Home</ThemedText>
-            <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+            <Ionicons name="chevron-forward" size={18} color="#A0A2A8" />
           </Pressable>
 
           {/* 2. Explorar */}
-          <Pressable style={styles.menuItem} onPress={() => handleNavigate('/explorar')}>
+          <Pressable style={styles.menuItem} onPress={() => handleNavigate('/(tabs)/explorar')}>
             <Ionicons name="compass-outline" size={20} color="#000000" />
             <ThemedText style={styles.menuText}>Explorar</ThemedText>
-            <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+            <Ionicons name="chevron-forward" size={18} color="#A0A2A8" />
           </Pressable>
 
           {/* 3. Meus Agendamentos */}
-          <Pressable style={styles.menuItem} onPress={() => handleNavigate('/agendamentos')}>
+          <Pressable style={styles.menuItem} onPress={() => handleNavigate('/src/screens/MeusAgendamentos')}>
             <Ionicons name="calendar-outline" size={20} color="#000000" />
             <ThemedText style={styles.menuText}>Meus Agendamentos</ThemedText>
-            <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+            <Ionicons name="chevron-forward" size={18} color="#A0A2A8" />
           </Pressable>
 
           {/* 4. Favoritos */}
-          <Pressable style={styles.menuItem} onPress={() => handleNavigate('/favoritos')}>
+          <Pressable style={styles.menuItem} onPress={() => handleNavigate('/src/screens/FavoritosDashboard')}>
             <Ionicons name="heart-outline" size={20} color="#000000" />
             <ThemedText style={styles.menuText}>Favoritos</ThemedText>
-            <Ionicons name="chevron-forward" size={18} color="#9CA3AF" />
+            <Ionicons name="chevron-forward" size={18} color="#A0A2A8" />
           </Pressable>
 
           {/* 5. Perfil (Último item - TelaPerfil) */}
-          <Pressable style={[styles.menuItem, styles.profileItem]} onPress={() => handleNavigate('/perfil')}>
+          <Pressable style={[styles.menuItem, styles.profileItem]} onPress={() => handleNavigate('/src/screens/TelaPerfil')}>
             <Ionicons name="person-outline" size={20} color="#000000" />
             <ThemedText style={[styles.menuText, styles.profileText]}>Meu Perfil</ThemedText>
             <Ionicons name="chevron-forward" size={18} color="#000000" />
@@ -97,7 +97,7 @@ const styles = StyleSheet.create({
     padding: 24,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#E5E7EB',
+    borderColor: '#E6E7E9',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.08,
@@ -111,13 +111,13 @@ const styles = StyleSheet.create({
     right: 16,
     padding: 8,
     borderRadius: 20,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#F0F0F2',
   },
   iconBadge: {
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#F0F0F2',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
@@ -126,13 +126,13 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 22,
     fontWeight: '700',
-    color: '#111827',
+    color: '#282828',
     textAlign: 'center',
     marginBottom: 4,
   },
   description: {
     fontSize: 14,
-    color: '#6B7280',
+    color: '#6A6C72',
     textAlign: 'center',
     marginBottom: 20,
   },
@@ -146,20 +146,20 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderRadius: 12,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: '#F5F5F5',
     borderWidth: 1,
-    borderColor: '#F3F4F6',
+    borderColor: '#F0F0F2',
   },
   menuText: {
     flex: 1,
     fontSize: 15,
     fontWeight: '500',
-    color: '#374151',
+    color: '#3A3A3A',
     marginLeft: 12,
   },
   profileItem: {
-    backgroundColor: '#F3F4F6',
-    borderColor: '#E5E7EB',
+    backgroundColor: '#F0F0F2',
+    borderColor: '#E6E7E9',
     marginTop: 4,
   },
   profileText: {

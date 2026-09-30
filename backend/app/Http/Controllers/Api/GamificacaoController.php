@@ -8,6 +8,20 @@ use Illuminate\Http\Request;
 
 class GamificacaoController extends Controller
 {
+    /**
+     * Mesma checagem usada em Desconto/ContaPagamento/RegraPontuacao: sem
+     * isso, qualquer usuário autenticado podia criar/editar/desativar o
+     * sistema de gamificação de QUALQUER estabelecimento.
+     */
+    private function garantirQueGerencia(Request $request, int $estabelecimentoId): void
+    {
+        $gerencia = $request->user()->estabelecimentos()
+            ->where('estabelecimentos.id', $estabelecimentoId)
+            ->exists();
+
+        abort_unless($gerencia, 403, 'Você não tem permissão para gerenciar a gamificação deste estabelecimento.');
+    }
+
     public function index(Request $request)
     {
         $query = Gamificacao::where('ativo', true);
@@ -28,6 +42,8 @@ class GamificacaoController extends Controller
             'ativo' => 'boolean'
         ]);
 
+        $this->garantirQueGerencia($request, (int) $validated['estabelecimento_id']);
+
         $gamificacao = Gamificacao::create($validated);
 
         return response()->json(['message' => 'Sistema de Gamificação criado!', 'data' => $gamificacao], 201);
@@ -41,6 +57,7 @@ class GamificacaoController extends Controller
     public function update(Request $request, string $id)
     {
         $gamificacao = Gamificacao::findOrFail($id);
+        $this->garantirQueGerencia($request, (int) $gamificacao->estabelecimento_id);
 
         $validated = $request->validate([
             'nome_sistema' => 'sometimes|string|max:255',
@@ -53,9 +70,11 @@ class GamificacaoController extends Controller
         return response()->json(['message' => 'Sistema atualizado.', 'data' => $gamificacao]);
     }
 
-    public function destroy(string $id)
+    public function destroy(Request $request, string $id)
     {
         $gamificacao = Gamificacao::findOrFail($id);
+        $this->garantirQueGerencia($request, (int) $gamificacao->estabelecimento_id);
+
         $gamificacao->update(['ativo' => false]);
 
         return response()->json(['message' => 'Gamificação desativada.']);

@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
+use App\Mail\NotificacaoTexto;
 use Carbon\Carbon;
 use Inertia\Inertia;
 use Exception;
@@ -168,6 +169,7 @@ class AdminFinanceiroController extends Controller
     {
         $comandosPermitidos = [
             'repassar-semanal' => 'financeiro:repassar-semanal',
+            'sincronizar-carteira' => 'carteira:sincronizar',
             'estornos-vencidos' => 'estornos:processar-vencidos',
             'processar-diario' => 'financeiro:processar-diario',
         ];
@@ -206,38 +208,38 @@ class AdminFinanceiroController extends Controller
         }
 
         try {
-            DB::beginTransaction();
+            // Sem transação externa: a tentativa (mesmo falha) precisa ficar registrada em transferencias_carteira.
+            $transferencia = app(\App\Services\Carteira\CarteiraService::class)
+                ->repasseSemanal((int) $provider->id, (float) $valorTransferencia, 'admin');
 
-            $enviado = $this->pagamentoService->repassarSaldoPixProvedor($provider->id, $valorTransferencia);
-
-            if ($enviado) {
+            if ($transferencia && $transferencia->status !== 'falhou') {
                 DB::table('extrato_providers')->insert([
                     'provider_id'      => $provider->id,
-                    'usuario_id'       => null, 
+                    'usuario_id'       => null,
                     'origem_type'      => 'App\Models\Provider',
                     'origem_id'        => $provider->id,
-                    'tipo'             => 'repasse', 
+                    'tipo'             => 'repasse',
                     'valor_bruto'      => $valorTransferencia,
                     'taxa_plataforma'  => 0,
-                    'valor_liquido'    => $valorTransferencia * -1, 
+                    'valor_liquido'    => $valorTransferencia * -1,
                     'descricao'        => 'Repasse manual enviado pelo Administrador via PIX',
                     'status'           => 'liberado',
-                    'codigo_transacao' => 'MANUAL_TRANSFER_'.uniqid(),
+                    'codigo_transacao' => 'MANUAL_TRANSFER_' . $transferencia->id,
                     'metodo_pagamento' => 'pix',
-                    'created_at'       => now()
+                    'created_at'       => now(),
                 ]);
 
-                DB::commit();
-                return redirect()->back()->with('success', "Repasse de R$ " . number_format($valorTransferencia, 2, ',', '.') . " processado com sucesso!");
+                return redirect()->back()->with('success', "Repasse de R$ " . number_format($valorTransferencia, 2, ',', '.') . " enviado (operação #{$transferencia->id}).");
             }
 
-            DB::rollBack();
-            return redirect()->back()->withErrors(['error' => 'O gateway Asaas rejeitou a transferência.']);
+            $motivo = $transferencia?->erro_mensagem ?: 'Não foi possível enviar o repasse.';
+            return redirect()->back()->withErrors(['error' => $motivo . ($transferencia ? " (operação #{$transferencia->id})" : '')]);
 
+        } catch (\App\Services\Carteira\CarteiraException $e) {
+            return redirect()->back()->withErrors(['error' => $e->getMessage()]);
         } catch (Exception $e) {
-            DB::rollBack();
             Log::error("Erro no repasse manual: " . $e->getMessage());
-            return redirect()->back()->withErrors(['error' => 'Erro interno: ' . $e->getMessage()]);
+            return redirect()->back()->withErrors(['error' => 'Erro interno ao processar o repasse. Veja o log da plataforma.']);
         }
     }
 
@@ -251,9 +253,9 @@ class AdminFinanceiroController extends Controller
 
         try {
             $conteudoMensagem = $request->mensagem;
-            Mail::raw($conteudoMensagem, function ($message) use ($request) {
-                $message->to($request->email_destino)->subject($request->assunto);
-            });
+            // Enviado pela fila (queue) em vez de na hora: a resposta pro admin não
+            // fica presa esperando o SMTP/Brevo responder.
+            Mail::to($request->email_destino)->queue(new NotificacaoTexto($request->assunto, $conteudoMensagem));
 
             return redirect()->back()->with('success', 'E-mail enviado com sucesso!');
         } catch (Exception $e) {

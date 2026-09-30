@@ -14,6 +14,7 @@ class Contrato extends Model
     protected $casts = [
         'assinado' => 'boolean',
         'data_assinatura' => 'datetime',
+        'enviado_em' => 'datetime',
     ];
 
     public function aluguel(): BelongsTo
@@ -21,7 +22,7 @@ class Contrato extends Model
         return $this->belongsTo(Aluguel::class, 'aluguel_id');
     }
 
-    protected $fillable = ['aluguel_id', 'numero_contrato', 'titulo', 'arquivo_pdf', 'hash_documento', 'plataforma_assinatura', 'assinado', 'url_assinatura'];
+    protected $fillable = ['aluguel_id', 'numero_contrato', 'titulo', 'arquivo_pdf', 'arquivo_docx', 'hash_documento', 'plataforma_assinatura', 'assinado', 'url_assinatura', 'enviado_em'];
 
 
 

@@ -10,33 +10,34 @@ import {
   Platform,
   SafeAreaView,
   TextInput,
-  Alert,
   Dimensions,
   KeyboardAvoidingView,
   Switch,
-  Modal
+  Modal,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { alertar } from '../../../services/alertar';
+import GaleriaFotos, { VisualizadorFotos } from '../../../components/client/GaleriaFotos';
 
 const { width } = Dimensions.get('window');
 
 const COLORS = {
-  primary: '#FF5A00',
-  primaryLight: '#FFF0E6',
-  secondary: '#111827',
-  gray: '#6B7280',
-  lightGray: '#F3F4F6',
+  primary: '#FF7A00',
+  primaryLight: '#FFF1E4',
+  secondary: '#282828',
+  gray: '#6A6C72',
+  lightGray: '#F0F0F2',
   cardBg: '#FFFFFF',
-  border: '#E5E7EB',
+  border: '#E6E7E9',
   star: '#F59E0B',
   green: '#22C55E',
   greenLight: '#DCFCE7',
   danger: '#EF4444',
   dangerLight: '#FEE2E2',
   textDark: '#1F2937',
-  textMuted: '#9CA3AF'
+  textMuted: '#A0A2A8'
 };
 
 const DEFAULT_PROFILE = 'https://images.unsplash.com/photo-1560026301-88340cf26b6b?q=80&w=1000&auto=format&fit=crop';
@@ -79,6 +80,8 @@ interface ItemCatalogo {
   recursos_oferecidos?: string | string[];
   comodidades?: string | string[];
   locais_retirada?: string | string[];
+  categoria?: string;
+  permite_entrega?: boolean;
   capacidade_pessoas?: number;
   numero_quartos?: number;
   mobiliado?: boolean;
@@ -109,6 +112,18 @@ export default function CriarReserva() {
 
   // Modal de Detalhes do Serviço/Item
   const [modalItem, setModalItem] = useState<ItemCatalogo | null>(null);
+  const [visualizador, setVisualizador] = useState<{ fotos: string[]; indice: number } | null>(null);
+
+  // Quando o local aluga mais de um tipo de item (ex.: carros e motos juntos), mostra abas por
+  // categoria em vez de uma lista única — só aparece se houver mais de uma categoria de verdade.
+  const [categoriaFiltro, setCategoriaFiltro] = useState('todos');
+  const categoriasDisponiveis = tipo === 'aluguel'
+    ? Array.from(new Set(servicos.map((i) => i.categoria).filter((c): c is string => !!c)))
+    : [];
+  const rotuloCategoria = (c: string) => c.replace(/_/g, ' ').replace(/^./, (m) => m.toUpperCase());
+  const servicosFiltrados = categoriasDisponiveis.length > 1 && categoriaFiltro !== 'todos'
+    ? servicos.filter((i) => i.categoria === categoriaFiltro)
+    : servicos;
 
   const [itensCarrinho, setItensCarrinho] = useState<ItemCarrinho[]>([]);
   const [horariosDisponiveis, setHorariosDisponiveis] = useState<string[]>([]);
@@ -442,24 +457,41 @@ export default function CriarReserva() {
   const descontoPontosVisual = usarPontos && pontosAUsa ? (Number(pontosAUsa) * 0.01) : 0;
   const totalFinalLiquido = Math.max(0, totalCalculado - descontoPontosVisual);
 
+  // Preenche rua, bairro e cidade sozinho quando o CEP tem 8 dígitos (consulta direto do app).
+  const buscarCepEntrega = async (valor: string) => {
+    const digitos = valor.replace(/\D/g, '').slice(0, 8);
+    setCepEntrega(digitos.length > 5 ? `${digitos.slice(0, 5)}-${digitos.slice(5)}` : digitos);
+    if (digitos.length !== 8) return;
+    try {
+      const res = await fetch(`https://viacep.com.br/ws/${digitos}/json/`);
+      const json = await res.json();
+      if (json.erro) return;
+      setRuaEntrega((atual) => json.logradouro || atual);
+      setBairroEntrega((atual) => json.bairro || atual);
+      setCidadeEntrega((atual) => json.localidade || atual);
+    } catch {
+      // segue com o preenchimento manual
+    }
+  };
+
   const handleFinalizar = async () => {
     if (!aceitouTermos) {
-      Alert.alert('Atenção', 'Você precisa aceitar os termos de uso para continuar.');
+      alertar('Atenção', 'Você precisa aceitar os termos de uso para continuar.');
       return;
     }
 
     if (itensCarrinho.length === 0) {
-      Alert.alert('Atenção', 'Adicione pelo menos um item ao pedido.');
+      alertar('Atenção', 'Adicione pelo menos um item ao pedido.');
       return;
     }
 
     if (!dataRetirada || !horarioRetirada) {
-      Alert.alert('Atenção', 'Preencha a data e horário corretamente.');
+      alertar('Atenção', 'Preencha a data e horário corretamente.');
       return;
     }
 
     if (usarPontos && pontosAUsa && Number(pontosAUsa) > saldoPontos) {
-      Alert.alert('Erro', 'Você não tem essa quantidade de pontos.');
+      alertar('Erro', 'Você não tem essa quantidade de pontos.');
       return;
     }
 
@@ -499,8 +531,8 @@ export default function CriarReserva() {
         usar_pontos: usarPontos,
         pontos_a_usar: usarPontos ? Number(pontosAUsa) : null,
         itens: itensFormatados,
-        tipo_entrega: tipoEntrega,
-        ...(tipoEntrega === 'endereco' && {
+        tipo_entrega: temItemComEntrega ? tipoEntrega : 'estabelecimento',
+        ...(temItemComEntrega && tipoEntrega === 'endereco' && {
           cep_entrega: cepEntrega,
           rua_entrega: ruaEntrega,
           numero_entrega: numeroEntrega,
@@ -540,13 +572,13 @@ export default function CriarReserva() {
           });
         }
       } else if (data.horario_ocupado) {
-        Alert.alert('Vaga preenchida', data.error || 'Este horário já foi reservado por outro cliente. Escolha outro horário.');
+        alertar('Vaga preenchida', data.error || 'Este horário já foi reservado por outro cliente. Escolha outro horário.');
       } else {
-        Alert.alert('Erro', data.error || 'Falha ao processar reserva.');
+        alertar('Erro', data.error || 'Falha ao processar reserva.');
       }
     } catch (e) {
       console.error('Erro Finalizar', e);
-      Alert.alert('Erro', 'Falha na comunicação com o servidor.');
+      alertar('Erro', 'Falha na comunicação com o servidor.');
     } finally {
       setIsProcessing(false);
     }
@@ -574,6 +606,10 @@ export default function CriarReserva() {
   }
 
   const temAluguelNoCarrinho = itensCarrinho.some(i => i.tipo === 'aluguel');
+  // Retirada/entrega só existe para bens móveis (veículos, equipamentos…); serviços e
+  // hospedagens/espaços são usados no próprio local.
+  const temItemComEntrega = itensCarrinho.some(i => i.tipo === 'aluguel' && i.permite_entrega);
+  const numSecao = (n: number) => (temItemComEntrega || n < 3 ? n : n - 1);
   const itemPrincipal = itensCarrinho.length > 0 ? itensCarrinho[0] : servicos[0];
 
   let recursosStr = '';
@@ -597,7 +633,7 @@ export default function CriarReserva() {
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
             <Ionicons name="chevron-back" size={24} color={COLORS.secondary} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Criar Reserva</Text>
+          <View style={{ flex: 1 }} />
           <View style={{ width: 36 }} />
         </View>
         <Text style={styles.headerSubtitle}>Preencha os detalhes para agendar ou alugar.</Text>
@@ -606,7 +642,7 @@ export default function CriarReserva() {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 190, paddingHorizontal: 16 }}>
 
-          {/* 👉 LINK/CARD PERFIL DO ESTABELECIMENTO */}
+          {/* LINK/CARD PERFIL DO ESTABELECIMENTO */}
           <TouchableOpacity
             style={styles.estCard}
             activeOpacity={0.85}
@@ -625,8 +661,14 @@ export default function CriarReserva() {
 
                 <View style={styles.ratingRow}>
                   <Ionicons name="star" size={14} color={COLORS.star} />
-                  <Text style={styles.ratingScore}>{estabelecimento.avaliacao_media || '4.8'}</Text>
-                  <Text style={styles.ratingCount}>({estabelecimento.total_avaliacoes || 0} avaliações)</Text>
+                  {estabelecimento.total_avaliacoes ? (
+                    <>
+                      <Text style={styles.ratingScore}>{estabelecimento.avaliacao_media}</Text>
+                      <Text style={styles.ratingCount}>({estabelecimento.total_avaliacoes} avaliações)</Text>
+                    </>
+                  ) : (
+                    <Text style={styles.ratingCount}>Novo por aqui, ainda sem avaliações</Text>
+                  )}
                 </View>
 
                 <View style={styles.priceRow}>
@@ -640,23 +682,28 @@ export default function CriarReserva() {
             </View>
           </TouchableOpacity>
 
-          {/* 👉 HORÁRIOS E DIAS DE FUNCIONAMENTO */}
+          {/* HORÁRIOS E DIAS DE FUNCIONAMENTO */}
           <View style={styles.operationInfoBox}>
             <View style={styles.operationRow}>
               <Ionicons name="calendar-outline" size={16} color={COLORS.primary} />
               <Text style={styles.operationText}>
-                Funcionamento: <Text style={styles.boldText}>{estabelecimento.dias_funcionamento || 'Segunda a Sábado'}</Text>
+                Funcionamento: <Text style={styles.boldText}>{estabelecimento.dias_funcionamento || 'Não informado'}</Text>
               </Text>
             </View>
             <View style={[styles.operationRow, { marginTop: 6 }]}>
               <Ionicons name="time-outline" size={16} color={COLORS.primary} />
               <Text style={styles.operationText}>
-                Horário: <Text style={styles.boldText}>{estabelecimento.horario_abertura || '08:00'} às {estabelecimento.horario_fechamento || '18:00'}</Text>
+                Horário:{' '}
+                <Text style={styles.boldText}>
+                  {estabelecimento.horario_abertura && estabelecimento.horario_fechamento
+                    ? `${estabelecimento.horario_abertura} às ${estabelecimento.horario_fechamento}`
+                    : 'Não informado'}
+                </Text>
               </Text>
             </View>
           </View>
 
-          {/* 👉 TAGS / COMODIDADES DO ESTABELECIMENTO */}
+          {/* TAGS / COMODIDADES DO ESTABELECIMENTO */}
           <View style={styles.tagsContainer}>
             {tipo === 'aluguel' ? (
               <View style={styles.tagsGrid}>
@@ -689,7 +736,7 @@ export default function CriarReserva() {
                   </View>
                 </View>
               ) : (
-                <Text style={styles.tagsSubText}>✓ Atendimento personalizado • Garantia de reserva</Text>
+                <Text style={styles.tagsSubText}>Atendimento personalizado • Garantia de reserva</Text>
               )
             )}
           </View>
@@ -796,7 +843,8 @@ export default function CriarReserva() {
             )}
           </View>
 
-          {/* SEÇÃO 2: LOCAL DE RETIRADA / DEVOLUÇÃO */}
+          {/* SEÇÃO 2: LOCAL DE RETIRADA / DEVOLUÇÃO (só para itens/veículos) */}
+          {temItemComEntrega && (<>
           <Text style={styles.sectionTitle}>2. Local de retirada / devolução</Text>
           <View style={styles.optionsBox}>
             <TouchableOpacity
@@ -834,7 +882,7 @@ export default function CriarReserva() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.fieldLabel}>CEP</Text>
                     <View style={styles.inputBox}>
-                      <TextInput style={styles.textInput} placeholder="00000-000" placeholderTextColor={COLORS.textMuted} value={cepEntrega} onChangeText={setCepEntrega} keyboardType="numeric" />
+                      <TextInput style={styles.textInput} placeholder="00000-000" placeholderTextColor={COLORS.textMuted} value={cepEntrega} onChangeText={buscarCepEntrega} keyboardType="numeric" maxLength={9} />
                     </View>
                   </View>
                   <View style={{ flex: 1 }}>
@@ -867,11 +915,26 @@ export default function CriarReserva() {
               </View>
             )}
           </View>
+          </>)}
 
           {/* SEÇÃO 3: CATÁLOGO DE SERVIÇOS / ITENS */}
           <Text style={styles.sectionTitle}>
-            {tipo === 'aluguel' ? '3. Selecione os itens para aluguel' : '3. Selecione os serviços'}
+            {tipo === 'aluguel' ? `${numSecao(3)}. Selecione os itens para aluguel` : `${numSecao(3)}. Selecione os serviços`}
           </Text>
+
+          {categoriasDisponiveis.length > 1 && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoriaAbas}>
+              {['todos', ...categoriasDisponiveis].map((c) => {
+                const on = categoriaFiltro === c;
+                return (
+                  <TouchableOpacity key={c} style={[styles.categoriaAba, on && styles.categoriaAbaOn]} onPress={() => setCategoriaFiltro(c)} activeOpacity={0.8}>
+                    <Text style={[styles.categoriaAbaTxt, on && styles.categoriaAbaTxtOn]}>{c === 'todos' ? 'Todos' : rotuloCategoria(c)}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          )}
+
           <View style={styles.catalogContainer}>
             {servicos.length === 0 ? (
               <View style={styles.emptyCatalogBox}>
@@ -879,7 +942,7 @@ export default function CriarReserva() {
                 <Text style={styles.emptyCatalogText}>Nenhum item disponível no catálogo momento.</Text>
               </View>
             ) : (
-              servicos.map((item) => {
+              servicosFiltrados.map((item) => {
                 const qtd = getItemQuantidade(item.id, tipo);
                 const precoEfetivo = obterPrecoEfetivo(item);
                 const precoOriginal = obterPrecoOriginal(item);
@@ -889,7 +952,10 @@ export default function CriarReserva() {
                   <View key={item.id} style={styles.itemCard}>
                     <TouchableOpacity
                       style={styles.itemCardContent}
-                      onPress={() => setModalItem(item)}
+                      onPress={() => router.push({
+                        pathname: '/src/screens/ExplorarDetalhes',
+                        params: { id: String(item.id), tipo: tipo === 'aluguel' ? 'reservas' : undefined },
+                      })}
                       activeOpacity={0.8}
                     >
                       <Image
@@ -956,10 +1022,12 @@ export default function CriarReserva() {
                   return (
                     <View key={`produto-${item.id}`} style={styles.itemCard}>
                       <View style={styles.itemCardContent}>
-                        <Image
-                          source={{ uri: item.foto || DEFAULT_PROFILE }}
-                          style={styles.itemImage}
-                        />
+                        <TouchableOpacity activeOpacity={0.85} onPress={() => item.foto && setVisualizador({ fotos: [item.foto], indice: 0 })} accessibilityLabel="Ver foto em tela cheia">
+                          <Image
+                            source={{ uri: item.foto || DEFAULT_PROFILE }}
+                            style={styles.itemImage}
+                          />
+                        </TouchableOpacity>
                         <View style={styles.itemInfo}>
                           <Text style={styles.itemName} numberOfLines={1}>{item.nome}</Text>
                           {item.descricao ? (
@@ -1007,7 +1075,7 @@ export default function CriarReserva() {
           )}
 
           {/* SEÇÃO 4: SEUS DADOS */}
-          <Text style={styles.sectionTitle}>4. Seus Dados</Text>
+          <Text style={styles.sectionTitle}>{numSecao(4)}. Seus Dados</Text>
           <View style={styles.formCard}>
             <Text style={styles.fieldLabel}>Nome Completo</Text>
             <View style={styles.inputBox}>
@@ -1081,7 +1149,7 @@ export default function CriarReserva() {
           {/* SEÇÃO 5: PROGRAMA DE PONTOS */}
           {saldoPontos > 0 && (
             <>
-              <Text style={styles.sectionTitle}>5. Programa de Pontos</Text>
+              <Text style={styles.sectionTitle}>{numSecao(5)}. Programa de Pontos</Text>
               <View style={styles.pointsCard}>
                 <View style={styles.pointsHeader}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
@@ -1143,6 +1211,7 @@ export default function CriarReserva() {
       </KeyboardAvoidingView>
 
       {/* MODAL DE DETALHES DO ITEM */}
+      <VisualizadorFotos fotos={visualizador?.fotos || []} indice={visualizador?.indice || 0} visivel={!!visualizador} aoFechar={() => setVisualizador(null)} />
       <Modal
         visible={!!modalItem}
         animationType="slide"
@@ -1157,9 +1226,11 @@ export default function CriarReserva() {
 
             {modalItem && (
               <ScrollView showsVerticalScrollIndicator={false}>
-                <Image
-                  source={{ uri: modalItem.foto_principal || modalItem.foto || DEFAULT_PROFILE }}
-                  style={styles.modalImage}
+                <GaleriaFotos
+                  fotos={modalItem.fotos || [modalItem.foto_principal || modalItem.foto || DEFAULT_PROFILE]}
+                  altura={230}
+                  raio={18}
+                  fallback={modalItem.foto_principal || modalItem.foto || DEFAULT_PROFILE}
                 />
                 <Text style={styles.modalTitle}>{modalItem.nome}</Text>
                 <Text style={styles.modalPrice}>
@@ -1232,14 +1303,14 @@ export default function CriarReserva() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB'
+    backgroundColor: '#F5F5F5'
   },
   center: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 24,
-    backgroundColor: '#F9FAFB'
+    backgroundColor: '#F5F5F5'
   },
   loadingText: {
     marginTop: 12,
@@ -1298,11 +1369,10 @@ const styles = StyleSheet.create({
   },
   estCard: {
     backgroundColor: COLORS.cardBg,
-    borderRadius: 12,
+    borderRadius: 20,
     padding: 12,
     marginTop: 16,
-    borderWidth: 1,
-    borderColor: COLORS.border
+    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3,
   },
   estCardHeader: {
     flexDirection: 'row',
@@ -1311,7 +1381,7 @@ const styles = StyleSheet.create({
   estImage: {
     width: 68,
     height: 68,
-    borderRadius: 10,
+    borderRadius: 14,
     backgroundColor: COLORS.lightGray
   },
   estInfo: {
@@ -1366,11 +1436,10 @@ const styles = StyleSheet.create({
   },
   operationInfoBox: {
     backgroundColor: COLORS.cardBg,
-    borderRadius: 10,
+    borderRadius: 20,
     padding: 12,
     marginTop: 12,
-    borderWidth: 1,
-    borderColor: COLORS.border
+    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3,
   },
   operationRow: {
     flexDirection: 'row',
@@ -1414,18 +1483,17 @@ const styles = StyleSheet.create({
     marginTop: 4
   },
   sectionTitle: {
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 17,
+    fontWeight: '800',
     color: COLORS.secondary,
     marginTop: 20,
     marginBottom: 10
   },
   datePickerBox: {
     backgroundColor: COLORS.cardBg,
-    borderRadius: 12,
+    borderRadius: 20,
     padding: 14,
-    borderWidth: 1,
-    borderColor: COLORS.border
+    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3,
   },
   datePickerRow: {
     flexDirection: 'row',
@@ -1495,10 +1563,9 @@ const styles = StyleSheet.create({
   },
   optionsBox: {
     backgroundColor: COLORS.cardBg,
-    borderRadius: 12,
+    borderRadius: 20,
     padding: 14,
-    borderWidth: 1,
-    borderColor: COLORS.border
+    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3,
   },
   optionRow: {
     flexDirection: 'row',
@@ -1566,16 +1633,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: COLORS.secondary
   },
+  categoriaAbas: { gap: 8, paddingBottom: 12 },
+  categoriaAba: { paddingHorizontal: 16, paddingVertical: 9, borderRadius: 18, backgroundColor: COLORS.lightGray },
+  categoriaAbaOn: { backgroundColor: COLORS.primary },
+  categoriaAbaTxt: { fontSize: 13, fontWeight: '700', color: COLORS.gray },
+  categoriaAbaTxtOn: { color: '#fff' },
   catalogContainer: {
     gap: 10
   },
   emptyCatalogBox: {
     backgroundColor: COLORS.cardBg,
-    borderRadius: 12,
+    borderRadius: 20,
     padding: 20,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.border
+    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3,
   },
   emptyCatalogText: {
     fontSize: 13,
@@ -1586,10 +1657,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.cardBg,
-    borderRadius: 12,
+    borderRadius: 20,
     padding: 10,
-    borderWidth: 1,
-    borderColor: COLORS.border
+    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3,
   },
   itemCardContent: {
     flex: 1,
@@ -1662,17 +1732,15 @@ const styles = StyleSheet.create({
   },
   formCard: {
     backgroundColor: COLORS.cardBg,
-    borderRadius: 12,
+    borderRadius: 20,
     padding: 14,
-    borderWidth: 1,
-    borderColor: COLORS.border
+    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3,
   },
   pointsCard: {
     backgroundColor: COLORS.cardBg,
-    borderRadius: 12,
+    borderRadius: 20,
     padding: 14,
-    borderWidth: 1,
-    borderColor: COLORS.border
+    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3,
   },
   pointsHeader: {
     flexDirection: 'row',
@@ -1757,7 +1825,7 @@ const styles = StyleSheet.create({
   modalImage: {
     width: '100%',
     height: 180,
-    borderRadius: 12,
+    borderRadius: 18,
     marginBottom: 14,
     backgroundColor: COLORS.lightGray
   },
@@ -1794,7 +1862,7 @@ const styles = StyleSheet.create({
   },
   modalAddButton: {
     backgroundColor: COLORS.green,
-    borderRadius: 10,
+    borderRadius: 24,
     height: 48,
     justifyContent: 'center',
     alignItems: 'center',
@@ -1847,7 +1915,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.green,
     paddingHorizontal: 20,
     height: 48,
-    borderRadius: 10,
+    borderRadius: 24,
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: 12

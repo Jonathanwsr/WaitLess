@@ -1,30 +1,34 @@
 import React from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ScrollView, 
-  TouchableOpacity, 
-  SafeAreaView, 
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  SafeAreaView,
   Platform,
   Linking,
-  Alert
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import * as WebBrowser from 'expo-web-browser';
+import { alertar } from '../../../services/alertar';
+
+const ENV_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api/mobile';
+const SITE_URL = ENV_URL.replace(/\/api\/mobile\/?$/, '').replace(/\/+$/, '');
 
 // Cores extraídas do design
 const COLORS = {
-  primary: '#FF5A00', // Laranja Lokyva
-  primaryLight: '#FFF5F0',
+  primary: '#FF7A00', // Laranja Lokyva
+  primaryLight: '#FFF1E4',
   primaryOutline: '#FFEAE0',
   whatsapp: '#00BFA5', // Verde WhatsApp
   whatsappLight: '#E6F9F5',
   background: '#FFFFFF',
   textDark: '#1F2937',
-  textGray: '#6B7280',
-  textLight: '#9CA3AF',
-  border: '#F3F4F6',
+  textGray: '#6A6C72',
+  textLight: '#A0A2A8',
+  border: '#E6E7E9',
   white: '#FFFFFF',
 };
 
@@ -34,21 +38,24 @@ export default function TelaSuporte() {
   // Funções de ação (Deep Links)
   const handleEmail = () => {
     Linking.openURL('mailto:suporte@lokyva.com').catch(() => {
-      Alert.alert('Erro', 'Não foi possível abrir o app de e-mail.');
+      alertar('Erro', 'Não foi possível abrir o app de e-mail.');
     });
   };
 
   const handleWhatsApp = () => {
     Linking.openURL('whatsapp://send?phone=5511999999999').catch(() => {
-      Alert.alert('Erro', 'O WhatsApp não está instalado no seu dispositivo.');
+      alertar('Erro', 'O WhatsApp não está instalado no seu dispositivo.');
     });
   };
 
   const handleTelefone = () => {
     Linking.openURL('tel:08000000000').catch(() => {
-      Alert.alert('Erro', 'Não foi possível abrir o discador.');
+      alertar('Erro', 'Não foi possível abrir o discador.');
     });
   };
+
+  const abrirPrivacidade = () => WebBrowser.openBrowserAsync(`${SITE_URL}/privacidade`);
+  const abrirTermos = () => WebBrowser.openBrowserAsync(`${SITE_URL}/termos`);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -57,8 +64,9 @@ export default function TelaSuporte() {
         <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           <Feather name="arrow-left" size={24} color={COLORS.textDark} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Suporte</Text>
-        <View style={{ width: 24 }} /> {/* Espaçador invisível para centralizar o título */}
+        <View style={{ flex: 1 }} />
+        {/* Espaçador invisível para centralizar o título */}
+        <View style={{ width: 24 }} />
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
@@ -159,7 +167,7 @@ export default function TelaSuporte() {
             <Text style={styles.contactLabel}>Perguntas{'\n'}Frequentes</Text>
             <Text style={styles.faqSub}>Encontre respostas{'\n'}para as dúvidas{'\n'}mais comuns.</Text>
           </View>
-          <TouchableOpacity style={styles.actionButtonOutline}>
+          <TouchableOpacity style={styles.actionButtonOutline} onPress={() => router.push('/src/screens/CentralAjuda' as never)}>
             <Text style={styles.actionButtonOutlineText}>Abrir Central de Ajuda</Text>
             <Feather name="chevron-right" size={14} color={COLORS.primary} style={{ marginLeft: 4 }} />
           </TouchableOpacity>
@@ -205,7 +213,15 @@ export default function TelaSuporte() {
             </View>
             <Text style={styles.versionText}>Lokyva v1.0.0</Text>
           </View>
-          <Text style={styles.footerLinks}>Política de Privacidade  |  Termos de Uso</Text>
+          <View style={styles.footerLinksRow}>
+            <TouchableOpacity onPress={abrirPrivacidade}>
+              <Text style={styles.footerLinks}>Política de Privacidade</Text>
+            </TouchableOpacity>
+            <Text style={styles.footerLinks}>  |  </Text>
+            <TouchableOpacity onPress={abrirTermos}>
+              <Text style={styles.footerLinks}>Termos de Uso</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
       </ScrollView>
@@ -353,5 +369,6 @@ const styles = StyleSheet.create({
   miniLogo: { width: 20, height: 20, borderRadius: 4, backgroundColor: COLORS.primary, alignItems: 'center', justifyContent: 'center', marginRight: 8 },
   miniLogoText: { color: COLORS.white, fontSize: 12, fontWeight: 'bold' },
   versionText: { fontSize: 11, color: COLORS.textGray },
+  footerLinksRow: { flexDirection: 'row', alignItems: 'center' },
   footerLinks: { fontSize: 11, color: COLORS.textGray }
 });

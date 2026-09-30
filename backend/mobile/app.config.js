@@ -38,6 +38,10 @@ module.exports = {
     },
     plugins: [
       'expo-router',
+      'expo-font',
+      'expo-image',
+      'expo-sharing',
+      'expo-status-bar',
       [
         'expo-splash-screen',
         {

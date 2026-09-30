@@ -9,6 +9,21 @@ use Illuminate\Http\Request;
 class DescontoController extends Controller
 {
     /**
+     * Confere se o usuário logado administra o estabelecimento informado.
+     * Sem isso, qualquer conta autenticada podia criar/editar/desativar
+     * descontos e recompensas de QUALQUER estabelecimento — inclusive de
+     * concorrentes — só sabendo/adivinhando o id.
+     */
+    private function garantirQueGerencia(Request $request, int $estabelecimentoId): void
+    {
+        $gerencia = $request->user()->estabelecimentos()
+            ->where('estabelecimentos.id', $estabelecimentoId)
+            ->exists();
+
+        abort_unless($gerencia, 403, 'Você não tem permissão para gerenciar descontos deste estabelecimento.');
+    }
+
+    /**
      * GET /api/descontos
      */
     public function index(Request $request)
@@ -44,6 +59,8 @@ class DescontoController extends Controller
             'ativo' => 'boolean'
         ]);
 
+        $this->garantirQueGerencia($request, (int) $validated['estabelecimento_id']);
+
         $desconto = Desconto::create($validated);
 
         return response()->json([
@@ -60,6 +77,7 @@ class DescontoController extends Controller
     public function update(Request $request, string $id)
     {
         $desconto = Desconto::findOrFail($id);
+        $this->garantirQueGerencia($request, (int) $desconto->estabelecimento_id);
 
         $validated = $request->validate([
             'titulo' => 'sometimes|string|max:255',
@@ -77,9 +95,11 @@ class DescontoController extends Controller
         return response()->json(['message' => 'Desconto atualizado', 'data' => $desconto]);
     }
 
-    public function destroy(string $id)
+    public function destroy(Request $request, string $id)
     {
         $desconto = Desconto::findOrFail($id);
+        $this->garantirQueGerencia($request, (int) $desconto->estabelecimento_id);
+
         $desconto->update(['ativo' => false]);
 
         return response()->json(['message' => 'Desconto inativado.']);

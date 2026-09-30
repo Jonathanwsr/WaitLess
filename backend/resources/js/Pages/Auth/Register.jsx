@@ -8,6 +8,8 @@ export default function Register() {
         email: '',
         password: '',
         password_confirmation: '',
+        // Código de indicação de um amigo (vem do link ?ref=CODIGO); opcional.
+        codigo_indicacao: (new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '').get('ref') || '').toUpperCase().replace(/[^A-Z0-9]/g, ''),
         papel: '',
         person_type: 'FISICA',
         cpf_cnpj: '',
@@ -23,9 +25,10 @@ export default function Register() {
         // Novos campos
         onde_estudei: '',
         onde_moro: '',
-        idiomas: '', 
+        idiomas: '',
         profissao: '',
         sobre_mim: '',
+        termo_compromisso_aceito: false,
     });
 
     const [showPassword, setShowPassword] = useState(false);
@@ -282,6 +285,18 @@ export default function Register() {
                                         </div>
                                         <InputError message={errors.password_confirmation} className="text-xs" />
                                     </div>
+                                    <div className="space-y-1 md:col-span-2">
+                                        <label className="text-[10px] font-bold text-gray-500 uppercase">Código de indicação (opcional)</label>
+                                        <input
+                                            type="text"
+                                            value={data.codigo_indicacao}
+                                            maxLength={12}
+                                            className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm uppercase tracking-widest focus:ring-1"
+                                            placeholder="Tem um código de um amigo? Informe aqui e ganhem pontos"
+                                            onChange={(e) => setData('codigo_indicacao', e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+                                        />
+                                        <InputError message={errors.codigo_indicacao} className="text-xs" />
+                                    </div>
                                 </div>
                             </div>
 
@@ -510,17 +525,40 @@ export default function Register() {
                                 </div>
                             </div>
 
+                            {/* TERMO DE COMPROMISSO */}
+                            <div className="pt-2">
+                                <label className="flex items-start gap-3 cursor-pointer select-none">
+                                    <input
+                                        type="checkbox"
+                                        checked={data.termo_compromisso_aceito}
+                                        onChange={(e) => setData('termo_compromisso_aceito', e.target.checked)}
+                                        className="mt-0.5 w-4 h-4 rounded border-gray-300 text-[#F26522] focus:ring-[#F26522]"
+                                    />
+                                    <span className="text-sm text-gray-600">
+                                        Li e aceito o{' '}
+                                        <Link href={route('legal.termos')} target="_blank" className="font-bold text-[#F26522] hover:underline">
+                                            Termo de Compromisso
+                                        </Link>{' '}
+                                        da Lokyva.
+                                    </span>
+                                </label>
+                                <InputError message={errors.termo_compromisso_aceito} className="text-xs mt-1" />
+                            </div>
+
                             {/* Botão de Envio */}
                             <div className="pt-4">
                                 <button
                                     type="submit"
                                     className="w-full flex justify-center py-4 px-4 border border-transparent rounded-xl shadow-sm text-base font-bold text-white bg-[#111111] hover:bg-[#222222] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-900 transition-colors disabled:opacity-70 cursor-pointer"
-                                    disabled={processing || selectedIdiomas.length === 0}
+                                    disabled={processing || selectedIdiomas.length === 0 || !data.termo_compromisso_aceito}
                                 >
                                     {processing ? 'Verifique os erros ou processando...' : 'Criar minha conta agora'}
                                 </button>
                                 {selectedIdiomas.length === 0 && !processing && (
                                     <p className="text-center text-xs text-red-500 mt-2 font-medium">Selecione pelo menos um idioma para continuar.</p>
+                                )}
+                                {selectedIdiomas.length > 0 && !data.termo_compromisso_aceito && !processing && (
+                                    <p className="text-center text-xs text-red-500 mt-2 font-medium">Você precisa aceitar o Termo de Compromisso para continuar.</p>
                                 )}
                             </div>
                         </form>

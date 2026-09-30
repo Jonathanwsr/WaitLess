@@ -29,7 +29,7 @@ import {
   ArrowLeftIcon
 } from '@heroicons/react/24/solid';
 
-export default function ProdutoManager({ auth, estabelecimentoId, estabelecimentos = [], listaServicos = [] }) {
+export default function ProdutoManager({ auth, estabelecimentoId, estabelecimentos = [], listaServicos = [], listaReservas = [] }) {
   const [produtos, setProdutos] = useState([]);
   const [servicosDisponiveis, setServicosDisponiveis] = useState(listaServicos);
   
@@ -66,6 +66,7 @@ export default function ProdutoManager({ auth, estabelecimentoId, estabeleciment
     atrelado_reservas: false,
     somente_premium: false,
     servico_id: '',
+    aluguel_id: '',
     fotos_existentes: []
   });
 
@@ -196,6 +197,7 @@ export default function ProdutoManager({ auth, estabelecimentoId, estabeleciment
       atrelado_reservas: produto.atrelado_reservas == 1 || produto.atrelado_reservas === true,
       somente_premium: produto.somente_premium == 1 || produto.somente_premium === true,
       servico_id: produto.servico_id || '',
+      aluguel_id: produto.aluguel_id || '',
       fotos_existentes: parsedFotos
     });
 
@@ -209,7 +211,7 @@ export default function ProdutoManager({ auth, estabelecimentoId, estabeleciment
     setFormData({
       id: null, nome: '', descricao: '', cor: '', tamanho: '', categoria: '', sub_categoria: '',
       valor_normal: '', valor_promocional: '', estoque_disponivel: 0,
-      estabelecimento_id: defaultEstabelecimentoId, promocao: false, atrelado_reservas: false, somente_premium: false, servico_id: '', fotos_existentes: []
+      estabelecimento_id: defaultEstabelecimentoId, promocao: false, atrelado_reservas: false, somente_premium: false, servico_id: '', aluguel_id: '', fotos_existentes: []
     });
   };
 
@@ -364,8 +366,8 @@ export default function ProdutoManager({ auth, estabelecimentoId, estabeleciment
           {/* CABEÇALHO DA PÁGINA */}
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4 px-4 sm:px-0">
             <div>
-              <h1 className="text-3xl font-black text-gray-900 tracking-tight">Catálogo da Loja</h1>
-              <p className="text-sm text-gray-500 mt-1">Gerencie os produtos, valores e disponibilidade de estoque.</p>
+              <h1 className="text-3xl font-black text-gray-900 tracking-tight">Crie produtos e vincule a serviços ou a reservas</h1>
+              <p className="text-sm text-gray-500 mt-1">Cadastre produtos, defina valores e estoque, e ofereça-os junto com um serviço ou uma reserva (locação) para vender mais.</p>
             </div>
             {!showForm && (
               <button 
@@ -383,7 +385,7 @@ export default function ProdutoManager({ auth, estabelecimentoId, estabeleciment
               <div className="flex justify-between items-center mb-8">
                 <h3 className="text-2xl font-black text-gray-900 flex items-center gap-3">
                   <TagIcon className="w-8 h-8 text-[#FF5A00]" />
-                  {isEditingProduto ? 'Editar Informações do Produto' : 'Cadastrar Novo Produto'}
+                  {isEditingProduto ? 'Editar produto e vínculos' : 'Criar produto e vincular a serviço ou reserva'}
                 </h3>
                 <button onClick={cancelarEdicaoProduto} className="text-gray-400 hover:text-red-500 transition-colors p-2 bg-gray-50 hover:bg-red-50 rounded-full">
                   <XMarkIcon className="w-6 h-6" />
@@ -647,23 +649,39 @@ export default function ProdutoManager({ auth, estabelecimentoId, estabeleciment
                     </label>
                   </div>
 
-                  {/* Vínculo a Serviço Específico */}
-                  <div className="w-full md:w-1/2 pt-2">
-                    <label className="block text-sm font-bold text-gray-900 mb-2">Vincular a um Serviço Específico</label>
-                    <select
-                      name="servico_id"
-                      className="w-full border-gray-200 rounded-xl p-3.5 text-sm focus:border-[#FF5A00] focus:ring-[#FF5A00] shadow-sm outline-none bg-white"
-                      value={formData.servico_id}
-                      onChange={handleInputChange}
-                    >
-                      <option value="">Nenhum - Venda Avulsa</option>
-                      {servicosDisponiveis && servicosDisponiveis.map(servico => (
-                        <option key={servico.id} value={servico.id}>
-                          {servico.nome}
-                        </option>
-                      ))}
-                    </select>
-                    <p className="text-xs text-gray-500 mt-2 flex items-center gap-1"><InformationCircleIcon className="w-4 h-4" /> Caso selecione um serviço, a venda deste item será atrelada a ele.</p>
+                  {/* Vínculo a Serviço e/ou Reserva */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+                    <div>
+                      <label className="block text-sm font-bold text-gray-900 mb-2">Vincular a um serviço</label>
+                      <select
+                        name="servico_id"
+                        className="w-full border-gray-200 rounded-xl p-3.5 text-sm focus:border-[#FF5A00] focus:ring-[#FF5A00] shadow-sm outline-none bg-white"
+                        value={formData.servico_id}
+                        onChange={handleInputChange}
+                      >
+                        <option value="">Nenhum</option>
+                        {servicosDisponiveis && servicosDisponiveis
+                          .filter((servico) => !servico.estabelecimento_id || String(servico.estabelecimento_id) === String(formData.estabelecimento_id))
+                          .map((servico) => (
+                            <option key={servico.id} value={servico.id}>{servico.nome}</option>
+                          ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-gray-900 mb-2">Vincular a uma reserva (locação)</label>
+                      <select
+                        name="aluguel_id"
+                        className="w-full border-gray-200 rounded-xl p-3.5 text-sm focus:border-[#FF5A00] focus:ring-[#FF5A00] shadow-sm outline-none bg-white"
+                        value={formData.aluguel_id}
+                        onChange={handleInputChange}
+                      >
+                        <option value="">Nenhuma</option>
+                        {listaReservas.map((reserva) => (
+                          <option key={reserva.id} value={reserva.id}>{reserva.nome}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <p className="md:col-span-2 text-xs text-gray-500 flex items-center gap-1"><InformationCircleIcon className="w-4 h-4" /> O produto vinculado aparece como item adicional para o cliente na hora de agendar o serviço ou reservar. Sem vínculo, é uma venda avulsa.</p>
                   </div>
                 </div>
 

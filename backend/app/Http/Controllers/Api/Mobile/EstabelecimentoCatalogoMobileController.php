@@ -99,7 +99,7 @@ class EstabelecimentoCatalogoMobileController extends Controller
     /**
      * 👉 INICIA O PEDIDO/RESERVA E SEGUE PARA O PAGAMENTO
      */
-    public function criarPedidoSacola(Request $request, PagamentoService $pagamentoService)
+    public function criarPedidoSacola(Request $request, PagamentoService $pagamentoService, \App\Services\CupomService $cupomService)
     {
         $request->validate([
             'estabelecimento_id' => 'required|exists:estabelecimentos,id',
@@ -107,26 +107,32 @@ class EstabelecimentoCatalogoMobileController extends Controller
             'data_agendamento'   => 'required|date',
             'hora_agendamento'   => 'required|string',
             'metodo_pagamento'   => 'required|in:pix,cartao,boleto,local',
-            'cupom_id'           => 'nullable|exists:cupons,id'
+            // Trocado de "cupom_id" cru pra "cupom_codigo": o id sozinho não
+            // provava que o usuário realmente resgatou aquele cupom (nem que
+            // ele ainda não tinha sido usado antes) — qualquer pessoa
+            // autenticada podia aplicar o desconto de qualquer cupom de
+            // qualquer estabelecimento, repetidamente.
+            'cupom_codigo'       => 'nullable|string|max:60',
         ]);
 
         try {
             DB::beginTransaction();
 
+            $user = Auth::user();
             $servico = Servico::findOrFail($request->servico_id);
             $valorFinal = $servico->valor;
 
-            // Aplica desconto do cupom se enviado
-            if ($request->filled('cupom_id')) {
-                $cupom = DB::table('cupons')->where('id', $request->cupom_id)->first();
-                if ($cupom) {
-                    if ($cupom->tipo_desconto === 'percentual') {
-                        $valorFinal -= ($valorFinal * ($cupom->valor_desconto / 100));
-                    } else {
-                        $valorFinal -= $cupom->valor_desconto;
-                    }
-                    $valorFinal = max(0, $valorFinal);
+            $cupomAplicado = null;
+            $valorDescontoCupom = 0.0;
+            if ($request->filled('cupom_codigo')) {
+                try {
+                    $cupomAplicado = $cupomService->buscarValidoParaUsuario($request->cupom_codigo, $user, (int) $request->estabelecimento_id);
+                } catch (\Illuminate\Validation\ValidationException $e) {
+                    DB::rollBack();
+                    return response()->json(['error' => collect($e->errors())->collapse()->first() ?? 'Cupom inválido.'], 422);
                 }
+                $valorDescontoCupom = $cupomService->calcularDesconto($cupomAplicado, $valorFinal);
+                $valorFinal = max(0, $valorFinal - $valorDescontoCupom);
             }
 
             $pin = (string) mt_rand(1000, 9999);
@@ -141,8 +147,14 @@ class EstabelecimentoCatalogoMobileController extends Controller
                 'status'             => 'aguardando_pagamento',
                 'status_pagamento'   => 'pendente',
                 'valor_final'        => $valorFinal,
+                'cupom_id'           => $cupomAplicado?->id,
+                'valor_desconto_cupom' => $cupomAplicado ? $valorDescontoCupom : null,
                 'codigo_verificacao' => $pin
             ]);
+
+            if ($cupomAplicado) {
+                $cupomService->marcarUsado($user, $cupomAplicado);
+            }
 
             DB::commit();
 

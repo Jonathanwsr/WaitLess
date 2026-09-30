@@ -3,38 +3,18 @@ import {
   View,
   Text,
   StyleSheet,
-  FlatList,
   TouchableOpacity,
   ActivityIndicator,
-  SafeAreaView,
-  Platform,
-  RefreshControl,
   Modal,
-  Alert,
   TextInput,
 } from 'react-native';
-import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import { useFocusEffect } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const COLORS = {
-  primary: '#FF5A00',
-  primaryLight: '#FFF0E6',
-  secondary: '#111827',
-  gray: '#6B7280',
-  lightGray: '#F9FAFB',
-  white: '#FFFFFF',
-  border: '#E5E7EB',
-  success: '#10B981',
-  successLight: '#ECFDF5',
-  warning: '#F59E0B',
-  warningLight: '#FFFBEB',
-  danger: '#DC2626',
-  dangerLight: '#FEF2F2',
-  indigo: '#4F46E5',
-  indigoLight: '#EEF2FF',
-};
+import { O } from '../../../constants/OwnerTheme';
+import { OwnerScreen, Card, Rotulo, Metrica, Pilula, Vazio } from '../../../components/owner/ui';
+import { alertar } from '../../../services/alertar';
 
 const ENV_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api';
 const cleanBaseUrl = ENV_URL.replace(/\/mobile\/?$/, '').replace(/\/+$/, '');
@@ -65,21 +45,19 @@ const STATUS_LABEL: Record<string, string> = {
   cancelado: 'Cancelado',
 };
 
-function corStatus(status: string) {
-  switch (status) {
-    case 'em_atendimento':
-      return { bg: COLORS.indigoLight, text: COLORS.indigo };
-    case 'finalizado':
-      return { bg: COLORS.successLight, text: COLORS.success };
-    case 'cancelado':
-      return { bg: COLORS.dangerLight, text: COLORS.danger };
-    default:
-      return { bg: COLORS.warningLight, text: COLORS.warning };
-  }
-}
+const TOM_STATUS: Record<string, 'alerta' | 'info' | 'positivo' | 'negativo'> = {
+  pendente: 'alerta',
+  confirmado: 'alerta',
+  em_atendimento: 'info',
+  finalizado: 'positivo',
+  cancelado: 'negativo',
+};
 
 export default function PainelFuncionario() {
   const router = useRouter();
+  // Vindo do menu do sócio, mantém a barra de baixo do sócio (e não a da equipe).
+  const { origem } = useLocalSearchParams();
+  const variante = origem === 'socio' ? 'socio' : 'funcionario';
 
   const [agendamentos, setAgendamentos] = useState<Agendamento[]>([]);
   const [loading, setLoading] = useState(true);
@@ -139,12 +117,12 @@ export default function PainelFuncionario() {
       });
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
-        Alert.alert('Não foi possível continuar', json.error || mensagemErro);
+        alertar('Não foi possível continuar', json.error || mensagemErro);
         return;
       }
       await carregarFila();
     } catch (e) {
-      Alert.alert('Erro de conexão', mensagemErro);
+      alertar('Erro de conexão', mensagemErro);
     } finally {
       setProcessandoId(null);
     }
@@ -173,13 +151,13 @@ export default function PainelFuncionario() {
       });
       const json = await res.json();
       if (!res.ok) {
-        Alert.alert('PIN inválido', json.error || 'Verifique o código com o cliente.');
+        alertar('PIN inválido', json.error || 'Verifique o código com o cliente.');
         return;
       }
       fecharModalFinalizar();
       carregarFila();
     } catch (e) {
-      Alert.alert('Erro', 'Não foi possível finalizar agora. Tente novamente.');
+      alertar('Erro', 'Não foi possível finalizar agora. Tente novamente.');
     } finally {
       setFinalizando(false);
     }
@@ -188,147 +166,163 @@ export default function PainelFuncionario() {
   const emAtendimento = agendamentos.filter((a) => a.status === 'em_atendimento');
   const pendentes = agendamentos.filter((a) => a.status === 'pendente');
   const finalizadosHoje = agendamentos.filter((a) => a.status === 'finalizado');
+  const cancelados = agendamentos.filter((a) => a.status === 'cancelado');
+  const proximo = pendentes[0];
 
-  const renderItem = ({ item }: { item: Agendamento }) => {
-    const cores = corStatus(item.status);
-    const isProcessando = processandoId === item.id;
+  const dataHoje = new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' });
+  const dataHojeCapitalizada = dataHoje.charAt(0).toUpperCase() + dataHoje.slice(1);
 
-    return (
-      <View style={styles.card}>
-        <TouchableOpacity
-          style={styles.cardHeaderRow}
-          activeOpacity={item.usuario?.id ? 0.7 : 1}
-          onPress={() => item.usuario?.id && router.push({ pathname: '/src/funcionario/DetalheCliente', params: { id: item.usuario.id } } as never)}
-        >
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{item.usuario?.name?.charAt(0)?.toUpperCase() || '?'}</Text>
-          </View>
-          <View style={{ flex: 1, marginLeft: 12 }}>
-            <Text style={styles.clienteNome} numberOfLines={1}>{item.usuario?.name || 'Cliente'}</Text>
-            <Text style={styles.servicoNome} numberOfLines={1}>{item.servico?.nome || 'Serviço'}</Text>
-          </View>
-          <View style={styles.horaBox}>
-            <Feather name="clock" size={12} color={COLORS.gray} />
-            <Text style={styles.horaText}>{item.hora_agendamento?.substring(0, 5) || '--:--'}</Text>
-          </View>
-          {item.usuario?.id && <Feather name="chevron-right" size={16} color={COLORS.border} style={{ marginLeft: 4 }} />}
-        </TouchableOpacity>
+  const abrirCliente = (item: Agendamento) => item.usuario?.id && router.push({ pathname: '/src/funcionario/DetalheCliente', params: { id: item.usuario.id } } as never);
 
-        <View style={styles.cardFooterRow}>
-          <View style={[styles.statusBadge, { backgroundColor: cores.bg }]}>
-            <Text style={[styles.statusBadgeText, { color: cores.text }]}>{STATUS_LABEL[item.status] || item.status}</Text>
-          </View>
-
-          {item.status === 'finalizado' && item.finalizado_por?.name && (
-            <View style={styles.finalizadoBadge}>
-              <Ionicons name="checkmark-circle" size={13} color={COLORS.success} />
-              <Text style={styles.finalizadoText} numberOfLines={1}>
-                Finalizado por {item.finalizado_por.name} às {item.hora_finalizacao?.substring(0, 5)}
-              </Text>
-            </View>
-          )}
-
-          {item.status === 'pendente' && (
-            <View style={styles.actionsRow}>
-              <TouchableOpacity style={styles.btnAdiar} onPress={() => adiarCliente(item)} disabled={isProcessando}>
-                <Feather name="clock" size={13} color={COLORS.gray} />
-                <Text style={styles.btnAdiarText}>Adiar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.btnPular} onPress={() => pularCliente(item)} disabled={isProcessando}>
-                <Feather name="skip-forward" size={13} color={COLORS.danger} />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.btnChamar} onPress={() => chamarCliente(item)} disabled={isProcessando}>
-                {isProcessando ? (
-                  <ActivityIndicator size="small" color={COLORS.white} />
-                ) : (
-                  <>
-                    <Ionicons name="megaphone-outline" size={14} color={COLORS.white} />
-                    <Text style={styles.btnChamarText}>Chamar</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {item.status === 'em_atendimento' && (
-            <TouchableOpacity style={styles.btnFinalizar} onPress={() => abrirModalFinalizar(item)}>
-              <Ionicons name="shield-checkmark-outline" size={14} color={COLORS.white} />
-              <Text style={styles.btnChamarText}>Concluir com PIN</Text>
-            </TouchableOpacity>
-          )}
-        </View>
+  /** Cabeçalho do cartão: quem é o cliente, o serviço e o horário. Tocar abre o histórico dele. */
+  const Topo = ({ item }: { item: Agendamento }) => (
+    <TouchableOpacity style={styles.topo} activeOpacity={item.usuario?.id ? 0.7 : 1} onPress={() => abrirCliente(item)}>
+      <View style={styles.avatar}>
+        <Text style={styles.avatarTxt}>{item.usuario?.name?.charAt(0)?.toUpperCase() || '?'}</Text>
       </View>
-    );
-  };
-
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.loadingBox}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-        </View>
-      </SafeAreaView>
-    );
-  }
+      <View style={{ flex: 1 }}>
+        <Text style={styles.cliente} numberOfLines={1}>{item.usuario?.name || 'Cliente'}</Text>
+        <Text style={styles.servico} numberOfLines={1}>{item.servico?.nome || 'Serviço'}</Text>
+      </View>
+      <View style={styles.hora}>
+        <Ionicons name="time-outline" size={14} color={O.accent} />
+        <Text style={styles.horaTxt}>{item.hora_agendamento?.substring(0, 5) || '--:--'}</Text>
+      </View>
+    </TouchableOpacity>
+  );
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>Painel do Funcionário</Text>
-          <Text style={styles.headerSubtitle}>Fila de atendimento de hoje</Text>
-        </View>
-        <View style={{ flexDirection: 'row', gap: 10 }}>
-          <TouchableOpacity style={styles.equipeBtn} onPress={() => router.push('/src/funcionario/AgendaEquipe' as never)}>
-            <Ionicons name="bar-chart-outline" size={18} color={COLORS.secondary} />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.profileBtn} onPress={() => router.push('/src/screens/TelaPerfil' as never)}>
-            <Ionicons name="person" size={18} color={COLORS.white} />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <View style={styles.metricsRow}>
-        <View style={styles.metricBox}>
-          <Text style={styles.metricValue}>{pendentes.length}</Text>
-          <Text style={styles.metricLabel}>Aguardando</Text>
-        </View>
-        <View style={styles.metricBox}>
-          <Text style={[styles.metricValue, { color: COLORS.indigo }]}>{emAtendimento.length}</Text>
-          <Text style={styles.metricLabel}>Em atendimento</Text>
-        </View>
-        <View style={styles.metricBox}>
-          <Text style={[styles.metricValue, { color: COLORS.success }]}>{finalizadosHoje.length}</Text>
-          <Text style={styles.metricLabel}>Finalizados</Text>
-        </View>
-      </View>
-
-      <FlatList
-        data={agendamentos}
-        keyExtractor={(item) => item.id.toString()}
-        contentContainerStyle={styles.listContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} colors={[COLORS.primary]} />}
-        renderItem={renderItem}
-        ListEmptyComponent={
-          <View style={styles.emptyContainer}>
-            <MaterialCommunityIcons name="calendar-check-outline" size={56} color={COLORS.border} />
-            <Text style={styles.emptyTitle}>Nenhum agendamento hoje</Text>
-            <Text style={styles.emptySubtitle}>Assim que houver novos clientes na fila, eles aparecem aqui.</Text>
+    <>
+      <OwnerScreen
+        titulo="Minha fila"
+        subtitulo={dataHojeCapitalizada}
+        semVoltar
+        variante={variante}
+        aba="fila"
+        carregando={loading}
+        atualizando={refreshing}
+        onAtualizar={onRefresh}
+      >
+        {/* RESUMO DO DIA */}
+        <View style={styles.hero}>
+          <Text style={styles.heroData}>{dataHojeCapitalizada}</Text>
+          <View style={styles.heroLinha}>
+            <View style={styles.heroItem}>
+              <Text style={styles.heroNum}>{pendentes.length}</Text>
+              <Text style={styles.heroRotulo}>Aguardando</Text>
+            </View>
+            <View style={styles.heroDivisor} />
+            <View style={styles.heroItem}>
+              <Text style={styles.heroNum}>{emAtendimento.length}</Text>
+              <Text style={styles.heroRotulo}>Em atendimento</Text>
+            </View>
+            <View style={styles.heroDivisor} />
+            <View style={styles.heroItem}>
+              <Text style={styles.heroNum}>{finalizadosHoje.length}</Text>
+              <Text style={styles.heroRotulo}>Finalizados</Text>
+            </View>
           </View>
-        }
-      />
+        </View>
+
+        {agendamentos.length === 0 ? (
+          <Card><Vazio icone="calendar-outline" titulo="Nenhum agendamento hoje" texto="Assim que houver novos clientes na fila, eles aparecem aqui. Puxe a tela para baixo para atualizar." /></Card>
+        ) : (
+          <>
+            {/* EM ATENDIMENTO AGORA */}
+            {emAtendimento.length > 0 && (
+              <>
+                <Rotulo>Em atendimento agora</Rotulo>
+                {emAtendimento.map((item) => (
+                  <View key={item.id} style={[styles.cartao, styles.cartaoAgora]}>
+                    <Topo item={item} />
+                    <TouchableOpacity style={styles.btnConcluir} onPress={() => abrirModalFinalizar(item)} activeOpacity={0.85}>
+                      <Ionicons name="shield-checkmark-outline" size={20} color="#fff" />
+                      <Text style={styles.btnGrandeTxt}>Concluir com PIN do cliente</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </>
+            )}
+
+            {/* FILA DE ESPERA */}
+            {pendentes.length > 0 && (
+              <>
+                <Rotulo>{`Fila de espera (${pendentes.length})`}</Rotulo>
+                {pendentes.map((item, i) => {
+                  const isProcessando = processandoId === item.id;
+                  const ehProximo = item.id === proximo?.id;
+                  return (
+                    <View key={item.id} style={[styles.cartao, ehProximo && styles.cartaoProximo]}>
+                      <View style={styles.posicaoLinha}>
+                        <View style={[styles.posicao, ehProximo && styles.posicaoOn]}>
+                          <Text style={[styles.posicaoTxt, ehProximo && { color: '#fff' }]}>{i + 1}º</Text>
+                        </View>
+                        <Text style={styles.posicaoRotulo}>{ehProximo ? 'Próximo da fila' : 'Aguardando'}</Text>
+                      </View>
+                      <Topo item={item} />
+
+                      <TouchableOpacity style={[styles.btnChamar, isProcessando && { opacity: 0.6 }]} onPress={() => chamarCliente(item)} disabled={isProcessando} activeOpacity={0.85}>
+                        {isProcessando ? (
+                          <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                          <>
+                            <Ionicons name="megaphone-outline" size={20} color="#fff" />
+                            <Text style={styles.btnGrandeTxt}>Chamar cliente</Text>
+                          </>
+                        )}
+                      </TouchableOpacity>
+
+                      <View style={styles.acoes}>
+                        <TouchableOpacity style={styles.btnSec} onPress={() => adiarCliente(item)} disabled={isProcessando} activeOpacity={0.7}>
+                          <Ionicons name="time-outline" size={18} color={O.ink} />
+                          <Text style={styles.btnSecTxt}>Adiar</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.btnPular} onPress={() => pularCliente(item)} disabled={isProcessando} activeOpacity={0.7}>
+                          <Ionicons name="play-skip-forward-outline" size={18} color={O.danger} />
+                          <Text style={styles.btnPularTxt}>Pular</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  );
+                })}
+              </>
+            )}
+
+            {/* FINALIZADOS */}
+            {finalizadosHoje.length > 0 && (
+              <>
+                <Rotulo>{`Finalizados (${finalizadosHoje.length})`}</Rotulo>
+                {finalizadosHoje.map((item) => (
+                  <View key={item.id} style={styles.cartao}>
+                    <Topo item={item} />
+                    <View style={styles.rodape}>
+                      <Pilula texto={STATUS_LABEL[item.status] || item.status} tom={TOM_STATUS[item.status] || 'neutro'} />
+                      {!!item.finalizado_por?.name && (
+                        <Text style={styles.finalizado} numberOfLines={1}>por {item.finalizado_por.name} às {item.hora_finalizacao?.substring(0, 5)}</Text>
+                      )}
+                    </View>
+                  </View>
+                ))}
+              </>
+            )}
+
+            {cancelados.length > 0 && (
+              <Text style={styles.canceladosNota}>{cancelados.length} {cancelados.length === 1 ? 'agendamento cancelado' : 'agendamentos cancelados'} hoje.</Text>
+            )}
+          </>
+        )}
+      </OwnerScreen>
 
       {/* MODAL FINALIZAR COM PIN */}
       <Modal visible={modalFinalizar.open} transparent animationType="fade" onRequestClose={fecharModalFinalizar}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalIconCircle}>
-              <Ionicons name="shield-checkmark" size={26} color={COLORS.primary} />
+        <View style={styles.overlay}>
+          <View style={styles.modal}>
+            <View style={styles.modalIcone}>
+              <Ionicons name="shield-checkmark-outline" size={28} color={O.accent} />
             </View>
-            <Text style={styles.modalTitle}>Finalizar Atendimento</Text>
-            <Text style={styles.modalSubtitle}>
-              Peça ao cliente o código PIN gerado no app dele para confirmar a conclusão.
-            </Text>
+            <Text style={styles.modalTitulo}>Concluir atendimento</Text>
+            {!!modalFinalizar.agendamento?.usuario?.name && <Text style={styles.modalCliente}>{modalFinalizar.agendamento.usuario.name}</Text>}
+            <Text style={styles.modalSub}>Peça ao cliente o código de 4 dígitos que aparece no app dele e digite abaixo para confirmar.</Text>
 
             <TextInput
               value={codigoPin}
@@ -336,131 +330,81 @@ export default function PainelFuncionario() {
               keyboardType="number-pad"
               maxLength={4}
               placeholder="0000"
-              placeholderTextColor={COLORS.gray}
-              style={styles.pinInput}
+              placeholderTextColor={O.faint}
+              style={styles.pin}
             />
 
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={styles.modalBtnCancel} onPress={fecharModalFinalizar} disabled={finalizando}>
-                <Text style={styles.modalBtnCancelText}>Cancelar</Text>
+            <View style={styles.modalAcoes}>
+              <TouchableOpacity style={styles.modalCancelar} onPress={fecharModalFinalizar} disabled={finalizando}>
+                <Text style={styles.modalCancelarTxt}>Cancelar</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalBtnConfirm, codigoPin.length !== 4 && { opacity: 0.5 }]}
+                style={[styles.modalConfirmar, codigoPin.length !== 4 && { opacity: 0.5 }]}
                 onPress={confirmarFinalizacao}
                 disabled={finalizando || codigoPin.length !== 4}
               >
-                {finalizando ? (
-                  <ActivityIndicator color={COLORS.white} size="small" />
-                ) : (
-                  <Text style={styles.modalBtnConfirmText}>Confirmar</Text>
-                )}
+                {finalizando ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.modalConfirmarTxt}>Confirmar</Text>}
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </>
   );
 }
 
+const sombra = { shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 } as const;
+
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: COLORS.white, paddingTop: Platform.OS === 'android' ? 30 : 0 },
-  loadingBox: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  hero: { backgroundColor: O.accent, borderRadius: 26, padding: 20, marginBottom: 8 },
+  heroData: { color: 'rgba(255,255,255,0.9)', fontSize: 13, fontWeight: '600' },
+  heroLinha: { flexDirection: 'row', marginTop: 14, backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 18, paddingVertical: 14 },
+  heroItem: { flex: 1, alignItems: 'center' },
+  heroNum: { color: '#fff', fontSize: 28, fontWeight: '800', letterSpacing: -0.6 },
+  heroRotulo: { color: 'rgba(255,255,255,0.92)', fontSize: 11, fontWeight: '600', marginTop: 2 },
+  heroDivisor: { width: 1, backgroundColor: 'rgba(255,255,255,0.3)' },
 
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-  },
-  headerTitle: { fontSize: 22, fontWeight: '900', color: COLORS.secondary, letterSpacing: -0.5 },
-  headerSubtitle: { fontSize: 12, color: COLORS.gray, marginTop: 2, fontWeight: '500' },
-  profileBtn: {
-    width: 38, height: 38, borderRadius: 19, backgroundColor: COLORS.primary,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  equipeBtn: {
-    width: 38, height: 38, borderRadius: 19, backgroundColor: COLORS.lightGray,
-    borderWidth: 1, borderColor: COLORS.border, alignItems: 'center', justifyContent: 'center',
-  },
+  cartao: { backgroundColor: O.card, borderRadius: 24, padding: 16, marginBottom: 12, borderWidth: 1.5, borderColor: 'transparent', ...sombra },
+  cartaoProximo: { borderColor: O.accent },
+  cartaoAgora: { borderColor: O.success },
+  posicaoLinha: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  posicao: { minWidth: 32, height: 26, borderRadius: 13, paddingHorizontal: 8, backgroundColor: O.soft, alignItems: 'center', justifyContent: 'center' },
+  posicaoOn: { backgroundColor: O.accent },
+  posicaoTxt: { fontSize: 12, fontWeight: '800', color: O.muted },
+  posicaoRotulo: { fontSize: 12, fontWeight: '700', color: O.muted },
 
-  metricsRow: { flexDirection: 'row', paddingHorizontal: 20, gap: 10, marginBottom: 8 },
-  metricBox: {
-    flex: 1, backgroundColor: COLORS.lightGray, borderRadius: 16, paddingVertical: 14,
-    alignItems: 'center', borderWidth: 1, borderColor: COLORS.border,
-  },
-  metricValue: { fontSize: 20, fontWeight: '900', color: COLORS.secondary },
-  metricLabel: { fontSize: 10, color: COLORS.gray, fontWeight: '700', marginTop: 2, textTransform: 'uppercase' },
+  topo: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  avatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#FFF1E4', alignItems: 'center', justifyContent: 'center' },
+  avatarTxt: { fontSize: 20, fontWeight: '800', color: O.accent },
+  cliente: { fontSize: 17, fontWeight: '800', color: O.ink, letterSpacing: -0.2 },
+  servico: { fontSize: 14, color: O.muted, marginTop: 2 },
+  hora: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#FFF1E4', paddingHorizontal: 11, paddingVertical: 8, borderRadius: 14 },
+  horaTxt: { fontSize: 14, fontWeight: '800', color: O.accent },
 
-  listContent: { padding: 20, paddingTop: 12, gap: 12 },
+  rodape: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 12 },
+  finalizado: { flex: 1, fontSize: 12, color: O.muted },
+  canceladosNota: { textAlign: 'center', fontSize: 12, color: O.faint, marginTop: 4, marginBottom: 8 },
 
-  card: {
-    backgroundColor: COLORS.white, borderRadius: 18, padding: 16,
-    borderWidth: 1, borderColor: COLORS.border,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 1,
-  },
-  cardHeaderRow: { flexDirection: 'row', alignItems: 'center' },
-  avatar: {
-    width: 44, height: 44, borderRadius: 14, backgroundColor: COLORS.primaryLight,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  avatarText: { fontSize: 18, fontWeight: '900', color: COLORS.primary },
-  clienteNome: { fontSize: 15, fontWeight: '800', color: COLORS.secondary },
-  servicoNome: { fontSize: 12, color: COLORS.gray, marginTop: 1, fontWeight: '500' },
-  horaBox: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: COLORS.lightGray, paddingHorizontal: 8, paddingVertical: 5, borderRadius: 8 },
-  horaText: { fontSize: 11, fontWeight: '800', color: COLORS.secondary },
+  btnChamar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: O.accent, height: 54, borderRadius: 27, marginTop: 14 },
+  btnConcluir: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: '#12A150', height: 54, borderRadius: 27, marginTop: 14 },
+  btnGrandeTxt: { color: '#fff', fontWeight: '800', fontSize: 16 },
 
-  cardFooterRow: { marginTop: 14, gap: 10 },
-  statusBadge: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
-  statusBadgeText: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.3 },
+  acoes: { flexDirection: 'row', gap: 10, marginTop: 10 },
+  btnSec: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, height: 48, borderRadius: 24, backgroundColor: O.soft },
+  btnSecTxt: { fontSize: 14, fontWeight: '700', color: O.ink },
+  btnPular: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, height: 48, borderRadius: 24, backgroundColor: O.dangerBg },
+  btnPularTxt: { fontSize: 14, fontWeight: '700', color: O.danger },
 
-  finalizadoBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: COLORS.successLight,
-    borderWidth: 1, borderColor: '#D1FAE5', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8,
-  },
-  finalizadoText: { fontSize: 11, fontWeight: '700', color: COLORS.success, flex: 1 },
-
-  actionsRow: { flexDirection: 'row', gap: 8 },
-  btnAdiar: {
-    flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: COLORS.lightGray,
-    paddingHorizontal: 12, paddingVertical: 9, borderRadius: 10, borderWidth: 1, borderColor: COLORS.border,
-  },
-  btnAdiarText: { fontSize: 12, fontWeight: '700', color: COLORS.gray },
-  btnPular: {
-    width: 36, alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.dangerLight,
-    borderRadius: 10, borderWidth: 1, borderColor: '#FEE2E2',
-  },
-  btnChamar: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    backgroundColor: COLORS.secondary, paddingVertical: 10, borderRadius: 10,
-  },
-  btnChamarText: { fontSize: 12, fontWeight: '800', color: COLORS.white },
-  btnFinalizar: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    backgroundColor: COLORS.success, paddingVertical: 12, borderRadius: 12,
-  },
-
-  emptyContainer: { alignItems: 'center', paddingVertical: 80, paddingHorizontal: 30 },
-  emptyTitle: { fontSize: 16, fontWeight: '800', color: COLORS.secondary, marginTop: 14 },
-  emptySubtitle: { fontSize: 13, color: COLORS.gray, marginTop: 6, textAlign: 'center' },
-
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(17,24,39,0.6)', justifyContent: 'center', alignItems: 'center', padding: 24 },
-  modalContainer: { backgroundColor: COLORS.white, borderRadius: 24, padding: 24, width: '100%', maxWidth: 380, alignItems: 'center' },
-  modalIconCircle: {
-    width: 56, height: 56, borderRadius: 28, backgroundColor: COLORS.primaryLight,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 14,
-  },
-  modalTitle: { fontSize: 18, fontWeight: '900', color: COLORS.secondary, marginBottom: 6 },
-  modalSubtitle: { fontSize: 12, color: COLORS.gray, textAlign: 'center', lineHeight: 18, marginBottom: 18 },
-  pinInput: {
-    width: '100%', textAlign: 'center', fontSize: 32, fontWeight: '900', letterSpacing: 16,
-    color: COLORS.secondary, backgroundColor: COLORS.lightGray, borderRadius: 16,
-    borderWidth: 2, borderColor: COLORS.border, paddingVertical: 14, marginBottom: 20,
-  },
-  modalActions: { flexDirection: 'row', gap: 10, width: '100%' },
-  modalBtnCancel: { flex: 1, backgroundColor: COLORS.lightGray, paddingVertical: 14, borderRadius: 14, alignItems: 'center' },
-  modalBtnCancelText: { color: COLORS.secondary, fontWeight: '700' },
-  modalBtnConfirm: { flex: 1, backgroundColor: COLORS.success, paddingVertical: 14, borderRadius: 14, alignItems: 'center' },
-  modalBtnConfirmText: { color: COLORS.white, fontWeight: '700' },
+  overlay: { flex: 1, backgroundColor: 'rgba(20,20,20,0.5)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  modal: { backgroundColor: '#fff', borderRadius: 28, padding: 24, width: '100%', maxWidth: 380, alignItems: 'center' },
+  modalIcone: { width: 64, height: 64, borderRadius: 32, backgroundColor: '#FFF1E4', alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
+  modalTitulo: { fontSize: 20, fontWeight: '800', color: O.ink, letterSpacing: -0.4 },
+  modalCliente: { fontSize: 14, fontWeight: '700', color: O.accent, marginTop: 4 },
+  modalSub: { fontSize: 13, color: O.muted, textAlign: 'center', lineHeight: 19, marginTop: 8, marginBottom: 18 },
+  pin: { width: '100%', textAlign: 'center', fontSize: 34, fontWeight: '800', letterSpacing: 16, color: O.ink, backgroundColor: '#fff', borderRadius: 18, borderWidth: 1.5, borderColor: O.line, paddingVertical: 14, marginBottom: 20 },
+  modalAcoes: { flexDirection: 'row', gap: 10, width: '100%' },
+  modalCancelar: { flex: 1, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', backgroundColor: O.soft },
+  modalCancelarTxt: { color: O.ink, fontWeight: '700' },
+  modalConfirmar: { flex: 1, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', backgroundColor: '#12A150' },
+  modalConfirmarTxt: { color: '#fff', fontWeight: '800' },
 });

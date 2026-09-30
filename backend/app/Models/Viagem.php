@@ -15,6 +15,7 @@ class Viagem extends Model
         'criador_id',
         'titulo',
         'destino',
+        'descricao',
         'data_inicio',
         'data_fim',
         'total_dias',
@@ -23,9 +24,15 @@ class Viagem extends Model
         'gastos_planejados',
         'latitude',
         'longitude',
+        'cidade',
+        'estado',
+        'codigo_convite',
+        'preferencias',
+        'status',
     ];
 
     protected $casts = [
+        'preferencias' => 'array',
         'gastos_planejados' => 'array', // Converte automaticamente JSON do banco para Array do PHP e vice-versa
         'data_inicio' => 'date',
         'data_fim' => 'date',
@@ -48,7 +55,41 @@ class Viagem extends Model
     public function membros()
     {
         return $this->belongsToMany(User::class, 'viagem_usuario', 'viagem_id', 'usuario_id')
-            ->withPivot('funcao')
+            ->withPivot('funcao', 'presenca')
             ->withTimestamps();
+    }
+
+    public function itens()
+    {
+        return $this->hasMany(ViagemItem::class)->orderBy('dia')->orderBy('ordem');
+    }
+
+    public function despesas()
+    {
+        return $this->hasMany(ViagemDespesa::class)->latest('data_despesa')->latest('id');
+    }
+
+    public function pagamentos()
+    {
+        return $this->hasMany(ViagemPagamento::class);
+    }
+
+    public function mensagens()
+    {
+        return $this->hasMany(ViagemMensagem::class);
+    }
+
+    /** O usuário participa desta viagem (criador ou convidado que não recusou)? */
+    public function temMembro(int $userId): bool
+    {
+        return $this->criador_id === $userId
+            || $this->membros()->where('usuario_id', $userId)->where('presenca', '!=', 'recusado')->exists();
+    }
+
+    /** Pode editar o roteiro: criador ou membro com função "editor". */
+    public function podeEditar(int $userId): bool
+    {
+        return $this->criador_id === $userId
+            || $this->membros()->where('usuario_id', $userId)->where('funcao', 'editor')->where('presenca', '!=', 'recusado')->exists();
     }
 }

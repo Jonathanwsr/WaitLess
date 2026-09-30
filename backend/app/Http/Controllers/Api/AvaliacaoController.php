@@ -73,7 +73,7 @@ class AvaliacaoController extends Controller
 
             $avaliacoes = $avaliacoesQuery->paginate(15);
             $totalAvaliacoes = $avaliacoes->total();
-            
+
             $estatisticas = [
                 'media_geral' => $totalAvaliacoes > 0 ? $avaliacoesQuery->avg('nota') : 0,
                 'total' => $totalAvaliacoes,
@@ -117,7 +117,7 @@ class AvaliacaoController extends Controller
             'agendamento_id'     => 'nullable|exists:agendamentos,id',
             'aluguel_id'         => 'nullable|exists:alugueis,id',
             'nota'               => 'required|integer|min:1|max:5',
-            'nota_localizacao'   => 'nullable|integer|min:1|max:10', 
+            'nota_localizacao'   => 'nullable|integer|min:1|max:10',
             'nota_custo_beneficio'=> 'nullable|integer|min:1|max:5',
             'comentario'         => 'nullable|string|max:1000',
             'fotos'              => 'nullable|array|max:4',
@@ -140,26 +140,26 @@ class AvaliacaoController extends Controller
 
         if (!empty($validated['agendamento_id'])) {
             $agendamento = Agendamento::findOrFail($validated['agendamento_id']);
-            
+
             if ($agendamento->usuario_id !== $userId) abort(403, 'Acesso Negado.');
             if (!in_array($agendamento->status, ['concluido', 'finalizado'])) return back()->withErrors(['error' => 'Você só pode avaliar serviços finalizados.']);
             if (Avaliacao::where('agendamento_id', $agendamento->id)->exists()) return back()->withErrors(['error' => 'Você já avaliou este serviço. Só é permitido uma avaliação por agendamento.']);
             if (Carbon::parse($agendamento->updated_at)->lessThan($prazoAvaliacao)) return back()->withErrors(['error' => 'O prazo para avaliar este serviço expirou (15 dias).']);
-            
+
             $servicoId = $agendamento->servico_id;
-            $validated['estabelecimento_id'] = $agendamento->estabelecimento_id; 
+            $validated['estabelecimento_id'] = $agendamento->estabelecimento_id;
         }
 
         if (!empty($validated['aluguel_id'])) {
             $aluguel = Aluguel::findOrFail($validated['aluguel_id']);
-            
+
             if ($aluguel->locatario_id !== $userId) abort(403, 'Acesso Negado.');
             if (!in_array($aluguel->status, ['concluido', 'finalizado'])) return back()->withErrors(['error' => 'Você só pode avaliar reservas finalizadas.']);
             if (Avaliacao::where('aluguel_id', $aluguel->id)->exists()) return back()->withErrors(['error' => 'Você já avaliou este aluguel. Só é permitido uma avaliação por reserva.']);
             if (Carbon::parse($aluguel->updated_at)->lessThan($prazoAvaliacao)) return back()->withErrors(['error' => 'O prazo para avaliar esta reserva expirou (15 dias).']);
 
             $itemId = $aluguel->item_aluguel_id;
-            $validated['estabelecimento_id'] = $aluguel->estabelecimento_id; 
+            $validated['estabelecimento_id'] = $aluguel->estabelecimento_id;
         }
 
         if (empty($validated['estabelecimento_id'])) return back()->withErrors(['error' => 'Prestador não identificado.']);
@@ -214,9 +214,10 @@ class AvaliacaoController extends Controller
             if ($servicoId) $this->atualizarMediaServico($servicoId);
             if ($itemId) $this->atualizarMediaItemAluguel($itemId);
 
-            // REGRA DE PONTOS EM DOBRO PARA PREMIUM/PLUS
+            // REGRA DE PONTOS EM DOBRO PARA PREMIUM (qualquer plano premium, não só um nome fixo)
             $pontosBase = $quantidadeFotosValidas > 0 ? 150 : 5;
-            $pontosGanhos = in_array(strtolower($user->assinatura), ['premium', 'plus']) ? ($pontosBase * 2) : $pontosBase;
+            $ehPremium = $user->isPremium();
+            $pontosGanhos = $ehPremium ? ($pontosBase * 2) : $pontosBase;
 
             if($user) {
                 $user->increment('pontos_saldo', $pontosGanhos);
@@ -227,7 +228,7 @@ class AvaliacaoController extends Controller
                 'estabelecimento_id' => $validated['estabelecimento_id'],
                 'agendamento_id'     => $validated['agendamento_id'] ?? null,
                 'tipo'               => 'ganho',
-                'descricao'          => 'Recompensa por Avaliação' . (in_array(strtolower($user->assinatura), ['premium', 'plus']) ? ' (Dobrado - Plano Premium)' : '') . ($quantidadeFotosValidas > 0 ? ' (com fotos)' : ''),
+                'descricao'          => 'Recompensa por Avaliação' . ($ehPremium ? ' (Dobrado - Plano Premium)' : '') . ($quantidadeFotosValidas > 0 ? ' (com fotos)' : ''),
                 'quantidade'         => $pontosGanhos,
                 'created_at'         => now()
             ]);
@@ -262,9 +263,9 @@ class AvaliacaoController extends Controller
         ]);
 
         $avaliacao = Avaliacao::findOrFail($id);
-        
+
         $avaliacao->increment('denuncias_count');
-        
+
         if ($request->filled('motivo')) {
             $motivos = $avaliacao->motivo_denuncia ? $avaliacao->motivo_denuncia . " | " . $request->motivo : $request->motivo;
             $avaliacao->update(['motivo_denuncia' => strip_tags($motivos)]);
@@ -276,7 +277,7 @@ class AvaliacaoController extends Controller
     public function indexAnfitriao(Request $request)
     {
         $userId = Auth::id();
-        
+
         $estabelecimentosIds = DB::table('estabelecimento_usuario')
             ->where('usuario_id', $userId)
             ->whereIn('tipo', ['admin', 'socio', 'gerente', 'proprietario'])
@@ -293,10 +294,56 @@ class AvaliacaoController extends Controller
                 'estabelecimento:id,nome'
             ])
             ->whereIn('estabelecimento_id', $estabelecimentosIds)
-            ->whereNull('justificativa_admin') 
+            ->whereNull('justificativa_admin')
             ->latest();
 
+        // Filtros do sócio: por local, por serviço ou por reserva (locação).
+        $localId = $request->filled('estabelecimento_id') ? (int) $request->input('estabelecimento_id') : null;
+        if ($localId && $estabelecimentosIds->contains($localId)) {
+            $query->where('estabelecimento_id', $localId);
+        }
+        if ($request->filled('servico_id')) {
+            $servicoId = (int) $request->input('servico_id');
+            $query->whereHas('agendamento', fn ($q) => $q->where('servico_id', $servicoId));
+        }
+        if ($request->filled('item_id')) {
+            $itemId = (int) $request->input('item_id');
+            $query->whereHas('aluguel', fn ($q) => $q->where('item_aluguel_id', $itemId));
+        }
+
         $avaliacoes = $query->paginate(20)->withQueryString();
+
+        $opcoesFiltro = [
+            'locais' => Estabelecimento::whereIn('id', $estabelecimentosIds)->orderBy('nome')->get(['id', 'nome']),
+            'servicos' => Servico::whereIn('estabelecimento_id', $estabelecimentosIds)->orderBy('nome')->get(['id', 'nome', 'estabelecimento_id']),
+            'itens' => ItemAluguel::catalogo()->where('estabelecimento_id', $userId)->orderBy('nome')->get(['id', 'nome']),
+        ];
+
+        $metricas = [
+            'curtidas' => (int) (clone $query)->sum('curtidas'),
+            'respondidas' => (clone $query)->whereNotNull('resposta_anfitriao')->count(),
+            'pendentes' => (clone $query)->whereNull('resposta_anfitriao')->count(),
+            'denunciadas' => (clone $query)->where('denuncias_count', '>', 0)->count(),
+            'com_fotos' => (clone $query)->whereNotNull('fotos')->whereRaw("fotos::text NOT IN ('[]', 'null')")->count(),
+        ];
+
+        $baseRanking = fn () => DB::table('avaliacoes')
+            ->whereIn('avaliacoes.estabelecimento_id', $estabelecimentosIds)
+            ->whereNull('avaliacoes.justificativa_admin');
+
+        $porServico = $baseRanking()
+            ->join('agendamentos', 'agendamentos.id', '=', 'avaliacoes.agendamento_id')
+            ->join('servicos', 'servicos.id', '=', 'agendamentos.servico_id')
+            ->groupBy('servicos.id', 'servicos.nome')
+            ->selectRaw('servicos.id, servicos.nome, COUNT(*) as total, ROUND(AVG(avaliacoes.nota)::numeric, 1) as media, COALESCE(SUM(avaliacoes.curtidas), 0) as curtidas')
+            ->orderByDesc('total')->limit(10)->get();
+
+        $porReserva = $baseRanking()
+            ->join('alugueis', 'alugueis.id', '=', 'avaliacoes.aluguel_id')
+            ->join('itens_aluguel', 'itens_aluguel.id', '=', 'alugueis.item_aluguel_id')
+            ->groupBy('itens_aluguel.id', 'itens_aluguel.nome')
+            ->selectRaw('itens_aluguel.id, itens_aluguel.nome, COUNT(*) as total, ROUND(AVG(avaliacoes.nota)::numeric, 1) as media, COALESCE(SUM(avaliacoes.curtidas), 0) as curtidas')
+            ->orderByDesc('total')->limit(10)->get();
 
         $estatisticas = [
             'total_avaliacoes' => (clone $query)->count(),
@@ -322,7 +369,11 @@ class AvaliacaoController extends Controller
             'estatisticas' => $estatisticas,
             'tipo' => 'geral',
             'itemNaoEncontrado' => false,
-            'filtros' => $request->all()
+            'filtros' => $request->all(),
+            'opcoesFiltro' => $opcoesFiltro,
+            'metricas' => $metricas,
+            'porServico' => $porServico,
+            'porReserva' => $porReserva,
         ]);
     }
 
@@ -412,7 +463,7 @@ class AvaliacaoController extends Controller
         ]);
 
         $avaliacao = Avaliacao::findOrFail($id);
-        
+
         try {
             DB::beginTransaction();
 
@@ -430,7 +481,7 @@ class AvaliacaoController extends Controller
 
             // Se o usuário foi Premium na hora de avaliar, remove o dobro
             $user = User::find($userId);
-            if ($user && in_array(strtolower($user->assinatura), ['premium', 'plus'])) {
+            if ($user && $user->isPremium()) {
                 $pontosRemovidos = $pontosRemovidos * 2;
             }
 
@@ -451,7 +502,7 @@ class AvaliacaoController extends Controller
                 'usuario_id'         => $userId,
                 'estabelecimento_id' => $estabelecimentoId,
                 'agendamento_id'     => $avaliacao->agendamento_id ?? null,
-                'tipo'               => 'uso', 
+                'tipo'               => 'uso',
                 'descricao'          => 'Punição: Avaliação banida por violar os termos da plataforma.',
                 'quantidade'         => $pontosRemovidos,
                 'created_at'         => now()
@@ -496,7 +547,7 @@ class AvaliacaoController extends Controller
 
         foreach ($fotosArray as $fotoUrl) {
             $basename = basename(parse_url($fotoUrl, PHP_URL_PATH));
-            
+
             $search = Http::withBasicAuth(config('services.imagekit.private_key'), '')
                 ->get('https://api.imagekit.io/v1/files', [
                     'searchQuery' => 'name="' . $basename . '"'
@@ -504,7 +555,7 @@ class AvaliacaoController extends Controller
 
             if ($search->successful() && !empty($search->json())) {
                 $fileId = $search->json()[0]['fileId'] ?? null;
-                
+
                 if ($fileId) {
                     Http::withBasicAuth(config('services.imagekit.private_key'), '')
                         ->delete('https://api.imagekit.io/v1/files/' . $fileId);
@@ -515,9 +566,9 @@ class AvaliacaoController extends Controller
 
     private function atualizarMediaEstabelecimento($id)
     {
-        $media = Avaliacao::where('estabelecimento_id', $id)->where('publica', true)->whereNotNull('nota')->avg('nota_localizacao') 
+        $media = Avaliacao::where('estabelecimento_id', $id)->where('publica', true)->whereNotNull('nota')->avg('nota_localizacao')
                  ?? Avaliacao::where('estabelecimento_id', $id)->where('publica', true)->whereNotNull('nota')->avg('nota');
-                 
+
         $total = Avaliacao::where('estabelecimento_id', $id)->where('publica', true)->whereNotNull('nota')->count();
 
         Estabelecimento::where('id', $id)->update([

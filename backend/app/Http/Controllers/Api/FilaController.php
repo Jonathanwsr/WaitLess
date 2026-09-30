@@ -14,26 +14,93 @@ class FilaController extends Controller
 {
     /**
      * Rota "/fila" (sem estabelecimento na URL) usada quando o usuário
-     * seleciona "Todos os locais" no seletor da tela de Fila. Não existe uma
-     * visão agregada entre estabelecimentos ainda, então redireciona para a
-     * fila do primeiro local vinculado ao usuário (dono, sócio, gerente ou
-     * funcionário) — evita o erro fatal de método inexistente que existia aqui.
+     * seleciona "Todos os locais" no seletor da tela de Fila. Se a pessoa só
+     * tem UM estabelecimento vinculado, não faz sentido mostrar uma visão
+     * "agregada" redundante — segue redirecionando direto pra fila dele, como
+     * sempre fez. Com mais de um, monta de verdade a fila combinada de todos
+     * os locais (dono, sócio, gerente ou funcionário), na mesma tabela, com
+     * uma coluna extra indicando de qual estabelecimento é cada linha.
      */
     public function index(Request $request)
     {
         $user = $request->user();
 
-        if (in_array($user->papel, ['atendente', 'funcionario'])) {
-            $estabelecimentoId = \App\Models\Funcionario::where('usuario_id', $user->id)->value('estabelecimento_id');
-        } else {
-            $estabelecimentoId = $user->estabelecimentos()->value('estabelecimentos.id');
+        if (!in_array($user->papel, ['admin', 'socio', 'gerente', 'proprietario', 'funcionario', 'atendente'])) {
+            abort(403, 'Acesso não autorizado. Papel inválido.');
         }
 
-        if (!$estabelecimentoId) {
+        if (in_array($user->papel, ['atendente', 'funcionario'])) {
+            $estId = \App\Models\Funcionario::where('usuario_id', $user->id)->value('estabelecimento_id');
+            $estabelecimentos = $estId ? Estabelecimento::where('id', $estId)->get(['id', 'nome', 'foto_perfil']) : collect();
+        } else {
+            $estabelecimentos = $user->estabelecimentos()->get(['estabelecimentos.id', 'estabelecimentos.nome', 'estabelecimentos.foto_perfil']);
+        }
+
+        if ($estabelecimentos->isEmpty()) {
             return redirect()->route('dashboard')->withErrors(['error' => 'Nenhum estabelecimento vinculado à sua conta.']);
         }
 
-        return redirect()->route('estabelecimentos.fila', $estabelecimentoId);
+        // Um funcionário/atendente só enxerga o próprio local, e quem só tem
+        // um estabelecimento não precisa de uma "visão agregada" de si mesmo.
+        if ($estabelecimentos->count() === 1) {
+            return redirect()->route('estabelecimentos.fila', $estabelecimentos->first()->id);
+        }
+
+        $estabelecimentosIds = $estabelecimentos->pluck('id');
+
+        $hoje = Carbon::today()->toDateString();
+        $filtros = [
+            'data_inicio' => $request->input('data_inicio', $hoje),
+            'data_fim' => $request->input('data_fim', $hoje),
+            'ordem' => $request->input('ordem', 'asc'),
+            'status' => $request->input('status', 'todos'),
+            'status_pagamento' => $request->input('status_pagamento', 'todos'),
+            'per_page' => $request->input('per_page', 10),
+        ];
+
+        $query = Agendamento::with(['usuario', 'servico', 'pagamento', 'estabelecimento:id,nome'])
+            ->whereIn('estabelecimento_id', $estabelecimentosIds)
+            ->whereBetween('data_agendamento', [$filtros['data_inicio'], $filtros['data_fim']]);
+
+        if ($filtros['status'] !== 'todos') {
+            $query->where('status', $filtros['status']);
+        }
+
+        if ($filtros['status_pagamento'] !== 'todos') {
+            $query->where('status_pagamento', $filtros['status_pagamento']);
+        }
+
+        $direcao = $filtros['ordem'] === 'desc' ? 'desc' : 'asc';
+        $query->orderBy('data_agendamento', $direcao)->orderBy('hora_agendamento', $direcao);
+
+        $agendamentos = $query->paginate($filtros['per_page'])->withQueryString();
+
+        $agendamentos->getCollection()->transform(function ($agendamento) {
+            $extras = DB::table('itens_aluguel')->where('agendamento_id', $agendamento->id)->get();
+            $agendamento->produtos_extras = $extras;
+            $agendamento->valor_total_extras = $extras->sum(function ($item) {
+                return $item->valor_diaria * $item->quantidade;
+            });
+            return $agendamento;
+        });
+
+        // Cada estabelecimento tem sua própria equipe — agrupa por
+        // estabelecimento_id pra "Delegar Profissional" não deixar atribuir
+        // um funcionário de um local a um agendamento de outro.
+        $funcionariosPorEstabelecimento = \App\Models\Funcionario::whereIn('estabelecimento_id', $estabelecimentosIds)
+            ->where('ativo', true)
+            ->get(['id', 'nome', 'cargo', 'estabelecimento_id'])
+            ->groupBy('estabelecimento_id');
+
+        return Inertia::render('Estabelecimentos/Fila', [
+            'estabelecimento' => null,
+            'estabelecimentos' => $estabelecimentos,
+            'agendamentos' => $agendamentos,
+            'funcionarios' => [],
+            'funcionariosPorEstabelecimento' => $funcionariosPorEstabelecimento,
+            'filtros' => $filtros,
+            'visaoAgregada' => true,
+        ]);
     }
 
     public function show(Request $request, Estabelecimento $estabelecimento)
@@ -125,18 +192,6 @@ class FilaController extends Controller
             }])
             ->get();
 
-        // 👉 INJEÇÃO: Busca os Produtos Extras para os agendamentos já designados aos funcionários
-        foreach ($funcionarios as $funcionario) {
-            $funcionario->agendamentos->transform(function ($agendamento) {
-                $extras = DB::table('itens_aluguel')->where('agendamento_id', $agendamento->id)->get();
-                $agendamento->produtos_extras = $extras;
-                $agendamento->valor_total_extras = $extras->sum(function($item) {
-                    return $item->valor_diaria * $item->quantidade;
-                });
-                return $agendamento;
-            });
-        }
-
         $semFuncionario = Agendamento::where('estabelecimento_id', $estabelecimento->id)
             ->whereBetween('data_agendamento', [$strInicio, $strFim])
             ->whereNull('funcionario_id')
@@ -146,35 +201,43 @@ class FilaController extends Controller
             ->orderBy('hora_agendamento', 'asc')
             ->get();
 
-        // 👉 INJEÇÃO: Busca os Produtos Extras para agendamentos na fila de espera (Sem funcionário)
-        $semFuncionario->transform(function ($agendamento) {
-            $extras = DB::table('itens_aluguel')->where('agendamento_id', $agendamento->id)->get();
-            $agendamento->produtos_extras = $extras;
-            $agendamento->valor_total_extras = $extras->sum(function($item) {
-                return $item->valor_diaria * $item->quantidade;
-            });
-            return $agendamento;
-        });
-
         // 3. DADOS PARA O RELATÓRIO E PDF (Paginados)
         $queryRelatorio = Agendamento::where('estabelecimento_id', $estabelecimento->id)
             ->whereBetween('data_agendamento', [$strInicio, $strFim])
             ->with(['usuario', 'servico', 'funcionario', 'pagamento', 'finalizadoPor:id,name'])
             ->orderBy('data_agendamento', 'desc')
             ->orderBy('hora_agendamento', 'desc');
-            
+
         $perPage = $request->get('per_page', 15);
         $agendamentosPaginados = $queryRelatorio->paginate($perPage)->withQueryString();
 
-        // 👉 INJEÇÃO: Busca os Produtos Extras para o formato de Tabela/Relatório PDF
-        $agendamentosPaginados->getCollection()->transform(function ($agendamento) {
-            $extras = DB::table('itens_aluguel')->where('agendamento_id', $agendamento->id)->get();
+        // 👉 Produtos extras: antes buscava do banco 1 vez PARA CADA agendamento (em 3
+        // loops separados: por funcionário, sem funcionário e no relatório paginado) —
+        // com uma agenda grande isso virava centenas de queries na mesma requisição.
+        // Agora é 1 única query com todos os IDs de uma vez, e o resultado é distribuído.
+        $todosAgendamentos = $funcionarios->flatMap(fn ($f) => $f->agendamentos)
+            ->concat($semFuncionario)
+            ->concat($agendamentosPaginados->getCollection());
+
+        $extrasPorAgendamento = DB::table('itens_aluguel')
+            ->whereIn('agendamento_id', $todosAgendamentos->pluck('id')->unique())
+            ->get()
+            ->groupBy('agendamento_id');
+
+        $anexarExtras = function ($agendamento) use ($extrasPorAgendamento) {
+            $extras = $extrasPorAgendamento->get($agendamento->id, collect());
             $agendamento->produtos_extras = $extras;
-            $agendamento->valor_total_extras = $extras->sum(function($item) {
+            $agendamento->valor_total_extras = $extras->sum(function ($item) {
                 return $item->valor_diaria * $item->quantidade;
             });
             return $agendamento;
-        });
+        };
+
+        foreach ($funcionarios as $funcionario) {
+            $funcionario->agendamentos->transform($anexarExtras);
+        }
+        $semFuncionario->transform($anexarExtras);
+        $agendamentosPaginados->getCollection()->transform($anexarExtras);
 
         return Inertia::render('Estabelecimentos/AgendaFuncionarios', [
             'estabelecimento' => $estabelecimento,

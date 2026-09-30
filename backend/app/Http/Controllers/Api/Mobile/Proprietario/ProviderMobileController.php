@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Database\QueryException;
 use Exception;
 
@@ -53,23 +54,23 @@ class ProviderMobileController extends Controller
             'name'             => ['required', 'string', 'max:255', 'regex:/^[a-zA-ZÀ-ÿ\s]+$/'],
             'email'            => 'required|email|unique:providers,email',
             'person_type'      => 'required|in:FISICA,JURIDICA',
-            'document'         => ['required', 'string'], 
+            'document'         => ['required', 'string', 'regex:/^[0-9.\-\/\s]+$/'],
             'birth_date'       => 'required|date',
-            'income_value'     => 'required|string',
-            'mobile_phone'     => 'required|string',
-            'postal_code'      => 'required|string',
+            'income_value'     => ['required', 'string', 'regex:/^[R$\s0-9.,]+$/'],
+            'mobile_phone'     => ['required', 'string', 'regex:/^[0-9()\-\s]+$/'],
+            'postal_code'      => ['required', 'string', 'regex:/^[0-9\-\s]+$/'],
             'address'          => 'required|string|max:255',
             'address_number'   => 'required|string|max:20',
             'complement'       => 'nullable|string|max:100',
-            'province'         => 'required|string|max:100', 
+            'province'         => 'required|string|max:100',
 
             'company_type'     => 'required_if:person_type,JURIDICA|in:MEI,EI,EIRELI,LTDA,SA,ANY_OTHER',
             'responsible_name' => ['required_if:person_type,JURIDICA', 'nullable', 'string', 'regex:/^[a-zA-ZÀ-ÿ\s]+$/'],
-            'responsible_cpf'  => 'required_if:person_type,JURIDICA|nullable|string',
+            'responsible_cpf'  => ['required_if:person_type,JURIDICA', 'nullable', 'string', 'regex:/^[0-9.\-\s]+$/'],
 
             // Chave PIX Principal
             'pix_key_type'     => 'required|in:CPF,CNPJ,EMAIL,PHONE,RANDOM',
-            'pix_key'          => ['required', 'string', 'max:255', 'regex:/^[^<>]+$/'], 
+            'pix_key'          => ['required', 'string', 'max:255', 'regex:/^[^<>]+$/'],
 
             // Dados do Estabelecimento & Chave PIX Reserva (OPCIONAL)
             'estabelecimento_id' => [
@@ -91,7 +92,7 @@ class ProviderMobileController extends Controller
         $cleanPostalCode   = preg_replace('/[^0-9]/', '', $validated['postal_code']);
         $cleanMobilePhone  = preg_replace('/[^0-9]/', '', $validated['mobile_phone']);
         $cleanRespCpf      = !empty($validated['responsible_cpf']) ? preg_replace('/[^0-9]/', '', $validated['responsible_cpf']) : null;
-        
+
         $formattedBirthDate = date('Y-m-d', strtotime($validated['birth_date']));
 
         // Limpeza da Renda (Transforma "R$ 1.500,00" em 1500.00)
@@ -125,7 +126,7 @@ class ProviderMobileController extends Controller
                     'Accept'       => 'application/json',
                 ])->post(config('services.asaas.url') . '/accounts', $asaasPayload);
 
-            $asaasData = $response->json(); 
+            $asaasData = $response->json();
 
             // Se o Asaas retornar erro
             if ($response->failed() || $response->status() === 302) {
@@ -162,20 +163,20 @@ class ProviderMobileController extends Controller
             }
 
             if (!is_array($asaasData) || !isset($asaasData['walletId'])) {
-                return response()->json(['error' => 'Erro ao vincular conta. O Asaas não retornou o ID da carteira.'], 500);
+                return response()->json(['error' => 'Erro ao vincular conta. Não recebemos a confirmação da carteira.'], 500);
             }
 
             // 5. Salvar em Transação no Banco de Dados
             $result = DB::transaction(function () use ($user, $validated, $cleanDocument, $formattedBirthDate, $cleanIncome, $cleanMobilePhone, $cleanPostalCode, $cleanRespCpf, $asaasData) {
-                
+
                 // A) Salvar Provedor
                 $provider = Provider::create([
-                    'user_id'          => $user->id, 
+                    'user_id'          => $user->id,
                     'name'             => $validated['name'],
                     'email'            => $validated['email'],
                     'person_type'      => $validated['person_type'],
                     'document'         => $cleanDocument,
-                    'birth_date'       => $formattedBirthDate, 
+                    'birth_date'       => $formattedBirthDate,
                     'income_value'     => $cleanIncome,
                     'mobile_phone'     => $cleanMobilePhone,
                     'postal_code'      => $cleanPostalCode,
@@ -183,7 +184,7 @@ class ProviderMobileController extends Controller
                     'address_number'   => $validated['address_number'],
                     'complement'       => $validated['complement'] ?? null,
                     'province'         => $validated['province'],
-                    
+
                     'company_type'     => $validated['company_type'] ?? null,
                     'responsible_name' => $validated['responsible_name'] ?? null,
                     'responsible_cpf'  => $cleanRespCpf,
@@ -191,8 +192,8 @@ class ProviderMobileController extends Controller
                     'pix_key_type'     => $validated['pix_key_type'],
                     'pix_key'          => trim($validated['pix_key']),
 
-                    'asaas_wallet_id'  => $asaasData['walletId'], 
-                    'asaas_api_key'    => $asaasData['apiKey'] ?? null,     
+                    'asaas_wallet_id'  => $asaasData['walletId'],
+                    'asaas_api_key'    => $asaasData['apiKey'] ?? null,
                     'asaas_status'     => $asaasData['status'] ?? 'PENDING',
                 ]);
 
@@ -215,6 +216,16 @@ class ProviderMobileController extends Controller
                     'conta_pagamento' => $contaPagamento
                 ];
             });
+
+            try {
+                $providerCriado = $result['provider'];
+                Mail::to($providerCriado->email)->queue(new \App\Mail\NotificacaoTexto(
+                    'Sua carteira Lokyva foi ativada',
+                    "Olá, {$providerCriado->name}!\n\nSua carteira digital Lokyva foi ativada com sucesso.\n\nID da carteira (Wallet ID): {$providerCriado->asaas_wallet_id}\nStatus: {$providerCriado->asaas_status}\n\nA partir de agora você já pode receber os repasses das suas reservas diretamente pela plataforma."
+                ));
+            } catch (Exception $e) {
+                Log::error('Erro ao enviar e-mail de confirmação de carteira mobile (Brevo): ' . $e->getMessage());
+            }
 
             return response()->json([
                 'message'         => 'Sua conta de recebimento foi criada e configurada com sucesso.',
@@ -285,7 +296,7 @@ class ProviderMobileController extends Controller
 
         $validated = $request->validate([
             'pix_key_type'       => 'required|in:CPF,CNPJ,EMAIL,PHONE,RANDOM',
-            'pix_key'            => ['required', 'string', 'max:255', 'regex:/^[^<>]+$/'], 
+            'pix_key'            => ['required', 'string', 'max:255', 'regex:/^[^<>]+$/'],
             'estabelecimento_id' => [
                 'nullable',
                 'exists:estabelecimentos,id',

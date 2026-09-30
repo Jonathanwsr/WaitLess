@@ -1,54 +1,46 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  FlatList, 
-  TouchableOpacity, 
-  Alert, 
-  ActivityIndicator,
-  RefreshControl,
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
   SafeAreaView,
   TextInput,
-  ScrollView,
+  ActivityIndicator,
+  RefreshControl,
+  Modal,
   Platform,
-  Modal
 } from 'react-native';
-import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
+import * as SecureStore from 'expo-secure-store';
+import { useRouter } from 'expo-router';
+import { T } from '../../../constants/ClientTheme';
+import { HeaderCliente } from '../../../components/client/ui';
+import { alertar } from '../../../services/alertar';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api/mobile';
 
-const COLORS = {
-  primary: '#FF5A00',
-  primaryLight: '#FFF4ED',
-  secondary: '#111827',
-  gray: '#6B7280',
-  lightGray: '#F9FAFB',
-  white: '#FFFFFF',
-  border: '#F3F4F6',
-  successText: '#059669',
-  successBg: '#ECFDF5',
-  warningText: '#D97706',
-  warningBg: '#FFFBEB',
-  dangerText: '#DC2626',
-  dangerBg: '#FEF2F2',
-};
+const MOTIVOS = ['Serviço não prestado', 'Desistência', 'Cobrança indevida', 'Serviço com problema', 'Outro motivo'];
+
+const brl = (v: unknown) => `R$ ${Number(v || 0).toFixed(2).replace('.', ',')}`;
+const dataBR = (v?: string) => (v ? new Date(v).toLocaleDateString('pt-BR') : '-');
 
 export default function MeusEstornosScreen() {
-  // --- ESTADOS GERAIS ---
+  const router = useRouter();
+
   const [currentView, setCurrentView] = useState<'LIST' | 'FORM'>('LIST');
   const [userRole, setUserRole] = useState('cliente');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  
-  // --- ESTADOS DA LISTA ---
+
   const [estornos, setEstornos] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'todos' | 'analise' | 'deferidos'>('todos');
-  
-  // --- ESTADOS DO FORMULÁRIO (IMAGEM 2) ---
+  const [activeTab, setActiveTab] = useState<'todos' | 'analise' | 'deferidos' | 'indeferidos'>('todos');
+  const [busca, setBusca] = useState('');
+
   const [motivo, setMotivo] = useState('');
   const [descricao, setDescricao] = useState('');
   const [imagens, setImagens] = useState<ImagePicker.ImagePickerAsset[]>([]);
@@ -57,22 +49,27 @@ export default function MeusEstornosScreen() {
   const [carregandoElegiveis, setCarregandoElegiveis] = useState(false);
   const [pedidoSelecionado, setPedidoSelecionado] = useState<any>(null);
 
-  // Modal Detalhes (Ações Admin/Proprietário)
   const [modalDetalhesVisible, setModalDetalhesVisible] = useState(false);
   const [detalheSelecionado, setDetalheSelecionado] = useState<any>(null);
+  const [detalheCompleto, setDetalheCompleto] = useState<any>(null);
+  const [carregandoDetalhe, setCarregandoDetalhe] = useState(false);
 
-  // Variáveis de Permissão
-  const isCliente = userRole === 'cliente';
-  const isPrestador = ['socio', 'proprietario'].includes(userRole);
+  const isPrestador = ['socio', 'proprietario', 'gerente'].includes(userRole);
   const isAdmin = ['admin', 'superadmin', 'administrador'].includes(userRole);
+  const isCliente = !isPrestador && !isAdmin;
 
   useEffect(() => {
     carregarUsuarioEDados();
   }, []);
 
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchEstornos();
+  };
+
   const carregarUsuarioEDados = async () => {
     try {
-      const userString = await AsyncStorage.getItem('@waitless_user');
+      const userString = await SecureStore.getItemAsync('userData');
       if (userString) {
         const user = JSON.parse(userString);
         setUserRole(user.papel?.toLowerCase() || 'cliente');
@@ -85,59 +82,67 @@ export default function MeusEstornosScreen() {
     setLoading(true);
     try {
       const token = await AsyncStorage.getItem('@waitless_token');
-      // Identifica rota baseada no papel local
-      const isAdm = await AsyncStorage.getItem('@waitless_user').then(u => {
-        if(!u) return false;
+      const isAdm = await SecureStore.getItemAsync('userData').then((u) => {
+        if (!u) return false;
         const parsed = JSON.parse(u);
         return ['admin', 'superadmin'].includes(parsed.papel?.toLowerCase());
       });
 
       const endpoint = isAdm ? `${API_URL}/admin/estornos` : `${API_URL}/estornos`;
-      
-      const res = await fetch(endpoint, {
-        headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' }
-      });
+
+      const res = await fetch(endpoint, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
       const data = await res.json();
 
       if (res.ok) {
-        const list = isAdm ? data.data.data : data.data; 
+        const list = isAdm ? data.data.data : data.data;
         setEstornos(list || []);
       }
     } catch (err) {
-      // Ignora erro visual para manter UI limpa
+      // mantém a UI limpa
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   };
 
-  // --- FILTROS E RESUMOS (IMAGEM 1) ---
-  const dadosFiltrados = estornos.filter(item => {
-    if (activeTab === 'todos') return true;
-    if (activeTab === 'analise') return ['PENDENTE', 'EM_ANALISE', 'AGUARDANDO_DOCUMENTOS'].includes(item.status);
-    if (activeTab === 'deferidos') return ['APROVADO', 'ESTORNADO'].includes(item.status);
+  const ANALISE = ['PENDENTE', 'EM_ANALISE', 'AGUARDANDO_DOCUMENTOS'];
+  const DEFERIDO = ['APROVADO', 'ESTORNADO', 'ESTORNO_SOLICITADO_ASAAS'];
+  const INDEFERIDO = ['REPROVADO', 'CANCELADO', 'ERRO_ASAAS'];
+
+  const dadosFiltrados = estornos.filter((item) => {
+    if (activeTab === 'analise' && !ANALISE.includes(item.status)) return false;
+    if (activeTab === 'deferidos' && !DEFERIDO.includes(item.status)) return false;
+    if (activeTab === 'indeferidos' && !INDEFERIDO.includes(item.status)) return false;
+    if (busca.trim()) {
+      const termo = busca.trim().toLowerCase();
+      const alvo = `${item.codigo_estorno || ''} ${item.itemAluguel?.nome || item.servico?.nome || ''} ${item.estabelecimento?.nome || ''}`.toLowerCase();
+      if (!alvo.includes(termo)) return false;
+    }
     return true;
   });
 
+  const soma = (lista: any[], campo: 'valor_pago' | 'valor_estornado') =>
+    lista.reduce((acc, curr) => acc + Number(campo === 'valor_estornado' ? curr.valor_estornado || curr.valor_pago : curr.valor_pago), 0);
+
+  const listaAnalise = estornos.filter((i) => ANALISE.includes(i.status));
+  const listaDeferida = estornos.filter((i) => DEFERIDO.includes(i.status));
+
   const resumo = {
     solicitados: estornos.length,
-    valorSolicitado: estornos.reduce((acc, curr) => acc + Number(curr.valor_pago), 0),
-    emAnalise: estornos.filter(i => ['PENDENTE', 'EM_ANALISE'].includes(i.status)).length,
-    valorAnalise: estornos.filter(i => ['PENDENTE', 'EM_ANALISE'].includes(i.status)).reduce((acc, curr) => acc + Number(curr.valor_pago), 0),
-    deferidos: estornos.filter(i => ['APROVADO', 'ESTORNADO'].includes(i.status)).length,
-    valorDeferido: estornos.filter(i => ['APROVADO', 'ESTORNADO'].includes(i.status)).reduce((acc, curr) => acc + Number(curr.valor_estornado || curr.valor_pago), 0),
+    valorSolicitado: soma(estornos, 'valor_pago'),
+    emAnalise: listaAnalise.length,
+    valorAnalise: soma(listaAnalise, 'valor_pago'),
+    deferidos: listaDeferida.length,
+    valorDeferido: soma(listaDeferida, 'valor_estornado'),
   };
 
-  // --- ABRIR FORMULÁRIO: BUSCA OS PEDIDOS ELEGÍVEIS PARA ESTORNO ---
   const abrirFormulario = async () => {
     setCurrentView('FORM');
     setPedidoSelecionado(null);
     setCarregandoElegiveis(true);
     try {
       const token = await AsyncStorage.getItem('@waitless_token');
-      const res = await fetch(`${API_URL}/estornos/elegiveis`, {
-        headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-      });
+      const res = await fetch(`${API_URL}/estornos/elegiveis`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
       const data = await res.json();
       const lista = res.ok && Array.isArray(data.data) ? data.data : [];
       setElegiveis(lista);
@@ -149,20 +154,20 @@ export default function MeusEstornosScreen() {
     }
   };
 
-  // --- AÇÕES DO FORMULÁRIO (IMAGEM 2) ---
   const selecionarImagem = async () => {
-    if (imagens.length >= 5) return Alert.alert('Atenção', 'Máximo de 5 imagens.');
+    if (imagens.length >= 5) return alertar('Atenção', 'Máximo de 5 imagens.');
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true, quality: 0.8,
+      allowsEditing: true,
+      quality: 0.8,
     });
     if (!result.canceled && result.assets) setImagens([...imagens, result.assets[0]]);
   };
 
   const enviarSolicitacao = async () => {
-    if (!pedidoSelecionado) return Alert.alert('Atenção', 'Selecione qual pedido você quer contestar.');
-    if (!motivo) return Alert.alert('Atenção', 'Selecione o motivo do estorno.');
-    if (descricao.length < 10) return Alert.alert('Atenção', 'Descreva o que aconteceu (mínimo 10 caracteres).');
+    if (!pedidoSelecionado) return alertar('Atenção', 'Selecione qual pedido você quer contestar.');
+    if (!motivo) return alertar('Atenção', 'Selecione o motivo do estorno.');
+    if (descricao.length < 10) return alertar('Atenção', 'Descreva o que aconteceu (mínimo 10 caracteres).');
 
     setEnviando(true);
     try {
@@ -178,459 +183,474 @@ export default function MeusEstornosScreen() {
 
       const res = await fetch(`${API_URL}/estornos/solicitar/${pedidoSelecionado.pagamento_id}`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
-        body: formData
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
       });
       const data = await res.json();
 
       if (res.ok) {
-        Alert.alert('Sucesso!', 'Sua solicitação de estorno foi enviada.');
+        alertar('Sucesso!', 'Sua solicitação de estorno foi enviada.');
         setCurrentView('LIST');
-        setMotivo(''); setDescricao(''); setImagens([]); setPedidoSelecionado(null);
+        setMotivo('');
+        setDescricao('');
+        setImagens([]);
+        setPedidoSelecionado(null);
         fetchEstornos();
       } else {
-        Alert.alert('Atenção', data.error || 'Falha ao solicitar estorno.');
+        alertar('Atenção', data.error || 'Falha ao solicitar estorno.');
       }
     } catch (e) {
-      Alert.alert('Erro', 'Falha na conexão.');
+      alertar('Erro', 'Falha na conexão.');
     } finally {
       setEnviando(false);
     }
   };
 
-  // --- FUNÇÕES VISUAIS ---
-  const formatMoney = (val: number) => `R$ ${Number(val).toFixed(2).replace('.', ',')}`;
-  
-  const getStatusBadge = (status: string) => {
-    if (['APROVADO', 'ESTORNADO'].includes(status)) return { label: 'Deferido', bg: COLORS.successBg, text: COLORS.successText, icon: 'checkmark-circle-outline' };
-    if (['PENDENTE', 'EM_ANALISE'].includes(status)) return { label: 'Em análise', bg: COLORS.warningBg, text: COLORS.warningText, icon: 'time-outline' };
-    if (['REPROVADO', 'CANCELADO', 'ERRO_ASAAS'].includes(status)) return { label: 'Indeferido', bg: COLORS.dangerBg, text: COLORS.dangerText, icon: 'close-circle-outline' };
-    return { label: 'Solicitado', bg: COLORS.primaryLight, text: COLORS.primary, icon: 'hourglass-outline' };
+  // Detalhes reais do estorno (endpoint do cliente); para admin/prestador mostra o que já veio na lista.
+  const abrirDetalhes = async (item: any) => {
+    setDetalheSelecionado(item);
+    setDetalheCompleto(null);
+    setModalDetalhesVisible(true);
+    if (!isCliente) return;
+    setCarregandoDetalhe(true);
+    try {
+      const token = await AsyncStorage.getItem('@waitless_token');
+      const res = await fetch(`${API_URL}/estornos/${item.id}/detalhes`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+      const json = await res.json();
+      if (res.ok) setDetalheCompleto(json.data);
+    } catch (e) {
+      // segue com os dados da lista
+    } finally {
+      setCarregandoDetalhe(false);
+    }
+  };
+
+  const statusInfo = (status: string) => {
+    if (DEFERIDO.includes(status)) return { label: 'Deferido', bg: T.successBg, cor: T.success, icone: 'checkmark-circle-outline' };
+    if (ANALISE.includes(status)) return { label: 'Em análise', bg: '#FEF3C7', cor: '#B45309', icone: 'time-outline' };
+    if (INDEFERIDO.includes(status)) return { label: 'Indeferido', bg: '#FEE2E2', cor: T.danger, icone: 'close-circle-outline' };
+    return { label: 'Solicitado', bg: T.primarySoft, cor: T.primary, icone: 'hourglass-outline' };
   };
 
   // =========================================================================
-  // RENDER: VISÃO 2 - FORMULÁRIO (IMAGEM 2)
+  // FORMULÁRIO
   // =========================================================================
   if (currentView === 'FORM') {
     return (
-      <SafeAreaView style={styles.safeArea}>
-        {/* HEADER */}
-        <View style={styles.formHeader}>
-          <TouchableOpacity onPress={() => setCurrentView('LIST')} style={{ padding: 4 }}>
-            <Ionicons name="arrow-back" size={24} color={COLORS.secondary} />
+      <SafeAreaView style={s.safe}>
+        <View style={s.formHeader}>
+          <TouchableOpacity onPress={() => setCurrentView('LIST')} style={s.voltar}>
+            <Ionicons name="chevron-back" size={22} color={T.ink} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Solicitar estorno</Text>
-          <View style={{ width: 24 }} />
+          <Text style={s.formTitulo}>Solicitar estorno</Text>
+          <View style={{ width: 38 }} />
         </View>
 
-        <ScrollView contentContainerStyle={styles.formContent} showsVerticalScrollIndicator={false}>
-          {/* Banner Segurança */}
-          <View style={styles.safeBanner}>
-            <View style={styles.safeBannerIcon}><Feather name="clock" size={24} color={COLORS.primary} /></View>
-            <View style={{ flex: 1, marginLeft: 12 }}>
-              <Text style={styles.safeBannerTitle}>Peça seu estorno com segurança</Text>
-              <Text style={styles.safeBannerDesc}>Analisaremos sua solicitação e retornaremos em até 3 dias úteis.</Text>
+        <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 50 }} showsVerticalScrollIndicator={false}>
+          <View style={s.banner}>
+            <View style={s.bannerIcone}><Ionicons name="checkmark-circle-outline" size={22} color={T.primary} /></View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.bannerTitulo}>Explique o que aconteceu</Text>
+              <Text style={s.bannerTxt}>Envie informações e documentos que possam nos ajudar a analisar sua solicitação. Retornamos em até 3 dias úteis.</Text>
             </View>
           </View>
 
-          {/* Pedido */}
-          <Text style={styles.sectionTitle}>Qual pedido você quer contestar?</Text>
+          <Text style={s.rotulo}>Pedido relacionado</Text>
           {carregandoElegiveis ? (
-            <ActivityIndicator size="small" color={COLORS.primary} style={{ marginVertical: 12 }} />
+            <ActivityIndicator size="small" color={T.primary} style={{ marginVertical: 12 }} />
           ) : elegiveis.length === 0 ? (
-            <View style={styles.emptyElegiveisBox}>
-              <Feather name="info" size={18} color={COLORS.gray} />
-              <Text style={styles.emptyElegiveisText}>
-                Nenhum serviço finalizado nos últimos 4 dias está disponível para estorno no momento.
-              </Text>
+            <View style={s.aviso}>
+              <Ionicons name="information-circle-outline" size={18} color={T.muted} />
+              <Text style={s.avisoTxt}>Nenhum serviço finalizado nos últimos 4 dias está disponível para estorno no momento.</Text>
             </View>
           ) : (
             elegiveis.map((item) => {
               const selecionado = pedidoSelecionado?.agendamento_id === item.agendamento_id;
               return (
-                <TouchableOpacity
-                  key={item.agendamento_id}
-                  style={[styles.pedidoCard, selecionado && styles.pedidoCardSelecionado]}
-                  onPress={() => setPedidoSelecionado(item)}
-                  activeOpacity={0.85}
-                >
+                <TouchableOpacity key={item.agendamento_id} style={[s.pedido, selecionado && s.pedidoOn]} onPress={() => setPedidoSelecionado(item)} activeOpacity={0.85}>
                   {item.estabelecimento_foto ? (
-                    <Image source={{ uri: item.estabelecimento_foto }} style={styles.pedidoImg} />
+                    <Image source={{ uri: item.estabelecimento_foto }} style={s.pedidoImg} contentFit="cover" />
                   ) : (
-                    <View style={[styles.pedidoImg, styles.pedidoImgPlaceholder]}>
-                      <Feather name="scissors" size={18} color={COLORS.gray} />
+                    <View style={[s.pedidoImg, { alignItems: 'center', justifyContent: 'center', backgroundColor: T.cream }]}>
+                      <Ionicons name="cut-outline" size={20} color={T.muted} />
                     </View>
                   )}
-                  <View style={styles.pedidoInfo}>
-                    <Text style={styles.pedidoTitle} numberOfLines={1}>{item.servico || 'Serviço'}</Text>
-                    <View style={styles.pedidoRow}>
-                      <Feather name="map-pin" size={12} color={COLORS.gray} />
-                      <Text style={styles.pedidoText} numberOfLines={1}>{item.estabelecimento}</Text>
-                    </View>
-                    <Text style={styles.pedidoId}>Prazo para pedir: {item.data_limite_formatada}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.pedidoTitulo} numberOfLines={1}>{item.servico || 'Serviço'}</Text>
+                    <Text style={s.pedidoSub} numberOfLines={1}>{item.estabelecimento}</Text>
+                    <Text style={s.pedidoSub}>Prazo para pedir: {item.data_limite_formatada}</Text>
                   </View>
-                  <View style={{ alignItems: 'flex-end', justifyContent: 'center' }}>
-                    <Text style={styles.pedidoPrice}>{formatMoney(item.valor_total || 0)}</Text>
-                    <Ionicons
-                      name={selecionado ? 'checkmark-circle' : 'ellipse-outline'}
-                      size={20}
-                      color={selecionado ? COLORS.primary : COLORS.gray}
-                      style={{ marginTop: 4 }}
-                    />
+                  <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                    <Text style={s.pedidoPreco}>{brl(item.valor_total)}</Text>
+                    <Ionicons name={selecionado ? 'checkmark-circle' : 'ellipse-outline'} size={20} color={selecionado ? T.primary : T.faint} />
                   </View>
                 </TouchableOpacity>
               );
             })
           )}
 
-          {/* Motivo */}
-          <Text style={styles.sectionTitle}>Motivo do estorno</Text>
-          <View style={styles.inputBox}>
-            <TextInput 
-              placeholder="Ex: Serviço não prestado, Desistência..." 
-              value={motivo} onChangeText={setMotivo}
-              style={styles.inputText}
-            />
-            <Feather name="chevron-down" size={20} color={COLORS.gray} />
+          <Text style={s.rotulo}>Motivo do estorno</Text>
+          <View style={s.chips}>
+            {MOTIVOS.map((m) => (
+              <TouchableOpacity key={m} style={[s.chipMotivo, motivo === m && s.chipMotivoOn]} onPress={() => setMotivo(m)} activeOpacity={0.85}>
+                <Text style={[s.chipMotivoTxt, motivo === m && { color: '#fff' }]}>{m}</Text>
+              </TouchableOpacity>
+            ))}
           </View>
 
-          {/* Descrição */}
-          <Text style={styles.sectionTitle}>Descreva o que aconteceu</Text>
-          <View style={styles.textAreaBox}>
-            <TextInput 
-              placeholder="Conte-nos o que aconteceu. Inclua detalhes que possam nos ajudar a analisar sua solicitação."
-              multiline rows={5}
+          <Text style={s.rotulo}>Descreva sua solicitação</Text>
+          <View style={s.textareaBox}>
+            <TextInput
+              placeholder="Conte-nos o que aconteceu. Inclua o máximo de detalhes possível para que nossa equipe possa analisar."
+              placeholderTextColor={T.faint}
+              multiline
+              numberOfLines={5}
               maxLength={500}
-              value={descricao} onChangeText={setDescricao}
-              style={styles.textArea}
+              value={descricao}
+              onChangeText={setDescricao}
+              style={s.textarea}
+              textAlignVertical="top"
             />
-            <Text style={styles.charCount}>{descricao.length}/500</Text>
+            <Text style={s.contador}>{descricao.length}/500</Text>
           </View>
 
-          {/* Anexos */}
-          <Text style={styles.sectionTitle}>Anexos (opcional)</Text>
-          <TouchableOpacity style={styles.uploadBox} onPress={selecionarImagem}>
-            <Feather name="upload-cloud" size={24} color={COLORS.primary} />
-            <Text style={styles.uploadTitle}>Adicionar fotos ou documentos</Text>
-            <Text style={styles.uploadSub}>Você pode enviar até 5 arquivos (PDF, JPG, PNG) com até 3MB cada.</Text>
-          </TouchableOpacity>
-          {imagens.length > 0 && (
-            <ScrollView horizontal style={{ marginTop: 12 }}>
-              {imagens.map((img, idx) => (
-                <Image key={idx} source={{ uri: img.uri }} style={styles.previewImg} />
-              ))}
-            </ScrollView>
+          <Text style={s.rotulo}>Anexar evidências <Text style={s.opcional}>(opcional)</Text></Text>
+          <Text style={s.ajuda}>Adicione fotos, comprovantes ou documentos que apoiem sua solicitação.</Text>
+          <View style={s.fotos}>
+            {imagens.map((img, idx) => (
+              <View key={idx} style={s.fotoBox}>
+                <Image source={{ uri: img.uri }} style={s.fotoPrev} contentFit="cover" />
+                <TouchableOpacity style={s.fotoRemover} onPress={() => setImagens(imagens.filter((_, i) => i !== idx))}>
+                  <Ionicons name="close" size={12} color="#fff" />
+                </TouchableOpacity>
+              </View>
+            ))}
+            {imagens.length < 5 && (
+              <TouchableOpacity style={s.fotoAdd} onPress={selecionarImagem} activeOpacity={0.8}>
+                <Ionicons name="camera-outline" size={22} color={T.primary} />
+                <Text style={s.fotoAddTxt}>Adicionar foto</Text>
+                <Text style={s.fotoAddSub}>Até 5 fotos</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {!!pedidoSelecionado && (
+            <View style={s.resumo}>
+              <View style={s.resumoLinha}><Text style={s.resumoRotulo}>Valor pago</Text><Text style={s.resumoValor}>{brl(pedidoSelecionado.valor_total)}</Text></View>
+              <View style={s.resumoDivisor} />
+              <View style={s.resumoLinha}><Text style={s.resumoTotalRotulo}>Valor solicitado</Text><Text style={s.resumoTotal}>{brl(pedidoSelecionado.valor_total)}</Text></View>
+              <Text style={s.resumoNota}>O valor final do reembolso é confirmado após a análise.</Text>
+            </View>
           )}
 
-          {/* Resumo Reembolso */}
-          <Text style={styles.sectionTitle}>Resumo do reembolso</Text>
-          <View style={styles.resumoBox}>
-            <View style={styles.resumoHeaderRow}>
-              <View style={styles.resumoIconWrapper}><Feather name="credit-card" size={20} color={COLORS.primary} /></View>
-              <View style={{ flex: 1, marginLeft: 16 }}>
-                <View style={styles.resumoRow}><Text style={styles.resumoLabel}>Valor pago</Text><Text style={styles.resumoValue}>R$ 1.250,00</Text></View>
-                <View style={[styles.resumoRow, { marginTop: 8 }]}><Text style={styles.resumoLabel}>Taxas</Text><Text style={styles.resumoValue}>R$ 50,00</Text></View>
-              </View>
-            </View>
-            <View style={styles.resumoDivider} />
-            <View style={styles.resumoRow}>
-              <Text style={styles.resumoTotalLabel}>Total a ser reembolsado</Text>
-              <Text style={styles.resumoTotalValue}>R$ 1.300,00</Text>
-            </View>
+          <View style={s.protegido}>
+            <Ionicons name="lock-closed" size={16} color={T.primary} />
+            <Text style={s.protegidoTxt}>Seus dados estão protegidos. As informações são usadas apenas para análise desta solicitação.</Text>
           </View>
 
-          {/* Shield Footer */}
-          <View style={styles.shieldBox}>
-            <Feather name="shield" size={16} color={COLORS.primary} />
-            <Text style={styles.shieldText}>Seu pedido é 100% seguro. Seus dados estão protegidos.</Text>
-          </View>
-
-          {/* Botoes */}
-          <TouchableOpacity
-            style={[styles.btnPrimary, !pedidoSelecionado && styles.btnPrimaryDisabled]}
-            onPress={enviarSolicitacao}
-            disabled={enviando || !pedidoSelecionado}
-          >
-            {enviando ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnPrimaryText}>Enviar solicitação de estorno</Text>}
+          <TouchableOpacity style={[s.btnPrim, (!pedidoSelecionado || enviando) && { opacity: 0.55 }]} onPress={enviarSolicitacao} disabled={enviando || !pedidoSelecionado} activeOpacity={0.85}>
+            {enviando ? <ActivityIndicator color="#fff" /> : <Text style={s.btnPrimTxt}>Enviar solicitação</Text>}
           </TouchableOpacity>
-          <TouchableOpacity style={styles.btnOutline} onPress={() => setCurrentView('LIST')} disabled={enviando}>
-            <Text style={styles.btnOutlineText}>Cancelar</Text>
+          <TouchableOpacity style={s.btnSec} onPress={() => setCurrentView('LIST')} disabled={enviando} activeOpacity={0.85}>
+            <Text style={s.btnSecTxt}>Cancelar</Text>
           </TouchableOpacity>
-
-          <View style={{ height: 40 }} />
         </ScrollView>
       </SafeAreaView>
     );
   }
 
   // =========================================================================
-  // RENDER: VISÃO 1 - LISTA / DASHBOARD (IMAGEM 1)
+  // LISTA
   // =========================================================================
+  const ABAS = [
+    { id: 'todos', rotulo: 'Todos', n: estornos.length },
+    { id: 'analise', rotulo: 'Em análise', n: listaAnalise.length },
+    { id: 'deferidos', rotulo: 'Deferidos', n: listaDeferida.length },
+    { id: 'indeferidos', rotulo: 'Indeferidos', n: estornos.filter((i) => INDEFERIDO.includes(i.status)).length },
+  ] as const;
+
+  const det = detalheCompleto || detalheSelecionado;
+  const detStatus = det ? statusInfo(det.status) : null;
+
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.headerDashboard}>
-        <TouchableOpacity style={{ padding: 4 }}><Ionicons name="arrow-back" size={24} color={COLORS.secondary} /></TouchableOpacity>
-        <Text style={styles.headerTitle}>Meus estornos</Text>
-        <TouchableOpacity style={{ padding: 4 }}><Feather name="help-circle" size={24} color={COLORS.secondary} /></TouchableOpacity>
-      </View>
-
-      <ScrollView 
-        contentContainerStyle={styles.listContent} 
+    <SafeAreaView style={s.safe}>
+      <ScrollView
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} />}
+        contentContainerStyle={{ paddingBottom: 40 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={T.primary} />}
       >
-        
-        {/* Header Texto + Botão Solicitar */}
-        <View style={styles.dashTopRow}>
-          <Text style={styles.dashSub}>Acompanhe suas solicitações de estorno de forma rápida e segura.</Text>
-          {isCliente && (
-            <TouchableOpacity style={styles.btnSolicitar} onPress={abrirFormulario}>
-              <Feather name="plus" size={16} color={COLORS.primary} />
-              <Text style={styles.btnSolicitarText}>Solicitar estorno</Text>
-            </TouchableOpacity>
-          )}
+        <HeaderCliente voltar tituloMenor titulo="Meus estornos" subtitulo="Acompanhe suas solicitações e conteste dentro do prazo para análise da nossa equipe." />
+
+        <View style={s.buscaLinha}>
+          <View style={s.busca}>
+            <Ionicons name="search" size={18} color={T.faint} />
+            <TextInput placeholder="Buscar por reserva, protocolo ou local..." placeholderTextColor={T.faint} style={s.buscaInput} value={busca} onChangeText={setBusca} />
+          </View>
         </View>
 
-        {/* Abas */}
-        <View style={styles.tabsContainer}>
-          <TouchableOpacity style={[styles.tabBtn, activeTab === 'todos' && styles.tabBtnActive]} onPress={() => setActiveTab('todos')}>
-            <Ionicons name="grid-outline" size={16} color={activeTab === 'todos' ? COLORS.primary : COLORS.gray} />
-            <Text style={[styles.tabText, activeTab === 'todos' && styles.tabTextActive]}>Todos</Text>
+        {isCliente && (
+          <TouchableOpacity style={s.solicitar} onPress={abrirFormulario} activeOpacity={0.85}>
+            <Ionicons name="add-circle-outline" size={20} color="#fff" />
+            <Text style={s.solicitarTxt}>Solicitar estorno</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.tabBtn, activeTab === 'analise' && styles.tabBtnActive]} onPress={() => setActiveTab('analise')}>
-            <Feather name="clock" size={16} color={activeTab === 'analise' ? COLORS.primary : COLORS.gray} />
-            <Text style={[styles.tabText, activeTab === 'analise' && styles.tabTextActive]}>Em análise</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.tabBtn, activeTab === 'deferidos' && styles.tabBtnActive]} onPress={() => setActiveTab('deferidos')}>
-            <Ionicons name="checkmark-circle-outline" size={16} color={activeTab === 'deferidos' ? COLORS.primary : COLORS.gray} />
-            <Text style={[styles.tabText, activeTab === 'deferidos' && styles.tabTextActive]}>Deferidos</Text>
-          </TouchableOpacity>
-        </View>
+        )}
 
-        {/* Resumo Cards */}
-        <Text style={styles.sectionTitle}>Resumo</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 24, overflow: 'visible' }}>
-          <View style={styles.summaryCard}>
-            <View style={[styles.summaryIconBox, { backgroundColor: COLORS.primaryLight }]}>
-              <Ionicons name="document-text-outline" size={18} color={COLORS.primary} />
-            </View>
-            <Text style={styles.summaryCount}>{resumo.solicitados}</Text>
-            <Text style={styles.summaryLabel}>Solicitados</Text>
-            <Text style={[styles.summaryMoney, { color: COLORS.primary }]}>{formatMoney(resumo.valorSolicitado)}</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.abas}>
+          {ABAS.map((a) => {
+            const on = activeTab === a.id;
+            return (
+              <TouchableOpacity key={a.id} style={[s.aba, on && s.abaOn]} onPress={() => setActiveTab(a.id)} activeOpacity={0.85}>
+                <Text style={[s.abaTxt, on && { color: '#fff' }]}>{a.rotulo}</Text>
+                {a.id !== 'todos' && a.n > 0 && (
+                  <View style={[s.abaBadge, on && { backgroundColor: '#fff' }]}><Text style={[s.abaBadgeTxt, on && { color: T.primary }]}>{a.n}</Text></View>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+
+        <Text style={s.secao}>Resumo</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 12, paddingBottom: 6 }}>
+          <View style={s.resumoCard}>
+            <View style={[s.resumoIcone, { backgroundColor: T.primarySoft }]}><Ionicons name="document-text-outline" size={18} color={T.primary} /></View>
+            <Text style={s.resumoCount}>{resumo.solicitados}</Text>
+            <Text style={s.resumoLabel}>Solicitados</Text>
+            <Text style={[s.resumoMoney, { color: T.primary }]}>{brl(resumo.valorSolicitado)}</Text>
           </View>
-          <View style={styles.summaryCard}>
-            <View style={[styles.summaryIconBox, { backgroundColor: COLORS.warningBg }]}>
-              <Feather name="clock" size={18} color={COLORS.warningText} />
-            </View>
-            <Text style={styles.summaryCount}>{resumo.emAnalise}</Text>
-            <Text style={styles.summaryLabel}>Em análise</Text>
-            <Text style={[styles.summaryMoney, { color: COLORS.warningText }]}>{formatMoney(resumo.valorAnalise)}</Text>
+          <View style={s.resumoCard}>
+            <View style={[s.resumoIcone, { backgroundColor: '#FEF3C7' }]}><Ionicons name="time-outline" size={18} color="#B45309" /></View>
+            <Text style={s.resumoCount}>{resumo.emAnalise}</Text>
+            <Text style={s.resumoLabel}>Em análise</Text>
+            <Text style={[s.resumoMoney, { color: '#B45309' }]}>{brl(resumo.valorAnalise)}</Text>
           </View>
-          <View style={styles.summaryCard}>
-            <View style={[styles.summaryIconBox, { backgroundColor: COLORS.successBg }]}>
-              <Ionicons name="checkmark-circle-outline" size={18} color={COLORS.successText} />
-            </View>
-            <Text style={styles.summaryCount}>{resumo.deferidos}</Text>
-            <Text style={styles.summaryLabel}>Deferidos</Text>
-            <Text style={[styles.summaryMoney, { color: COLORS.successText }]}>{formatMoney(resumo.valorDeferido)}</Text>
+          <View style={s.resumoCard}>
+            <View style={[s.resumoIcone, { backgroundColor: T.successBg }]}><Ionicons name="checkmark-circle-outline" size={18} color={T.success} /></View>
+            <Text style={s.resumoCount}>{resumo.deferidos}</Text>
+            <Text style={s.resumoLabel}>Deferidos</Text>
+            <Text style={[s.resumoMoney, { color: T.success }]}>{brl(resumo.valorDeferido)}</Text>
           </View>
         </ScrollView>
 
-        {/* Histórico Lista */}
-        <View style={styles.historyHeader}>
-          <Text style={styles.sectionTitle}>Histórico de estornos</Text>
-          <TouchableOpacity style={styles.sortBtn}>
-            <Feather name="filter" size={14} color={COLORS.secondary} />
-            <Text style={styles.sortBtnText}>Mais recentes</Text>
-            <Feather name="chevron-down" size={16} color={COLORS.secondary} />
-          </TouchableOpacity>
-        </View>
+        <Text style={s.secao}>Histórico de estornos</Text>
 
         {loading ? (
-          <ActivityIndicator size="large" color={COLORS.primary} style={{ marginTop: 40 }} />
+          <ActivityIndicator size="large" color={T.primary} style={{ marginTop: 40 }} />
         ) : dadosFiltrados.length === 0 ? (
-          <View style={styles.emptyBox}>
-            <Text style={styles.emptyText}>Nenhum registro encontrado.</Text>
+          <View style={s.vazio}>
+            <View style={s.vazioIcone}><Ionicons name="receipt-outline" size={28} color={T.faint} /></View>
+            <Text style={s.vazioTitulo}>Nenhum registro encontrado</Text>
+            <Text style={s.vazioTxt}>Suas solicitações de estorno aparecem aqui.</Text>
           </View>
         ) : (
-          dadosFiltrados.map((item) => {
-            const badge = getStatusBadge(item.status);
-            const titulo = item.itemAluguel?.nome || item.servico?.nome || item.estabelecimento?.nome;
-            const foto = item.itemAluguel?.fotos?.[0] || item.servico?.foto || item.estabelecimento?.foto_perfil;
-            const iconOverlay = item.categoria === 'ALUGUEL' ? 'home-outline' : 'leaf-outline'; // Icone dinamico
-            
-            return (
-              <TouchableOpacity key={item.id} style={styles.listCard} onPress={() => { setDetalheSelecionado(item); setModalDetalhesVisible(true); }}>
-                {/* Imagem + Icone Overlay */}
-                <View style={styles.listCardImgBox}>
-                  <Image source={{ uri: foto || 'https://via.placeholder.com/100' }} style={styles.listCardImg} contentFit="cover" />
-                  <View style={styles.listCardIconOverlay}>
-                    <Ionicons name={iconOverlay as any} size={12} color={COLORS.primary} />
-                  </View>
-                </View>
+          <View style={{ paddingHorizontal: 20 }}>
+            {dadosFiltrados.map((item) => {
+              const st = statusInfo(item.status);
+              const titulo = item.itemAluguel?.nome || item.servico?.nome || item.estabelecimento?.nome;
+              const foto = item.itemAluguel?.fotos?.[0] || item.servico?.foto || item.estabelecimento?.foto_perfil;
+              const protocolo = String(item.codigo_estorno || '').split('-').slice(1).join('-') || item.id;
+              const emAnalise = ANALISE.includes(item.status);
 
-                {/* Info Centro */}
-                <View style={styles.listCardInfo}>
-                  <Text style={styles.listCardTitle} numberOfLines={1}>{titulo}</Text>
-                  <Text style={styles.listCardSub} numberOfLines={1}>{item.estabelecimento?.cidade || 'Local'}</Text>
-                  <Text style={styles.listCardId}>Ref #{item.codigo_estorno.split('-')[1]}</Text>
-                  <Text style={styles.listCardDate}>Solicitado em {new Date(item.data_solicitacao).toLocaleDateString('pt-BR')}</Text>
-                </View>
+              return (
+                <TouchableOpacity key={item.id} style={s.card} activeOpacity={0.9} onPress={() => abrirDetalhes(item)}>
+                  <View style={s.cardTopo}>
+                    <View style={s.cardFoto}>
+                      <Image source={{ uri: foto || 'https://via.placeholder.com/120' }} style={{ width: '100%', height: '100%' }} contentFit="cover" />
+                      <View style={s.cardTag}><Text style={s.cardTagTxt}>{item.categoria === 'ALUGUEL' ? 'Reserva' : 'Serviço'}</Text></View>
+                    </View>
 
-                {/* Status Direita */}
-                <View style={styles.listCardRight}>
-                  <View style={[styles.statusBadge, { backgroundColor: badge.bg }]}>
-                    <Ionicons name={badge.icon as any} size={12} color={badge.text} style={{ marginRight: 4 }} />
-                    <Text style={[styles.statusBadgeText, { color: badge.text }]}>{badge.label}</Text>
-                  </View>
-                  <View style={{ alignItems: 'flex-end', marginTop: 12 }}>
-                    <Text style={styles.listCardTotalLabel}>{badge.label === 'Deferido' ? 'Reembolsado em' : 'Total solicitado'}</Text>
-                    {badge.label === 'Deferido' && <Text style={styles.listCardDateSmall}>{new Date(item.data_estorno || item.updated_at).toLocaleDateString('pt-BR')}</Text>}
-                    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-                      <Text style={styles.listCardTotalValue}>{formatMoney(item.valor_pago)}</Text>
-                      <Feather name="chevron-right" size={16} color={COLORS.secondary} style={{ marginLeft: 4 }} />
+                    <View style={{ flex: 1 }}>
+                      <View style={s.cardLinha}>
+                        <Text style={s.cardTitulo} numberOfLines={1}>{titulo}</Text>
+                      </View>
+                      <Text style={s.cardSub} numberOfLines={1}>Protocolo #{protocolo}</Text>
+                      <Text style={s.cardSub}>Solicitação: {dataBR(item.data_solicitacao)}</Text>
+                      <Text style={s.cardValor}>Valor: {brl(item.valor_pago)}</Text>
+                    </View>
+
+                    <View style={{ alignItems: 'flex-end', gap: 6 }}>
+                      <View style={[s.status, { backgroundColor: st.bg }]}>
+                        <Ionicons name={st.icone as never} size={12} color={st.cor} />
+                        <Text style={[s.statusTxt, { color: st.cor }]}>{st.label}</Text>
+                      </View>
+                      {emAnalise && item.prazo_resposta && <Text style={s.prazo}>Prazo {dataBR(item.prazo_resposta)}</Text>}
+                      {DEFERIDO.includes(item.status) && <Text style={s.prazo}>Reembolso {dataBR(item.data_estorno || item.updated_at)}</Text>}
+                      <Ionicons name="chevron-forward" size={18} color={T.faint} />
                     </View>
                   </View>
-                </View>
-              </TouchableOpacity>
-            )
-          })
-        )}
 
+                  <View style={s.cardBotao}>
+                    <Text style={s.cardBotaoTxt}>Ver detalhes</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        )}
       </ScrollView>
 
-      {/* Modal Genérico para as Ações (Como foi pedido focar no design dessas telas, coloquei o modal resumido) */}
-      <Modal visible={modalDetalhesVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setModalDetalhesVisible(false)}>
-        <SafeAreaView style={{ flex: 1, backgroundColor: '#FFF' }}>
-          <View style={styles.formHeader}>
-             <TouchableOpacity onPress={() => setModalDetalhesVisible(false)} style={{ padding: 4 }}><Ionicons name="close" size={24} color={COLORS.secondary} /></TouchableOpacity>
-             <Text style={styles.headerTitle}>Detalhes do Processo</Text>
-             <View style={{ width: 24 }} />
+      {/* DETALHES DO ESTORNO */}
+      <Modal visible={modalDetalhesVisible} animationType="slide" transparent onRequestClose={() => setModalDetalhesVisible(false)}>
+        <View style={s.overlay}>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setModalDetalhesVisible(false)} />
+          <View style={s.sheet}>
+            <View style={s.grip} />
+            <View style={s.sheetTopo}>
+              <Text style={s.sheetTitulo}>Detalhes do estorno</Text>
+              {detStatus && (
+                <View style={[s.status, { backgroundColor: detStatus.bg }]}>
+                  <Text style={[s.statusTxt, { color: detStatus.cor }]}>{detStatus.label}</Text>
+                </View>
+              )}
+            </View>
+
+            {carregandoDetalhe && <ActivityIndicator color={T.primary} style={{ marginVertical: 8 }} />}
+
+            {!!det && (
+              <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
+                <View style={s.detLinha}><Text style={s.detRotulo}>Protocolo</Text><Text style={s.detValor}>{det.codigo_estorno}</Text></View>
+                <View style={s.detLinha}><Text style={s.detRotulo}>Local</Text><Text style={s.detValor}>{det.estabelecimento?.nome || '-'}</Text></View>
+                <View style={s.detLinha}><Text style={s.detRotulo}>Item</Text><Text style={s.detValor}>{det.itemAluguel?.nome || det.servico?.nome || '-'}</Text></View>
+                <View style={s.detLinha}><Text style={s.detRotulo}>Valor pago</Text><Text style={s.detValor}>{brl(det.valor_pago)}</Text></View>
+                {Number(det.valor_estornado) > 0 && <View style={s.detLinha}><Text style={s.detRotulo}>Valor estornado</Text><Text style={[s.detValor, { color: T.success }]}>{brl(det.valor_estornado)}</Text></View>}
+                <View style={s.detLinha}><Text style={s.detRotulo}>Solicitado em</Text><Text style={s.detValor}>{dataBR(det.data_solicitacao)}</Text></View>
+                {!!det.motivo && <View style={s.detBloco}><Text style={s.detRotulo}>Motivo</Text><Text style={s.detTexto}>{det.motivo}</Text></View>}
+                {!!det.descricao_cliente && <View style={s.detBloco}><Text style={s.detRotulo}>Sua descrição</Text><Text style={s.detTexto}>{det.descricao_cliente}</Text></View>}
+                {!!det.descricao_admin && <View style={[s.detBloco, { backgroundColor: T.primarySoft }]}><Text style={s.detRotulo}>Resposta da análise</Text><Text style={s.detTexto}>{det.descricao_admin}</Text></View>}
+
+                {Array.isArray(detalheCompleto?.historicos) && detalheCompleto.historicos.length > 0 && (
+                  <>
+                    <Text style={[s.rotulo, { marginTop: 16 }]}>Andamento</Text>
+                    {detalheCompleto.historicos.map((h: any) => (
+                      <View key={h.id} style={s.histLinha}>
+                        <View style={s.histPonto} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={s.histTitulo}>{String(h.novo_status).replace(/_/g, ' ')}</Text>
+                          {!!h.descricao && <Text style={s.histSub}>{h.descricao}</Text>}
+                          <Text style={s.histSub}>{dataBR(h.created_at)}</Text>
+                        </View>
+                      </View>
+                    ))}
+                  </>
+                )}
+              </ScrollView>
+            )}
+
+            <TouchableOpacity style={s.btnPrim} onPress={() => setModalDetalhesVisible(false)} activeOpacity={0.85}>
+              <Text style={s.btnPrimTxt}>Fechar</Text>
+            </TouchableOpacity>
           </View>
-          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
-            <Ionicons name="construct-outline" size={60} color={COLORS.gray} />
-            <Text style={{ fontSize: 16, fontWeight: 'bold', marginTop: 16, textAlign: 'center' }}>
-              Integração completa com as rotas de aprovação/contestação do Controller Mobile.
-            </Text>
-            <Text style={{ fontSize: 14, color: COLORS.gray, textAlign: 'center', marginTop: 8 }}>
-              (A tela principal de Listagem e Formulário está finalizada conforme o Figma).
-            </Text>
-          </View>
-        </SafeAreaView>
+        </View>
       </Modal>
     </SafeAreaView>
   );
 }
 
-// =========================================================================
-// ESTILOS (100% FIEL ÀS IMAGENS)
-// =========================================================================
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: COLORS.white, paddingTop: Platform.OS === 'android' ? 30 : 0 },
-  
-  // --- HEADER SHARED ---
-  headerDashboard: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 12 },
-  formHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  headerTitle: { fontSize: 18, fontWeight: '800', color: COLORS.secondary },
-  
-  listContent: { paddingHorizontal: 20, paddingBottom: 40 },
+const s = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: T.cream, paddingTop: Platform.OS === 'android' ? 30 : 0 },
 
-  // --- TOP ROW DASHBOARD (IMAGEM 1) ---
-  dashTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: 8, marginBottom: 20 },
-  dashSub: { flex: 1, fontSize: 13, color: COLORS.gray, lineHeight: 18, marginRight: 16 },
-  btnSolicitar: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.primaryLight, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 8 },
-  btnSolicitarText: { color: COLORS.primary, fontWeight: '700', fontSize: 13, marginLeft: 6 },
+  formHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12 },
+  voltar: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
+  formTitulo: { fontSize: 17, fontWeight: '800', color: T.ink },
 
-  // --- TABS (IMAGEM 1) ---
-  tabsContainer: { flexDirection: 'row', backgroundColor: COLORS.white, borderRadius: 12, padding: 4, borderWidth: 1, borderColor: COLORS.border, marginBottom: 24 },
-  tabBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, borderRadius: 8 },
-  tabBtnActive: { backgroundColor: COLORS.white, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 },
-  tabText: { fontSize: 13, fontWeight: '600', color: COLORS.gray, marginLeft: 6 },
-  tabTextActive: { color: COLORS.primary, fontWeight: '800' },
+  buscaLinha: { paddingHorizontal: 20, marginTop: 6 },
+  busca: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: T.card, borderRadius: 24, paddingHorizontal: 16, height: 50, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  buscaInput: { flex: 1, fontSize: 14, color: T.ink },
 
-  // --- RESUMO CARDS (IMAGEM 1) ---
-  sectionTitle: { fontSize: 16, fontWeight: '800', color: COLORS.secondary, marginBottom: 12 },
-  summaryCard: { backgroundColor: COLORS.white, width: 140, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: COLORS.border, marginRight: 12, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 4, elevation: 1 },
-  summaryIconBox: { width: 32, height: 32, borderRadius: 8, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
-  summaryCount: { fontSize: 24, fontWeight: '900', color: COLORS.secondary },
-  summaryLabel: { fontSize: 12, color: COLORS.gray, fontWeight: '500', marginBottom: 8 },
-  summaryMoney: { fontSize: 14, fontWeight: '800' },
+  solicitar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: T.primary, marginHorizontal: 20, marginTop: 14, height: 54, borderRadius: 27 },
+  solicitarTxt: { color: '#fff', fontWeight: '800', fontSize: 15 },
 
-  // --- HISTORY LIST (IMAGEM 1) ---
-  historyHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  sortBtn: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  sortBtnText: { fontSize: 13, color: COLORS.secondary, fontWeight: '600' },
-  
-  listCard: { flexDirection: 'row', backgroundColor: COLORS.white, borderRadius: 16, padding: 12, borderWidth: 1, borderColor: COLORS.border, marginBottom: 12 },
-  listCardImgBox: { width: 70, height: 70, borderRadius: 12, position: 'relative' },
-  listCardImg: { width: '100%', height: '100%', borderRadius: 12, backgroundColor: COLORS.lightGray },
-  listCardIconOverlay: { position: 'absolute', bottom: -4, right: -4, backgroundColor: COLORS.white, padding: 4, borderRadius: 10, borderWidth: 1, borderColor: COLORS.border },
-  
-  listCardInfo: { flex: 1, marginLeft: 12, justifyContent: 'center' },
-  listCardTitle: { fontSize: 15, fontWeight: '800', color: COLORS.secondary, marginBottom: 2 },
-  listCardSub: { fontSize: 12, color: COLORS.gray, marginBottom: 4 },
-  listCardId: { fontSize: 11, color: COLORS.gray },
-  listCardDate: { fontSize: 11, color: COLORS.gray, marginTop: 2 },
-  
-  listCardRight: { alignItems: 'flex-end', justifyContent: 'space-between' },
-  statusBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 100 },
-  statusBadgeText: { fontSize: 10, fontWeight: '800' },
-  listCardTotalLabel: { fontSize: 10, color: COLORS.gray, fontWeight: '500' },
-  listCardDateSmall: { fontSize: 10, color: COLORS.gray, marginTop: 2 },
-  listCardTotalValue: { fontSize: 14, fontWeight: '900', color: COLORS.secondary },
+  abas: { paddingHorizontal: 20, gap: 8, paddingVertical: 14 },
+  aba: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: T.card, paddingHorizontal: 16, paddingVertical: 10, borderRadius: 22 },
+  abaOn: { backgroundColor: T.primary, borderColor: T.primary },
+  abaTxt: { fontSize: 13, fontWeight: '700', color: T.ink },
+  abaBadge: { minWidth: 18, height: 18, borderRadius: 9, backgroundColor: T.primary, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  abaBadgeTxt: { fontSize: 10, fontWeight: '800', color: '#fff' },
 
-  emptyBox: { alignItems: 'center', paddingVertical: 40 },
-  emptyText: { fontSize: 14, color: COLORS.gray },
+  secao: { fontSize: 18, fontWeight: '800', color: T.ink, paddingHorizontal: 20, marginTop: 10, marginBottom: 12, letterSpacing: -0.3 },
+  resumoCard: { backgroundColor: T.card, width: 148, borderRadius: 22, padding: 16, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  resumoIcone: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
+  resumoCount: { fontSize: 28, fontWeight: '800', color: T.ink },
+  resumoLabel: { fontSize: 12, color: T.muted, marginBottom: 6 },
+  resumoMoney: { fontSize: 14, fontWeight: '800' },
 
-  // --- FORM VIEW (IMAGEM 2) ---
-  formContent: { padding: 20, paddingBottom: 60 },
-  
-  safeBanner: { flexDirection: 'row', backgroundColor: COLORS.primaryLight, padding: 16, borderRadius: 12, marginBottom: 24, alignItems: 'center' },
-  safeBannerIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#FFE4D6', alignItems: 'center', justifyContent: 'center' },
-  safeBannerTitle: { fontSize: 14, fontWeight: '800', color: COLORS.secondary, marginBottom: 2 },
-  safeBannerDesc: { fontSize: 12, color: COLORS.gray, lineHeight: 18 },
+  card: { backgroundColor: T.card, borderRadius: 24, padding: 14, marginBottom: 14, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  cardTopo: { flexDirection: 'row', gap: 12 },
+  cardFoto: { width: 84, height: 96, borderRadius: 14, overflow: 'hidden', backgroundColor: T.line },
+  cardTag: { position: 'absolute', top: 6, left: 6, backgroundColor: T.tag, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6 },
+  cardTagTxt: { color: '#fff', fontSize: 9, fontWeight: '800' },
+  cardLinha: { flexDirection: 'row', alignItems: 'center' },
+  cardTitulo: { flex: 1, fontSize: 16, fontWeight: '800', color: T.ink },
+  cardSub: { fontSize: 12, color: T.muted, marginTop: 3 },
+  cardValor: { fontSize: 15, fontWeight: '800', color: T.ink, marginTop: 6 },
+  status: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 9, paddingVertical: 5, borderRadius: 8 },
+  statusTxt: { fontSize: 11, fontWeight: '800' },
+  prazo: { fontSize: 10, color: T.muted, textAlign: 'right', maxWidth: 90 },
+  cardBotao: { marginTop: 12, backgroundColor: T.primary, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center' },
+  cardBotaoTxt: { color: '#fff', fontWeight: '800', fontSize: 14 },
 
-  pedidoCard: { flexDirection: 'row', backgroundColor: COLORS.white, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: COLORS.border, marginBottom: 12 },
-  pedidoCardSelecionado: { borderColor: COLORS.primary, borderWidth: 2, backgroundColor: COLORS.primaryLight },
-  pedidoImg: { width: 60, height: 60, borderRadius: 8, backgroundColor: COLORS.lightGray },
-  pedidoImgPlaceholder: { alignItems: 'center', justifyContent: 'center' },
-  emptyElegiveisBox: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: COLORS.lightGray, padding: 14, borderRadius: 12, marginBottom: 20 },
-  emptyElegiveisText: { flex: 1, fontSize: 12, color: COLORS.gray, lineHeight: 17 },
-  pedidoInfo: { flex: 1, marginLeft: 12, justifyContent: 'center' },
-  pedidoTitle: { fontSize: 14, fontWeight: '800', color: COLORS.secondary, marginBottom: 4 },
-  pedidoRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  pedidoText: { fontSize: 11, color: COLORS.gray, marginLeft: 4 },
-  pedidoId: { fontSize: 11, color: COLORS.gray },
-  pedidoPrice: { fontSize: 14, fontWeight: '800', color: COLORS.primary },
+  vazio: { alignItems: 'center', paddingVertical: 40, paddingHorizontal: 30 },
+  vazioIcone: { width: 72, height: 72, borderRadius: 36, backgroundColor: T.card, alignItems: 'center', justifyContent: 'center', marginBottom: 12, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  vazioTitulo: { fontSize: 16, fontWeight: '800', color: T.ink },
+  vazioTxt: { fontSize: 13, color: T.muted, marginTop: 4, textAlign: 'center' },
 
-  inputBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, paddingHorizontal: 16, height: 50, marginBottom: 24 },
-  inputText: { flex: 1, fontSize: 14, color: COLORS.secondary },
-  
-  textAreaBox: { backgroundColor: COLORS.white, borderWidth: 1, borderColor: COLORS.border, borderRadius: 12, padding: 16, marginBottom: 24 },
-  textArea: { fontSize: 14, color: COLORS.secondary, textAlignVertical: 'top', height: 100 },
-  charCount: { fontSize: 11, color: COLORS.gray, alignSelf: 'flex-end', marginTop: 8 },
+  // formulário
+  banner: { flexDirection: 'row', gap: 12, alignItems: 'center', backgroundColor: T.primarySoft, borderRadius: 20, padding: 16 },
+  bannerIcone: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  bannerTitulo: { fontSize: 14, fontWeight: '800', color: T.ink },
+  bannerTxt: { fontSize: 12, color: T.muted, marginTop: 2, lineHeight: 17 },
+  rotulo: { fontSize: 14, fontWeight: '800', color: T.ink, marginTop: 20, marginBottom: 10 },
+  opcional: { fontWeight: '500', color: T.muted },
+  ajuda: { fontSize: 12, color: T.muted, marginTop: -6, marginBottom: 10 },
+  aviso: { flexDirection: 'row', gap: 8, alignItems: 'center', backgroundColor: T.card, borderRadius: 20, padding: 14, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  avisoTxt: { flex: 1, fontSize: 13, color: T.muted, lineHeight: 18 },
+  pedido: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: T.card, borderRadius: 20, padding: 14, marginBottom: 10, borderWidth: 1.5, borderColor: 'transparent', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  pedidoOn: { borderColor: T.primary, backgroundColor: T.primarySoft },
+  pedidoImg: { width: 56, height: 56, borderRadius: 12, backgroundColor: T.line },
+  pedidoTitulo: { fontSize: 14, fontWeight: '800', color: T.ink },
+  pedidoSub: { fontSize: 11, color: T.muted, marginTop: 2 },
+  pedidoPreco: { fontSize: 14, fontWeight: '800', color: T.primary },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chipMotivo: { backgroundColor: T.card, borderWidth: 1.5, borderColor: T.line, paddingHorizontal: 15, paddingVertical: 10, borderRadius: 22 },
+  chipMotivoOn: { backgroundColor: T.primary, borderColor: T.primary },
+  chipMotivoTxt: { fontSize: 13, fontWeight: '600', color: T.ink },
+  textareaBox: { backgroundColor: T.card, borderRadius: 20, borderWidth: 1.5, borderColor: T.line, padding: 14 },
+  textarea: { minHeight: 110, fontSize: 14, color: T.ink },
+  contador: { alignSelf: 'flex-end', fontSize: 11, color: T.faint },
+  fotos: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  fotoBox: { width: 84, height: 84, borderRadius: 14, overflow: 'hidden' },
+  fotoPrev: { width: '100%', height: '100%' },
+  fotoRemover: { position: 'absolute', top: 4, right: 4, width: 20, height: 20, borderRadius: 10, backgroundColor: 'rgba(31,26,23,0.7)', alignItems: 'center', justifyContent: 'center' },
+  fotoAdd: { width: 84, height: 84, borderRadius: 14, borderWidth: 1.5, borderStyle: 'dashed', borderColor: '#F0B79C', backgroundColor: T.card, alignItems: 'center', justifyContent: 'center', gap: 2 },
+  fotoAddTxt: { fontSize: 10, fontWeight: '700', color: T.ink },
+  fotoAddSub: { fontSize: 9, color: T.muted },
+  resumo: { backgroundColor: T.card, borderRadius: 20, padding: 14, marginTop: 20, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  resumoLinha: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  resumoRotulo: { fontSize: 13, color: T.muted },
+  resumoValor: { fontSize: 14, fontWeight: '700', color: T.ink },
+  resumoDivisor: { height: 1, backgroundColor: T.line, marginVertical: 10 },
+  resumoTotalRotulo: { fontSize: 14, fontWeight: '800', color: T.ink },
+  resumoTotal: { fontSize: 18, fontWeight: '800', color: T.primary },
+  resumoNota: { fontSize: 11, color: T.muted, marginTop: 8 },
+  protegido: { flexDirection: 'row', gap: 10, alignItems: 'center', backgroundColor: T.primarySoft, borderRadius: 14, padding: 14, marginTop: 20 },
+  protegidoTxt: { flex: 1, fontSize: 12, color: T.muted, lineHeight: 17 },
+  btnPrim: { backgroundColor: T.primary, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', marginTop: 18 },
+  btnPrimTxt: { color: '#fff', fontWeight: '800', fontSize: 15 },
+  btnSec: { height: 52, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginTop: 10, backgroundColor: T.card, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  btnSecTxt: { color: T.primary, fontWeight: '800', fontSize: 15 },
 
-  uploadBox: { backgroundColor: '#FAFAFA', borderWidth: 1, borderColor: '#D1D5DB', borderStyle: 'dashed', borderRadius: 12, padding: 24, alignItems: 'center', marginBottom: 24 },
-  uploadTitle: { fontSize: 14, fontWeight: '700', color: COLORS.secondary, marginTop: 12, marginBottom: 4 },
-  uploadSub: { fontSize: 12, color: COLORS.gray, textAlign: 'center', paddingHorizontal: 20 },
-  previewImg: { width: 60, height: 60, borderRadius: 8, marginRight: 8, backgroundColor: COLORS.border },
-
-  resumoBox: { backgroundColor: '#FAFAFA', borderRadius: 12, padding: 16, borderWidth: 1, borderColor: COLORS.border, marginBottom: 24 },
-  resumoHeaderRow: { flexDirection: 'row', alignItems: 'flex-start' },
-  resumoIconWrapper: { width: 40, height: 40, borderRadius: 8, backgroundColor: COLORS.primaryLight, alignItems: 'center', justifyContent: 'center' },
-  resumoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  resumoLabel: { fontSize: 13, color: COLORS.gray },
-  resumoValue: { fontSize: 13, fontWeight: '600', color: COLORS.secondary },
-  resumoDivider: { height: 1, backgroundColor: COLORS.border, marginVertical: 16 },
-  resumoTotalLabel: { fontSize: 14, fontWeight: '800', color: COLORS.primary },
-  resumoTotalValue: { fontSize: 16, fontWeight: '900', color: COLORS.primary },
-
-  shieldBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F3F4F6', padding: 16, borderRadius: 12, marginBottom: 24 },
-  shieldText: { marginLeft: 8, fontSize: 12, color: COLORS.secondary, fontWeight: '500' },
-
-  btnPrimary: { backgroundColor: COLORS.primary, paddingVertical: 16, borderRadius: 12, alignItems: 'center', marginBottom: 12 },
-  btnPrimaryDisabled: { backgroundColor: COLORS.border },
-  btnPrimaryText: { color: COLORS.white, fontSize: 15, fontWeight: '800' },
-  btnOutline: { backgroundColor: COLORS.white, paddingVertical: 16, borderRadius: 12, alignItems: 'center', borderWidth: 1, borderColor: COLORS.primary },
-  btnOutlineText: { color: COLORS.primary, fontSize: 15, fontWeight: '800' },
+  // detalhes
+  overlay: { flex: 1, backgroundColor: 'rgba(31,26,23,0.5)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: '#fff', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 22, paddingBottom: 30 },
+  grip: { width: 40, height: 4, borderRadius: 2, backgroundColor: T.line, alignSelf: 'center', marginBottom: 14 },
+  sheetTopo: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  sheetTitulo: { fontSize: 19, fontWeight: '800', color: T.ink },
+  detLinha: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: T.line, gap: 12 },
+  detRotulo: { fontSize: 13, color: T.muted },
+  detValor: { flex: 1, textAlign: 'right', fontSize: 13, fontWeight: '700', color: T.ink },
+  detBloco: { backgroundColor: T.cream, borderRadius: 14, padding: 12, marginTop: 12 },
+  detTexto: { fontSize: 13, color: T.ink, marginTop: 4, lineHeight: 19 },
+  histLinha: { flexDirection: 'row', gap: 10, marginBottom: 12 },
+  histPonto: { width: 10, height: 10, borderRadius: 5, backgroundColor: T.primary, marginTop: 4 },
+  histTitulo: { fontSize: 13, fontWeight: '700', color: T.ink, textTransform: 'capitalize' },
+  histSub: { fontSize: 11, color: T.muted, marginTop: 2 },
 });

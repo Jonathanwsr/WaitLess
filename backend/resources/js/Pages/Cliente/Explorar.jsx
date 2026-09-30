@@ -11,6 +11,14 @@ import {
     HeartPulse, Plane, GraduationCap, Dog, Wrench, UserRound, Lock
 } from 'lucide-react';
 
+const ESTADOS_BR = [
+    ['AC', 'Acre'], ['AL', 'Alagoas'], ['AP', 'Amapá'], ['AM', 'Amazonas'], ['BA', 'Bahia'], ['CE', 'Ceará'],
+    ['DF', 'Distrito Federal'], ['ES', 'Espírito Santo'], ['GO', 'Goiás'], ['MA', 'Maranhão'], ['MT', 'Mato Grosso'],
+    ['MS', 'Mato Grosso do Sul'], ['MG', 'Minas Gerais'], ['PA', 'Pará'], ['PB', 'Paraíba'], ['PR', 'Paraná'],
+    ['PE', 'Pernambuco'], ['PI', 'Piauí'], ['RJ', 'Rio de Janeiro'], ['RN', 'Rio Grande do Norte'], ['RS', 'Rio Grande do Sul'],
+    ['RO', 'Rondônia'], ['RR', 'Roraima'], ['SC', 'Santa Catarina'], ['SP', 'São Paulo'], ['SE', 'Sergipe'], ['TO', 'Tocantins'],
+];
+
 export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtros = {} }) {
     // 💡 IMPORTANTE: Pegamos o ID do usuário logado para saber de quem são os favoritos
     const user = usePage().props.auth.user;
@@ -23,6 +31,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
     const [categoriaAtiva, setCategoriaAtiva] = useState(filtros.categoria || 'todas');
     const [ordenarPor, setOrdenarPor] = useState(filtros.ordem || 'relevancia');
     const [apenasPromocoes, setApenasPromocoes] = useState(!!filtros.apenas_promocoes);
+    const [estado, setEstado] = useState(filtros.estado || '');
     const [carregando, setCarregando] = useState(false);
     const [imageErrors, setImageErrors] = useState({});
     
@@ -36,24 +45,26 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
     const [toast, setToast] = useState({ show: false, message: '' });
 
     // Mapeamento EXATO com o banco de dados
+    // Cada categoria com sua própria cor (a ativa usa esse tom, não sempre o laranja da marca) —
+    // mesmas cores usadas nas categorias de serviço do painel do lojista e no app do cliente.
     const categorias = [
-        { nome: 'todas', label: 'Todos', icon: Layers },
-        
+        { nome: 'todas', label: 'Todos', icon: Layers, cor: '#282828' },
+
         // --- Categorias de Locações / Aluguéis ---
-        { nome: 'casa', label: 'Imóveis & Espaços', icon: Home },
-        { nome: 'carro', label: 'Aluguel de Veículos', icon: Car },
-        { nome: 'equipamento', label: 'Equipamentos', icon: Wrench },
+        { nome: 'casa', label: 'Imóveis & Espaços', icon: Home, cor: '#0EA5A4' },
+        { nome: 'carro', label: 'Aluguel de Veículos', icon: Car, cor: '#4F46E5' },
+        { nome: 'equipamento', label: 'Equipamentos', icon: Wrench, cor: '#475569' },
 
         // --- Categorias de Serviços / Estabelecimentos ---
-        { nome: 'Saúde e Bem-Estar', label: 'Saúde & Bem-Estar', icon: HeartPulse },
-        { nome: 'Beleza e Estética', label: 'Beleza', icon: Scissors },
-        { nome: 'Turismo e Viagens', label: 'Turismo', icon: Plane },
-        { nome: 'Tecnologia', label: 'Tecnologia', icon: Laptop },
-        { nome: 'Educação e Cursos', label: 'Educação', icon: GraduationCap },
-        { nome: 'Eventos e Entretenimento', label: 'Eventos', icon: PartyPopper },
-        { nome: 'Pets e Animais', label: 'Pets', icon: Dog },
-        { nome: 'Serviços Profissionais', label: 'Profissionais', icon: Briefcase },
-        { nome: 'Automotivo', label: 'Oficinas', icon: Car },
+        { nome: 'Saúde e Bem-Estar', label: 'Saúde & Bem-Estar', icon: HeartPulse, cor: '#2563EB' },
+        { nome: 'Beleza e Estética', label: 'Beleza', icon: Scissors, cor: '#E8467C' },
+        { nome: 'Turismo e Viagens', label: 'Turismo', icon: Plane, cor: '#0284C7' },
+        { nome: 'Tecnologia', label: 'Tecnologia', icon: Laptop, cor: '#0369A1' },
+        { nome: 'Educação e Cursos', label: 'Educação', icon: GraduationCap, cor: '#1D4ED8' },
+        { nome: 'Eventos e Entretenimento', label: 'Eventos', icon: PartyPopper, cor: '#9333EA' },
+        { nome: 'Pets e Animais', label: 'Pets', icon: Dog, cor: '#D97706' },
+        { nome: 'Serviços Profissionais', label: 'Profissionais', icon: Briefcase, cor: '#475569' },
+        { nome: 'Automotivo', label: 'Oficinas', icon: Car, cor: '#4F46E5' },
     ];
 
     // 👇 ESTA FUNÇÃO É A MÁGICA QUE VERIFICA SE JÁ VEIO FAVORITADO DO BANCO 👇
@@ -90,6 +101,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
             categoria: novosFiltros.categoria ?? categoriaAtiva,
             ordem: novosFiltros.ordem ?? ordenarPor,
             apenas_promocoes: novosFiltros.apenas_promocoes ?? apenasPromocoes,
+            estado: novosFiltros.estado ?? estado,
             page: novosFiltros.page || 1,
         };
 
@@ -99,6 +111,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
         if (!params.data) delete params.data;
         if (params.ordem === 'relevancia') delete params.ordem;
         if (!params.apenas_promocoes) delete params.apenas_promocoes;
+        if (!params.estado) delete params.estado;
         if (params.page === 1) delete params.page;
 
         router.get(route('cliente.explorar'), params, {
@@ -107,7 +120,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
             only: ['estabelecimentos', 'itens_aluguel', 'filtros'],
             onFinish: () => setCarregando(false),
         });
-    }, [tipoBusca, busca, enderecoManual, dataDesejada, categoriaAtiva, ordenarPor, apenasPromocoes]);
+    }, [tipoBusca, busca, enderecoManual, dataDesejada, categoriaAtiva, ordenarPor, apenasPromocoes, estado]);
 
     const handleBuscaSubmit = (e) => {
         e?.preventDefault();
@@ -122,6 +135,11 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
     const handleTipoBuscaClick = (tipo) => {
         setTipoBusca(tipo);
         atualizarResultados({ tipo_busca: tipo, page: 1 });
+    };
+
+    const handleEstadoChange = (uf) => {
+        setEstado(uf);
+        atualizarResultados({ estado: uf, page: 1 });
     };
 
     const handlePromocoesToggle = () => {
@@ -320,9 +338,9 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                             className="inline-flex bg-white dark:bg-zinc-900 rounded-full p-1 shadow-sm border border-zinc-200 dark:border-zinc-800"
                         >
                             {[
+                                { id: 'estabelecimentos', label: 'Lojas', icon: Store },
                                 { id: 'servicos', label: 'Serviços', icon: Briefcase },
                                 { id: 'reservas', label: 'Reservas', icon: Calendar },
-                                { id: 'estabelecimentos', label: 'Locais', icon: Store },
                             ].map(({ id, label, icon: Icon }) => (
                                 <motion.button
                                     key={id}
@@ -341,8 +359,23 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                             ))}
                         </motion.div>
 
-                        {/* Promo + Ordenação */}
-                        <div className="flex items-center gap-3">
+                        {/* Promo + Estado + Ordenação */}
+                        <div className="flex flex-wrap items-center gap-3">
+                            <div className="relative">
+                                <select
+                                    value={estado}
+                                    onChange={(e) => handleEstadoChange(e.target.value)}
+                                    className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-2xl py-2.5 pl-4 pr-10 text-sm font-medium focus:ring-2 focus:ring-[#FF5A00] appearance-none cursor-pointer"
+                                    aria-label="Filtrar por estado"
+                                >
+                                    <option value="">Todos os estados</option>
+                                    {ESTADOS_BR.map(([uf, nome]) => (
+                                        <option key={uf} value={uf}>{nome} ({uf})</option>
+                                    ))}
+                                </select>
+                                <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 pointer-events-none" />
+                            </div>
+
                             <motion.button
                                 whileHover={{ scale: 1.05 }}
                                 whileTap={{ scale: 0.95 }}
@@ -394,18 +427,28 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                                     whileHover={{ scale: 1.08, y: -2 }}
                                     whileTap={{ scale: 0.95 }}
                                     onClick={() => handleCategoriaClick(cat.nome)}
+                                    style={active ? { backgroundColor: cat.cor, boxShadow: `0 10px 20px -8px ${cat.cor}80` } : undefined}
                                     className={`flex items-center gap-2.5 px-6 py-3 rounded-2xl font-semibold text-sm whitespace-nowrap transition-all flex-shrink-0 ${
                                         active
-                                            ? 'bg-[#FF5A00] text-white shadow-lg shadow-orange-500/30'
+                                            ? 'text-white'
                                             : 'bg-white dark:bg-zinc-900 hover:bg-zinc-50 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-700'
                                     }`}
                                 >
-                                    <IconComponent className={`w-4 h-4 ${active ? 'text-white' : 'text-zinc-400'}`} />
+                                    <IconComponent className="w-4 h-4" style={{ color: active ? '#fff' : cat.cor }} />
                                     {cat.label}
                                 </motion.button>
                             );
                         })}
                     </motion.div>
+
+                    {estado && (
+                        <div className="mb-6 flex items-center gap-3 text-sm">
+                            <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#FF5A00]/10 text-[#FF5A00] font-bold">
+                                <MapPin className="w-4 h-4" /> {ESTADOS_BR.find(([uf]) => uf === estado)?.[1] || estado}
+                            </span>
+                            <button type="button" onClick={() => handleEstadoChange('')} className="text-zinc-500 hover:text-zinc-900 font-semibold underline">Ver todos os estados</button>
+                        </div>
+                    )}
 
                     {/* Resultados com Animação de Stagger */}
                     <AnimatePresence mode="wait">
@@ -441,8 +484,8 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                                             whileTap={{ scale: 0.95 }}
                                             onClick={() => {
                                                 setBusca(''); setEnderecoManual(''); setDataDesejada('');
-                                                setCategoriaAtiva('todas'); setApenasPromocoes(false);
-                                                atualizarResultados({ busca: '', endereco_manual: '', data: '', categoria: 'todas', apenas_promocoes: false, page: 1 });
+                                                setCategoriaAtiva('todas'); setApenasPromocoes(false); setEstado('');
+                                                atualizarResultados({ busca: '', endereco_manual: '', data: '', categoria: 'todas', apenas_promocoes: false, estado: '', page: 1 });
                                             }}
                                             className="px-8 py-3.5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-2xl hover:bg-black dark:hover:bg-white transition-colors font-medium shadow-sm"
                                         >
@@ -461,7 +504,9 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                                             ? route('assinatura.status')
                                             : (isEstabelecimentos
                                                 ? route('estabelecimentos.loja', item.id)
-                                                : route('itens.detalhes', item.id));
+                                                : tipoItem === 'servico'
+                                                    ? route('cliente.agendar', { estabelecimento: item.estabelecimento_id, servico_id: item.id })
+                                                    : route('itens.detalhes', item.id));
 
                                         // ✅ AQUI LIGAMOS AS AVALIAÇÕES PARA SEREM VISTAS DO EXPLORAR!
                                         const routeAvaliacoes = route('explorar.avaliacoes', { id: item.id, tipo: tipoItem });
@@ -535,6 +580,12 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                                                         {tipoItem === 'item_aluguel' && item.direto_dono && (
                                                             <div className="absolute bottom-4 right-4 bg-zinc-900/90 text-white text-[10px] font-bold px-3 py-1.5 rounded-2xl tracking-wider shadow-sm z-10 flex items-center gap-1.5">
                                                                 <UserRound className="w-3.5 h-3.5" /> DIRETO COM O DONO
+                                                            </div>
+                                                        )}
+
+                                                        {item.vagas_status && (
+                                                            <div className={`absolute top-14 left-4 z-20 text-xs font-bold px-3 py-1.5 rounded-2xl shadow-sm ${item.vagas_status === 'esgotado' ? 'bg-red-600 text-white' : 'bg-amber-400 text-zinc-900'}`}>
+                                                                {item.vagas_status === 'esgotado' ? 'Esgotado hoje' : `Últimas vagas hoje (${item.vagas_restantes})`}
                                                             </div>
                                                         )}
 

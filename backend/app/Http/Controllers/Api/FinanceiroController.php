@@ -27,16 +27,35 @@ class FinanceiroController extends Controller
         try {
             $user = $request->user();
 
-            if (strtolower($user->plano_assinatura ?? '') !== 'premium') {
-                return back()->withErrors(['erro' => 'Esta funcionalidade é exclusiva para assinantes Premium. Faça o upgrade para acessar o controle financeiro.']);
-            }
+        // O financeiro do proprietário/gerente agora é uma tela só: a Carteira.
+        if (in_array(mb_strtolower((string) $user->papel), ['socio', 'sócio', 'proprietario', 'proprietário', 'gerente'], true)) {
+            return redirect()->route('carteira.asaas');
+        }
 
+            // Precisa saber se é admin ANTES de checar o plano Premium — admin
+            // sempre tem acesso, independente de assinatura (antes esse check
+            // vinha depois do bloqueio Premium, então nem admin sem o plano
+            // conseguia entrar, e o "bypass" que o front já esperava nunca era
+            // realmente alcançado).
             $papeisPermitidos = ['admin', 'socio', 'proprietario', 'gerente'];
             $vinculos = EstabelecimentoUsuario::where('usuario_id', $user->id)
                 ->whereIn('tipo', $papeisPermitidos)
                 ->get();
 
-            $isAdmin = $vinculos->where('tipo', 'admin')->isNotEmpty() || ($user->tipo ?? '') === 'admin';
+            $isAdmin = $vinculos->where('tipo', 'admin')->isNotEmpty()
+                || mb_strtolower((string) ($user->papel ?? '')) === 'admin';
+
+            // "asaas_subscription_status" vira 'CANCELLED' na hora que o sócio
+            // cancela (ver AssinaturaController::cancelar) — plano_assinatura
+            // sozinho não basta pra saber isso, porque ele só é rebaixado pro
+            // gratuito depois que o ciclo pago acaba. Pra essa tela, o corte
+            // de acesso precisa ser imediato ao cancelar, então checamos os dois.
+            $aindaEhPremium = strtolower($user->plano_assinatura ?? '') === 'premium'
+                && strtoupper((string) ($user->asaas_subscription_status ?? '')) !== 'CANCELLED';
+
+            if (!$isAdmin && !$aindaEhPremium) {
+                return back()->withErrors(['erro' => 'Esta funcionalidade é exclusiva para assinantes Premium. Faça o upgrade para acessar o controle financeiro.']);
+            }
 
             if (!$isAdmin && $vinculos->isEmpty()) {
                 return back()->withErrors(['erro' => 'Seu perfil atual não tem permissão de gerente ou sócio para visualizar estes dados.']);

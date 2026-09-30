@@ -16,7 +16,6 @@ import {
     CheckIcon,
     ChartBarIcon,
     HeartIcon,
-    WalletIcon,
     ShoppingCartIcon,
     CheckCircleIcon,
     ShoppingBagIcon,
@@ -244,8 +243,11 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
         ? produtos.filter(p => p.id !== produtoSelecionado.id).slice(0, 4) 
         : [];
 
-    const bannerUrl = estabelecimento.banner || estabelecimento.foto_banner || 'https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=1920&q=80'; 
-    const logoUrl = estabelecimento.logo || 'https://placehold.co/150x150/e2e8f0/828ea8?text=Sem+Logo';
+    const bannerUrl = estabelecimento.foto_banner || 'https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=1920&q=80';
+    const logoUrl = estabelecimento.foto_perfil || 'https://placehold.co/150x150/e2e8f0/828ea8?text=Sem+Logo';
+
+    const temAvaliacaoReal = Number(estabelecimento.total_avaliacoes) > 0;
+    const totalPromocoes = servicos.filter(s => Number(s.valor) < 150).length + produtos.filter(p => p.promocao == 1 || p.is_promocao == 1).length;
 
     return (
         <AuthenticatedLayout
@@ -302,10 +304,16 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
                             </div>
                             
                             <div className="flex items-center gap-2 text-sm text-gray-300 mt-2 flex-wrap">
-                                <div className="flex items-center text-amber-400 gap-1 font-bold">
-                                    <StarIcon className="w-4 h-4" /> 4.8
-                                </div>
-                                <span className="text-gray-400">(256 avaliações)</span>
+                                {temAvaliacaoReal ? (
+                                    <>
+                                        <div className="flex items-center text-amber-400 gap-1 font-bold">
+                                            <StarIcon className="w-4 h-4" /> {Number(estabelecimento.avaliacao_media).toFixed(1)}
+                                        </div>
+                                        <span className="text-gray-400">({estabelecimento.total_avaliacoes} avaliações)</span>
+                                    </>
+                                ) : (
+                                    <span className="text-gray-300 font-medium">Novo por aqui</span>
+                                )}
                                 <span className="text-gray-500">•</span>
                                 <span>{estabelecimento.bairro ? `${estabelecimento.bairro}, ` : ''}{estabelecimento.cidade}</span>
                             </div>
@@ -326,7 +334,7 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
 
             {/* MÉTRICAS E INDICADORES (Desktop) */}
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-8 relative z-10 hidden sm:block">
-                <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-5 grid grid-cols-2 md:grid-cols-5 gap-y-6 gap-x-4 divide-gray-100 md:divide-x">
+                <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-5 grid grid-cols-2 md:grid-cols-4 gap-y-6 gap-x-4 divide-gray-100 md:divide-x">
                     <div className="flex items-center gap-4 px-3">
                         <div className="bg-emerald-50 p-3 rounded-xl text-emerald-600">
                             <ChartBarIcon className="w-6 h-6" />
@@ -350,7 +358,13 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
                             <StarIcon className="w-6 h-6" />
                         </div>
                         <div>
-                            <div className="text-2xl font-black text-gray-900 leading-none">4,8 <span className="text-sm font-medium text-gray-400">/ 5</span></div>
+                            <div className="text-2xl font-black text-gray-900 leading-none">
+                                {temAvaliacaoReal ? (
+                                    <>{Number(estabelecimento.avaliacao_media).toFixed(1)} <span className="text-sm font-medium text-gray-400">/ 5</span></>
+                                ) : (
+                                    <span className="text-base font-bold text-gray-400">Novo</span>
+                                )}
+                            </div>
                             <div className="text-xs text-gray-500 font-medium mt-1">Avaliação</div>
                         </div>
                     </div>
@@ -359,17 +373,8 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
                             <HeartIcon className="w-6 h-6" />
                         </div>
                         <div>
-                            <div className="text-2xl font-black text-gray-900 leading-none">12</div>
+                            <div className="text-2xl font-black text-gray-900 leading-none">{totalPromocoes}</div>
                             <div className="text-xs text-gray-500 font-medium mt-1">Promoções</div>
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-4 px-3">
-                        <div className="bg-indigo-50 p-3 rounded-xl text-indigo-600">
-                            <WalletIcon className="w-6 h-6" />
-                        </div>
-                        <div>
-                            <div className="text-2xl font-black text-gray-900 leading-none">2.450</div>
-                            <div className="text-xs text-indigo-600 font-bold hover:underline cursor-pointer mt-1">Meus Pontos</div>
                         </div>
                     </div>
                 </div>
@@ -463,10 +468,12 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
                                                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" 
                                                         />
                                                         
-                                                        <div className="absolute top-3 left-3 bg-white/95 backdrop-blur-sm px-2.5 py-1.5 rounded-lg text-xs font-bold text-gray-900 flex items-center gap-1 shadow-sm">
-                                                            <StarIcon className="w-4 h-4 text-amber-500" />
-                                                            {(Number(servico.avaliacao_media) || 4.9).toFixed(1)}
-                                                        </div>
+                                                        {Number(servico.total_avaliacoes) > 0 && (
+                                                            <div className="absolute top-3 left-3 bg-white/95 backdrop-blur-sm px-2.5 py-1.5 rounded-lg text-xs font-bold text-gray-900 flex items-center gap-1 shadow-sm">
+                                                                <StarIcon className="w-4 h-4 text-amber-500" />
+                                                                {Number(servico.avaliacao_media).toFixed(1)}
+                                                            </div>
+                                                        )}
 
                                                         {servico.valor < 150 && (
                                                             <div className="absolute top-3 right-3 bg-red-600 text-white text-[10px] font-black px-2.5 py-1.5 rounded-lg tracking-wider uppercase shadow-sm flex items-center gap-1">
@@ -657,11 +664,17 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
                                 </div>
 
                                 <div className="flex flex-wrap items-center gap-x-6 gap-y-4 border-b border-gray-100 pb-6 mb-6">
-                                    <div className="flex items-center gap-1 font-bold text-gray-900 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-100">
-                                        <StarIcon className="w-5 h-5 text-amber-500" />
-                                        <span>{(Number(servicoSelecionado.avaliacao_media) || 4.9).toFixed(1)}</span>
-                                        <span className="text-xs text-amber-700/60 ml-1 font-medium">({servicoSelecionado.total_avaliacoes || 24} avaliações)</span>
-                                    </div>
+                                    {Number(servicoSelecionado.total_avaliacoes) > 0 ? (
+                                        <div className="flex items-center gap-1 font-bold text-gray-900 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-100">
+                                            <StarIcon className="w-5 h-5 text-amber-500" />
+                                            <span>{Number(servicoSelecionado.avaliacao_media).toFixed(1)}</span>
+                                            <span className="text-xs text-amber-700/60 ml-1 font-medium">({servicoSelecionado.total_avaliacoes} avaliações)</span>
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center gap-1 font-bold text-gray-500 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100">
+                                            Novo, ainda sem avaliações
+                                        </div>
+                                    )}
                                     <div className="flex items-center gap-2 text-gray-700 font-medium bg-gray-50 border border-gray-100 px-3 py-1.5 rounded-lg">
                                         <ClockIcon className="w-5 h-5 text-gray-400"/> 
                                         <span>{servicoSelecionado.duracao_minutos} minutos</span>
@@ -861,9 +874,11 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
                                                 
                                                 <div className="flex items-center gap-3 mt-4 pt-4 border-t border-gray-50 text-xs text-gray-500 font-medium">
                                                     <span className="flex items-center gap-1"><ClockIcon className="w-4 h-4 text-gray-400" /> {outroServico.duracao_minutos}m</span>
-                                                    <div className="flex items-center gap-1 font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded-md">
-                                                        <StarIcon className="w-3.5 h-3.5" /> {(Number(outroServico.avaliacao_media) || 4.9).toFixed(1)}
-                                                    </div>
+                                                    {Number(outroServico.total_avaliacoes) > 0 && (
+                                                        <div className="flex items-center gap-1 font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded-md">
+                                                            <StarIcon className="w-3.5 h-3.5" /> {Number(outroServico.avaliacao_media).toFixed(1)}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
                                         );

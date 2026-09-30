@@ -1,38 +1,12 @@
 import React, { useCallback, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  ActivityIndicator,
-  SafeAreaView,
-  Platform,
-  Image,
-  RefreshControl,
-} from 'react-native';
-import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { useFocusEffect } from '@react-navigation/native';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, ScrollView, ActivityIndicator } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
+import { useLocalSearchParams, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const COLORS = {
-  primary: '#FF5A00',
-  primaryLight: '#FFF0E6',
-  secondary: '#111827',
-  gray: '#6B7280',
-  lightGray: '#F9FAFB',
-  white: '#FFFFFF',
-  border: '#E5E7EB',
-  success: '#10B981',
-  successLight: '#ECFDF5',
-  warning: '#F59E0B',
-  warningLight: '#FFFBEB',
-  danger: '#DC2626',
-  dangerLight: '#FEF2F2',
-  indigo: '#4F46E5',
-  indigoLight: '#EEF2FF',
-};
+import { O } from '../../../constants/OwnerTheme';
+import { OwnerScreen, Card, Rotulo, Metrica, Pilula, Vazio, Erro, brl, api } from '../../../components/owner/ui';
+import { alertar } from '../../../services/alertar';
 
 const ENV_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api';
 const cleanBaseUrl = ENV_URL.replace(/\/mobile\/?$/, '').replace(/\/+$/, '');
@@ -67,7 +41,20 @@ interface HistoricoItem {
   hora_finalizacao?: string | null;
 }
 
+interface ServicoReserva {
+  id: number;
+  nome: string;
+  valor: number;
+  max_pessoas: number;
+}
+
+interface ReservaManualDados {
+  estabelecimento_id: number;
+  servicos: ServicoReserva[];
+}
+
 interface DetalheClienteData {
+  reserva_manual?: ReservaManualDados | null;
   paciente: Paciente;
   triagem: any;
   proximoServico: ProximoServico | null;
@@ -83,26 +70,19 @@ const STATUS_LABEL: Record<string, string> = {
   cancelado: 'Cancelado',
 };
 
-function corStatus(status: string) {
-  switch (status) {
-    case 'em_atendimento':
-    case 'confirmado':
-      return { bg: COLORS.indigoLight, text: COLORS.indigo };
-    case 'finalizado':
-      return { bg: COLORS.successLight, text: COLORS.success };
-    case 'cancelado':
-      return { bg: COLORS.dangerLight, text: COLORS.danger };
-    default:
-      return { bg: COLORS.warningLight, text: COLORS.warning };
-  }
-}
+const TOM_STATUS: Record<string, 'alerta' | 'info' | 'positivo' | 'negativo'> = {
+  pendente: 'alerta',
+  confirmado: 'info',
+  em_atendimento: 'info',
+  finalizado: 'positivo',
+  cancelado: 'negativo',
+};
 
 async function pegarToken() {
   return (await AsyncStorage.getItem('@waitless_token')) || (await AsyncStorage.getItem('@lokyva_token'));
 }
 
 export default function DetalheCliente() {
-  const router = useRouter();
   const params = useLocalSearchParams();
   const clienteId = params.id?.toString();
 
@@ -110,6 +90,82 @@ export default function DetalheCliente() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+
+  // --- Reserva manual (dono/gerente reserva um serviço em nome do cliente) ---
+  const [modalReserva, setModalReserva] = useState(false);
+  const [servicoId, setServicoId] = useState<number | null>(null);
+  const [dataReserva, setDataReserva] = useState('');
+  const [horaReserva, setHoraReserva] = useState('');
+  const [pessoas, setPessoas] = useState(1);
+  const [horarios, setHorarios] = useState<string[]>([]);
+  const [buscandoHorarios, setBuscandoHorarios] = useState(false);
+  const [salvandoReserva, setSalvandoReserva] = useState(false);
+  const [erroReserva, setErroReserva] = useState<string | null>(null);
+
+  const proximosDias = React.useMemo(() => {
+    const semana = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+    return Array.from({ length: 14 }, (_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() + i);
+      const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      return { iso, semana: semana[d.getDay()], dia: String(d.getDate()).padStart(2, '0') };
+    });
+  }, []);
+
+  const servicoEscolhido = dados?.reserva_manual?.servicos.find((sv) => sv.id === servicoId) || null;
+  const maxPessoas = servicoEscolhido?.max_pessoas || 1;
+  const valorEstimado = servicoEscolhido ? servicoEscolhido.valor * pessoas : 0;
+
+  const abrirReserva = () => {
+    setServicoId(null); setDataReserva(''); setHoraReserva(''); setPessoas(1); setHorarios([]); setErroReserva(null);
+    setModalReserva(true);
+  };
+
+  React.useEffect(() => {
+    setPessoas(1);
+    setHoraReserva('');
+  }, [servicoId]);
+
+  React.useEffect(() => {
+    if (!servicoId || !dataReserva) { setHorarios([]); return; }
+    let cancelado = false;
+    setBuscandoHorarios(true);
+    setHoraReserva('');
+    api(`/horarios-disponiveis/${servicoId}?data=${dataReserva}&tipo=servico`)
+      .then((lista: string[]) => { if (!cancelado) setHorarios(Array.isArray(lista) ? lista : []); })
+      .catch(() => { if (!cancelado) setHorarios([]); })
+      .finally(() => { if (!cancelado) setBuscandoHorarios(false); });
+    return () => { cancelado = true; };
+  }, [servicoId, dataReserva]);
+
+  const confirmarReserva = async () => {
+    if (!dados?.reserva_manual || !servicoId || !dataReserva || !horaReserva) {
+      setErroReserva('Escolha o serviço, a data e o horário.');
+      return;
+    }
+    setSalvandoReserva(true);
+    setErroReserva(null);
+    try {
+      await api('/proprietario/reservas-manuais', {
+        method: 'POST',
+        body: {
+          cliente_id: dados.paciente.id,
+          estabelecimento_id: dados.reserva_manual.estabelecimento_id,
+          servico_id: servicoId,
+          data: dataReserva,
+          hora: horaReserva,
+          pessoas,
+        },
+      });
+      setModalReserva(false);
+      alertar('Reserva criada', 'A reserva foi registrada para o cliente.');
+      carregar();
+    } catch (e: any) {
+      setErroReserva(e?.message || 'Não foi possível criar a reserva.');
+    } finally {
+      setSalvandoReserva(false);
+    }
+  };
 
   const carregar = useCallback(async () => {
     if (!clienteId) return;
@@ -144,200 +200,231 @@ export default function DetalheCliente() {
     carregar();
   };
 
-  const formatarMoeda = (v?: number) => `R$ ${Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={22} color={COLORS.secondary} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Histórico do Cliente</Text>
-        <View style={styles.backBtn} />
-      </View>
-
-      {loading ? (
-        <View style={styles.centerBox}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-        </View>
-      ) : erro ? (
-        <View style={styles.centerBox}>
-          <Ionicons name="alert-circle-outline" size={48} color={COLORS.border} />
-          <Text style={styles.erroText}>{erro}</Text>
-        </View>
-      ) : dados ? (
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.primary} colors={[COLORS.primary]} />}
-        >
+    <OwnerScreen titulo="Cliente" subtitulo="Histórico de atendimentos" carregando={loading} atualizando={refreshing} onAtualizar={onRefresh}>
+      {erro ? (
+        <Erro mensagem={erro} aoTentar={() => { setLoading(true); carregar(); }} />
+      ) : dados && (
+        <>
           {/* CARTÃO DO CLIENTE */}
-          <View style={styles.clienteCard}>
-            {dados.paciente.foto ? (
-              <Image source={{ uri: dados.paciente.foto }} style={styles.avatar} />
-            ) : (
-              <View style={styles.avatarPlaceholder}>
-                <Text style={styles.avatarPlaceholderText}>{dados.paciente.nome?.charAt(0)?.toUpperCase() || '?'}</Text>
-              </View>
-            )}
-            <Text style={styles.clienteNome}>{dados.paciente.nome}</Text>
-            <Text style={styles.clienteDesde}>Cliente desde {dados.paciente.desde}</Text>
+          <View style={s.hero}>
+            <View style={s.avatar}>
+              {dados.paciente.foto ? (
+                <Image source={{ uri: dados.paciente.foto }} style={s.avatarImg} contentFit="cover" />
+              ) : (
+                <Text style={s.avatarTxt}>{dados.paciente.nome?.charAt(0)?.toUpperCase() || '?'}</Text>
+              )}
+            </View>
+            <Text style={s.nome}>{dados.paciente.nome}</Text>
+            <Text style={s.desde}>Cliente desde {dados.paciente.desde}</Text>
 
-            <View style={styles.contatoRow}>
-              {dados.paciente.telefone && (
-                <View style={styles.contatoItem}>
-                  <Feather name="phone" size={13} color={COLORS.gray} />
-                  <Text style={styles.contatoText}>{dados.paciente.telefone}</Text>
+            <View style={s.contatos}>
+              {!!dados.paciente.telefone && (
+                <View style={s.contato}>
+                  <Ionicons name="call-outline" size={15} color={O.muted} />
+                  <Text style={s.contatoTxt}>{dados.paciente.telefone}</Text>
                 </View>
               )}
-              {dados.paciente.email && (
-                <View style={styles.contatoItem}>
-                  <Feather name="mail" size={13} color={COLORS.gray} />
-                  <Text style={styles.contatoText} numberOfLines={1}>{dados.paciente.email}</Text>
+              {!!dados.paciente.email && (
+                <View style={s.contato}>
+                  <Ionicons name="mail-outline" size={15} color={O.muted} />
+                  <Text style={s.contatoTxt} numberOfLines={1}>{dados.paciente.email}</Text>
                 </View>
               )}
             </View>
           </View>
+
+          {/* NOVA RESERVA (só dono/gerente) */}
+          {!!dados.reserva_manual && dados.reserva_manual.servicos.length > 0 && (
+            <TouchableOpacity style={s.botaoReserva} activeOpacity={0.85} onPress={abrirReserva}>
+              <Ionicons name="add-circle-outline" size={20} color="#fff" />
+              <Text style={s.botaoReservaTxt}>Nova reserva para {dados.paciente.nome?.split(' ')[0]}</Text>
+            </TouchableOpacity>
+          )}
 
           {/* RESUMO FINANCEIRO */}
-          <View style={styles.metricsRow}>
-            <View style={styles.metricBox}>
-              <Text style={[styles.metricValue, { color: COLORS.success }]}>{formatarMoeda(dados.financeiro.total_gasto)}</Text>
-              <Text style={styles.metricLabel}>Total Gasto</Text>
-            </View>
-            <View style={styles.metricBox}>
-              <Text style={[styles.metricValue, { color: dados.financeiro.pendente > 0 ? COLORS.warning : COLORS.secondary }]}>
-                {formatarMoeda(dados.financeiro.pendente)}
-              </Text>
-              <Text style={styles.metricLabel}>Pendente</Text>
-            </View>
-            <View style={styles.metricBox}>
-              <Text style={styles.metricValue}>{dados.historicoServicos.length}</Text>
-              <Text style={styles.metricLabel}>Atendimentos</Text>
-            </View>
+          <View style={s.grade}>
+            <Metrica rotulo="Total gasto" valor={brl(dados.financeiro.total_gasto)} icone="cash-outline" tom="positivo" />
+            <Metrica rotulo="Pendente" valor={brl(dados.financeiro.pendente)} icone="hourglass-outline" tom={dados.financeiro.pendente > 0 ? 'alerta' : 'neutro'} />
           </View>
+          <Metrica rotulo="Atendimentos registrados" valor={dados.historicoServicos.length} icone="clipboard-outline" />
 
           {/* PRÓXIMO SERVIÇO */}
           {dados.proximoServico && (
-            <View style={styles.proximoCard}>
-              <View style={styles.proximoIconWrap}>
-                <Ionicons name="calendar" size={18} color={COLORS.primary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.proximoTitulo}>Próximo: {dados.proximoServico.servico}</Text>
-                <Text style={styles.proximoSub}>
-                  {dados.proximoServico.data_formatada} às {dados.proximoServico.hora} • {dados.proximoServico.profissional}
-                </Text>
-              </View>
-            </View>
+            <>
+              <Rotulo>Próximo agendamento</Rotulo>
+              <Card style={s.proximo}>
+                <View style={s.proximoIcone}><Ionicons name="calendar-outline" size={20} color={O.ink} /></View>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.proximoTitulo}>{dados.proximoServico.servico}</Text>
+                  <Text style={s.proximoSub}>
+                    {dados.proximoServico.data_formatada} às {dados.proximoServico.hora} · {dados.proximoServico.profissional}
+                  </Text>
+                </View>
+              </Card>
+            </>
           )}
 
           {/* HISTÓRICO */}
-          <Text style={styles.sectionTitle}>Histórico de Atendimentos</Text>
-
+          <Rotulo>Histórico de atendimentos</Rotulo>
           {dados.historicoServicos.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <MaterialCommunityIcons name="calendar-blank-outline" size={48} color={COLORS.border} />
-              <Text style={styles.emptyText}>Nenhum atendimento registrado ainda.</Text>
-            </View>
+            <Card><Vazio icone="calendar-outline" titulo="Nenhum atendimento" texto="Os atendimentos deste cliente aparecem aqui." /></Card>
           ) : (
-            dados.historicoServicos.map((item) => {
-              const cores = corStatus(item.status);
-              return (
-                <View key={item.id} style={styles.historicoCard}>
-                  <View style={styles.historicoHeaderRow}>
-                    <Text style={styles.historicoServico} numberOfLines={1}>{item.servico}</Text>
-                    <View style={[styles.statusBadge, { backgroundColor: cores.bg }]}>
-                      <Text style={[styles.statusBadgeText, { color: cores.text }]}>{STATUS_LABEL[item.status] || item.status}</Text>
-                    </View>
-                  </View>
-                  <Text style={styles.historicoMeta}>{item.data} • {item.profissional}</Text>
-                  {typeof item.valor_final === 'number' && item.valor_final > 0 && (
-                    <Text style={styles.historicoValor}>{formatarMoeda(item.valor_final)}</Text>
-                  )}
-                  {item.status === 'finalizado' && item.finalizado_por && (
-                    <View style={styles.finalizadoBadge}>
-                      <Ionicons name="checkmark-circle" size={12} color={COLORS.success} />
-                      <Text style={styles.finalizadoText} numberOfLines={1}>
+            <Card style={{ paddingVertical: 4 }}>
+              {dados.historicoServicos.map((item, i) => (
+                <View key={item.id} style={[s.item, i < dados.historicoServicos.length - 1 && s.itemBorda]}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.itemTitulo} numberOfLines={1}>{item.servico}</Text>
+                    <Text style={s.itemMeta}>{item.data} · {item.profissional}</Text>
+                    {item.status === 'finalizado' && item.finalizado_por && (
+                      <Text style={s.itemMeta} numberOfLines={1}>
                         Finalizado por {item.finalizado_por}{item.hora_finalizacao ? ` às ${item.hora_finalizacao.substring(0, 5)}` : ''}
                       </Text>
-                    </View>
-                  )}
+                    )}
+                  </View>
+                  <View style={{ alignItems: 'flex-end', gap: 6 }}>
+                    <Pilula texto={STATUS_LABEL[item.status] || item.status} tom={TOM_STATUS[item.status] || 'neutro'} />
+                    {typeof item.valor_final === 'number' && item.valor_final > 0 && <Text style={s.itemValor}>{brl(item.valor_final)}</Text>}
+                  </View>
                 </View>
-              );
-            })
+              ))}
+            </Card>
           )}
-        </ScrollView>
-      ) : null}
-    </SafeAreaView>
+        </>
+      )}
+
+      <Modal visible={modalReserva} animationType="slide" transparent onRequestClose={() => setModalReserva(false)}>
+        <View style={s.modalFundo}>
+          <View style={s.modalCaixa}>
+            <View style={s.modalTopo}>
+              <Text style={s.modalTitulo}>Nova reserva</Text>
+              <TouchableOpacity onPress={() => setModalReserva(false)}><Ionicons name="close" size={24} color={O.ink} /></TouchableOpacity>
+            </View>
+            <ScrollView contentContainerStyle={{ paddingBottom: 12 }} keyboardShouldPersistTaps="handled">
+              <View style={s.presencial}>
+                <View style={s.presencialIcone}><Ionicons name="storefront-outline" size={20} color={O.accent} /></View>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.presencialTitulo}>Pagamento presencial</Text>
+                  <Text style={s.presencialTxt}>O cliente paga direto no estabelecimento. Reservas feitas por você não têm pagamento online (Pix, cartão ou boleto).</Text>
+                </View>
+              </View>
+
+              <Text style={s.campoRotulo}>Serviço</Text>
+              <View style={s.chips}>
+                {dados?.reserva_manual?.servicos.map((sv) => (
+                  <TouchableOpacity key={sv.id} style={[s.chip, servicoId === sv.id && s.chipOn]} onPress={() => setServicoId(sv.id)}>
+                    <Text style={[s.chipTxt, servicoId === sv.id && s.chipTxtOn]}>{sv.nome} · {brl(sv.valor)}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={s.campoRotulo}>Data</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                {proximosDias.map((d) => (
+                  <TouchableOpacity key={d.iso} style={[s.dia, dataReserva === d.iso && s.chipOn]} onPress={() => setDataReserva(d.iso)}>
+                    <Text style={[s.diaSemana, dataReserva === d.iso && s.chipTxtOn]}>{d.semana}</Text>
+                    <Text style={[s.diaNum, dataReserva === d.iso && s.chipTxtOn]}>{d.dia}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              <Text style={s.campoRotulo}>Horário</Text>
+              {!servicoId || !dataReserva ? (
+                <Text style={s.dica}>Escolha o serviço e a data para ver os horários.</Text>
+              ) : buscandoHorarios ? (
+                <ActivityIndicator color={O.ink} style={{ alignSelf: 'flex-start' }} />
+              ) : horarios.length === 0 ? (
+                <Text style={[s.dica, { color: O.danger }]}>Esgotado: não há horários livres nesta data.</Text>
+              ) : (
+                <View style={s.chips}>
+                  {horarios.map((h) => (
+                    <TouchableOpacity key={h} style={[s.chip, horaReserva === h && s.chipOn]} onPress={() => setHoraReserva(h)}>
+                      <Text style={[s.chipTxt, horaReserva === h && s.chipTxtOn]}>{h}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              {maxPessoas > 1 && (
+                <>
+                  <Text style={s.campoRotulo}>Quantas pessoas</Text>
+                  <View style={s.stepper}>
+                    <TouchableOpacity style={s.stepBtn} onPress={() => setPessoas((n) => Math.max(1, n - 1))}><Ionicons name="remove" size={20} color={O.ink} /></TouchableOpacity>
+                    <Text style={s.stepNum}>{pessoas}</Text>
+                    <TouchableOpacity style={s.stepBtn} onPress={() => setPessoas((n) => Math.min(maxPessoas, n + 1))}><Ionicons name="add" size={20} color={O.ink} /></TouchableOpacity>
+                    <Text style={s.dica}>máx. {maxPessoas}</Text>
+                  </View>
+                </>
+              )}
+
+              {!!servicoEscolhido && (
+                <View style={s.total}>
+                  <Text style={s.totalRotulo}>Valor estimado</Text>
+                  <Text style={s.totalValor}>{brl(valorEstimado)}</Text>
+                </View>
+              )}
+
+              {!!erroReserva && <Text style={s.erroReserva}>{erroReserva}</Text>}
+            </ScrollView>
+
+            <TouchableOpacity style={[s.botaoReserva, (salvandoReserva || !horaReserva) && { opacity: 0.5 }]} disabled={salvandoReserva || !horaReserva} onPress={confirmarReserva} activeOpacity={0.85}>
+              {salvandoReserva ? <ActivityIndicator color="#fff" /> : <Text style={s.botaoReservaTxt}>Confirmar reserva</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </OwnerScreen>
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: COLORS.white, paddingTop: Platform.OS === 'android' ? 30 : 0 },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 12, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border,
-  },
-  backBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
-  headerTitle: { fontSize: 16, fontWeight: '900', color: COLORS.secondary },
+const s = StyleSheet.create({
+  presencial: { flexDirection: 'row', gap: 12, backgroundColor: '#FFF7ED', borderRadius: 18, padding: 14, marginBottom: 6 },
+  presencialIcone: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#FFF1E4', alignItems: 'center', justifyContent: 'center' },
+  presencialTitulo: { fontSize: 14, fontWeight: '800', color: O.ink },
+  presencialTxt: { fontSize: 12, color: O.muted, lineHeight: 18, marginTop: 2 },
+  botaoReserva: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: O.accent, borderRadius: 16, paddingVertical: 14, marginBottom: 14 },
+  botaoReservaTxt: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  modalFundo: { flex: 1, backgroundColor: 'rgba(20,20,20,0.5)', justifyContent: 'flex-end' },
+  modalCaixa: { backgroundColor: O.card, borderTopLeftRadius: 26, borderTopRightRadius: 26, padding: 20, maxHeight: '90%' },
+  modalTopo: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 },
+  modalTitulo: { fontSize: 20, fontWeight: '800', color: O.ink },
+  campoRotulo: { fontSize: 12, fontWeight: '700', color: O.muted, textTransform: 'uppercase', letterSpacing: 0.6, marginTop: 16, marginBottom: 8 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: { borderWidth: 1, borderColor: O.line, backgroundColor: O.soft, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10 },
+  chipOn: { backgroundColor: O.accent, borderColor: O.accent },
+  chipTxt: { fontSize: 13, fontWeight: '600', color: O.ink },
+  chipTxtOn: { color: '#fff' },
+  dia: { width: 56, alignItems: 'center', borderWidth: 1, borderColor: O.line, backgroundColor: O.soft, borderRadius: 14, paddingVertical: 10 },
+  diaSemana: { fontSize: 11, color: O.muted, textTransform: 'uppercase' },
+  diaNum: { fontSize: 18, fontWeight: '800', color: O.ink, marginTop: 2 },
+  dica: { fontSize: 12, color: O.muted },
+  stepper: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  stepBtn: { width: 40, height: 40, borderRadius: 12, backgroundColor: O.soft, alignItems: 'center', justifyContent: 'center' },
+  stepNum: { fontSize: 20, fontWeight: '800', color: O.ink, minWidth: 28, textAlign: 'center' },
+  total: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: O.soft, borderRadius: 14, padding: 14, marginTop: 18 },
+  totalRotulo: { fontSize: 13, color: O.muted, fontWeight: '600' },
+  totalValor: { fontSize: 20, fontWeight: '800', color: O.ink },
+  erroReserva: { color: O.danger, fontSize: 13, fontWeight: '600', marginTop: 12 },
+  hero: { alignItems: 'center', backgroundColor: O.card, borderRadius: 26, padding: 22, marginBottom: 14, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  avatar: { width: 84, height: 84, borderRadius: 42, backgroundColor: O.accent, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', marginBottom: 12 },
+  avatarImg: { width: '100%', height: '100%' },
+  avatarTxt: { color: '#fff', fontSize: 32, fontWeight: '700' },
+  nome: { fontSize: 20, fontWeight: '800', color: O.ink, letterSpacing: -0.4 },
+  desde: { fontSize: 13, color: O.muted, marginTop: 3 },
+  contatos: { alignSelf: 'stretch', marginTop: 16, gap: 8 },
+  contato: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: O.soft, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 },
+  contatoTxt: { flex: 1, fontSize: 13, color: O.ink, fontWeight: '500' },
 
-  centerBox: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 30 },
-  erroText: { fontSize: 14, color: COLORS.gray, textAlign: 'center', marginTop: 12, fontWeight: '600' },
+  grade: { flexDirection: 'row', gap: 12, marginBottom: 12 },
 
-  scrollContent: { padding: 20, paddingBottom: 60 },
+  proximo: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  proximoIcone: { width: 44, height: 44, borderRadius: 14, backgroundColor: O.soft, alignItems: 'center', justifyContent: 'center' },
+  proximoTitulo: { fontSize: 15, fontWeight: '700', color: O.ink },
+  proximoSub: { fontSize: 12, color: O.muted, marginTop: 3 },
 
-  clienteCard: { alignItems: 'center', marginBottom: 20 },
-  avatar: { width: 84, height: 84, borderRadius: 42, marginBottom: 12, backgroundColor: COLORS.lightGray },
-  avatarPlaceholder: {
-    width: 84, height: 84, borderRadius: 42, backgroundColor: COLORS.primaryLight,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 12,
-  },
-  avatarPlaceholderText: { fontSize: 32, fontWeight: '900', color: COLORS.primary },
-  clienteNome: { fontSize: 20, fontWeight: '900', color: COLORS.secondary },
-  clienteDesde: { fontSize: 12, color: COLORS.gray, marginTop: 2, fontWeight: '500' },
-
-  contatoRow: { flexDirection: 'row', gap: 16, marginTop: 12, flexWrap: 'wrap', justifyContent: 'center' },
-  contatoItem: { flexDirection: 'row', alignItems: 'center', gap: 5, maxWidth: 180 },
-  contatoText: { fontSize: 12, color: COLORS.gray, fontWeight: '500' },
-
-  metricsRow: { flexDirection: 'row', gap: 10, marginBottom: 20 },
-  metricBox: {
-    flex: 1, backgroundColor: COLORS.lightGray, borderRadius: 16, paddingVertical: 14,
-    alignItems: 'center', borderWidth: 1, borderColor: COLORS.border,
-  },
-  metricValue: { fontSize: 15, fontWeight: '900', color: COLORS.secondary },
-  metricLabel: { fontSize: 9, color: COLORS.gray, fontWeight: '700', marginTop: 4, textTransform: 'uppercase' },
-
-  proximoCard: {
-    flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: COLORS.primaryLight,
-    borderRadius: 16, padding: 14, marginBottom: 24, borderWidth: 1, borderColor: '#FFE0CC',
-  },
-  proximoIconWrap: {
-    width: 38, height: 38, borderRadius: 12, backgroundColor: COLORS.white,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  proximoTitulo: { fontSize: 13, fontWeight: '800', color: COLORS.secondary },
-  proximoSub: { fontSize: 11, color: COLORS.gray, marginTop: 2, fontWeight: '500' },
-
-  sectionTitle: { fontSize: 15, fontWeight: '900', color: COLORS.secondary, marginBottom: 12 },
-
-  emptyContainer: { alignItems: 'center', paddingVertical: 40 },
-  emptyText: { fontSize: 13, color: COLORS.gray, marginTop: 10 },
-
-  historicoCard: {
-    backgroundColor: COLORS.white, borderRadius: 16, padding: 14, marginBottom: 10,
-    borderWidth: 1, borderColor: COLORS.border,
-  },
-  historicoHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  historicoServico: { flex: 1, fontSize: 14, fontWeight: '800', color: COLORS.secondary },
-  statusBadge: { paddingHorizontal: 9, paddingVertical: 4, borderRadius: 8 },
-  statusBadgeText: { fontSize: 9, fontWeight: '800', textTransform: 'uppercase' },
-  historicoMeta: { fontSize: 11, color: COLORS.gray, marginTop: 6, fontWeight: '500' },
-  historicoValor: { fontSize: 13, fontWeight: '800', color: COLORS.secondary, marginTop: 6 },
-
-  finalizadoBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: COLORS.successLight,
-    borderWidth: 1, borderColor: '#D1FAE5', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7, marginTop: 8,
-  },
-  finalizadoText: { fontSize: 10, fontWeight: '700', color: COLORS.success, flex: 1 },
+  item: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14 },
+  itemBorda: { borderBottomWidth: 1, borderBottomColor: O.line },
+  itemTitulo: { fontSize: 15, fontWeight: '700', color: O.ink },
+  itemMeta: { fontSize: 12, color: O.muted, marginTop: 2 },
+  itemValor: { fontSize: 14, fontWeight: '700', color: O.ink },
 });

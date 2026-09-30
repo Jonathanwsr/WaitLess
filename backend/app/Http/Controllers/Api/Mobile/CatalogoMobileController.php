@@ -34,7 +34,8 @@ class CatalogoMobileController extends Controller
 
             return response()->json([
                 'servico' => $servico,
-                'avaliacoes_previa' => $avaliacoes
+                'avaliacoes_previa' => $avaliacoes,
+                'funcionarios' => \App\Models\Funcionario::where('estabelecimento_id', $servico->estabelecimento_id)->where('ativo', true)->orderBy('nome')->get(['id', 'nome', 'cargo']),
             ], 200);
 
         } catch (\Exception $e) {

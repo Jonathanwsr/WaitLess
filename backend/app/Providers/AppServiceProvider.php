@@ -25,6 +25,13 @@ class AppServiceProvider extends ServiceProvider
     {
         Vite::prefetch(concurrency: 3);
 
+        \App\Models\Agendamento::observe(\App\Observers\AgendamentoObserver::class);
+
+        // App em português: mensagens de validação, datas por extenso ("21 de setembro") e "há 5 minutos".
+        // Definido aqui para não depender do APP_LOCALE de cada ambiente; o que faltar cai no inglês.
+        app()->setLocale('pt_BR');
+        \Illuminate\Support\Carbon::setLocale('pt_BR');
+
         // Limite geral da API (app mobile + front): generoso o bastante para
         // uso normal (ex: a fila do funcionário atualiza sozinha a cada 30s),
         // mas evita que um app travado em loop ou muitos usuários simultâneos
@@ -38,6 +45,21 @@ class AppServiceProvider extends ServiceProvider
         // o uso normal do app.
         RateLimiter::for('login', function (Request $request) {
             return Limit::perMinute(8)->by(strtolower((string) $request->input('email')) . '|' . $request->ip());
+        });
+
+        // Cadastro faz chamadas reais à API do Asaas e envia e-mail a cada
+        // tentativa — sem limite, um script automatizado conseguia gerar
+        // contas em massa e gastar as chamadas do gateway de pagamento.
+        // Recuperação de senha: manda e-mail e aceita tentativas de código, então é limitada por e-mail e por IP.
+        RateLimiter::for('senha', function (Request $request) {
+            return [
+                Limit::perMinute(5)->by(strtolower((string) $request->input('email')) . '|' . $request->ip()),
+                Limit::perHour(30)->by($request->ip()),
+            ];
+        });
+
+        RateLimiter::for('register', function (Request $request) {
+            return Limit::perMinute(6)->by($request->ip());
         });
     }
 }

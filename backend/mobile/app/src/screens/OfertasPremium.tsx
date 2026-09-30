@@ -15,13 +15,13 @@ import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const COLORS = {
-  primary: '#FF5A00',
-  primaryLight: '#FFF0E6',
-  dark: '#0F172A',
-  gray: '#6B7280',
-  lightGray: '#F9FAFB',
+  primary: '#FF7A00',
+  primaryLight: '#FFF1E4',
+  dark: '#282828',
+  gray: '#6A6C72',
+  lightGray: '#F5F5F5',
   white: '#FFFFFF',
-  border: '#E5E7EB',
+  border: '#E6E7E9',
   error: '#DC2626',
   blue: '#2563EB',
 };
@@ -100,12 +100,24 @@ export default function OfertasPremium() {
 
   const totalOfertas = servicos.length + reservas.length + produtos.length;
 
+  const abrirOferta = (oferta: Oferta) => {
+    if (oferta.bloqueado) {
+      router.push('/assinatura' as never);
+      return;
+    }
+    if (oferta.tipo === 'produto') return; // sem tela de detalhe de produto no app ainda
+    router.push({
+      pathname: '/src/screens/ExplorarDetalhes' as never,
+      params: { id: String(oferta.id), tipo: oferta.tipo === 'reserva' ? 'reservas' : 'servico' },
+    });
+  };
+
   const CardOferta = ({ oferta }: { oferta: Oferta }) => {
     const capa = oferta.fotos && oferta.fotos.length > 0 ? oferta.fotos[0] : null;
     const temDesconto = oferta.tem_promocao && oferta.valor_com_desconto < oferta.valor_original;
 
     return (
-      <View style={styles.card}>
+      <TouchableOpacity style={styles.card} activeOpacity={oferta.tipo === 'produto' ? 1 : 0.85} onPress={() => abrirOferta(oferta)}>
         <View style={styles.cardImageWrap}>
           {capa ? (
             <Image source={{ uri: capa }} style={[styles.cardImage, oferta.bloqueado && { opacity: 0.4 }]} />
@@ -157,7 +169,7 @@ export default function OfertasPremium() {
             )}
           </View>
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -179,7 +191,7 @@ export default function OfertasPremium() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color={COLORS.dark} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Ofertas Premium</Text>
+        <View style={{ flex: 1 }} />
         <View style={{ width: 36 }} />
       </View>
 
@@ -239,7 +251,7 @@ export default function OfertasPremium() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: COLORS.white },
+  safeArea: { flex: 1, backgroundColor: '#F5F5F5' },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 16, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border,
@@ -266,8 +278,9 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 15, fontWeight: '800', color: COLORS.dark, marginBottom: 12 },
   cardsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, justifyContent: 'space-between' },
   card: {
-    width: '48%', backgroundColor: COLORS.white, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border,
+    width: '48%', backgroundColor: COLORS.white, borderRadius: 20,
     overflow: 'hidden', marginBottom: 4,
+    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3,
   },
   cardImageWrap: { width: '100%', aspectRatio: 4 / 3, backgroundColor: COLORS.lightGray },
   cardImage: { width: '100%', height: '100%' },
@@ -276,13 +289,13 @@ const styles = StyleSheet.create({
   badgePremium: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: COLORS.primary, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8 },
   badgeDesconto: { backgroundColor: COLORS.error, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 8 },
   badgeText: { color: COLORS.white, fontSize: 9, fontWeight: '800', textTransform: 'uppercase' },
-  lockOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center', gap: 4 },
+  lockOverlay: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center', gap: 4 },
   lockText: { color: COLORS.white, fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
   cardBody: { padding: 10 },
   cardEstabelecimento: { fontSize: 9, fontWeight: '700', color: COLORS.gray, textTransform: 'uppercase', marginBottom: 2 },
   cardNome: { fontSize: 13, fontWeight: '800', color: COLORS.dark, minHeight: 32 },
   cardFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 8 },
   precoOriginal: { fontSize: 10, color: COLORS.gray, textDecorationLine: 'line-through' },
-  precoFinal: { fontSize: 15, fontWeight: '900', color: COLORS.primary },
+  precoFinal: { fontSize: 15, fontWeight: '800', color: COLORS.primary },
   pontosTexto: { fontSize: 9, fontWeight: '700', color: COLORS.blue, textAlign: 'right' },
 });

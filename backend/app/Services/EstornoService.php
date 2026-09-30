@@ -135,13 +135,11 @@ class EstornoService
             ]);
 
             if ($estorno->prestador_id) {
-                NotificacaoEstorno::create([
-                    'estorno_id' => $estorno->id,
-                    'usuario_id' => $estorno->prestador_id,
-                    'titulo' => 'Nova Solicitação de Estorno',
-                    'mensagem' => "O cliente {$cliente->name} solicitou um estorno. Você tem 48h para contestar."
-                ]);
+                $this->notificar($estorno, $estorno->prestador_id, 'Nova Solicitação de Estorno',
+                    "O cliente {$cliente->name} solicitou um estorno. Você tem 48h para contestar.");
             }
+            $this->notificar($estorno, $cliente->id, 'Solicitação de estorno enviada',
+                'Recebemos seu pedido. O local tem até 48h para responder e você será avisado da decisão.');
 
             // ✉️ Envio de E-mail: Dispara notificação de solicitação
             $this->enviarEmailNotificacaoEstorno($estorno, 'SOLICITADO');
@@ -206,6 +204,9 @@ class EstornoService
                 'descricao' => 'O prestador enviou uma contestação com evidências.',
                 'ip' => request()->ip()
             ]);
+
+            $this->notificar($estorno, $estorno->usuario_id, 'Estorno em análise',
+                'O local respondeu ao seu pedido. Nossa equipe está analisando as informações dos dois lados.');
         });
     }
 
@@ -293,6 +294,13 @@ class EstornoService
                 'ip' => request()->ip()
             ]);
 
+            $this->notificar($estorno, $estorno->usuario_id, 'Estorno aprovado',
+                'Seu estorno foi aprovado e o valor volta para a sua forma de pagamento original.');
+            if ($estorno->prestador_id) {
+                $this->notificar($estorno, $estorno->prestador_id, 'Estorno aprovado para o cliente',
+                    'A solicitação de estorno foi aprovada pela análise. O valor foi devolvido ao cliente.');
+            }
+
             // ✉️ Envio de E-mail: Dispara notificação de aprovação
             $this->enviarEmailNotificacaoEstorno($estorno, 'APROVADO');
         });
@@ -324,9 +332,32 @@ class EstornoService
                 'ip' => request()->ip()
             ]);
 
+            $this->notificar($estorno, $estorno->usuario_id, 'Estorno não aprovado',
+                'Sua solicitação de estorno não foi aprovada. Abra o estorno para ver o motivo.');
+            if ($estorno->prestador_id) {
+                $this->notificar($estorno, $estorno->prestador_id, 'Estorno reprovado',
+                    'A análise reprovou o estorno e o valor voltou para o seu saldo.');
+            }
+
             // ✉️ Envio de E-mail: Dispara notificação de reprovação
             $this->enviarEmailNotificacaoEstorno($estorno, 'REPROVADO');
         });
+    }
+
+    /**
+     * Notificação dentro do app (sininho). Nunca repete a mesma mensagem para a mesma pessoa no mesmo estorno
+     * — os dois caminhos de aprovação (serviço e controller) podem passar aqui.
+     */
+    private function notificar(Estorno $estorno, ?int $usuarioId, string $titulo, string $mensagem): void
+    {
+        if (!$usuarioId) {
+            return;
+        }
+
+        NotificacaoEstorno::firstOrCreate(
+            ['estorno_id' => $estorno->id, 'usuario_id' => $usuarioId, 'titulo' => $titulo],
+            ['mensagem' => $mensagem]
+        );
     }
 
     /**
@@ -421,18 +452,15 @@ class EstornoService
                     break;
             }
 
-            // Disparo para o Cliente
+            // Disparo para o Cliente (na fila: a decisão do estorno não pode ficar
+            // esperando o e-mail sair pra responder ao admin/cliente).
             if ($cliente && $cliente->email && $mensagemCliente !== "") {
-                Mail::raw($mensagemCliente, function ($mail) use ($cliente, $assuntoCliente) {
-                    $mail->to($cliente->email)->subject($assuntoCliente);
-                });
+                Mail::to($cliente->email)->queue(new \App\Mail\NotificacaoTexto($assuntoCliente, $mensagemCliente));
             }
 
             // Disparo para o Prestador (Dono)
             if ($prestador && $prestador->email && $mensagemDono !== "") {
-                Mail::raw($mensagemDono, function ($mail) use ($prestador, $assuntoDono) {
-                    $mail->to($prestador->email)->subject($assuntoDono);
-                });
+                Mail::to($prestador->email)->queue(new \App\Mail\NotificacaoTexto($assuntoDono, $mensagemDono));
             }
 
         } catch (\Exception $e) {

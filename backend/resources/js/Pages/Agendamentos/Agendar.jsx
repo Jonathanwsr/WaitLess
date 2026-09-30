@@ -1,15 +1,15 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import InputError from '@/Components/InputError';
-import { Head, useForm, usePage, Link, router } from '@inertiajs/react'; 
+import { Head, useForm, usePage, Link, router } from '@inertiajs/react';
 import { useState, useEffect } from 'react';
 import axios from 'axios';
-import { 
-    CheckCircleIcon, 
-    ClockIcon, 
-    CreditCardIcon, 
-    CalendarIcon, 
-    ArrowLeftIcon, 
-    TagIcon, 
+import {
+    CheckCircleIcon,
+    ClockIcon,
+    CreditCardIcon,
+    CalendarIcon,
+    ArrowLeftIcon,
+    TagIcon,
     StarIcon,
     QrCodeIcon,
     DocumentTextIcon,
@@ -18,10 +18,16 @@ import {
     LockClosedIcon,
     BuildingStorefrontIcon,
     ShoppingBagIcon,
-    XMarkIcon
+    XMarkIcon,
+    SparklesIcon
 } from '@heroicons/react/24/solid';
 
-export default function Agendar({ auth, estabelecimento, servicos = [], produtosExtras = [], extras_ids, pedidoProdutoPendente = null }) {
+// Mesma taxa de conversão usada no backend (App\Services\PontosService) — só
+// pra exibir uma prévia do desconto antes de enviar; o valor real e
+// autoritativo sempre é recalculado no servidor.
+const PONTOS_POR_REAL = 1000;
+
+export default function Agendar({ auth, estabelecimento, servicos = [], produtosExtras = [], extras_ids, pedidoProdutoPendente = null, cuponsRecomendados = [], funcionarios = [] }) {
     const [servicoSelecionado, setServicoSelecionado] = useState(null);
     const [diaDaSemanaSelecionado, setDiaDaSemanaSelecionado] = useState('');
     const [editandoDataHora, setEditandoDataHora] = useState(false);
@@ -32,13 +38,23 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
     const [metodoPagamentoProduto, setMetodoPagamentoProduto] = useState('pix');
     const [processandoProduto, setProcessandoProduto] = useState(false);
     const [erroProduto, setErroProduto] = useState(null);
-    
+
     // ESTADOS PARA CONTROLE DE PREÇO, CUPOM E PRODUTOS (Carrinho)
-    const [qtdLocal, setQtdLocal] = useState(1); 
-    const [cupomAtivo, setCupomAtivo] = useState(null); 
+    const [qtdLocal, setQtdLocal] = useState(1);
+    const [cupomAtivo, setCupomAtivo] = useState(null);
     const [listaProdutosExtras, setListaProdutosExtras] = useState(produtosExtras || []);
 
-    const { flash = {} } = usePage().props; 
+    // CUPOM (input manual) E PONTOS DE FIDELIDADE
+    const [cupomInput, setCupomInput] = useState('');
+    const [validandoCupom, setValidandoCupom] = useState(false);
+    const [erroCupom, setErroCupom] = useState(null);
+    const [usarPontos, setUsarPontos] = useState(false);
+
+    const saldoPontosUsuario = Number(auth?.user?.pontos_saldo) || 0;
+    const aceitaPontos = !!servicoSelecionado?.aceita_pontos;
+    const maximoPontosPermitidos = servicoSelecionado?.maximo_pontos_permitidos || null;
+
+    const { flash = {} } = usePage().props;
 
     // Calcula o valor total apenas dos produtos extras escolhidos que ainda estão na lista
     const valorDosExtras = listaProdutosExtras.reduce((acc, produto) => {
@@ -48,14 +64,16 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
 
     const { data, setData, post, processing, errors } = useForm({
         servico_id: '',
+        funcionario_id: '',
         data_agendamento: new Date().toISOString().split('T')[0],
         hora_agendamento: '',
         forma_pagamento: '', // online_agora, online_depois, presencial
         metodo_pagamento: '', // pix, cartao, boleto
         parcelas: 1,
-        valor_final: 0, 
-        quantidade: 1, 
-        cupom_codigo: '', 
+        valor_final: 0,
+        quantidade: 1,
+        cupom_codigo: '',
+        pontos_utilizados: 0,
         extras_ids: extras_ids || '' // IDs dos produtos sendo enviados pro Backend
     });
 
@@ -74,8 +92,8 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
         const urlServicoId = parametros.get('servico_id');
         const urlData = parametros.get('data');
         const urlHora = parametros.get('hora');
-        const urlQtd = parametros.get('quantidade_carrinho'); 
-        
+        const urlQtd = parametros.get('quantidade_carrinho');
+
         const urlCupom = parametros.get('cupom');
         const urlDesconto = parametros.get('desconto');
         const urlTipoDesconto = parametros.get('tipo_desconto');
@@ -125,17 +143,17 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
         if (urlData && urlHora && urlServicoId) {
             setEditandoDataHora(false);
         } else {
-            setEditandoDataHora(true); 
+            setEditandoDataHora(true);
         }
 
         if (mudouAlgo) setData(newState);
-    }, []); 
+    }, []);
 
     // BUSCA OS DADOS COMPLETOS DOS PRODUTOS SE ELES ESTIVEREM NA URL
     useEffect(() => {
         if (data.extras_ids && listaProdutosExtras.length === 0 && estabelecimento?.id) {
             const idsExtras = data.extras_ids.split(',').map(id => Number(id));
-            
+
             axios.get(`/estabelecimentos/${estabelecimento.id}/produtos/cliente`)
                 .then(response => {
                     if (Array.isArray(response.data)) {
@@ -160,6 +178,16 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
             // SOMA O VALOR DO SERVIÇO COM O VALOR DOS EXTRAS
             let valorCalculado = ((Number(servicoSelecionado.valor) || 0) * qtdLocal) + valorDosExtras;
 
+            // PONTOS DE FIDELIDADE (saldo global) — aplicados antes do cupom
+            let pontosAplicaveis = 0;
+            if (aceitaPontos && usarPontos && saldoPontosUsuario > 0) {
+                const maxPeloSubtotal = Math.floor(valorCalculado * PONTOS_POR_REAL);
+                pontosAplicaveis = Math.min(saldoPontosUsuario, maxPeloSubtotal, maximoPontosPermitidos || Infinity);
+                if (pontosAplicaveis > 0) {
+                    valorCalculado = Math.max(0, valorCalculado - (pontosAplicaveis / PONTOS_POR_REAL));
+                }
+            }
+
             if (cupomAtivo) {
                 if (cupomAtivo.tipo === 'percentual') {
                     valorCalculado = valorCalculado - (valorCalculado * ((Number(cupomAtivo.valor) || 0) / 100));
@@ -168,22 +196,23 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
                 }
             }
 
-            if (valorCalculado < 0) valorCalculado = 0; 
-            setData(prev => ({ 
-                ...prev, 
-                valor_final: valorCalculado, 
-                quantidade: qtdLocal
+            if (valorCalculado < 0) valorCalculado = 0;
+            setData(prev => ({
+                ...prev,
+                valor_final: valorCalculado,
+                quantidade: qtdLocal,
+                pontos_utilizados: pontosAplicaveis,
             }));
         }
-    }, [qtdLocal, servicoSelecionado, cupomAtivo, valorDosExtras]);
+    }, [qtdLocal, servicoSelecionado, cupomAtivo, valorDosExtras, usarPontos, aceitaPontos, saldoPontosUsuario, maximoPontosPermitidos]);
 
     useEffect(() => {
         if (flash.success && flash.success.includes('PIN')) {
-            setStatusFinalizacao('sucesso_local'); 
-            localStorage.removeItem('checkout_pendente_waitless'); 
+            setStatusFinalizacao('sucesso_local');
+            localStorage.removeItem('checkout_pendente_waitless');
         } else if (flash.warning && flash.warning.includes('reservada')) {
-            setStatusFinalizacao('pendente_online'); 
-            localStorage.removeItem('checkout_pendente_waitless'); 
+            setStatusFinalizacao('pendente_online');
+            localStorage.removeItem('checkout_pendente_waitless');
         }
     }, [flash]);
 
@@ -209,12 +238,12 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
                 const year = dataAtual.getFullYear();
                 const month = String(dataAtual.getMonth() + 1).padStart(2, '0');
                 const day = String(dataAtual.getDate()).padStart(2, '0');
-                
+
                 diasGerados.push({
                     dataOriginal: `${year}-${month}-${day}`,
-                    diaSemana: diaSemanaStr.substring(0, 3), 
+                    diaSemana: diaSemanaStr.substring(0, 3),
                     diaMes: dataAtual.getDate(),
-                    mes: dataAtual.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '') 
+                    mes: dataAtual.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '')
                 });
             }
             dataAtual.setDate(dataAtual.getDate() + 1);
@@ -231,8 +260,44 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
             forma_pagamento: extrairConfiguracoes(servico.configuracoes).tipoPagamentoRaw === 'presencial' ? 'presencial' : 'online_agora',
             metodo_pagamento: extrairConfiguracoes(servico.configuracoes).tipoPagamentoRaw === 'presencial' ? '' : 'pix'
         }));
-        setQtdLocal(1); 
-        setEditandoDataHora(true); 
+        setQtdLocal(1);
+        setEditandoDataHora(true);
+        setUsarPontos(false);
+    };
+
+    const aplicarCupom = () => aplicarCupomCodigo(cupomInput);
+
+    const aplicarCupomCodigo = async (codigoBruto) => {
+        const codigo = String(codigoBruto || '').trim();
+        if (!codigo) return;
+        setErroCupom(null);
+        setValidandoCupom(true);
+        try {
+            const { data: resposta } = await axios.post(route('cupons.validar'), {
+                codigo,
+                estabelecimento_id: estabelecimento?.id,
+                servico_id: data.servico_id || null,
+            });
+            setCupomAtivo({
+                codigo: resposta.cupom.codigo,
+                valor: resposta.cupom.valor_desconto,
+                tipo: resposta.cupom.tipo_desconto,
+            });
+            setData('cupom_codigo', resposta.cupom.codigo);
+        } catch (e) {
+            setErroCupom(e.response?.data?.error || 'Não foi possível validar este cupom.');
+            setCupomAtivo(null);
+            setData('cupom_codigo', '');
+        } finally {
+            setValidandoCupom(false);
+        }
+    };
+
+    const removerCupom = () => {
+        setCupomAtivo(null);
+        setCupomInput('');
+        setErroCupom(null);
+        setData('cupom_codigo', '');
     };
 
     const alterarQuantidade = (valor) => {
@@ -270,7 +335,7 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
         tipoPagamentoAtual = configExtraida.tipoPagamentoRaw;
         servicoDisponivelNesteDia = configExtraida.diasArray.includes(diaDaSemanaSelecionado);
         diasParaMostrar = gerarDiasProximos(configExtraida.diasArray);
-        
+
         let horas = servicoSelecionado.horarios_disponiveis || [];
         if (typeof horas === 'string') { try { horas = JSON.parse(horas); } catch (e) {} }
         horariosDoServico = horas;
@@ -278,10 +343,6 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
         const fotosObj = parseJSONSeguro(servicoSelecionado.fotos);
         if (fotosObj.length > 0) fotoServico = fotosObj[0];
     }
-
-    const valorOriginalBruto = servicoSelecionado ? (((Number(servicoSelecionado.valor) || 0) * qtdLocal) + valorDosExtras) : 0;
-    const valorDesconto = valorOriginalBruto - (Number(data.valor_final) || 0);
-    const temDescontoVisivel = cupomAtivo && valorDesconto > 0;
 
     // ==========================================
     // CHECKOUT DE COMPRA AVULSA DE PRODUTO (sem serviço)
@@ -439,7 +500,7 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
 
             <div className={`max-w-7xl mx-auto mt-6 px-4 pb-24 transition-opacity duration-300 ${processing ? 'opacity-40 pointer-events-none' : ''}`}>
                 {flash?.error && <div className="mb-6 p-4 text-red-800 bg-red-100 border border-red-200 rounded-xl font-medium shadow-sm">{flash.error}</div>}
-                
+
                 <form onSubmit={submitAgendamento}>
                     {/* ============================================================== */}
                     {/* PASSO 1: SELEÇÃO DE DATA E HORA (APARECE SE editandoDataHora) */}
@@ -448,7 +509,7 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
                         <div className="space-y-8 max-w-4xl mx-auto animate-in fade-in">
                             <div className="bg-white p-6 md:p-8 rounded-3xl border border-gray-100 shadow-sm">
                                 <h3 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-3">
-                                    <span className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm font-black">1</span> 
+                                    <span className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm font-black">1</span>
                                     Escolha o Serviço
                                 </h3>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -496,10 +557,10 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
                             {servicoSelecionado && (
                                 <div className="bg-white p-6 md:p-8 rounded-3xl border border-gray-100 shadow-sm animate-in fade-in slide-in-from-bottom-4">
                                     <h3 className="text-xl font-bold text-gray-900 mb-6 flex items-center gap-3">
-                                        <span className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm font-black">2</span> 
+                                        <span className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm font-black">2</span>
                                         Defina Data e Hora
                                     </h3>
-                                    
+
                                     <div className="mb-8">
                                         <h4 className="text-sm font-bold text-gray-500 uppercase tracking-widest mb-4 flex items-center gap-2">
                                             <CalendarIcon className="w-5 h-5 text-gray-400" /> Selecione o Dia
@@ -509,7 +570,7 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
                                                 diasParaMostrar.map(dia => {
                                                     const isSelected = data.data_agendamento === dia.dataOriginal;
                                                     return (
-                                                        <button 
+                                                        <button
                                                             key={dia.dataOriginal} type="button" disabled={processing}
                                                             onClick={() => { setData('data_agendamento', dia.dataOriginal); setData('hora_agendamento', ''); }}
                                                             className={`snap-start flex flex-col items-center justify-center min-w-[80px] p-4 rounded-2xl border-2 transition-all disabled:opacity-50 ${isSelected ? 'border-indigo-600 bg-indigo-600 text-white shadow-lg shadow-indigo-200 transform scale-105' : 'border-gray-100 bg-white text-gray-700 hover:border-indigo-200 hover:bg-indigo-50/50'}`}
@@ -538,9 +599,9 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
                                                     horariosDoServico.map(hora => {
                                                         const isSelected = data.hora_agendamento === hora;
                                                         return (
-                                                            <button 
+                                                            <button
                                                                 type="button" key={hora} disabled={processing}
-                                                                onClick={() => { setData('hora_agendamento', hora); setEditandoDataHora(false); }} 
+                                                                onClick={() => { setData('hora_agendamento', hora); setEditandoDataHora(false); }}
                                                                 className={`px-5 py-3 text-sm font-black rounded-2xl border-2 transition-all disabled:opacity-50 ${isSelected ? 'border-indigo-600 bg-indigo-600 text-white shadow-md' : 'border-gray-100 bg-gray-50 text-gray-700 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700'}`}
                                                             >
                                                                 {hora}
@@ -563,14 +624,14 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
                     {/* ============================================================== */}
                     {!editandoDataHora && servicoSelecionado && data.hora_agendamento && (
                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 animate-in fade-in slide-in-from-bottom-8">
-                            
+
                             {/* COLUNA ESQUERDA: RESUMO DA RESERVA E PRODUTOS (FIXO) */}
                             <div className="lg:col-span-5 lg:col-start-1 order-2 lg:order-1">
                                 <div className="sticky top-24 space-y-6">
                                     <div className="bg-white rounded-3xl border border-gray-200 shadow-sm overflow-hidden">
                                         <div className="p-6 md:p-8 border-b border-gray-100">
                                             <h3 className="text-xl font-bold text-gray-900 mb-6">Resumo do pedido</h3>
-                                            
+
                                             {/* SERVIÇO PRINCIPAL */}
                                             <div className="flex gap-4 mb-6">
                                                 <div className="w-20 h-20 rounded-2xl overflow-hidden shrink-0 bg-gray-100 border border-gray-100">
@@ -611,7 +672,7 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
                                             {listaProdutosExtras.length > 0 && (
                                                 <div className="mt-6 pt-2 pb-2">
                                                     <h4 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
-                                                        <ShoppingBagIcon className="w-5 h-5 text-[#FF5A00]" /> 
+                                                        <ShoppingBagIcon className="w-5 h-5 text-[#FF5A00]" />
                                                         Você também está adquirindo:
                                                     </h4>
                                                     <div className="space-y-4">
@@ -640,7 +701,7 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
                                                                             </span>
                                                                         </div>
                                                                     </div>
-                                                                    <button 
+                                                                    <button
                                                                         type="button"
                                                                         onClick={() => removerExtra(extra.id)}
                                                                         className="absolute top-3 right-3 text-gray-400 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-colors"
@@ -655,6 +716,117 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
                                                 </div>
                                             )}
 
+                                            {/* ESCOLHA DO PROFISSIONAL */}
+                                            {funcionarios.length > 0 && (
+                                                <div className="mt-6 pt-6 border-t border-gray-100">
+                                                    <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                                                        <UserGroupIcon className="w-4 h-4" /> Profissional (opcional)
+                                                    </label>
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                        <button type="button" onClick={() => setData('funcionario_id', '')}
+                                                            className={`text-left px-4 py-3 rounded-xl border text-sm font-bold transition ${!data.funcionario_id ? 'border-[#FF5A00] bg-orange-50 text-[#FF5A00]' : 'border-gray-200 text-gray-700 hover:border-gray-300'}`}>
+                                                            Qualquer profissional
+                                                        </button>
+                                                        {funcionarios.map((f) => (
+                                                            <button key={f.id} type="button" onClick={() => setData('funcionario_id', f.id)}
+                                                                className={`text-left px-4 py-3 rounded-xl border text-sm transition ${String(data.funcionario_id) === String(f.id) ? 'border-[#FF5A00] bg-orange-50 text-[#FF5A00]' : 'border-gray-200 text-gray-700 hover:border-gray-300'}`}>
+                                                                <span className="font-bold block">{f.nome}</span>
+                                                                {f.cargo && <span className="text-xs text-gray-500">{f.cargo}</span>}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                    <InputError message={errors.funcionario_id} className="mt-1" />
+                                                </div>
+                                            )}
+
+                                            {/* CUPOM E PONTOS DE FIDELIDADE */}
+                                            <div className="mt-6 pt-6 border-t border-gray-100 space-y-4">
+                                                {(() => {
+                                                    const doServico = cuponsRecomendados.filter((c) => c.escopo === 'local' || String(c.servico_id) === String(data.servico_id));
+                                                    if (doServico.length === 0) return null;
+                                                    return (
+                                                        <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
+                                                            <p className="text-[10px] font-bold text-emerald-800 uppercase mb-2 flex items-center gap-1.5"><TagIcon className="w-3.5 h-3.5" /> Cupons para você</p>
+                                                            <div className="space-y-2">
+                                                                {doServico.map((c) => (
+                                                                    <div key={c.id} className="flex items-center justify-between gap-3 bg-white rounded-lg px-3 py-2 border border-emerald-100">
+                                                                        <div className="min-w-0">
+                                                                            <p className="text-sm font-bold text-gray-900 truncate">{c.titulo}</p>
+                                                                            <p className="text-[11px] text-gray-500">
+                                                                                {c.tipo_desconto === 'percentual' ? `${c.valor_desconto}% OFF` : `R$ ${Number(c.valor_desconto).toFixed(2).replace('.', ',')} OFF`}
+                                                                                {c.escopo !== 'local' && ' · exclusivo deste serviço'}
+                                                                                {c.apenas_plus && ' · Premium'}
+                                                                            </p>
+                                                                        </div>
+                                                                        {c.bloqueado ? (
+                                                                            <span className="text-[11px] font-bold text-gray-400 shrink-0">Premium</span>
+                                                                        ) : c.resgatado ? (
+                                                                            <button type="button" onClick={() => { setCupomInput(c.codigo); aplicarCupomCodigo(c.codigo); }} className="text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg shrink-0">Aplicar</button>
+                                                                        ) : (
+                                                                            <button type="button" onClick={() => router.post(route('cliente.resgatar.cupom', c.id), {}, { preserveScroll: true })} className="text-xs font-bold bg-gray-900 hover:bg-black text-white px-3 py-1.5 rounded-lg shrink-0">
+                                                                                {c.pontos_custo > 0 ? `Resgatar (${c.pontos_custo} pts)` : 'Resgatar grátis'}
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })()}
+                                                <div>
+                                                    <label className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                                                        <TagIcon className="w-4 h-4" /> Cupom de desconto
+                                                    </label>
+                                                    {cupomAtivo ? (
+                                                        <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
+                                                            <span className="text-sm font-bold text-emerald-700">{cupomAtivo.codigo} aplicado</span>
+                                                            <button type="button" onClick={removerCupom} className="text-emerald-600 hover:text-emerald-800">
+                                                                <XMarkIcon className="w-4 h-4" />
+                                                            </button>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex gap-2">
+                                                            <input
+                                                                type="text"
+                                                                value={cupomInput}
+                                                                onChange={(e) => setCupomInput(e.target.value.toUpperCase())}
+                                                                placeholder="Digite o código"
+                                                                className="flex-1 rounded-xl border-gray-200 text-sm focus:border-orange-500 focus:ring-orange-500"
+                                                                disabled={validandoCupom || processing}
+                                                            />
+                                                            <button
+                                                                type="button"
+                                                                onClick={aplicarCupom}
+                                                                disabled={validandoCupom || processing || !cupomInput.trim()}
+                                                                className="px-4 py-2 bg-gray-900 hover:bg-gray-800 text-white text-sm font-bold rounded-xl disabled:opacity-50 shrink-0"
+                                                            >
+                                                                {validandoCupom ? '...' : 'Aplicar'}
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                    {erroCupom && <p className="text-red-600 text-xs font-medium mt-2">{erroCupom}</p>}
+                                                </div>
+
+                                                {aceitaPontos && saldoPontosUsuario > 0 && (
+                                                    <label className="flex items-center justify-between bg-orange-50 border border-orange-100 rounded-xl px-4 py-3 cursor-pointer">
+                                                        <div className="flex items-center gap-2">
+                                                            <SparklesIcon className="w-5 h-5 text-orange-500 shrink-0" />
+                                                            <div>
+                                                                <p className="text-sm font-bold text-orange-900">Usar meus pontos</p>
+                                                                <p className="text-xs text-orange-700">Você tem {saldoPontosUsuario} pontos disponíveis</p>
+                                                            </div>
+                                                        </div>
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={usarPontos}
+                                                            onChange={(e) => setUsarPontos(e.target.checked)}
+                                                            disabled={processing}
+                                                            className="w-5 h-5 accent-orange-600 shrink-0"
+                                                        />
+                                                    </label>
+                                                )}
+                                            </div>
+
                                             <button type="button" onClick={() => setEditandoDataHora(true)} className="w-full py-3 bg-gray-50 hover:bg-gray-100 text-gray-700 font-bold text-sm rounded-xl transition mt-6">
                                                 Alterar Data ou Serviço
                                             </button>
@@ -665,7 +837,7 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
                                                 <span>Subtotal do Serviço</span>
                                                 <span>{formatarMoeda((Number(servicoSelecionado.valor) || 0) * qtdLocal)}</span>
                                             </div>
-                                            
+
                                             {listaProdutosExtras.length > 0 && (
                                                 <div className="flex justify-between items-center text-sm text-gray-600 mb-3">
                                                     <span className="flex items-center gap-1.5">
@@ -675,10 +847,17 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
                                                 </div>
                                             )}
 
-                                            {temDescontoVisivel && (
+                                            {data.pontos_utilizados > 0 && (
+                                                <div className="flex justify-between items-center text-sm text-orange-600 font-bold mb-3">
+                                                    <span className="flex items-center gap-1"><SparklesIcon className="w-4 h-4"/> {data.pontos_utilizados} pontos usados</span>
+                                                    <span>- {formatarMoeda(data.pontos_utilizados / PONTOS_POR_REAL)}</span>
+                                                </div>
+                                            )}
+
+                                            {cupomAtivo && (
                                                 <div className="flex justify-between items-center text-sm text-emerald-600 font-bold mb-3">
                                                     <span className="flex items-center gap-1"><TagIcon className="w-4 h-4"/> Cupom Aplicado</span>
-                                                    <span>- {formatarMoeda(valorDesconto)}</span>
+                                                    <span>{cupomAtivo.tipo === 'percentual' ? `${cupomAtivo.valor}% off` : `- ${formatarMoeda(cupomAtivo.valor)}`}</span>
                                                 </div>
                                             )}
                                             <div className="border-t border-gray-200 my-4"></div>
@@ -717,7 +896,7 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
                                 <InputError message={errors.metodo_pagamento} className="mb-4" />
 
                                 <h3 className="text-lg font-bold text-gray-900 mb-4">Escolha a forma de pagamento</h3>
-                                
+
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
                                     {/* CARD CARTÃO DE CRÉDITO */}
                                     {(tipoPagamentoAtual === 'hibrido' || tipoPagamentoAtual === 'online') && (
@@ -766,7 +945,7 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
                                         <h3 className="text-lg font-bold text-gray-900 mb-4">Dados do pagamento</h3>
                                         <div className="bg-gray-50 border border-gray-200 p-6 rounded-2xl">
                                             <label className="block text-sm font-bold text-gray-700 mb-2">Opções de Parcelamento</label>
-                                            <select 
+                                            <select
                                                 value={data.parcelas}
                                                 onChange={e => setData('parcelas', Number(e.target.value))}
                                                 className="w-full rounded-xl border-gray-300 text-sm font-bold text-gray-800 shadow-sm focus:border-orange-500 focus:ring-orange-500 bg-white py-3"
@@ -790,7 +969,7 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
 
                                 {/* BOTÃO FINALIZAR */}
                                 <div className="pt-6 border-t border-gray-200 mt-8">
-                                    <button 
+                                    <button
                                         type="submit"
                                         disabled={!data.forma_pagamento || processing}
                                         className="w-full py-4 text-lg font-black rounded-xl shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:-translate-y-0.5 bg-[#F95E1F] hover:bg-[#E04D13] text-white flex items-center justify-center gap-3"

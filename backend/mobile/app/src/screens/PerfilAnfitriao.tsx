@@ -13,15 +13,17 @@ import {
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { FavoriteButton } from '../../../components/client/ui';
 
-const COLORS = { 
-  primary: '#E11D48',
-  secondary: '#111827', 
-  gray: '#6B7280', 
-  lightGray: '#F3F4F6',
-  white: '#FFFFFF', 
-  border: '#E5E7EB',
-  green: '#10B981',
+const COLORS = {
+  primary: '#FF7A00',
+  primarySoft: '#FFF1E4',
+  secondary: '#282828',
+  gray: '#6A6C72',
+  lightGray: '#F0F0F2',
+  white: '#FFFFFF',
+  border: '#E6E7E9',
+  green: '#00A868',
   promoBg: '#FEE2E2',
   promoText: '#B91C1C'
 };
@@ -41,29 +43,6 @@ export default function PerfilAnfitriao() {
   const [abaAtiva, setAbaAtiva] = useState('Destaques');
   const [favorito, setFavorito] = useState(false);
 
-  // MOCK DE TESTE (caso a API falhe ou ID esteja nulo)
-  const mockData = {
-    anfitriao: {
-      id: id || '1',
-      nome: 'Carlos Silva',
-      subtitulo: 'Anfitrião • Profissional Verificado',
-      foto_perfil: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?q=80&w=256&auto=format&fit=crop',
-      capa: 'https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?q=80&w=1000&auto=format&fit=crop',
-      total_avaliacoes: 48,
-      avaliacao_media: '4.9',
-      status: 'Superhost',
-      cidade: 'São Paulo',
-      estado: 'SP',
-      onde_estudou: 'USP - Universidade de São Paulo',
-      idiomas: 'Português, Inglês',
-      cpf_cnpj: '***.***.***-**'
-    },
-    servicos: [
-      { id: 1, nome: 'Serviço Exemplo 1', preco: '89,90', precoAntigo: '110,00', desconto: '-18%', img: 'https://images.unsplash.com/photo-1520340356584-f9917d1eea6f?q=80&w=600', badge: 'Mais pedido', desc: 'Descrição detalhada do serviço prestado pelo anfitrião.' },
-      { id: 2, nome: 'Serviço Exemplo 2', preco: '150,00', precoAntigo: null, desconto: null, img: 'https://images.unsplash.com/photo-1607860108855-64acf2078ed9?q=80&w=600', badge: null, desc: 'Atendimento personalizado com garantia de qualidade.' }
-    ]
-  };
-
   useEffect(() => {
     carregarPerfil();
   }, [id]);
@@ -73,7 +52,7 @@ export default function PerfilAnfitriao() {
       setLoading(true);
 
       if (!id || id === 'undefined' || id === 'null') {
-        setDados(mockData);
+        setDados(null);
         return;
       }
 
@@ -92,7 +71,10 @@ export default function PerfilAnfitriao() {
         const json = await res.json();
         
         // Pega os dados do estabelecimento ou do usuário associado
-        const payload = json.estabelecimento || json.data || json;
+        // A rota real (AnfitriaoMobileController::getPerfil) devolve os dados
+        // dentro de "anfitriao", não em "estabelecimento"/"data" — sem isso,
+        // TODOS os campos abaixo (nome, foto, avaliação...) caíam pro mock.
+        const payload = json.anfitriao || json.estabelecimento || json.data || json;
         const user = payload.usuario || payload.owner || payload;
 
         setDados({
@@ -100,10 +82,10 @@ export default function PerfilAnfitriao() {
             id: user.id || payload.id || id,
             nome: user.name || payload.nome || 'Anfitrião',
             subtitulo: user.papel ? `Papel: ${user.papel}` : (payload.categoria || 'Prestador de Serviços'),
-            foto_perfil: user.foto_perfil || user.avatar || payload.foto_perfil || mockData.anfitriao.foto_perfil,
-            capa: payload.foto_capa || user.capa || mockData.anfitriao.capa,
+            foto_perfil: user.foto_perfil || user.avatar || payload.foto_perfil || null,
+            capa: payload.foto_banner || payload.capa || user.capa || null,
             total_avaliacoes: user.numero_reservas || payload.total_avaliacoes || 0,
-            avaliacao_media: payload.avaliacao_media || '5.0',
+            avaliacao_media: payload.avaliacao_media && Number(payload.avaliacao_media) > 0 ? Number(payload.avaliacao_media).toFixed(1).replace('.', ',') : null,
             status: user.plano_assinatura ? `Plano ${user.plano_assinatura}` : 'Verificado',
             cidade: user.city || payload.cidade || '',
             estado: user.state || payload.estado || '',
@@ -121,28 +103,30 @@ export default function PerfilAnfitriao() {
                 preco: Number(s.valor || s.preco || 0).toFixed(2).replace('.', ','),
                 precoAntigo: s.preco_antigo ? Number(s.preco_antigo).toFixed(2).replace('.', ',') : null,
                 desconto: s.desconto || null,
-                img: s.foto || s.imagem || mockData.servicos[0].img,
+                img: s.foto || s.imagem || null,
                 badge: s.destaque ? 'Destaque' : null,
                 desc: s.descricao || `${s.duracao_minutos || 30} min`
               }))
-            : mockData.servicos
+            : []
         });
       } else {
-        setDados(mockData);
+        setDados(null);
       }
 
     } catch (error) {
       console.log('Erro ao carregar dados do usuário:', error);
-      setDados(mockData);
+      setDados(null);
     } finally {
       setLoading(false);
     }
   };
 
   const irParaServico = (servicoId: string | number) => {
+    // ServicoDetalhes espera o id de um ESTABELECIMENTO, não de um serviço —
+    // o detalhe de um serviço específico é a ExplorarDetalhes.
     router.push({
-      pathname: '/src/screens/ServicoDetalhes',
-      params: { id: String(servicoId), servicoId: String(servicoId) }
+      pathname: '/src/screens/ExplorarDetalhes' as never,
+      params: { id: String(servicoId), tipo: 'servico' }
     });
   };
 
@@ -154,7 +138,20 @@ export default function PerfilAnfitriao() {
     );
   }
 
-  const { anfitriao, servicos } = dados || mockData;
+  if (!dados) {
+    return (
+      <View style={styles.loadingContainer}>
+        <Ionicons name="alert-circle-outline" size={44} color={COLORS.gray} />
+        <Text style={{ fontSize: 16, fontWeight: '800', color: COLORS.secondary, marginTop: 12 }}>Perfil indisponível</Text>
+        <Text style={{ fontSize: 13, color: COLORS.gray, marginTop: 4, textAlign: 'center', paddingHorizontal: 32 }}>Não foi possível carregar este perfil agora.</Text>
+        <TouchableOpacity style={styles.tentar} onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)/home' as never))}>
+          <Text style={styles.tentarTxt}>Voltar</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  const { anfitriao, servicos } = dados;
 
   return (
     <View style={styles.container}>
@@ -164,25 +161,26 @@ export default function PerfilAnfitriao() {
         
         {/* --- CAPA E BOTÕES DE NAVEGAÇÃO --- */}
         <View style={styles.coverContainer}>
-          <Image source={{ uri: anfitriao.capa }} style={styles.coverImage} />
+          {anfitriao.capa ? <Image source={{ uri: anfitriao.capa }} style={styles.coverImage} /> : <View style={[styles.coverImage, { backgroundColor: COLORS.primary }]} />}
+          <View style={styles.coverShade} />
           <View style={styles.headerIcons}>
             <TouchableOpacity style={styles.circleBtn} onPress={() => router.back()}>
               <Ionicons name="arrow-back" size={20} color={COLORS.secondary} />
             </TouchableOpacity>
             
-            <TouchableOpacity style={styles.circleBtn} onPress={() => setFavorito(!favorito)}>
-              <Ionicons 
-                name={favorito ? "heart" : "heart-outline"} 
-                size={20} 
-                color={favorito ? COLORS.primary : COLORS.secondary} 
-              />
-            </TouchableOpacity>
+            <FavoriteButton ativo={favorito} onPress={() => setFavorito(!favorito)} tamanho={38} />
           </View>
         </View>
 
         {/* --- CONTEÚDO PRINCIPAL --- */}
         <View style={styles.mainContent}>
-          <Image source={{ uri: anfitriao.foto_perfil }} style={styles.avatar} />
+          {anfitriao.foto_perfil ? (
+            <Image source={{ uri: anfitriao.foto_perfil }} style={styles.avatar} />
+          ) : (
+            <View style={[styles.avatar, { alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.primary }]}>
+              <Text style={{ color: '#fff', fontSize: 30, fontWeight: '900' }}>{String(anfitriao.nome || 'A').charAt(0).toUpperCase()}</Text>
+            </View>
+          )}
           
           <Text style={styles.hostName}>{anfitriao.nome}</Text>
           <Text style={styles.hostSubtitle}>{anfitriao.subtitulo}</Text>
@@ -196,7 +194,7 @@ export default function PerfilAnfitriao() {
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
               <Text style={styles.statNumber}>
-                {anfitriao.avaliacao_media} <Ionicons name="star" size={13} color={COLORS.secondary}/>
+                {anfitriao.avaliacao_media || 'Novo'} {!!anfitriao.avaliacao_media && <Ionicons name="star" size={13} color="#F59E0B"/>}
               </Text>
               <Text style={styles.statLabel}>estrelas</Text>
             </View>
@@ -264,6 +262,8 @@ export default function PerfilAnfitriao() {
             <Text style={styles.sectionTitle}>{abaAtiva}</Text>
           </View>
 
+          {servicos.length === 0 && <Text style={{ color: COLORS.gray, textAlign: 'center', paddingVertical: 24 }}>Nenhum serviço disponível no momento.</Text>}
+
           {servicos.map((item: any) => (
             <TouchableOpacity 
               key={item.id} 
@@ -277,7 +277,7 @@ export default function PerfilAnfitriao() {
                 </View>
               )}
               
-              <Image source={{ uri: item.img }} style={styles.cardImage} resizeMode="cover" />
+              {item.img ? <Image source={{ uri: item.img }} style={styles.cardImage} resizeMode="cover" /> : <View style={[styles.cardImage, { alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.lightGray }]}><Ionicons name="image-outline" size={30} color={COLORS.gray} /></View>}
               
               <View style={styles.cardInfo}>
                 <Text style={styles.cardName}>{item.nome}</Text>
@@ -312,78 +312,82 @@ export default function PerfilAnfitriao() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: COLORS.white },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: COLORS.white },
-  
-  coverContainer: { position: 'relative', width: '100%', height: 220 },
+  container: { flex: 1, backgroundColor: '#F5F5F5' },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F5F5F5' },
+  tentar: { marginTop: 18, backgroundColor: COLORS.primary, paddingHorizontal: 28, paddingVertical: 13, borderRadius: 14 },
+  tentarTxt: { color: '#fff', fontWeight: '800', fontSize: 14 },
+
+  coverContainer: { position: 'relative', width: '100%', height: 230 },
   coverImage: { width: '100%', height: '100%', resizeMode: 'cover' },
-  headerIcons: { 
-    position: 'absolute', top: Platform.OS === 'ios' ? 50 : 40, left: 16, right: 16, 
-    flexDirection: 'row', justifyContent: 'space-between' 
+  coverShade: { ...StyleSheet.absoluteFill as object, backgroundColor: 'rgba(0,0,0,0.12)' },
+  headerIcons: {
+    position: 'absolute', top: Platform.OS === 'ios' ? 50 : 40, left: 16, right: 16,
+    flexDirection: 'row', justifyContent: 'space-between'
   },
-  circleBtn: { 
-    width: 38, height: 38, borderRadius: 19, backgroundColor: COLORS.white, 
-    justifyContent: 'center', alignItems: 'center', elevation: 3,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 3
+  circleBtn: {
+    width: 42, height: 42, borderRadius: 21, backgroundColor: COLORS.white,
+    justifyContent: 'center', alignItems: 'center', elevation: 4,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.16, shadowRadius: 8
   },
-  
-  mainContent: { 
-    backgroundColor: COLORS.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, 
-    marginTop: -24, paddingHorizontal: 20 
-  },
-  avatar: { 
-    width: 84, height: 84, borderRadius: 42, borderWidth: 4, borderColor: COLORS.white, 
-    alignSelf: 'center', marginTop: -42, backgroundColor: COLORS.lightGray 
-  },
-  hostName: { fontSize: 22, fontWeight: '900', color: COLORS.secondary, textAlign: 'center', marginTop: 8 },
-  hostSubtitle: { fontSize: 13, color: COLORS.gray, textAlign: 'center', marginTop: 2, marginBottom: 16 },
 
-  infoSection: { gap: 10, marginBottom: 20, backgroundColor: '#F9FAFB', padding: 14, borderRadius: 12 },
-  infoRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  infoText: { fontSize: 13, color: COLORS.gray },
-  infoValue: { color: COLORS.secondary, fontWeight: '600' },
+  mainContent: {
+    backgroundColor: '#F5F5F5', borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    marginTop: -28, paddingHorizontal: 20, paddingBottom: 8
+  },
+  avatar: {
+    width: 92, height: 92, borderRadius: 46, borderWidth: 4, borderColor: '#F5F5F5',
+    alignSelf: 'center', marginTop: -46, backgroundColor: COLORS.lightGray,
+    shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 4
+  },
+  hostName: { fontSize: 24, fontWeight: '800', color: COLORS.secondary, textAlign: 'center', marginTop: 12, letterSpacing: -0.5 },
+  hostSubtitle: { fontSize: 13, color: COLORS.gray, textAlign: 'center', marginTop: 3, marginBottom: 18 },
 
-  statsBox: { 
-    flexDirection: 'row', backgroundColor: COLORS.white, borderRadius: 16, 
-    padding: 14, justifyContent: 'space-evenly', alignItems: 'center', marginBottom: 16,
-    borderWidth: 1, borderColor: COLORS.border
+  infoSection: { gap: 12, marginBottom: 18, backgroundColor: COLORS.white, padding: 16, borderRadius: 20 },
+  infoRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  infoText: { fontSize: 14, color: COLORS.gray, flex: 1 },
+  infoValue: { color: COLORS.secondary, fontWeight: '700' },
+
+  statsBox: {
+    flexDirection: 'row', backgroundColor: COLORS.white, borderRadius: 20,
+    paddingVertical: 16, paddingHorizontal: 8, justifyContent: 'space-evenly', alignItems: 'center', marginBottom: 14,
+    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 2
   },
   statItem: { alignItems: 'center', flex: 1 },
-  statNumber: { fontSize: 15, fontWeight: '800', color: COLORS.secondary },
-  statLabel: { fontSize: 11, color: COLORS.gray, marginTop: 2 },
-  statDivider: { width: 1, height: 24, backgroundColor: COLORS.border },
+  statNumber: { fontSize: 17, fontWeight: '800', color: COLORS.secondary },
+  statLabel: { fontSize: 12, color: COLORS.gray, marginTop: 3 },
+  statDivider: { width: 1, height: 28, backgroundColor: COLORS.border },
 
-  tabsContainer: { flexDirection: 'row', borderBottomWidth: 1, borderColor: COLORS.lightGray, marginBottom: 16 },
-  tabItem: { paddingVertical: 12, marginRight: 20 },
-  tabItemActive: { borderBottomWidth: 2, borderColor: COLORS.primary },
+  tabsContainer: { flexDirection: 'row', backgroundColor: '#E9E9EC', borderRadius: 14, padding: 4, marginBottom: 18 },
+  tabItem: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 11 },
+  tabItemActive: { backgroundColor: COLORS.white, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
   tabText: { fontSize: 14, color: COLORS.gray, fontWeight: '600' },
   tabTextActive: { color: COLORS.primary, fontWeight: '800' },
 
   sectionHeader: { marginBottom: 14 },
-  sectionTitle: { fontSize: 18, fontWeight: '800', color: COLORS.secondary },
+  sectionTitle: { fontSize: 20, fontWeight: '800', color: COLORS.secondary, letterSpacing: -0.4 },
 
-  card: { 
-    backgroundColor: COLORS.white, borderRadius: 16, overflow: 'hidden', 
-    marginBottom: 16, borderWidth: 1, borderColor: COLORS.border,
-    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6, elevation: 2
+  card: {
+    backgroundColor: COLORS.white, borderRadius: 22, overflow: 'hidden',
+    marginBottom: 16,
+    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3
   },
-  badgeTop: { 
-    position: 'absolute', top: 12, left: 12, backgroundColor: COLORS.primary, 
-    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, zIndex: 1 
+  badgeTop: {
+    position: 'absolute', top: 12, left: 12, backgroundColor: COLORS.primary,
+    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, zIndex: 1
   },
-  badgeText: { color: COLORS.white, fontSize: 10, fontWeight: 'bold' },
-  cardImage: { width: '100%', height: 140 },
-  cardInfo: { padding: 14, gap: 4 },
-  cardName: { fontSize: 15, color: COLORS.secondary, fontWeight: '700' },
-  priceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 2 },
-  cardPrice: { fontSize: 17, fontWeight: '900', color: COLORS.secondary },
-  addBtn: { 
-    width: 32, height: 32, borderRadius: 16, backgroundColor: COLORS.lightGray, 
-    justifyContent: 'center', alignItems: 'center' 
+  badgeText: { color: COLORS.white, fontSize: 11, fontWeight: '800' },
+  cardImage: { width: '100%', height: 150 },
+  cardInfo: { padding: 16, gap: 4 },
+  cardName: { fontSize: 16, color: COLORS.secondary, fontWeight: '700' },
+  priceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 },
+  cardPrice: { fontSize: 20, fontWeight: '800', color: COLORS.secondary, letterSpacing: -0.3 },
+  addBtn: {
+    width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.primarySoft,
+    justifyContent: 'center', alignItems: 'center'
   },
   oldPriceRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  oldPrice: { fontSize: 12, color: COLORS.gray, textDecorationLine: 'line-through' },
-  discountBadge: { backgroundColor: COLORS.green, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
-  discountText: { color: COLORS.white, fontSize: 10, fontWeight: 'bold' },
-  cardDesc: { fontSize: 12, color: COLORS.gray, marginTop: 4, lineHeight: 18 }
+  oldPrice: { fontSize: 13, color: COLORS.gray, textDecorationLine: 'line-through' },
+  discountBadge: { backgroundColor: COLORS.green, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6 },
+  discountText: { color: COLORS.white, fontSize: 11, fontWeight: 'bold' },
+  cardDesc: { fontSize: 13, color: COLORS.gray, marginTop: 4, lineHeight: 19 }
 });

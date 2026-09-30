@@ -21,6 +21,11 @@ class ExtratoProviderController extends Controller
     {
         $user = Auth::user();
 
+        // O financeiro do proprietário/gerente agora é uma tela só: a Carteira.
+        if (in_array(mb_strtolower((string) $user->papel), ['socio', 'sócio', 'proprietario', 'proprietário', 'gerente'], true)) {
+            return redirect()->route('carteira.asaas');
+        }
+
         // 1. Definição do escopo de estabelecimentos permitidos de acordo com o papel
         if ($user->papel === 'admin') {
             $estabelecimentosPermitidos = Estabelecimento::pluck('id')->toArray();
@@ -112,7 +117,8 @@ class ExtratoProviderController extends Controller
             ],
             'dadosGraficos' => [
                 'formas_pagamento' => $receitasPorFormaPgto
-            ]
+            ],
+            'filtrosAtuais' => $request->only(['data_inicio', 'data_fim', 'estabelecimento_id', 'tipo', 'metodo_pagamento']),
         ]);
     }
 

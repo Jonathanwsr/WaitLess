@@ -7,6 +7,14 @@ import {
 } from '@heroicons/react/24/solid';
 import { useState, useEffect } from 'react';
 
+// Mesmo catálogo de PlanoService::PLANOS_PREMIUM['socio'] / StatusAssinatura.jsx.
+const PLANOS_LOJISTA = [
+    { id: 'premium', nome: 'Premium', preco: '15,00', ciclo: 'mensal', destaque: false, beneficios: ['Taxas reduzidas', 'Suporte padrão', 'Painel de métricas básico'] },
+    { id: 'premium-socio', nome: 'Premium Sócio', preco: '30,00', ciclo: 'mensal', destaque: true, badge: 'Máximo Retorno', beneficios: ['Isenção da taxa da plataforma no balcão', 'Destaque no app', 'Suporte VIP 24/7', 'Métricas avançadas'] },
+    { id: 'premium-anual', nome: 'Premium Anual', preco: '126,00', ciclo: 'anual', destaque: false, badge: '30% OFF', beneficios: ['Equivale a R$ 10,50/mês', 'Ganha 600 pontos na hora', 'Taxas reduzidas'] },
+    { id: 'premium-socio-anual', nome: 'Sócio Anual', preco: '252,00', ciclo: 'anual', destaque: true, badge: 'Melhor Custo-Benefício', beneficios: ['Equivale a R$ 21,00/mês', 'Ganha 3600 pontos na hora', 'Isenção da taxa da plataforma', 'Suporte VIP 24/7'] },
+];
+
 export default function Carteira({ auth, recompensas = [], meusCupons = [] }) {
     const user = auth.user;
     const { flash = {} } = usePage().props;
@@ -37,11 +45,9 @@ export default function Carteira({ auth, recompensas = [], meusCupons = [] }) {
         }
     }, []);
 
-    const assinarPlano = (nomeDoPlano) => {
-        post(route('assinatura.nova', { plano: nomeDoPlano }), {
-            preserveScroll: true
-        });
-    };
+    // A contratação real (plano, ciclo, forma de pagamento e Asaas) acontece na tela de assinatura;
+    // postar só o nome do plano aqui era recusado pelo servidor (planos inexistentes / sem método).
+    const irParaPlanos = () => router.visit(route('assinatura.status'));
 
     const cancelarAssinatura = () => {
         const diaAtual = new Date().getDate();
@@ -66,12 +72,13 @@ export default function Carteira({ auth, recompensas = [], meusCupons = [] }) {
 
     const planoAtualSeguro = user?.plano_assinatura || 'gratuito';
 
-    const isPlus = planoAtualSeguro === 'plus';
-    const isBasico = planoAtualSeguro === 'basico';
-    const isPro = planoAtualSeguro === 'profissional';
-    const isPremium = planoAtualSeguro === 'premium';
-    
-    const temPlanoAtivo = isPlus || isBasico || isPro || isPremium;
+    // Os planos premium de cliente realmente emitidos pela assinatura (ver
+    // PlanoService::PLANOS_PREMIUM['user']) são 'premium' e 'premium-plus' —
+    // nunca o literal 'plus'. Comparar com 'plus' fazia todo cliente premium
+    // real ser tratado como gratuito nesta tela (upgrade sempre visível,
+    // cupons "apenas_plus" sempre bloqueados mesmo para quem já paga).
+    const isPlus = planoAtualSeguro.startsWith('premium');
+    const temPlanoAtivo = planoAtualSeguro !== 'gratuito';
 
     const hoje = new Date();
     const proximaCobranca = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 10).toLocaleDateString('pt-BR');
@@ -233,7 +240,7 @@ export default function Carteira({ auth, recompensas = [], meusCupons = [] }) {
                                                 <div className="bg-gray-50 rounded-3xl p-6 border border-gray-200 mb-6 flex flex-col items-center justify-center text-center h-full min-h-[220px]">
                                                     <SparklesIcon className="w-10 h-10 text-gray-300 mb-3" />
                                                     <h4 className="font-bold text-gray-900 mb-2">Você está no plano gratuito</h4>
-                                                    <p className="text-sm font-medium text-gray-500">Faça o upgrade por apenas R$ 12,00/mês e libere todos os recursos VIP.</p>
+                                                    <p className="text-sm font-medium text-gray-500">Faça o upgrade a partir de R$ 8,00/mês e libere todos os recursos VIP.</p>
                                                 </div>
                                             )}
 
@@ -350,7 +357,7 @@ export default function Carteira({ auth, recompensas = [], meusCupons = [] }) {
                                     </ul>
 
                                     {!isPlus ? (
-                                        <button onClick={() => assinarPlano('plus')} disabled={processing} className="w-full py-4 rounded-xl font-bold text-white bg-[#0F172A] hover:bg-black shadow-md transition-all disabled:opacity-50 flex justify-center items-center gap-2">
+                                        <button onClick={() => irParaPlanos()} disabled={processing} className="w-full py-4 rounded-xl font-bold text-white bg-[#0F172A] hover:bg-black shadow-md transition-all disabled:opacity-50 flex justify-center items-center gap-2">
                                             <StarIcon className="w-5 h-5 text-[#E05D36]" />
                                             {processing ? 'Processando...' : 'Fazer Upgrade'}
                                         </button>
@@ -419,95 +426,37 @@ export default function Carteira({ auth, recompensas = [], meusCupons = [] }) {
                                     <p className="text-gray-500 font-medium text-lg">Escolha o plano que melhor se adapta ao tamanho e às necessidades do seu estabelecimento.</p>
                                 </div>
 
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                                    {/* PLANO BÁSICO */}
-                                    <div className="bg-white rounded-[2rem] p-8 border border-gray-100 shadow-sm relative flex flex-col">
-                                        {isBasico && <div className="absolute top-0 inset-x-0 h-1.5 bg-emerald-500 rounded-t-[2rem]"></div>}
-                                        <h4 className="text-2xl font-black text-gray-900 mb-2">Básico</h4>
-                                        <p className="text-sm font-medium text-gray-500 mb-6">Para negócios locais que estão começando.</p>
-                                        <div className="flex items-baseline gap-1 mb-8">
-                                            <span className="text-4xl font-black text-[#0F172A]">R$ 49,90</span>
-                                            <span className="text-base font-bold text-gray-500">/mês</span>
-                                        </div>
-                                        <ul className="space-y-4 mb-8 flex-1">
-                                            <li className="flex items-center gap-3 text-sm font-bold text-gray-700">
-                                                <CheckBadgeIcon className="w-5 h-5 text-[#E05D36] shrink-0" /> Até 100 agendamentos
-                                            </li>
-                                            <li className="flex items-center gap-3 text-sm font-bold text-gray-700">
-                                                <CheckBadgeIcon className="w-5 h-5 text-[#E05D36] shrink-0" /> Fila virtual básica
-                                            </li>
-                                        </ul>
-                                        <button 
-                                            onClick={() => assinarPlano('basico')} 
-                                            disabled={processing || isBasico} 
-                                            className={`w-full py-4 rounded-xl font-bold transition-all ${isBasico ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-gray-100 text-gray-900 hover:bg-gray-200'}`}
-                                        >
-                                            {isBasico ? 'Plano Atual' : 'Assinar Básico'}
-                                        </button>
-                                    </div>
-
-                                    {/* PLANO PROFISSIONAL */}
-                                    <div className="bg-[#0F172A] rounded-[2rem] p-8 shadow-xl relative flex flex-col transform md:-translate-y-4 border border-gray-800">
-                                        {isPro && <div className="absolute top-0 inset-x-0 h-1.5 bg-emerald-500 rounded-t-[2rem]"></div>}
-                                        <div className="absolute top-0 right-6 transform -translate-y-1/2">
-                                            <span className="bg-[#E05D36] text-white text-[10px] font-black uppercase tracking-wider px-4 py-1.5 rounded-full shadow-md">
-                                                Recomendado
-                                            </span>
-                                        </div>
-                                        <h4 className="text-2xl font-black text-white mb-2">Profissional</h4>
-                                        <p className="text-sm font-medium text-gray-400 mb-6">Para estabelecimentos em crescimento.</p>
-                                        <div className="flex items-baseline gap-1 mb-8">
-                                            <span className="text-4xl font-black text-white">R$ 99,90</span>
-                                            <span className="text-base font-bold text-gray-400">/mês</span>
-                                        </div>
-                                        <ul className="space-y-4 mb-8 flex-1">
-                                            <li className="flex items-center gap-3 text-sm font-bold text-gray-300">
-                                                <CheckBadgeIcon className="w-5 h-5 text-[#E05D36] shrink-0" /> Agendamentos ilimitados
-                                            </li>
-                                            <li className="flex items-center gap-3 text-sm font-bold text-gray-300">
-                                                <CheckBadgeIcon className="w-5 h-5 text-[#E05D36] shrink-0" /> Criação de recompensas
-                                            </li>
-                                            <li className="flex items-center gap-3 text-sm font-bold text-gray-300">
-                                                <CheckBadgeIcon className="w-5 h-5 text-[#E05D36] shrink-0" /> Relatórios gerenciais
-                                            </li>
-                                        </ul>
-                                        <button 
-                                            onClick={() => assinarPlano('profissional')} 
-                                            disabled={processing || isPro} 
-                                            className={`w-full py-4 rounded-xl font-bold transition-all shadow-md ${isPro ? 'bg-emerald-500 text-white' : 'bg-[#E05D36] text-white hover:bg-[#b3401f]'}`}
-                                        >
-                                            {isPro ? 'Plano Atual' : 'Assinar Profissional'}
-                                        </button>
-                                    </div>
-
-                                    {/* PLANO PREMIUM */}
-                                    <div className="bg-white rounded-[2rem] p-8 border border-gray-100 shadow-sm relative flex flex-col">
-                                        {isPremium && <div className="absolute top-0 inset-x-0 h-1.5 bg-emerald-500 rounded-t-[2rem]"></div>}
-                                        <h4 className="text-2xl font-black text-gray-900 mb-2">Premium</h4>
-                                        <p className="text-sm font-medium text-gray-500 mb-6">Acesso total para escalar suas vendas.</p>
-                                        <div className="flex items-baseline gap-1 mb-8">
-                                            <span className="text-4xl font-black text-[#0F172A]">R$ 149,90</span>
-                                            <span className="text-base font-bold text-gray-500">/mês</span>
-                                        </div>
-                                        <ul className="space-y-4 mb-8 flex-1">
-                                            <li className="flex items-center gap-3 text-sm font-bold text-gray-700">
-                                                <CheckBadgeIcon className="w-5 h-5 text-[#E05D36] shrink-0" /> Tudo do plano Profissional
-                                            </li>
-                                            <li className="flex items-center gap-3 text-sm font-bold text-gray-700">
-                                                <CheckBadgeIcon className="w-5 h-5 text-[#E05D36] shrink-0" /> Destaque no Marketplace
-                                            </li>
-                                            <li className="flex items-center gap-3 text-sm font-bold text-gray-700">
-                                                <CheckBadgeIcon className="w-5 h-5 text-[#E05D36] shrink-0" /> Suporte prioritário 24/7
-                                            </li>
-                                        </ul>
-                                        <button 
-                                            onClick={() => assinarPlano('premium')} 
-                                            disabled={processing || isPremium} 
-                                            className={`w-full py-4 rounded-xl font-bold transition-all ${isPremium ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-gray-100 text-gray-900 hover:bg-gray-200'}`}
-                                        >
-                                            {isPremium ? 'Plano Atual' : 'Assinar Premium'}
-                                        </button>
-                                    </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+                                    {PLANOS_LOJISTA.map((plano) => {
+                                        const atual = planoAtualSeguro === plano.id;
+                                        return (
+                                            <div key={plano.id} className={`rounded-[2rem] p-8 relative flex flex-col ${plano.destaque ? 'bg-[#0F172A] shadow-xl border border-gray-800' : 'bg-white border border-gray-100 shadow-sm'}`}>
+                                                {atual && <div className="absolute top-0 inset-x-0 h-1.5 bg-emerald-500 rounded-t-[2rem]"></div>}
+                                                {plano.badge && (
+                                                    <span className="absolute top-0 right-6 -translate-y-1/2 bg-[#E05D36] text-white text-[10px] font-black uppercase tracking-wider px-4 py-1.5 rounded-full shadow-md">{plano.badge}</span>
+                                                )}
+                                                <h4 className={`text-2xl font-black mb-2 ${plano.destaque ? 'text-white' : 'text-gray-900'}`}>{plano.nome}</h4>
+                                                <div className="flex items-baseline gap-1 mb-6">
+                                                    <span className={`text-4xl font-black ${plano.destaque ? 'text-white' : 'text-[#0F172A]'}`}>R$ {plano.preco}</span>
+                                                    <span className={`text-base font-bold ${plano.destaque ? 'text-gray-400' : 'text-gray-500'}`}>/{plano.ciclo === 'anual' ? 'ano' : 'mês'}</span>
+                                                </div>
+                                                <ul className="space-y-3 mb-8 flex-1">
+                                                    {plano.beneficios.map((b) => (
+                                                        <li key={b} className={`flex items-center gap-3 text-sm font-bold ${plano.destaque ? 'text-gray-300' : 'text-gray-700'}`}>
+                                                            <CheckBadgeIcon className="w-5 h-5 text-[#E05D36] shrink-0" /> {b}
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                                <button
+                                                    onClick={irParaPlanos}
+                                                    disabled={atual}
+                                                    className={`w-full py-4 rounded-xl font-bold transition-all ${atual ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : plano.destaque ? 'bg-[#E05D36] text-white hover:bg-[#b3401f] shadow-md' : 'bg-gray-100 text-gray-900 hover:bg-gray-200'}`}
+                                                >
+                                                    {atual ? 'Plano Atual' : 'Ver e assinar'}
+                                                </button>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
 
                                 {temPlanoAtivo && (

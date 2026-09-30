@@ -7,28 +7,30 @@ import {
   TouchableOpacity,
   SafeAreaView,
   ActivityIndicator,
-  Alert,
   Platform,
   RefreshControl,
 } from 'react-native';
 import { Ionicons, Feather } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { alertar } from '../../../services/alertar';
+import { irParaLoginSemVoltar } from '../../../services/sessao';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api/mobile';
 
 const COLORS = {
-  primary: '#F05627',
-  primaryLight: '#FFF0E6',
-  background: '#F8F9FA',
+  primary: '#FF7A00',
+  accent: '#FF7A00',
+  background: '#F5F5F5',
   white: '#FFFFFF',
-  textDark: '#1F2937',
-  textGray: '#6B7280',
-  textLight: '#9CA3AF',
-  border: '#F3F4F6',
-  danger: '#EF4444',
-  avatarBg: '#E5E7EB',
+  textDark: '#282828',
+  textGray: '#6A6C72',
+  textLight: '#A0A2A8',
+  border: '#E6E7E9',
+  danger: '#DC2626',
+  avatarBg: '#E6E7E9',
 };
 
 async function pegarToken() {
@@ -38,6 +40,28 @@ async function pegarToken() {
 async function limparSessao() {
   await AsyncStorage.multiRemove(['@lokyva_token', '@waitless_token', '@waitless_user']);
 }
+
+const soDigitos = (v) => String(v || '').replace(/\D/g, '');
+
+const formatarTelefone = (v) => {
+  const d = soDigitos(v);
+  if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
+  if (d.length === 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
+  return v;
+};
+
+const formatarData = (iso) => {
+  if (!iso) return '';
+  const [ano, mes, dia] = String(iso).slice(0, 10).split('-');
+  return ano && mes && dia ? `${dia}/${mes}/${ano}` : '';
+};
+
+const mascararDocumento = (doc) => {
+  const d = soDigitos(doc);
+  if (d.length === 11) return `***.${d.slice(3, 6)}.***-${d.slice(9)}`;
+  if (d.length === 14) return `**.${d.slice(2, 5)}.***/****-${d.slice(12)}`;
+  return '';
+};
 
 const PAPEL_LABEL = {
   user: 'Cliente',
@@ -61,7 +85,7 @@ export default function TelaPerfil() {
       const token = await pegarToken();
 
       if (!token) {
-        router.replace('/autenticacao/login');
+        irParaLoginSemVoltar(router);
         return;
       }
 
@@ -71,11 +95,15 @@ export default function TelaPerfil() {
       const data = await res.json();
 
       if (res.ok && data.success) {
+        if (['socio', 'proprietario', 'gerente'].includes(String(data.user?.papel || '').toLowerCase())) {
+          router.replace('/Proprietario/perfil');
+          return;
+        }
         setUsuario(data.user);
       } else if (res.status === 401) {
-        Alert.alert('Sessão expirada', 'Por favor, faça login novamente.');
+        alertar('Sessão expirada', 'Por favor, faça login novamente.');
         await limparSessao();
-        router.replace('/autenticacao/login');
+        irParaLoginSemVoltar(router);
       }
     } catch (error) {
       console.log('Erro ao carregar dados do perfil:', error);
@@ -92,7 +120,7 @@ export default function TelaPerfil() {
   );
 
   const handleLogout = () => {
-    Alert.alert(
+    alertar(
       'Sair da conta',
       'Tem certeza de que deseja encerrar sua sessão?',
       [
@@ -115,7 +143,7 @@ export default function TelaPerfil() {
             } finally {
               await limparSessao();
               setSaindo(false);
-              router.replace('/autenticacao/login');
+              irParaLoginSemVoltar(router);
             }
           },
         },
@@ -138,6 +166,18 @@ export default function TelaPerfil() {
   const planoExibicao = (usuario?.plano_atual || 'gratuito').toUpperCase();
   const temAssinatura = usuario?.assinatura && usuario.assinatura.status === 'ativa';
   const localizacao = [usuario?.cidade, usuario?.estado].filter(Boolean).join(' - ');
+  const enderecoCompleto = [
+    [usuario?.endereco, usuario?.numero].filter(Boolean).join(', '),
+    usuario?.bairro,
+  ].filter(Boolean).join(' - ');
+  const inicial = (nomeExibicao || 'U').charAt(0).toUpperCase();
+  // Pontos, favoritos, agendamentos e viagens são recursos de CLIENTE: sócio,
+  // equipe e admin usam o app pelo próprio painel.
+  const papelBruto = (usuario?.papel || '').toLowerCase();
+  const souCliente = !['socio', 'proprietario', 'gerente', 'funcionario', 'atendente', 'admin'].includes(papelBruto);
+  const souDono = ['socio', 'proprietario', 'gerente'].includes(papelBruto);
+  // Assinatura é um recurso de cliente/dono: funcionário e atendente não têm plano próprio.
+  const souEquipe = ['funcionario', 'atendente'].includes(papelBruto);
 
   const ListItem = ({ icon, title, value, subValue, valueColor, titleColor, isLast, onPress }) => (
     <TouchableOpacity
@@ -166,7 +206,7 @@ export default function TelaPerfil() {
         <TouchableOpacity style={styles.headerButton} onPress={() => router.back()}>
           <Feather name="chevron-left" size={24} color={COLORS.textDark} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Meu Perfil</Text>
+        <View style={{ flex: 1 }} />
         <View style={styles.headerButton} />
       </View>
 
@@ -186,9 +226,13 @@ export default function TelaPerfil() {
       >
         <View style={styles.profileSummary}>
           <View style={styles.avatarContainer}>
-            <View style={styles.avatar}>
-              <Ionicons name="person" size={32} color={COLORS.textGray} />
-            </View>
+            {usuario?.foto_perfil ? (
+              <Image source={{ uri: usuario.foto_perfil }} style={styles.avatar} />
+            ) : (
+              <View style={styles.avatar}>
+                <Text style={styles.avatarInicial}>{inicial}</Text>
+              </View>
+            )}
           </View>
           <View style={styles.profileDetails}>
             <Text style={styles.profileName}>{nomeExibicao}</Text>
@@ -199,62 +243,148 @@ export default function TelaPerfil() {
           </View>
         </View>
 
+        <TouchableOpacity style={styles.editBtn} onPress={() => router.push('/src/screens/EditarPerfil')} activeOpacity={0.85}>
+          <Feather name="edit-2" size={16} color={COLORS.white} />
+          <Text style={styles.editBtnText}>Editar perfil</Text>
+        </TouchableOpacity>
+
         <View style={styles.statsRow}>
-          <View style={styles.statBox}>
-            <Text style={styles.statValue}>{usuario?.pontos_saldo ?? 0}</Text>
-            <Text style={styles.statLabel}>Pontos</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statBox}>
-            <Text style={[styles.statValue, temAssinatura && { color: COLORS.primary }]}>{planoExibicao}</Text>
-            <Text style={styles.statLabel}>Plano atual</Text>
-          </View>
+          {souCliente && (
+            <>
+              <TouchableOpacity style={styles.statBox} onPress={() => router.push('/src/screens/MeusPontos')} activeOpacity={0.7}>
+                <Text style={styles.statValue}>{usuario?.pontos_saldo ?? 0}</Text>
+                <Text style={styles.statLabel}>Pontos</Text>
+              </TouchableOpacity>
+              <View style={styles.statDivider} />
+            </>
+          )}
+          {!souEquipe && (
+            <View style={styles.statBox}>
+              <Text style={styles.statValue}>{planoExibicao}</Text>
+              <Text style={styles.statLabel}>Plano atual</Text>
+            </View>
+          )}
         </View>
 
         <Text style={styles.sectionTitle}>Informações pessoais</Text>
         <View style={styles.cardGroup}>
           <ListItem icon="person-outline" title="Nome completo" value={nomeExibicao} />
-          {!!usuario?.telefone && <ListItem icon="call-outline" title="Telefone" value={usuario.telefone} />}
-          {!!localizacao && <ListItem icon="location-outline" title="Localização" value={localizacao} />}
+          <ListItem icon="mail-outline" title="E-mail" value={emailExibicao} />
+          {!!usuario?.telefone && <ListItem icon="call-outline" title="Telefone" value={formatarTelefone(usuario.telefone)} />}
+          {!!usuario?.data_nascimento && <ListItem icon="calendar-outline" title="Nascimento" value={formatarData(usuario.data_nascimento)} />}
+          {!!mascararDocumento(usuario?.cpf_cnpj) && <ListItem icon="card-outline" title="CPF / CNPJ" value={mascararDocumento(usuario.cpf_cnpj)} />}
+          {!!enderecoCompleto && <ListItem icon="home-outline" title="Endereço" value={enderecoCompleto} />}
+          {!!localizacao && <ListItem icon="location-outline" title="Cidade" value={localizacao} />}
           {!!usuario?.profissao && <ListItem icon="briefcase-outline" title="Profissão" value={usuario.profissao} />}
-          <ListItem icon="mail-outline" title="E-mail" value={emailExibicao} isLast />
+          {!!usuario?.idiomas && <ListItem icon="language-outline" title="Idiomas" value={usuario.idiomas} />}
+          {!!usuario?.onde_estudei && <ListItem icon="school-outline" title="Onde estudei" value={usuario.onde_estudei} />}
+          {!!usuario?.onde_moro && <ListItem icon="map-outline" title="Onde moro" value={usuario.onde_moro} />}
+          {!!usuario?.membro_desde && <ListItem icon="time-outline" title="Membro desde" value={formatarData(usuario.membro_desde)} />}
+          <ListItem icon="create-outline" title="Editar informações" onPress={() => router.push('/src/screens/EditarPerfil')} isLast />
         </View>
+
+        {!!usuario?.sobre_mim && (
+          <>
+            <Text style={styles.sectionTitle}>Sobre mim</Text>
+            <View style={[styles.cardGroup, styles.aboutCard]}>
+              <Text style={styles.aboutText}>{usuario.sobre_mim}</Text>
+            </View>
+          </>
+        )}
 
         <Text style={styles.sectionTitle}>Conta e assinatura</Text>
         <View style={styles.cardGroup}>
           <ListItem icon="people-outline" title="Tipo de usuário" value={papelExibicao} />
+          {!souEquipe && (
+            <ListItem
+              icon="ribbon-outline"
+              title="Minha assinatura"
+              value={planoExibicao}
+              valueColor={COLORS.textDark}
+              onPress={() => router.push('/assinatura')}
+            />
+          )}
+          {souCliente && (
+            <>
           <ListItem
-            icon="ribbon-outline"
-            title="Minha assinatura"
-            value={planoExibicao}
-            valueColor={COLORS.primary}
-            onPress={() => router.push('/assinatura')}
+            icon="sparkles-outline"
+            title="Meus pontos"
+            value={`${usuario?.pontos_saldo ?? 0} pts`}
+            valueColor={COLORS.textDark}
+            onPress={() => router.push('/src/screens/MeusPontos')}
           />
-          <ListItem
+              <ListItem
+            icon="people-outline"
+            title="Convide amigos e ganhe pontos"
+            onPress={() => router.push('/src/screens/Indicacao')}
+          />
+              <ListItem
+            icon="gift-outline"
+            title="Promoções"
+            onPress={() => router.push('/src/screens/Promocoes')}
+          />
+              <ListItem
             icon="time-outline"
             title="Meus agendamentos"
             onPress={() => router.push('/src/screens/MeusAgendamentos')}
+          />
+              <ListItem
+            icon="chatbubble-ellipses-outline"
+            title="Meus comentários"
+            onPress={() => router.push('/src/screens/MeusComentarios')}
+          />
+          <ListItem
+            icon="return-up-back-outline"
+            title="Meus estornos"
+            onPress={() => router.push('/src/screens/MeusEstornosScreen')}
           />
           <ListItem
             icon="heart-outline"
             title="Meus favoritos"
             onPress={() => router.push('/src/screens/FavoritosDashboard')}
           />
-          <ListItem
-            icon="chatbubbles-outline"
-            title="Mensagens"
-            onPress={() => router.push('/(tabs)/caixa-entrada')}
-          />
-          <ListItem
+              <ListItem
             icon="airplane-outline"
             title="Planejar viagem"
             subValue="Organize seus roteiros e orçamento"
             onPress={() => router.push('/src/screens/PlanTripScreen')}
           />
           <ListItem
+            icon="map-outline"
+            title="Minhas viagens em grupo"
+            subValue="Roteiro inteligente, reservas e gastos divididos"
+            onPress={() => router.push('/src/screens/MinhasViagens')}
+          />
+            </>
+          )}
+          {souDono && (
+            <ListItem
+              icon="storefront-outline"
+              title="Painel do proprietário"
+              subValue="Locais, equipe e reservas"
+              onPress={() => router.push('/Proprietario/dashboard')}
+            />
+          )}
+          <ListItem
+            icon="flash-outline"
+            title="Ganhe pontos usando o app"
+            subValue="Check-in diário e sugestões"
+            onPress={() => router.push('/src/screens/Gamificacao')}
+          />
+          <ListItem
+            icon="chatbubbles-outline"
+            title="Mensagens"
+            onPress={() => router.push(souCliente ? '/(tabs)/caixa-entrada' : '/mensagens')}
+          />
+          <ListItem
             icon="headset-outline"
             title="Suporte"
             onPress={() => router.push('/src/screens/TelaSuporte')}
+          />
+          <ListItem
+            icon="document-text-outline"
+            title="Termos e Compromissos"
+            onPress={() => router.push('/src/screens/TermosCompromisso')}
             isLast
           />
         </View>
@@ -299,21 +429,26 @@ const styles = StyleSheet.create({
   scrollContent: { paddingHorizontal: 20, paddingBottom: 40 },
   profileSummary: { flexDirection: 'row', alignItems: 'center', marginBottom: 20, marginTop: 10 },
   avatarContainer: { position: 'relative', marginRight: 16 },
-  avatar: { width: 64, height: 64, borderRadius: 32, backgroundColor: COLORS.avatarBg, alignItems: 'center', justifyContent: 'center' },
+  avatar: { width: 72, height: 72, borderRadius: 36, backgroundColor: COLORS.avatarBg, alignItems: 'center', justifyContent: 'center' },
   profileDetails: { flex: 1 },
   profileName: { fontSize: 18, fontWeight: '700', color: COLORS.textDark, marginBottom: 2 },
   profileEmail: { fontSize: 13, color: COLORS.textGray, marginBottom: 6 },
-  tagBadge: { backgroundColor: COLORS.primary, paddingHorizontal: 12, paddingVertical: 4, borderRadius: 6, alignSelf: 'flex-start' },
-  tagText: { color: COLORS.white, fontSize: 11, fontWeight: '600' },
+  tagBadge: { backgroundColor: COLORS.border, paddingHorizontal: 12, paddingVertical: 4, borderRadius: 8, alignSelf: 'flex-start' },
+  tagText: { color: COLORS.textDark, fontSize: 11, fontWeight: '700' },
+  avatarInicial: { fontSize: 26, fontWeight: '700', color: COLORS.textGray },
+  editBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: COLORS.primary, height: 48, borderRadius: 24, marginBottom: 16 },
+  editBtnText: { color: COLORS.white, fontSize: 15, fontWeight: '700' },
+  aboutCard: { padding: 16 },
+  aboutText: { fontSize: 14, lineHeight: 21, color: COLORS.textDark },
 
-  statsRow: { flexDirection: 'row', backgroundColor: COLORS.white, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border, marginBottom: 24, paddingVertical: 16 },
+  statsRow: { flexDirection: 'row', backgroundColor: COLORS.white, borderRadius: 20, marginBottom: 24, paddingVertical: 16, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
   statBox: { flex: 1, alignItems: 'center' },
   statDivider: { width: 1, backgroundColor: COLORS.border },
   statValue: { fontSize: 18, fontWeight: '800', color: COLORS.textDark },
   statLabel: { fontSize: 11, color: COLORS.textGray, marginTop: 2, fontWeight: '600' },
 
-  sectionTitle: { fontSize: 16, fontWeight: '700', color: COLORS.textDark, marginBottom: 12, marginTop: 10 },
-  cardGroup: { backgroundColor: COLORS.white, borderRadius: 12, overflow: 'hidden', marginBottom: 24, borderWidth: 1, borderColor: COLORS.border },
+  sectionTitle: { fontSize: 13, fontWeight: '700', color: COLORS.textGray, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 10, marginTop: 10 },
+  cardGroup: { backgroundColor: COLORS.white, borderRadius: 20, overflow: 'hidden', marginBottom: 24, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
   listItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 16, paddingHorizontal: 16, backgroundColor: COLORS.white },
   listItemBorder: { borderBottomWidth: 1, borderBottomColor: COLORS.border },
   listItemLeft: { flexDirection: 'row', alignItems: 'center', flex: 1 },

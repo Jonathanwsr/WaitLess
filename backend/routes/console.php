@@ -16,3 +16,9 @@ Schedule::command('financeiro:processar-diario')->dailyAt('01:00');
 Schedule::command('financeiro:repassar-semanal')->weeklyOn(1, '05:00');
 
 Schedule::command('estornos:processar-vencidos')->hourly();
+
+// Acompanha transferências da carteira Asaas (não há webhook de transferência) e refaz validações pendentes.
+Schedule::command('carteira:sincronizar')->everyTenMinutes()->withoutOverlapping();
+
+// Gamificação: bônus mensal automático de pontos por plano premium (todo dia 1, de madrugada).
+Schedule::command('gamificacao:bonus-mensal')->monthlyOn(1, '03:00');

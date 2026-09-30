@@ -7,7 +7,8 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use App\Services\PagamentoService;
+use App\Services\Carteira\AsaasErro;
+use App\Services\Carteira\CarteiraService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Exception;
@@ -25,35 +26,38 @@ class RealizarRepassePixJob implements ShouldQueue
         $this->providerId = $providerId;
     }
 
-    public function handle(PagamentoService $pagamentoService)
+    public function handle(CarteiraService $carteira)
     {
-        $provider = DB::table('providers')->where('id', $this->providerId)->first();
+        $transferencia = $carteira->repasseSemanal((int) $this->providerId);
 
-        if (!$provider || $provider->saldo <= 0) {
-            return;
+        if (!$transferencia) {
+            return; // sem saldo ou sem destino de repasse
         }
 
-        $sucesso = $pagamentoService->repassarSaldoPixProvedor($provider->id);
-
-        if ($sucesso) {
-            DB::table('extrato_providers')->insert([
-                'provider_id'      => $provider->id,
-                'usuario_id'       => null, 
-                'origem_type'      => 'App\Models\Provider',
-                'origem_id'        => $provider->id,
-                'tipo'             => 'repasse',
-                'valor_bruto'      => $provider->saldo,
-                'taxa_plataforma'  => 0,
-                'valor_liquido'    => $provider->saldo * -1, 
-                'descricao'        => 'Repasse semanal enviado para sua conta bancária via PIX',
-                'status'           => 'liberado',
-                'codigo_transacao' => 'TRANSFER_'.uniqid(),
-                'metodo_pagamento' => 'pix',
-                'created_at'       => now()
-            ]);
-        } else {
-            throw new Exception("O Asaas recusou a transferência para o Provider ID: {$provider->id}");
+        if ($transferencia->status === 'falhou') {
+            // Erro nos dados (chave inválida, conta em análise...): repetir não adianta, o usuário é avisado.
+            if (!in_array($transferencia->erro_codigo, AsaasErro::RETENTAVEIS, true)) {
+                $this->failed(new Exception($transferencia->erro_detalhe ?: 'Repasse recusado.'));
+                return;
+            }
+            throw new Exception("Repasse #{$transferencia->id} falhou: {$transferencia->erro_codigo}");
         }
+
+        DB::table('extrato_providers')->insert([
+            'provider_id'      => $transferencia->provider_id,
+            'usuario_id'       => null,
+            'origem_type'      => 'App\Models\Provider',
+            'origem_id'        => $transferencia->provider_id,
+            'tipo'             => 'repasse',
+            'valor_bruto'      => $transferencia->valor_bruto,
+            'taxa_plataforma'  => 0,
+            'valor_liquido'    => $transferencia->valor_bruto * -1,
+            'descricao'        => 'Repasse semanal enviado para sua conta bancária via PIX',
+            'status'           => 'liberado',
+            'codigo_transacao' => 'TRANSFER_' . $transferencia->id,
+            'metodo_pagamento' => 'pix',
+            'created_at'       => now(),
+        ]);
     }
 
     public function failed(Exception $exception)

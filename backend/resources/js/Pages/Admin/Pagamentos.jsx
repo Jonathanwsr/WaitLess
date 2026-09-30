@@ -10,7 +10,7 @@ const STATUS_ESTILO = {
     estornado: 'bg-rose-100 text-rose-700',
 };
 
-export default function AdminPagamentos({ pagamentos, filtros = {}, resumo = {} }) {
+export default function AdminPagamentos({ pagamentos = { data: [] }, filtros = {}, resumo = {} }) {
     const [busca, setBusca] = useState(filtros.busca || '');
     const [status, setStatus] = useState(filtros.status || '');
     const [metodo, setMetodo] = useState(filtros.metodo || '');

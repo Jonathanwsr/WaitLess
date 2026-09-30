@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Agendamento;
+use App\Models\Aluguel;
 use Illuminate\Http\Request;
 use App\Models\Estabelecimento;
 use Illuminate\Support\Facades\Auth;
@@ -56,14 +57,19 @@ class DashboardController extends Controller
             ->orderBy('hora_agendamento', 'asc')
             ->get();
 
-        foreach ($meusAgendamentos as $agendamento) {
-            $pessoasNaFrente = Agendamento::where('estabelecimento_id', $agendamento->estabelecimento_id)
-                ->whereDate('data_agendamento', $agendamento->data_agendamento)
-                ->whereIn('status', ['pendente', 'confirmado', 'aguardando_pagamento'])
-                ->where('hora_agendamento', '<', $agendamento->hora_agendamento)
-                ->count();
+        // Conta "pessoas na frente" de uma vez para todos os estabelecimentos/dias
+        // envolvidos, em vez de 1 query de contagem por agendamento do cliente.
+        $filasPorEstabelecimentoEDia = Agendamento::whereIn('estabelecimento_id', $meusAgendamentos->pluck('estabelecimento_id')->unique())
+            ->whereIn('data_agendamento', $meusAgendamentos->pluck('data_agendamento')->unique())
+            ->whereIn('status', ['pendente', 'confirmado', 'aguardando_pagamento'])
+            ->get(['estabelecimento_id', 'data_agendamento', 'hora_agendamento']);
 
-            $agendamento->pessoas_na_frente = $pessoasNaFrente;
+        foreach ($meusAgendamentos as $agendamento) {
+            $agendamento->pessoas_na_frente = $filasPorEstabelecimentoEDia
+                ->where('estabelecimento_id', $agendamento->estabelecimento_id)
+                ->where('data_agendamento', $agendamento->data_agendamento)
+                ->filter(fn ($a) => $a->hora_agendamento < $agendamento->hora_agendamento)
+                ->count();
         }
 
         // B. NOVO: Busca HISTÓRICO de Agendamentos (Concluídos e Cancelados)
@@ -84,6 +90,15 @@ class DashboardController extends Controller
                 return $item;
             });
 
+        // B2. Locações avulsas (Aluguel) do cliente — mesmo conceito de
+        // agendamentos/histórico acima, mas para imóveis/veículos/etc.
+        // alugados direto do dono (ver LocacaoAvulsaController).
+        $meusAlugueis = Aluguel::with('item:id,nome,categoria,fotos')
+            ->where('locatario_id', $user->id)
+            ->orderBy('created_at', 'desc')
+            ->take(20)
+            ->get();
+
         // C. LÓGICA DE GEOLOCALIZAÇÃO: Estabelecimentos Próximos
         $userLat = $request->input('lat');
         $userLng = $request->input('lng');
@@ -100,8 +115,9 @@ class DashboardController extends Controller
         return Inertia::render('Cliente/Dashboard', [
             'agendamentos' => $meusAgendamentos,
             'historico' => $historicoAgendamentos, // <--- Enviado para a nova aba do Front-end
+            'alugueis' => $meusAlugueis,
             'usuario' => $user,
-            'estabelecimentos_proximos' => $estabelecimentosProximos 
+            'estabelecimentos_proximos' => $estabelecimentosProximos
         ]);
     }
 

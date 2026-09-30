@@ -7,7 +7,7 @@ import { Head, useForm, Link, usePage, router } from '@inertiajs/react';
 import { useState } from 'react';
 import { GiftIcon, StarIcon, TicketIcon, TrashIcon, PencilSquareIcon, CheckBadgeIcon } from '@heroicons/react/24/solid';
 
-export default function Cupons({ auth, estabelecimento, cupons = [] }) {
+export default function Cupons({ auth, estabelecimento, cupons = [], servicos = [], reservas = [] }) {
     const { flash = {} } = usePage().props;
     const [isEditing, setIsEditing] = useState(false);
 
@@ -20,8 +20,12 @@ export default function Cupons({ auth, estabelecimento, cupons = [] }) {
         valor_desconto: '',
         pontos_custo: 0, // Se 0, é grátis. Se > 0, vira recompensa de gamificação
         apenas_plus: false,
+        somente_novos_clientes: false,
         data_validade: '',
         ativo: true,
+        escopo: 'local',
+        servico_id: '',
+        item_aluguel_id: '',
     });
 
     // Função para gerar código aleatório para facilitar a vida do lojista
@@ -29,6 +33,15 @@ export default function Cupons({ auth, estabelecimento, cupons = [] }) {
         const codigo = 'WL-' + Math.random().toString(36).substring(2, 8).toUpperCase();
         setData('codigo', codigo);
     };
+
+    // O backend só aceita letras, números, hífen e underline (o código vira
+    // uma chave de busca única na plataforma toda) — sanitiza aqui pra não
+    // deixar o lojista digitar espaço/acento e só descobrir o erro depois de enviar.
+    const handleCodigoChange = (e) => {
+        setData('codigo', e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, ''));
+    };
+
+    const descontoAcimaDoLimite = data.tipo_desconto === 'percentual' && Number(data.valor_desconto) > 100;
 
     const submit = (e) => {
         e.preventDefault();
@@ -57,8 +70,12 @@ export default function Cupons({ auth, estabelecimento, cupons = [] }) {
             valor_desconto: cupom.valor_desconto,
             pontos_custo: cupom.pontos_custo,
             apenas_plus: cupom.apenas_plus,
+            somente_novos_clientes: !!cupom.somente_novos_clientes,
             data_validade: cupom.data_validade ? cupom.data_validade.substring(0, 10) : '', // Formato DATE padrão (YYYY-MM-DD)
             ativo: cupom.ativo,
+            escopo: cupom.servico_id ? 'servico' : (cupom.item_aluguel_id ? 'reserva' : 'local'),
+            servico_id: cupom.servico_id || '',
+            item_aluguel_id: cupom.item_aluguel_id || '',
         });
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
@@ -131,7 +148,8 @@ export default function Cupons({ auth, estabelecimento, cupons = [] }) {
                                         <InputLabel value="Código do Cupom *" />
                                         <button type="button" onClick={gerarCodigoAleatorio} className="text-[10px] font-bold text-indigo-600 hover:underline">Gerar Aleatório</button>
                                     </div>
-                                    <TextInput className="w-full uppercase font-mono tracking-wider font-bold text-center text-lg" value={data.codigo} onChange={e => setData('codigo', e.target.value.toUpperCase())} placeholder="Ex: VERAO20" required />
+                                    <TextInput className="w-full uppercase font-mono tracking-wider font-bold text-center text-lg" value={data.codigo} onChange={handleCodigoChange} placeholder="Ex: VERAO20" required />
+                                    <p className="text-[10px] text-gray-400 mt-1">Apenas letras, números, hífen e underline. Precisa ser único em toda a plataforma.</p>
                                     <InputError message={errors.codigo} />
                                 </div>
 
@@ -167,10 +185,55 @@ export default function Cupons({ auth, estabelecimento, cupons = [] }) {
                                             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                                                 <span className="text-gray-500 font-bold">{data.tipo_desconto === 'percentual' ? '%' : 'R$'}</span>
                                             </div>
-                                            <TextInput type="number" step="0.01" min="0.1" className="w-full pl-9" value={data.valor_desconto} onChange={e => setData('valor_desconto', e.target.value)} required />
+                                            <TextInput type="number" step="0.01" min="0.1" max={data.tipo_desconto === 'percentual' ? 100 : undefined} className={`w-full pl-9 ${descontoAcimaDoLimite ? 'border-red-400 focus:border-red-500 focus:ring-red-500' : ''}`} value={data.valor_desconto} onChange={e => setData('valor_desconto', e.target.value)} required />
                                         </div>
+                                        {descontoAcimaDoLimite && <p className="text-[10px] text-red-600 font-bold mt-1">Um desconto percentual não pode passar de 100%.</p>}
                                         <InputError message={errors.valor_desconto} />
                                     </div>
+                                </div>
+
+                                {/* ONDE O CUPOM VALE */}
+                                <div className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-xl border border-gray-100 dark:border-gray-700 space-y-3">
+                                    <InputLabel value="Onde este cupom funciona" />
+                                    <div className="grid grid-cols-3 gap-2">
+                                        {[
+                                            { id: 'local', rotulo: 'Todo o local' },
+                                            { id: 'servico', rotulo: 'Um serviço' },
+                                            { id: 'reserva', rotulo: 'Uma reserva' },
+                                        ].map((op) => (
+                                            <button
+                                                key={op.id}
+                                                type="button"
+                                                onClick={() => setData((d) => ({ ...d, escopo: op.id, servico_id: '', item_aluguel_id: '' }))}
+                                                className={`px-2 py-2.5 rounded-lg text-xs font-bold border transition ${data.escopo === op.id ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:border-indigo-300'}`}
+                                            >
+                                                {op.rotulo}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    {data.escopo === 'servico' && (
+                                        <div>
+                                            <select className="w-full border-gray-300 dark:bg-gray-800 dark:text-white dark:border-gray-600 rounded-lg shadow-sm focus:border-indigo-500 text-sm" value={data.servico_id} onChange={(e) => setData('servico_id', e.target.value)} required>
+                                                <option value="">Escolha o serviço…</option>
+                                                {servicos.map((sv) => <option key={sv.id} value={sv.id}>{sv.nome}</option>)}
+                                            </select>
+                                            {servicos.length === 0 && <p className="text-[10px] text-amber-600 mt-1">Você ainda não tem serviços ativos neste local.</p>}
+                                            <InputError message={errors.servico_id} />
+                                        </div>
+                                    )}
+                                    {data.escopo === 'reserva' && (
+                                        <div>
+                                            <select className="w-full border-gray-300 dark:bg-gray-800 dark:text-white dark:border-gray-600 rounded-lg shadow-sm focus:border-indigo-500 text-sm" value={data.item_aluguel_id} onChange={(e) => setData('item_aluguel_id', e.target.value)} required>
+                                                <option value="">Escolha a reserva (locação)…</option>
+                                                {reservas.map((r) => <option key={r.id} value={r.id}>{r.nome}</option>)}
+                                            </select>
+                                            {reservas.length === 0 && <p className="text-[10px] text-amber-600 mt-1">Você ainda não tem reservas (locações) cadastradas.</p>}
+                                            <InputError message={errors.item_aluguel_id} />
+                                        </div>
+                                    )}
+                                    <p className="text-[10px] text-gray-500 leading-tight">
+                                        {data.escopo === 'local' ? 'Vale para qualquer serviço ou reserva deste local.' : 'Só vale para o item escolhido.'} O cupom é recomendado aos clientes na página {data.escopo === 'servico' ? 'desse serviço' : data.escopo === 'reserva' ? 'dessa reserva' : 'de agendamento do seu local'}.
+                                    </p>
                                 </div>
 
                                 {/* 👉 ÁREA DE GAMIFICAÇÃO */}
@@ -184,6 +247,15 @@ export default function Cupons({ auth, estabelecimento, cupons = [] }) {
                                         <p className="text-[10px] text-orange-600 dark:text-orange-400 mt-2 font-medium leading-tight">Se colocar "0", o cupom é público e gratuito. Se colocar mais que "0", ele vai para a Loja de Recompensas e o cliente precisa gastar os pontos acumulados para resgatar.</p>
                                     </div>
                                 </div>
+
+                                {/* PRIMEIRA RESERVA: atrai clientes novos */}
+                                <label className="flex items-start gap-3 p-4 border border-emerald-200 rounded-xl bg-emerald-50/60 cursor-pointer">
+                                    <input type="checkbox" className="w-5 h-5 text-emerald-600 rounded border-gray-300 focus:ring-emerald-500 mt-0.5" checked={!!data.somente_novos_clientes} onChange={e => setData('somente_novos_clientes', e.target.checked)} />
+                                    <div className="flex-1">
+                                        <p className="text-sm font-bold text-gray-900">Só para a primeira reserva do cliente</p>
+                                        <p className="text-[10px] text-gray-500 mt-0.5">Bom para atrair clientes novos: quem já reservou no seu local não vê nem usa este cupom. Deixe o custo em pontos como 0 para o cliente resgatar de graça.</p>
+                                    </div>
+                                </label>
 
                                 {/* 👉 TRAVA PLUS */}
                                 <label className="flex items-start gap-3 p-4 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-900/50 cursor-pointer hover:bg-gray-100 transition">
@@ -219,7 +291,7 @@ export default function Cupons({ auth, estabelecimento, cupons = [] }) {
                                             Cancelar
                                         </button>
                                     )}
-                                    <PrimaryButton className={`w-full justify-center py-3 rounded-xl text-sm font-bold shadow-md transition ${isEditing ? 'bg-orange-600 hover:bg-orange-700' : 'bg-indigo-600 hover:bg-indigo-700'}`} disabled={processing}>
+                                    <PrimaryButton className={`w-full justify-center py-3 rounded-xl text-sm font-bold shadow-md transition ${isEditing ? 'bg-green-600 hover:bg-green-700' : 'bg-green-600 hover:bg-green-700'}`} disabled={processing || descontoAcimaDoLimite}>
                                         {processing ? 'A processar...' : (isEditing ? 'Salvar Alterações' : 'Criar Recompensa')}
                                     </PrimaryButton>
                                 </div>
@@ -262,6 +334,9 @@ export default function Cupons({ auth, estabelecimento, cupons = [] }) {
                                                 <div className="flex justify-between items-start p-5 pb-0">
                                                     <div className="flex flex-col gap-2 items-start">
                                                         <div className="flex gap-2">
+                                                            {cupom.somente_novos_clientes && (
+                                                                <span className="text-[9px] font-black bg-emerald-100 text-emerald-700 px-2 py-1 rounded uppercase tracking-wider">1ª reserva</span>
+                                                            )}
                                                             {cupom.apenas_plus && (
                                                                 <span className="text-[9px] font-black bg-black text-yellow-400 px-2 py-1 rounded uppercase tracking-wider shadow-sm flex items-center gap-1">
                                                                     <CheckBadgeIcon className="w-3 h-3" /> VIP Plus
@@ -286,7 +361,11 @@ export default function Cupons({ auth, estabelecimento, cupons = [] }) {
 
                                                 <div className="p-5">
                                                     <h4 className="font-black text-xl text-gray-900 leading-tight mb-2">{cupom.titulo}</h4>
-                                                    {cupom.descricao && <p className="text-xs text-gray-500 mb-4 line-clamp-2">{cupom.descricao}</p>}
+                                                    {cupom.descricao && <p className="text-xs text-gray-500 mb-2 line-clamp-2">{cupom.descricao}</p>}
+                                                    <p className="text-[11px] font-bold text-indigo-600 mb-3 flex items-center gap-1">
+                                                        <TicketIcon className="w-3.5 h-3.5" />
+                                                        {cupom.servico_id ? `Vale só para o serviço: ${cupom.servico?.nome || '—'}` : cupom.item_aluguel_id ? `Vale só para a reserva: ${cupom.item_aluguel?.nome || cupom.itemAluguel?.nome || '—'}` : 'Vale em todo o local'}
+                                                    </p>
                                                     
                                                     <div className="flex items-center gap-3 mt-4 pt-4 border-t border-gray-200/60">
                                                         <div className="flex-1">

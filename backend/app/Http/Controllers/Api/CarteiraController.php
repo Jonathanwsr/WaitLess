@@ -176,7 +176,26 @@ class CarteiraController extends Controller
         // 4. CLIENTE (USER)
         // =========================================================
         if ($papel === 'user') {
+            // LEFT JOIN: entradas globais de pontos (bônus de cadastro,
+            // promoções de admin, renovação de plano) têm estabelecimento_id
+            // nulo e não podem se perder do extrato do cliente.
+            $historicoPontos = DB::table('historico_pontos')
+                ->leftJoin('estabelecimentos', 'historico_pontos.estabelecimento_id', '=', 'estabelecimentos.id')
+                ->where('historico_pontos.usuario_id', $user->id)
+                ->select(
+                    'historico_pontos.id',
+                    'historico_pontos.tipo',
+                    'historico_pontos.descricao',
+                    'historico_pontos.quantidade',
+                    'historico_pontos.created_at',
+                    'estabelecimentos.nome as estabelecimento_nome'
+                )
+                ->orderBy('historico_pontos.created_at', 'desc')
+                ->get();
+
             $props['dadosCliente'] = [
+                'pontos_saldo' => $user->pontos_saldo,
+                'historico_pontos' => $historicoPontos,
                 'recompensas' => Cupom::where('ativo', true)->latest()->get()
             ];
         }

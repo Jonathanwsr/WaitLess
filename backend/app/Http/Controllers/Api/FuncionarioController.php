@@ -31,16 +31,20 @@ class FuncionarioController extends Controller
             }], 'valor_final')
             ->get();
 
-        // Calcula a média de avaliações manualmente para cada um
+        // Média de avaliações de todos os funcionários numa única query agregada
+        // (antes era 1 query por funcionário dentro do loop — N+1 que pesava
+        // cada vez mais conforme a equipe crescia).
+        $mediasPorFuncionario = DB::table('avaliacoes')
+            ->join('agendamentos', 'avaliacoes.agendamento_id', '=', 'agendamentos.id')
+            ->whereIn('agendamentos.funcionario_id', $funcionarios->pluck('id'))
+            ->whereNotNull('agendamentos.funcionario_id')
+            ->groupBy('agendamentos.funcionario_id')
+            ->select('agendamentos.funcionario_id', DB::raw('AVG(avaliacoes.nota) as media'))
+            ->pluck('media', 'funcionario_id');
+
         foreach ($funcionarios as $func) {
-            $func->faturamento_total = $func->faturamento_total ?? 0; 
-            
-            $media = DB::table('avaliacoes')
-                ->join('agendamentos', 'avaliacoes.agendamento_id', '=', 'agendamentos.id')
-                ->where('agendamentos.funcionario_id', $func->id)
-                ->avg('avaliacoes.nota');
-                
-            $func->avaliacao_media = $media;
+            $func->faturamento_total = $func->faturamento_total ?? 0;
+            $func->avaliacao_media = $mediasPorFuncionario[$func->id] ?? null;
         }
 
         // 2. BUSCA PRODUÇÃO (FECHAMENTOS RECENTES) DOS FUNCIONÁRIOS DESSAS LOJAS
@@ -62,11 +66,21 @@ class FuncionarioController extends Controller
             ->orderBy('ausencias_funcionarios.created_at', 'asc')
             ->get();
 
+        // Atividade recente da equipe (quem fez o quê, em qual atendimento) —
+        // alimenta o painel "em tempo real" que complementa via Echo/Reverb.
+        $atividadesRecentes = \App\Models\AtividadeEquipe::with('usuario:id,name')
+            ->whereIn('estabelecimento_id', $meusEstabelecimentosIds)
+            ->latest('created_at')
+            ->limit(30)
+            ->get(['id', 'estabelecimento_id', 'usuario_id', 'papel', 'acao', 'descricao', 'created_at']);
+
         return Inertia::render('Estabelecimentos/Funcionarios', [
             'funcionarios' => $funcionarios,
             'meusEstabelecimentos' => $meusEstabelecimentos,
             'fechamentosRecentes' => $fechamentosRecentes,
-            'ausenciasPendentes' => $ausenciasPendentes
+            'ausenciasPendentes' => $ausenciasPendentes,
+            'podeGerenciarEquipeAvancada' => $user->podeGerenciarEquipeAvancada(),
+            'atividadesRecentes' => $atividadesRecentes,
         ]);
     }
 
@@ -93,43 +107,125 @@ class FuncionarioController extends Controller
         return back()->with('success', $mensagem);
     }
 
+    /** Cargos que o formulário de "Novo Funcionário" pode criar, e o papel/tipo real que cada um gera. */
+    private const CARGOS_FUNCIONARIO = [
+        'Atendente' => 'atendente',
+        'Gerente'   => 'gerente',
+    ];
+
     public function store(Request $request, Estabelecimento $estabelecimento)
     {
+        $user = $request->user();
+
+        // Só quem de fato administra este estabelecimento (ou o admin da plataforma)
+        // pode cadastrar gente nele — antes disso não havia checagem alguma aqui.
+        $souGestorDoLocal = $user->papel === 'admin'
+            || $user->estabelecimentos()->where('estabelecimentos.id', $estabelecimento->id)->exists();
+        abort_unless($souGestorDoLocal, 403, 'Você não administra este estabelecimento.');
+
         $validated = $request->validate([
             'nome'     => 'required|string|max:255',
             'telefone' => 'nullable|string|max:20',
-            'cargo'    => 'required|string|max:255',
+            'cargo'    => ['required', 'string', 'in:' . implode(',', array_keys(self::CARGOS_FUNCIONARIO))],
             'email'    => 'required|email|unique:users,email',
             'password' => 'required|string|min:8',
         ]);
 
-        $user = User::create([
+        $papel = self::CARGOS_FUNCIONARIO[$validated['cargo']];
+
+        // Criar um Gerente é um recurso do plano Sócio Premium — atendente
+        // continua liberado pra qualquer plano (inclusive o gratuito).
+        if ($papel === 'gerente' && $user->papel !== 'admin' && !$user->podeGerenciarEquipeAvancada()) {
+            return back()->withErrors(['cargo' => 'Criar gerentes é um recurso exclusivo do plano Sócio Premium. Faça upgrade em Minha assinatura.']);
+        }
+
+        $novoUsuario = User::create([
             'name'     => $validated['nome'],
             'email'    => $validated['email'],
             'password' => Hash::make($validated['password']),
-            'papel'    => $validated['cargo'], 
+            'papel'    => $papel,
         ]);
 
         $estabelecimento->funcionarios()->create([
-            'usuario_id' => $user->id,
+            'usuario_id' => $novoUsuario->id,
             'nome'       => $validated['nome'],
-            'telefone'   => $validated['telefone'],
+            'telefone'   => $validated['telefone'] ?? null,
             'cargo'      => $validated['cargo'],
         ]);
+
+        // Gerente também entra na tabela de gestão do local (mesma tabela que
+        // sócio/proprietário), pra herdar automaticamente acesso a tudo que é
+        // filtrado por estabelecimento (agenda, financeiro de leitura, etc.).
+        if ($papel === 'gerente') {
+            $estabelecimento->proprietarios()->attach($novoUsuario->id, ['tipo' => 'gerente']);
+        }
 
         return redirect()->back()->with('success', 'Funcionário e conta de acesso criados!');
     }
 
-    public function update(Request $request, Funcionario $funcionario)
+    /**
+     * Convida outro sócio (co-proprietário) pra ajudar a administrar os mesmos
+     * estabelecimentos — recurso exclusivo do plano Sócio Premium, sem limite
+     * de quantos sócios podem ser convidados.
+     */
+    public function storeSocio(Request $request, Estabelecimento $estabelecimento)
     {
+        $user = $request->user();
+
+        $souGestorDoLocal = $user->estabelecimentos()->where('estabelecimentos.id', $estabelecimento->id)->exists();
+        abort_unless($souGestorDoLocal, 403, 'Você não administra este estabelecimento.');
+
+        if (!$user->podeGerenciarEquipeAvancada()) {
+            return back()->withErrors(['email' => 'Convidar outros sócios é um recurso exclusivo do plano Sócio Premium. Faça upgrade em Minha assinatura.']);
+        }
+
         $validated = $request->validate([
             'nome'     => 'required|string|max:255',
             'telefone' => 'nullable|string|max:20',
-            'cargo'    => 'required|string|max:255',
+            'email'    => 'required|email|unique:users,email',
+            'password' => 'required|string|min:8',
+        ]);
+
+        $novoSocio = User::create([
+            'name'     => $validated['nome'],
+            'email'    => $validated['email'],
+            'telefone' => $validated['telefone'] ?? null,
+            'password' => Hash::make($validated['password']),
+            'papel'    => 'socio',
+        ]);
+
+        $estabelecimento->proprietarios()->attach($novoSocio->id, ['tipo' => 'socio']);
+
+        return redirect()->back()->with('success', "{$novoSocio->name} agora é sócio(a) deste estabelecimento!");
+    }
+
+    public function update(Request $request, Funcionario $funcionario)
+    {
+        $quemPede = $request->user();
+        $souGestorDoLocal = $quemPede->papel === 'admin'
+            || $quemPede->estabelecimentos()->where('estabelecimentos.id', $funcionario->estabelecimento_id)->exists();
+        abort_unless($souGestorDoLocal, 403, 'Você não administra o estabelecimento deste funcionário.');
+
+        $validated = $request->validate([
+            'nome'     => 'required|string|max:255',
+            'telefone' => 'nullable|string|max:20',
+            'cargo'    => ['required', 'string', 'in:' . implode(',', array_keys(self::CARGOS_FUNCIONARIO))],
             'email'    => 'nullable|email|unique:users,email,' . $funcionario->usuario_id,
             'password' => 'nullable|string|min:8',
             'estabelecimento_id' => 'required|exists:estabelecimentos,id'
         ]);
+
+        $papel = self::CARGOS_FUNCIONARIO[$validated['cargo']];
+        if ($papel === 'gerente' && $quemPede->papel !== 'admin' && !$quemPede->podeGerenciarEquipeAvancada()) {
+            return back()->withErrors(['cargo' => 'Promover a gerente é um recurso exclusivo do plano Sócio Premium. Faça upgrade em Minha assinatura.']);
+        }
+
+        $novoEstabelecimento = Estabelecimento::find($validated['estabelecimento_id']);
+        abort_unless(
+            $quemPede->papel === 'admin' || $quemPede->estabelecimentos()->where('estabelecimentos.id', $novoEstabelecimento->id)->exists(),
+            403,
+            'Você não administra o estabelecimento de destino.'
+        );
 
         $funcionario->update([
             'nome'     => $validated['nome'],
@@ -141,9 +237,10 @@ class FuncionarioController extends Controller
         if ($funcionario->usuario_id) {
             $user = User::find($funcionario->usuario_id);
             if ($user) {
+                $papelAntigo = $user->papel;
                 $user->name = $validated['nome'];
-                $user->papel = $validated['cargo'];
-                
+                $user->papel = $papel;
+
                 if (!empty($validated['email'])) {
                     $user->email = $validated['email'];
                 }
@@ -151,14 +248,27 @@ class FuncionarioController extends Controller
                     $user->password = Hash::make($validated['password']);
                 }
                 $user->save();
+
+                // Mantém a tabela de gestão do local (proprietarios/estabelecimento_usuario)
+                // coerente com o papel atual: sai de lá se deixou de ser gerente, entra se passou a ser.
+                if ($papelAntigo === 'gerente' && $papel !== 'gerente') {
+                    $novoEstabelecimento->proprietarios()->detach($user->id);
+                } elseif ($papel === 'gerente' && !$novoEstabelecimento->proprietarios()->where('users.id', $user->id)->exists()) {
+                    $novoEstabelecimento->proprietarios()->attach($user->id, ['tipo' => 'gerente']);
+                }
             }
         }
 
         return redirect()->back()->with('success', 'Funcionário atualizado com sucesso!');
     }
 
-    public function destroy(Funcionario $funcionario)
+    public function destroy(Request $request, Funcionario $funcionario)
     {
+        $quemPede = $request->user();
+        $souGestorDoLocal = $quemPede->papel === 'admin'
+            || $quemPede->estabelecimentos()->where('estabelecimentos.id', $funcionario->estabelecimento_id)->exists();
+        abort_unless($souGestorDoLocal, 403, 'Você não administra o estabelecimento deste funcionário.');
+
         $funcionario->update(['ativo' => false]);
         return redirect()->back()->with('success', 'Funcionário inativado e removido da escala.');
     }

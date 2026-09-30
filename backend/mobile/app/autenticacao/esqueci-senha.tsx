@@ -1,115 +1,190 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
-  StatusBar
+  StatusBar,
+  ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { AppColors } from '../../constants/AppColors';
+import { alertar } from '../../services/alertar';
+
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api/mobile';
+const REENVIO_SEGUNDOS = 60;
+
+const limpar = (t: string) => (t || '').replace(/[<>{}[\];=]/g, '').trim();
+
+/** Chamada pública (o usuário ainda não está logado). Devolve a mensagem de erro já em português. */
+async function chamar(caminho: string, corpo: unknown): Promise<{ ok: boolean; mensagem: string }> {
+  try {
+    const r = await fetch(`${API_URL}${caminho}`, {
+      method: 'POST',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify(corpo),
+    });
+    const dados = await r.json().catch(() => null);
+    if (r.ok) return { ok: true, mensagem: dados?.message || '' };
+    if (r.status === 429) return { ok: false, mensagem: 'Muitas tentativas seguidas. Aguarde um minuto e tente de novo.' };
+    const primeiro = dados?.errors ? (Object.values(dados.errors)[0] as string[])?.[0] : null;
+    return { ok: false, mensagem: primeiro || dados?.message || 'Não conseguimos concluir agora. Tente novamente em instantes.' };
+  } catch {
+    return { ok: false, mensagem: 'Sem conexão com o servidor. Verifique sua internet.' };
+  }
+}
 
 export default function EsqueciSenha() {
   const router = useRouter();
+  const [etapa, setEtapa] = useState<'email' | 'codigo'>('email');
   const [email, setEmail] = useState('');
+  const [codigo, setCodigo] = useState('');
+  const [senha, setSenha] = useState('');
+  const [confirmacao, setConfirmacao] = useState('');
+  const [mostrar, setMostrar] = useState(false);
+  const [enviando, setEnviando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const [espera, setEspera] = useState(0);
+  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // --- FILTRO DE SEGURANÇA ---
-  const sanitizeInput = (text: string): string => {
-    if (!text) return '';
-    return text
-      .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
-      .replace(/[<>{}[\];=]/g, '')
-      .trim();
+  useEffect(() => () => { if (timer.current) clearInterval(timer.current); }, []);
+
+  const iniciarEspera = () => {
+    setEspera(REENVIO_SEGUNDOS);
+    if (timer.current) clearInterval(timer.current);
+    timer.current = setInterval(() => setEspera((s) => { if (s <= 1) { if (timer.current) clearInterval(timer.current); return 0; } return s - 1; }), 1000);
   };
 
-  const handleRecuperarSenha = () => {
-    const cleanEmail = sanitizeInput(email);
+  const enviarCodigo = async () => {
+    const limpo = limpar(email).toLowerCase();
+    if (!limpo) { setErro('Informe o e-mail da sua conta.'); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(limpo)) { setErro('Digite um e-mail válido.'); return; }
 
-    if (!cleanEmail) {
-      Alert.alert('Atenção', 'Por favor, informe seu e-mail de cadastro.');
-      return;
-    }
+    setErro(null);
+    setEnviando(true);
+    const r = await chamar('/senha/solicitar', { email: limpo });
+    setEnviando(false);
+    if (!r.ok) { setErro(r.mensagem); return; }
 
-    // Validação simples de formato de e-mail
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(cleanEmail)) {
-      Alert.alert('Atenção', 'Por favor, insira um e-mail válido.');
-      return;
-    }
+    setEmail(limpo);
+    setEtapa('codigo');
+    iniciarEspera();
+  };
 
-    // Aqui no futuro você colocará o fetch() chamando a rota de recuperar senha da sua API
-    Alert.alert(
-      'Tudo certo!',
-      'Se o e-mail existir em nossa base, você receberá um link de recuperação em instantes.',
-      [{ text: 'Voltar ao Login', onPress: () => router.back() }]
-    );
+  const reenviar = async () => {
+    if (espera > 0) return;
+    setEnviando(true);
+    const r = await chamar('/senha/solicitar', { email });
+    setEnviando(false);
+    if (!r.ok) { setErro(r.mensagem); return; }
+    setErro(null);
+    iniciarEspera();
+    alertar('Código reenviado', 'Confira sua caixa de entrada e o spam.');
+  };
+
+  const redefinir = async () => {
+    if (codigo.length !== 6) { setErro('Digite os 6 números do código que enviamos por e-mail.'); return; }
+    if (senha.length < 8) { setErro('A nova senha precisa ter pelo menos 8 caracteres.'); return; }
+    if (senha !== confirmacao) { setErro('As senhas não conferem.'); return; }
+
+    setErro(null);
+    setEnviando(true);
+    const r = await chamar('/senha/redefinir', { email, codigo, password: senha, password_confirmation: confirmacao });
+    setEnviando(false);
+    if (!r.ok) { setErro(r.mensagem); return; }
+
+    alertar('Senha alterada!', 'Entre com a sua nova senha. Por segurança, você foi desconectado dos outros aparelhos.', [
+      { text: 'Ir para o login', onPress: () => router.replace('/autenticacao/login' as never) },
+    ]);
   };
 
   return (
     <View style={styles.background}>
       <StatusBar barStyle="dark-content" backgroundColor="#F7F8FA" />
-      
+
       <SafeAreaView style={styles.safeArea}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.container}
-        >
-          {/* HEADER */}
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
           <View style={styles.header}>
-            <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <TouchableOpacity onPress={() => (etapa === 'codigo' ? (setEtapa('email'), setErro(null)) : router.back())} style={styles.backButton}>
               <Ionicons name="arrow-back" size={24} color="#000000" />
             </TouchableOpacity>
             <View style={styles.headerCenter}>
               <Text style={styles.headerTitle}>Recuperar Senha</Text>
             </View>
-            <View style={{ width: 44 }} /> {/* Espaçador para centralizar o título */}
+            <View style={{ width: 44 }} />
           </View>
 
-          {/* CONTEÚDO */}
-          <View style={styles.content}>
-            
+          <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
             <View style={styles.iconContainer}>
               <View style={styles.iconCircle}>
-                <Ionicons name="lock-closed-outline" size={40} color="#FF6B35" />
+                <Ionicons name={etapa === 'email' ? 'lock-closed-outline' : 'mail-open-outline'} size={40} color={AppColors.primary} />
               </View>
             </View>
 
-            <Text style={styles.title}>Esqueceu sua senha?</Text>
-            <Text style={styles.subtitle}>
-              Não se preocupe! Digite o e-mail associado à sua conta e enviaremos as instruções para redefinição.
-            </Text>
+            {etapa === 'email' ? (
+              <>
+                <Text style={styles.title}>Esqueceu sua senha?</Text>
+                <Text style={styles.subtitle}>Digite o e-mail da sua conta e enviaremos um código de 6 números para você criar uma nova senha.</Text>
 
-            {/* FORMULÁRIO */}
-            <View style={styles.form}>
-              <Text style={styles.label}>E-mail de recuperação</Text>
-              <View style={styles.inputContainer}>
-                <Ionicons name="mail-outline" size={20} color="#000000" style={styles.inputIcon} />
-                <TextInput
-                  style={styles.input}
-                  placeholder="exemplo@email.com"
-                  placeholderTextColor="#888888"
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  value={email}
-                  onChangeText={setEmail}
-                />
-              </View>
+                <Text style={styles.label}>E-mail da conta</Text>
+                <View style={styles.inputContainer}>
+                  <Ionicons name="mail-outline" size={20} color="#000000" style={styles.inputIcon} />
+                  <TextInput style={styles.input} placeholder="exemplo@email.com" placeholderTextColor="#888888" keyboardType="email-address" autoCapitalize="none" autoCorrect={false} value={email} onChangeText={setEmail} editable={!enviando} />
+                </View>
 
-              <TouchableOpacity
-                style={styles.primaryButton}
-                onPress={handleRecuperarSenha}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.primaryButtonText}>Enviar link de recuperação</Text>
-              </TouchableOpacity>
-            </View>
-            
-          </View>
+                {!!erro && <Text style={styles.erro}>{erro}</Text>}
+
+                <TouchableOpacity style={[styles.primaryButton, enviando && { opacity: 0.6 }]} onPress={enviarCodigo} disabled={enviando} activeOpacity={0.85}>
+                  {enviando ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Enviar código</Text>}
+                </TouchableOpacity>
+
+                <View style={styles.aviso}>
+                  <Ionicons name="shield-checkmark-outline" size={18} color={AppColors.primary} />
+                  <Text style={styles.avisoTxt}>Por segurança, cada conta pode trocar a senha até 3 vezes a cada 30 dias.</Text>
+                </View>
+              </>
+            ) : (
+              <>
+                <Text style={styles.title}>Digite o código</Text>
+                <Text style={styles.subtitle}>Enviamos um código de 6 números para <Text style={{ fontWeight: '700', color: '#000' }}>{email}</Text>. Ele vale por 15 minutos.</Text>
+
+                <Text style={styles.label}>Código</Text>
+                <View style={styles.inputContainer}>
+                  <Ionicons name="keypad-outline" size={20} color="#000000" style={styles.inputIcon} />
+                  <TextInput style={[styles.input, { letterSpacing: 6, fontWeight: '700', fontSize: 20 }]} placeholder="000000" placeholderTextColor="#BBBBBB" keyboardType="number-pad" maxLength={6} value={codigo} onChangeText={(t) => setCodigo(t.replace(/\D/g, ''))} editable={!enviando} />
+                </View>
+
+                <Text style={styles.label}>Nova senha</Text>
+                <View style={styles.inputContainer}>
+                  <Ionicons name="lock-closed-outline" size={20} color="#000000" style={styles.inputIcon} />
+                  <TextInput style={styles.input} placeholder="Mínimo de 8 caracteres" placeholderTextColor="#888888" secureTextEntry={!mostrar} autoCapitalize="none" value={senha} onChangeText={setSenha} editable={!enviando} />
+                  <TouchableOpacity onPress={() => setMostrar(!mostrar)}><Ionicons name={mostrar ? 'eye-off-outline' : 'eye-outline'} size={20} color="#888" /></TouchableOpacity>
+                </View>
+
+                <Text style={styles.label}>Confirmar nova senha</Text>
+                <View style={styles.inputContainer}>
+                  <Ionicons name="lock-closed-outline" size={20} color="#000000" style={styles.inputIcon} />
+                  <TextInput style={styles.input} placeholder="Repita a senha" placeholderTextColor="#888888" secureTextEntry={!mostrar} autoCapitalize="none" value={confirmacao} onChangeText={setConfirmacao} editable={!enviando} />
+                </View>
+
+                {!!erro && <Text style={styles.erro}>{erro}</Text>}
+
+                <TouchableOpacity style={[styles.primaryButton, enviando && { opacity: 0.6 }]} onPress={redefinir} disabled={enviando} activeOpacity={0.85}>
+                  {enviando ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Alterar senha</Text>}
+                </TouchableOpacity>
+
+                <TouchableOpacity onPress={reenviar} disabled={espera > 0 || enviando} style={styles.reenviar}>
+                  <Text style={[styles.reenviarTxt, espera > 0 && { color: '#999' }]}>{espera > 0 ? `Reenviar código em ${espera}s` : 'Não recebi o código — reenviar'}</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
     </View>
@@ -117,125 +192,27 @@ export default function EsqueciSenha() {
 }
 
 const styles = StyleSheet.create({
-  background: {
-    flex: 1,
-    backgroundColor: '#F7F8FA',
-  },
-  safeArea: {
-    flex: 1,
-  },
-  container: {
-    flex: 1,
-  },
-  header: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    paddingHorizontal: 24,
-    marginTop: Platform.OS === 'android' ? 40 : 10, 
-    marginBottom: 20 
-  },
-  backButton: { 
-    width: 44, 
-    height: 44, 
-    borderRadius: 22, 
-    backgroundColor: '#FFFFFF', 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    borderWidth: 1, 
-    borderColor: '#E0E0E0',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-  },
-  headerCenter: { 
-    flex: 1, 
-    alignItems: 'center' 
-  },
-  headerTitle: { 
-    fontSize: 18, 
-    fontWeight: 'bold', 
-    color: '#000000' 
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 24,
-    paddingTop: 20,
-  },
-  iconContainer: {
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  iconCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: 'rgba(255, 107, 53, 0.1)', // Fundo laranja bem clarinho
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: 'bold',
-    color: '#000000',
-    textAlign: 'center',
-    marginBottom: 12,
-  },
-  subtitle: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: '#555555',
-    textAlign: 'center',
-    marginBottom: 40,
-    paddingHorizontal: 10,
-  },
-  form: {
-    width: '100%',
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#555555',
-    marginBottom: 8,
-    marginLeft: 4,
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-    borderRadius: 16,
-    marginBottom: 32,
-    paddingHorizontal: 16,
-    height: 58,
-  },
-  inputIcon: {
-    marginRight: 12,
-  },
-  input: {
-    flex: 1,
-    color: '#000000',
-    fontSize: 15,
-    height: '100%',
-  },
-  primaryButton: {
-    backgroundColor: '#FF6B35',
-    height: 60,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#FF6B35',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  primaryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: 'bold',
-    letterSpacing: 0.5,
-  },
+  background: { flex: 1, backgroundColor: '#F7F8FA' },
+  safeArea: { flex: 1 },
+  container: { flex: 1 },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 24, marginTop: Platform.OS === 'android' ? 40 : 10, marginBottom: 12 },
+  backButton: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#E0E0E0', elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2 },
+  headerCenter: { flex: 1, alignItems: 'center' },
+  headerTitle: { fontSize: 18, fontWeight: 'bold', color: '#000000' },
+  content: { paddingHorizontal: 24, paddingTop: 12, paddingBottom: 40 },
+  iconContainer: { alignItems: 'center', marginBottom: 20 },
+  iconCircle: { width: 80, height: 80, borderRadius: 40, backgroundColor: AppColors.primaryLight, justifyContent: 'center', alignItems: 'center' },
+  title: { fontSize: 26, fontWeight: 'bold', color: '#000000', textAlign: 'center', marginBottom: 10 },
+  subtitle: { fontSize: 15, lineHeight: 22, color: '#555555', textAlign: 'center', marginBottom: 28, paddingHorizontal: 6 },
+  label: { fontSize: 13, fontWeight: '600', color: '#555555', marginBottom: 8, marginLeft: 4 },
+  inputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E0E0E0', borderRadius: 16, marginBottom: 18, paddingHorizontal: 16, height: 58 },
+  inputIcon: { marginRight: 12 },
+  input: { flex: 1, color: '#000000', fontSize: 15, height: '100%' },
+  erro: { color: '#DC2626', fontSize: 13, fontWeight: '600', marginBottom: 14, marginLeft: 4 },
+  primaryButton: { backgroundColor: AppColors.primary, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center', shadowColor: AppColors.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 5 },
+  primaryButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: 'bold' },
+  aviso: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 22, backgroundColor: AppColors.primaryLight, borderRadius: 14, padding: 12 },
+  avisoTxt: { flex: 1, fontSize: 12, color: '#7C2D12', lineHeight: 17 },
+  reenviar: { alignItems: 'center', marginTop: 18, padding: 8 },
+  reenviarTxt: { color: AppColors.primary, fontWeight: '700', fontSize: 14 },
 });

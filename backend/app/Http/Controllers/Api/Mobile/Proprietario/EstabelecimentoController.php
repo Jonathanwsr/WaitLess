@@ -14,6 +14,24 @@ use App\Services\HiveAiService; // Novo serviço para verificação de imagem
 class EstabelecimentoController extends Controller
 {
     /**
+     * Mesma checagem já usada em `toggleStatus()` deste arquivo — só que
+     * `update()` (que inclui o campo token_mercadopago!) e `destroy()`
+     * (apaga o estabelecimento) não a tinham: qualquer usuário autenticado
+     * podia editar ou apagar QUALQUER estabelecimento da plataforma.
+     */
+    private function garantirQueGerencia(Request $request, int $estabelecimentoId): void
+    {
+        $vinculado = \Illuminate\Support\Facades\DB::table('estabelecimento_usuario')
+            ->where('usuario_id', $request->user()->id)
+            ->where('estabelecimento_id', $estabelecimentoId)
+            ->exists();
+
+        if (!$vinculado && $request->user()->papel !== 'admin') {
+            abort(403, 'Você não tem permissão para alterar este estabelecimento.');
+        }
+    }
+
+    /**
      * SALVAR NOVO ESTABELECIMENTO VIA APP
      */
     public function store(Request $request)
@@ -102,6 +120,7 @@ class EstabelecimentoController extends Controller
     public function update(Request $request, $id)
     {
         $estabelecimento = Estabelecimento::findOrFail($id);
+        $this->garantirQueGerencia($request, $estabelecimento->id);
 
         $this->limparMascaras($request);
 
@@ -170,9 +189,10 @@ class EstabelecimentoController extends Controller
     /**
      * APAGAR ESTABELECIMENTO (Com regra de bloqueio)
      */
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
         $estabelecimento = Estabelecimento::findOrFail($id);
+        $this->garantirQueGerencia($request, $estabelecimento->id);
 
         $temAgendamentos = Agendamento::where('estabelecimento_id', $estabelecimento->id)
             ->whereIn('status', ['pendente', 'confirmado', 'aguardando_pagamento'])
@@ -208,8 +228,17 @@ class EstabelecimentoController extends Controller
     /**
      * ATIVAR / DESATIVAR
      */
-    public function toggleStatus($id)
+    public function toggleStatus(\Illuminate\Http\Request $request, $id)
     {
+        // Só quem está vinculado ao estabelecimento (ou admin) pode ativar/desativar.
+        $vinculado = \Illuminate\Support\Facades\DB::table('estabelecimento_usuario')
+            ->where('usuario_id', $request->user()->id)
+            ->where('estabelecimento_id', $id)
+            ->exists();
+        if (!$vinculado && $request->user()->papel !== 'admin') {
+            return response()->json(['error' => 'Você não tem permissão para alterar este estabelecimento.'], 403);
+        }
+
         $estabelecimento = Estabelecimento::findOrFail($id);
         $estabelecimento->update(['ativo' => !$estabelecimento->ativo]);
         

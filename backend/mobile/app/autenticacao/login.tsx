@@ -5,7 +5,6 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
@@ -19,10 +18,25 @@ import { useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import * as SecureStore from 'expo-secure-store';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AppColors } from '../../constants/AppColors';
 
-// --- NOTIFICAÇÕES REATIVADAS ---
-import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
+import Constants from 'expo-constants';
+import { alertar } from '../../services/alertar';
+
+// No Expo Go (SDK 53+) o simples import de 'expo-notifications' lança erro e
+// derruba a tela de login. Carrega sob demanda, dentro de try/catch — em
+// development build o push funciona normalmente.
+function carregarNotifications(): any | null {
+  // No Expo Go a lib registra o erro por conta própria (aparece na tela mesmo
+  // com try/catch), então nem chega a carregar.
+  if (Constants.executionEnvironment === 'storeClient') return null;
+  try {
+    return require('expo-notifications');
+  } catch {
+    return null;
+  }
+}
 
 export default function Login() {
   const router = useRouter();
@@ -116,12 +130,12 @@ export default function Login() {
 
   const handleLogin = async () => {
     if (blockTime > 0) {
-      Alert.alert('Acesso bloqueado', `Aguarde ${formatTime(blockTime)} minutos para tentar novamente.`);
+      alertar('Acesso bloqueado', `Aguarde ${formatTime(blockTime)} minutos para tentar novamente.`);
       return;
     }
 
     if (!email || !password) {
-      Alert.alert('Ops', 'Por favor, preencha seu e-mail e senha.');
+      alertar('Ops', 'Por favor, preencha seu e-mail e senha.');
       return;
     }
 
@@ -131,7 +145,8 @@ export default function Login() {
     
     // --- LÓGICA DE PUSH NOTIFICATION REATIVADA ---
     try {
-      if (Device.isDevice) {
+      const Notifications = Device.isDevice ? carregarNotifications() : null;
+      if (Notifications) {
         const { status: existingStatus } = await Notifications.getPermissionsAsync();
         let finalStatus = existingStatus;
         if (existingStatus !== 'granted') {
@@ -148,12 +163,13 @@ export default function Login() {
     }
 
     try {
-      const ENV_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api';
-      const cleanBaseUrl = ENV_URL.endsWith('/') ? ENV_URL.slice(0, -1) : ENV_URL;
+      // EXPO_PUBLIC_API_URL já termina em "/mobile" — descontar isso antes de
+      // recompor evita "/mobile/mobile/login" (a versão anterior gerava esse
+      // caminho duplicado sempre que a env var estivesse definida, quebrando
+      // o login em qualquer build real).
+      const ENV_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api/mobile';
+      const cleanBaseUrl = ENV_URL.replace(/\/mobile\/?$/, '').replace(/\/+$/, '');
       const API_URL = `${cleanBaseUrl}/mobile/login`;
-
-      console.log('=====> ENVIANDO PARA:', API_URL);
-      console.log('=====> TOKEN PUSH GERADO:', pushToken);
 
       const response = await fetch(API_URL, {
         method: 'POST',
@@ -176,14 +192,14 @@ export default function Login() {
       } catch (e) {
         await handleFailedAttempt();
         console.log("Erro de JSON:", textoCru);
-        Alert.alert('Ops', 'Servidor retornou um erro inesperado.');
+        alertar('Ops', 'Servidor retornou um erro inesperado.');
         setLoading(false);
         return;
       }
 
       if (response.status === 421 || response.status === 401 || !response.ok) {
         await handleFailedAttempt();
-        Alert.alert('Ops', 'E-mail ou senha incorretos. Tente novamente!');
+        alertar('Ops', 'E-mail ou senha incorretos. Tente novamente!');
         setLoading(false);
         return;
       }
@@ -201,7 +217,9 @@ export default function Login() {
           papelUsuario = data.usuario.papel?.toLowerCase() || '';
         }
 
-        if (data.destino === 'dashboard' || ['socio', 'proprietario', 'gerente'].includes(papelUsuario)) {
+        if (papelUsuario === 'admin') {
+          router.replace('/src/screens/AdminUsuarios' as never);
+        } else if (data.destino === 'dashboard' || ['socio', 'proprietario', 'gerente'].includes(papelUsuario)) {
           router.replace('/Proprietario/dashboard');
         } else if (data.destino === 'funcionario') {
           router.replace('/src/funcionario/Painel-funcioanario');
@@ -211,12 +229,12 @@ export default function Login() {
         
       } else {
         await handleFailedAttempt();
-        Alert.alert('Ops', 'Algo deu errado. Tente novamente!');
+        alertar('Ops', 'Algo deu errado. Tente novamente!');
       }
     } catch (error) {
       await handleFailedAttempt();
       console.log('ERRO DE CONEXAO:', error);
-      Alert.alert('Ops', 'Não foi possível conectar. Verifique sua internet.');
+      alertar('Ops', 'Não foi possível conectar. Verifique sua internet.');
     } finally {
       setLoading(false);
     }
@@ -249,7 +267,7 @@ export default function Login() {
 
               <View style={styles.form}>
                 <View style={styles.inputContainer}>
-                  <Feather name="mail" size={20} color="#FF6B35" style={styles.inputIcon} />
+                  <Feather name="mail" size={20} color={AppColors.primary} style={styles.inputIcon} />
                   <TextInput
                     style={styles.input}
                     placeholder="Seu e-mail"
@@ -263,7 +281,7 @@ export default function Login() {
                 </View>
 
                 <View style={styles.inputContainer}>
-                  <Feather name="lock" size={20} color="#FF6B35" style={styles.inputIcon} />
+                  <Feather name="lock" size={20} color={AppColors.primary} style={styles.inputIcon} />
                   <TextInput
                     style={styles.input}
                     placeholder="Sua senha"
@@ -282,7 +300,7 @@ export default function Login() {
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[styles.loginButton, blockTime > 0 && { backgroundColor: '#A9A9A9' }]}
+                  style={[styles.loginButton, blockTime > 0 && { backgroundColor: AppColors.textFaint }]}
                   onPress={handleLogin}
                   disabled={loading || blockTime > 0}
                   activeOpacity={0.85}
@@ -391,12 +409,12 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   forgotPasswordText: {
-    color: '#FF6B35',
+    color: AppColors.primary,
     fontSize: 15,
     fontWeight: '600',
   },
   loginButton: {
-    backgroundColor: '#FF6B35',
+    backgroundColor: AppColors.primary,
     height: 64,
     borderRadius: 32,
     justifyContent: 'center',

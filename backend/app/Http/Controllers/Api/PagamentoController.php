@@ -11,6 +11,7 @@ use App\Services\PagamentoService;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use App\Events\FilaAtualizada;
 
 class PagamentoController extends Controller
 {
@@ -26,7 +27,18 @@ class PagamentoController extends Controller
             'parcelas'          => 'nullable|integer|min:1|max:12'
         ]);
 
-        $agendamento = Agendamento::with(['servico', 'estabelecimento'])->findOrFail($request->agendamento_id);
+        $agendamento = Agendamento::with(['servico', 'estabelecimento'])->find($request->agendamento_id);
+
+        // Sem isso, qualquer usuário autenticado podia informar o agendamento_id de
+        // OUTRA pessoa e confirmar/pagar em nome dela (o equivalente mobile deste
+        // mesmo endpoint já tinha essa checagem — aqui na web estava faltando).
+        if (!$agendamento || $agendamento->usuario_id !== $request->user()->id) {
+            return response()->json(['error' => 'Não foi possível localizar este pedido.'], 404);
+        }
+
+        if (in_array($agendamento->status_pagamento, ['pago', 'pago_online', 'local', 'presencial'], true)) {
+            return response()->json(['error' => 'Este pedido já está pago, não é possível pagar novamente.'], 409);
+        }
 
         try {
             // =========================================================================
@@ -34,7 +46,7 @@ class PagamentoController extends Controller
             // =========================================================================
             if ($request->metodo_pagamento === 'local') {
                 
-                // Chama o service que gera o PIN, envia e-mail e CALCULA OS 12% (se não for premium)
+                // Chama o service que gera o PIN, envia e-mail e CALCULA A TAXA DA PLATAFORMA (se não for premium)
                 $pagamentoService->processarPagamentoLocal($agendamento);
 
                 // Assegura que o status geral do agendamento fique como 'confirmado' para entrar na fila
@@ -218,7 +230,11 @@ class PagamentoController extends Controller
                         break;
 
                     case 'PAYMENT_OVERDUE':
-                        $pagamento->update(['status' => 'vencido']);
+                        // A coluna pagamentos.status só aceita pendente/pago/cancelado/estornado
+                        // (CHECK constraint) — 'vencido' não é um valor válido e derrubava esta
+                        // atualização com erro de banco, o que cancelava a transação inteira: o
+                        // agendamento NUNCA chegava a ser cancelado quando o PIX/boleto vencia.
+                        $pagamento->update(['status' => 'cancelado']);
                         if ($pagamento->agendamento_id) {
                             Agendamento::where('id', $pagamento->agendamento_id)->update(['status' => 'cancelado', 'status_pagamento' => 'cancelado']);
                             
@@ -295,6 +311,19 @@ class PagamentoController extends Controller
                 }
             });
 
+            // Avisa em tempo real (web + mobile) que o status de pagamento mudou —
+            // sem isso, quem está esperando confirmação de PIX/boleto só veria a
+            // atualização ao atualizar a página manualmente. Nunca pode derrubar
+            // o webhook: se o broadcast falhar (ex.: Reverb fora do ar), o status
+            // no banco já está correto de qualquer forma.
+            if (in_array($event, ['PAYMENT_RECEIVED', 'PAYMENT_CONFIRMED', 'PAYMENT_OVERDUE', 'PAYMENT_REFUNDED'], true)) {
+                try {
+                    event(new FilaAtualizada($pagamento->estabelecimento_id));
+                } catch (\Throwable $e) {
+                    Log::warning('Falha ao notificar mudança de status de pagamento em tempo real: ' . $e->getMessage());
+                }
+            }
+
             return response()->json(['status' => 'success'], 200);
 
         } catch (\Exception $e) {
@@ -326,7 +355,9 @@ class PagamentoController extends Controller
                 'usuario_id'         => $pagamento->usuario_id,
                 'estabelecimento_id' => $pagamento->estabelecimento_id,
                 $colunaFiltro        => $origemId,
-                'tipo'               => 'perda',
+                // historico_pontos.tipo só aceita 'ganho'/'uso' (CHECK constraint) —
+                // 'perda' não existe e derrubava todo o estorno com erro de banco.
+                'tipo'               => 'uso',
                 'descricao'          => 'Estorno de pontos de fidelidade após cancelamento',
                 'quantidade'         => $pontosGanhosNessaTransacao,
                 'created_at'         => now()

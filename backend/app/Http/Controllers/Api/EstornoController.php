@@ -325,12 +325,10 @@ class EstornoController extends Controller
                 'ip' => request()->ip()
             ]);
 
-            NotificacaoEstorno::create([
-                'estorno_id' => $estorno->id,
-                'usuario_id' => $estorno->usuario_id,
-                'titulo' => 'Estorno Aprovado',
-                'mensagem' => 'Seu estorno foi aprovado e o valor foi estornado para sua conta/cartão original.'
-            ]);
+            NotificacaoEstorno::firstOrCreate(
+                ['estorno_id' => $estorno->id, 'usuario_id' => $estorno->usuario_id, 'titulo' => 'Estorno aprovado'],
+                ['mensagem' => 'Seu estorno foi aprovado e o valor foi estornado para sua conta/cartão original.']
+            );
 
             if (class_exists(\App\Services\NotificacaoService::class) && $estorno->prestador) {
                 $notificacaoService = new \App\Services\NotificacaoService();

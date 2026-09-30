@@ -6,37 +6,36 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
-  Alert,
-  Platform,
-  Image
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as WebBrowser from 'expo-web-browser';
-
-const COLORS = { 
-  primary: '#FF5A00', 
-  primaryLight: '#FFF4ED', 
-  secondary: '#111827', 
-  gray: '#6B7280', 
-  lightGray: '#F3F4F6', 
-  white: '#FFFFFF', 
-  border: '#E5E7EB', 
-  success: '#10B981',
-  greenLight: '#ECFDF5',
-  warning: '#F59E0B'
-};
+import { TextInput } from 'react-native';
+import { T } from '../../../constants/ClientTheme';
+import { alertar } from '../../../services/alertar';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api/mobile';
 
 type PaymentMethod = 'pix' | 'boleto' | 'cartao' | 'local';
 
+const PASSOS = ['Serviço', 'Agendamento', 'Dados', 'Pagamento'];
+
+const brl = (v: unknown) => `R$ ${Number(v || 0).toFixed(2).replace('.', ',')}`;
+
 export default function PagamentoScreen() {
   const router = useRouter();
+  const [cancelamentoPct, setCancelamentoPct] = useState(2);
+  useEffect(() => {
+    fetch(`${API_URL}/taxas`, { headers: { Accept: 'application/json' } })
+      .then((r) => r.json())
+      .then((j) => { if (typeof j?.cancelamento_tardio_percentual === 'number') setCancelamentoPct(j.cancelamento_tardio_percentual); })
+      .catch(() => {});
+  }, []);
   const params = useLocalSearchParams();
-  
+
   // Parâmetros recebidos da tela de Criar Reserva
   const agendamento_id = Array.isArray(params.agendamento_id) ? params.agendamento_id[0] : params.agendamento_id;
   const asaas_customer_id = Array.isArray(params.asaas_customer_id) ? params.asaas_customer_id[0] : params.asaas_customer_id;
@@ -49,6 +48,11 @@ export default function PagamentoScreen() {
   const [checkoutDados, setCheckoutDados] = useState<any>(null);
   const abrindoGateway = useRef(false);
 
+  // Cartão com parcelas calculadas pelo servidor
+  const [cartao, setCartao] = useState({ numero: '', titular: '', mes: '', ano: '', cvv: '' });
+  const [parcelas, setParcelas] = useState(1);
+  const [opcoesParcelas, setOpcoesParcelas] = useState<{ parcelas: number; valor_parcela: number; total: number }[]>([]);
+
   const pegarToken = async () => (await AsyncStorage.getItem('@waitless_token')) || (await AsyncStorage.getItem('@lokyva_token'));
 
   const buscarDadosCheckout = useCallback(async () => {
@@ -60,10 +64,7 @@ export default function PagamentoScreen() {
     try {
       const token = await pegarToken();
       const res = await fetch(`${API_URL}/pagamentos/${agendamento_id}/resumo`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: 'application/json',
-        },
+        headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
       });
 
       if (res.ok) {
@@ -89,8 +90,15 @@ export default function PagamentoScreen() {
   }, [checkoutDados?.ja_esta_pago]);
 
   const processarPagamento = async () => {
-    if (!agendamento_id) return Alert.alert('Ops', 'Não encontramos o pedido para pagar. Volte e tente novamente.');
+    if (!agendamento_id) return alertar('Ops', 'Não encontramos o pedido para pagar. Volte e tente novamente.');
     if (abrindoGateway.current) return; // evita duplo toque abrindo duas cobranças
+
+    if (method === 'cartao') {
+      const numero = cartao.numero.replace(/\D/g, '');
+      if (numero.length < 13 || !cartao.titular.trim() || !cartao.mes || !cartao.ano || cartao.cvv.length < 3) {
+        return alertar('Dados do cartão', 'Preencha número, nome, validade e CVV do cartão.');
+      }
+    }
 
     setProcessing(true);
     abrindoGateway.current = true;
@@ -99,17 +107,20 @@ export default function PagamentoScreen() {
       const payload = {
         agendamento_id,
         metodo_pagamento: method,
-        parcelas: 1,
+        parcelas: method === 'cartao' ? parcelas : 1,
         asaas_customer_id: method !== 'local' ? asaas_customer_id : undefined,
+        cartao: method === 'cartao' ? {
+          numero: cartao.numero.replace(/\D/g, ''),
+          titular: cartao.titular.trim(),
+          mes: Number(cartao.mes),
+          ano: Number(cartao.ano),
+          cvv: cartao.cvv,
+        } : undefined,
       };
 
       const res = await fetch(`${API_URL}/pagamento/processar`, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify(payload),
       });
 
@@ -121,7 +132,12 @@ export default function PagamentoScreen() {
           router.replace({ pathname: '/src/screens/ConfirmacaoScreen', params: { id: agendamento_id } });
           return;
         }
-        Alert.alert('Não foi possível continuar', data.error || data.message || 'Tente novamente em instantes.');
+        alertar('Não foi possível continuar', data.error || data.message || 'Tente novamente em instantes.');
+        return;
+      }
+
+      if (data.aprovado) {
+        router.replace({ pathname: '/src/screens/ConfirmacaoScreen', params: { id: agendamento_id, codigo: codigo_pedido_param } });
         return;
       }
 
@@ -146,7 +162,7 @@ export default function PagamentoScreen() {
         if (statusAtualizado?.ja_esta_pago) {
           router.replace({ pathname: '/src/screens/ConfirmacaoScreen', params: { id: agendamento_id, codigo: codigo_pedido_param } });
         } else {
-          Alert.alert(
+          alertar(
             'Pagamento pendente',
             'Ainda não identificamos a confirmação do seu pagamento. Sua reserva foi mantida como pendente — você pode concluir o pagamento a qualquer momento em "Meus agendamentos".',
             [{ text: 'Entendi', onPress: () => router.replace('/(tabs)/home') }]
@@ -154,7 +170,7 @@ export default function PagamentoScreen() {
         }
       }
     } catch (e) {
-      Alert.alert('Sem conexão', 'Não foi possível falar com o servidor agora. Verifique sua internet e tente novamente.');
+      alertar('Sem conexão', 'Não foi possível falar com o servidor agora. Verifique sua internet e tente novamente.');
     } finally {
       setProcessing(false);
       abrindoGateway.current = false;
@@ -162,167 +178,284 @@ export default function PagamentoScreen() {
   };
 
   // Usa o valor do backend se existir, senão usa o que veio por parâmetro da tela anterior
-  const amountToPay = checkoutDados?.valor_total ? parseFloat(checkoutDados.valor_total) : (parseFloat(valor_total_param as string) || 0);
+  const amountToPay = checkoutDados?.valor_total ? parseFloat(checkoutDados.valor_total) : parseFloat(valor_total_param as string) || 0;
+
+  useEffect(() => {
+    if (method !== 'cartao' || amountToPay <= 0) { setOpcoesParcelas([]); return; }
+    let cancelado = false;
+    (async () => {
+      try {
+        const token = await pegarToken();
+        const res = await fetch(`${API_URL}/pagamentos/parcelamento`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ valor: Number(amountToPay.toFixed(2)) }),
+        });
+        const json = await res.json();
+        if (cancelado || !res.ok) return;
+        const lista = json.parcelamento || [];
+        setOpcoesParcelas(lista);
+        setParcelas((p) => Math.min(p, lista.length || 1));
+      } catch {
+        if (!cancelado) setOpcoesParcelas([]);
+      }
+    })();
+    return () => { cancelado = true; };
+  }, [method, amountToPay.toFixed(2)]);
 
   if (loadingDados) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={{marginTop: 12, color: COLORS.gray, fontWeight: '600'}}>Buscando resumo do pedido...</Text>
+      <View style={s.loading}>
+        <ActivityIndicator size="large" color={T.primary} />
+        <Text style={s.loadingTxt}>Buscando resumo do pedido...</Text>
       </View>
     );
   }
 
+  const online = method !== 'local';
+
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Ionicons name="chevron-back" size={24} color={COLORS.secondary} />
+    <SafeAreaView style={s.safe} edges={['top']}>
+      <View style={s.header}>
+        <TouchableOpacity onPress={() => router.back()} style={s.voltar}>
+          <Ionicons name="chevron-back" size={24} color={T.ink} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Pagamento</Text>
-        <View style={{ width: 32, alignItems: 'center' }}>
-          <Ionicons name="lock-closed" size={18} color={COLORS.success} />
+        <View style={{ flex: 1, alignItems: 'center' }}>
+          <View style={{ flex: 1 }} />
+          <View style={{ flex: 1 }} />
         </View>
+        <View style={s.cadeado}><Ionicons name="lock-closed" size={16} color={T.success} /></View>
       </View>
 
-      <ScrollView style={styles.container} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 150 }}>
-        
-        {/* STEPPER VISUAL */}
-        <View style={styles.stepperContainer}>
-          <View style={styles.stepBox}>
-            <View style={styles.stepCircle}><Feather name="check" size={12} color="#FFF"/></View>
-            <Text style={styles.stepText}>Serviço</Text>
-          </View>
-          <View style={styles.stepLine} />
-          <View style={styles.stepBox}>
-            <View style={styles.stepCircle}><Feather name="check" size={12} color="#FFF"/></View>
-            <Text style={styles.stepText}>Agendamento</Text>
-          </View>
-          <View style={styles.stepLine} />
-          <View style={styles.stepBox}>
-            <View style={styles.stepCircle}><Feather name="check" size={12} color="#FFF"/></View>
-            <Text style={styles.stepText}>Dados</Text>
-          </View>
-          <View style={styles.stepLine} />
-          <View style={styles.stepBox}>
-            <View style={[styles.stepCircle, {backgroundColor: COLORS.primary}]}>
-              <Text style={styles.stepNumber}>4</Text>
-            </View>
-            <Text style={[styles.stepText, {color: COLORS.primary, fontWeight: 'bold'}]}>Pagamento</Text>
-          </View>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 140 }}>
+        {/* PASSOS */}
+        <View style={s.passos}>
+          {PASSOS.map((p, i) => {
+            const atual = i === PASSOS.length - 1;
+            return (
+              <React.Fragment key={p}>
+                <View style={s.passo}>
+                  <View style={[s.passoCirculo, atual && s.passoCirculoAtual]}>
+                    {atual ? <Text style={s.passoNum}>{i + 1}</Text> : <Ionicons name="checkmark" size={13} color="#fff" />}
+                  </View>
+                  <Text style={[s.passoTxt, atual && s.passoTxtAtual]}>{p}</Text>
+                </View>
+                {i < PASSOS.length - 1 && <View style={s.passoLinha} />}
+              </React.Fragment>
+            );
+          })}
         </View>
 
-        {/* CÓDIGO DO PEDIDO */}
-        {codigo_pedido_param && (
-          <View style={styles.orderCodeBadge}>
-            <MaterialCommunityIcons name="ticket-confirmation-outline" size={20} color={COLORS.primary} />
-            <Text style={styles.orderCodeText}>Pedido: {codigo_pedido_param}</Text>
+        {/* RESUMO DO PEDIDO */}
+        <View style={s.resumo}>
+          {!!codigo_pedido_param && (
+            <View style={s.pedido}>
+              <MaterialCommunityIcons name="ticket-confirmation-outline" size={16} color={T.primary} />
+              <Text style={s.pedidoTxt}>Pedido {codigo_pedido_param}</Text>
+            </View>
+          )}
+          <View style={s.resumoTopo}>
+            <View style={s.resumoAvatar}>
+              <Ionicons name="storefront-outline" size={26} color={T.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={s.resumoNome} numberOfLines={1}>{checkoutDados?.estabelecimento_nome || 'Seu pedido'}</Text>
+              {!!checkoutDados?.servico_nome && <Text style={s.resumoSub} numberOfLines={1}>{checkoutDados.servico_nome}{checkoutDados.funcionario_nome ? ` com ${checkoutDados.funcionario_nome}` : ''}</Text>}
+              {!!checkoutDados?.data_formatada && (
+                <View style={s.resumoInfo}>
+                  <Ionicons name="calendar-outline" size={13} color={T.primary} />
+                  <Text style={s.resumoInfoTxt}>{checkoutDados.data_formatada}{checkoutDados.hora_formatada ? ` às ${checkoutDados.hora_formatada}` : ''}</Text>
+                </View>
+              )}
+            </View>
           </View>
-        )}
 
-        {/* RESUMO DO VALOR */}
-        <View style={styles.totalSummaryCard}>
-          <Text style={styles.totalSummaryLabel}>Total a pagar</Text>
-          <Text style={styles.totalSummaryValue}>R$ {amountToPay.toFixed(2).replace('.', ',')}</Text>
-          
-          {/* Se a API retornar que usou pontos, exibe aqui */}
+          <View style={s.resumoTotal}>
+            <Text style={s.resumoTotalRotulo}>TOTAL A PAGAR</Text>
+            <Text style={s.resumoTotalValor}>{brl(amountToPay)}</Text>
+          </View>
+
           {checkoutDados?.pontos_usados > 0 && (
-            <View style={styles.discountRow}>
-              <Ionicons name="star" size={14} color={COLORS.success} />
-              <Text style={styles.discountText}>
-                Desconto aplicado: {checkoutDados.pontos_usados} pontos (-R$ {Number(checkoutDados.desconto_pontos).toFixed(2).replace('.', ',')})
+            <View style={s.desconto}>
+              <Ionicons name="star" size={14} color={T.success} />
+              <Text style={s.descontoTxt}>
+                Desconto aplicado: {checkoutDados.pontos_usados} pontos (-{brl(checkoutDados.desconto_pontos)})
               </Text>
             </View>
           )}
         </View>
 
-        {/* PRODUTOS EXTRAS INCLUÍDOS NO PEDIDO */}
+        {/* ITENS EXTRAS */}
         {Array.isArray(checkoutDados?.produtos) && checkoutDados.produtos.length > 0 && (
-          <View style={styles.produtosCard}>
-            <Text style={styles.produtosTitulo}>Itens incluídos neste pedido</Text>
+          <View style={s.extras}>
+            <Text style={s.extrasTitulo}>Itens incluídos neste pedido</Text>
             {checkoutDados.produtos.map((produto: any) => (
-              <View key={produto.id} style={styles.produtoRow}>
+              <View key={produto.id} style={s.extraLinha}>
                 {produto.foto ? (
-                  <Image source={{ uri: produto.foto }} style={styles.produtoFoto} />
+                  <Image source={{ uri: produto.foto }} style={s.extraFoto} contentFit="cover" />
                 ) : (
-                  <View style={[styles.produtoFoto, styles.produtoFotoPlaceholder]}>
-                    <Ionicons name="cube-outline" size={18} color={COLORS.gray} />
+                  <View style={[s.extraFoto, { alignItems: 'center', justifyContent: 'center' }]}>
+                    <Ionicons name="cube-outline" size={18} color={T.muted} />
                   </View>
                 )}
-                <Text style={styles.produtoNome} numberOfLines={1}>{produto.nome}</Text>
-                <Text style={styles.produtoValor}>R$ {Number(produto.valor).toFixed(2).replace('.', ',')}</Text>
+                <Text style={s.extraNome} numberOfLines={1}>{produto.nome}</Text>
+                <Text style={s.extraValor}>{brl(produto.valor)}</Text>
               </View>
             ))}
           </View>
         )}
 
-        <Text style={styles.sectionTitle}>1. Como você prefere pagar?</Text>
-        
-        {/* OPÇÕES FIÉIS À IMAGEM */}
-        <TouchableOpacity style={[styles.optionCard, method === 'local' && styles.optionCardActive]} onPress={() => setMethod('local')}>
-          <View style={[styles.iconWrap, method === 'local' && styles.iconWrapActive]}>
-            <Ionicons name="storefront" size={20} color={method === 'local' ? COLORS.primary : COLORS.gray} />
+        {/* 1. FORMA */}
+        <View style={s.tituloLinha}><View style={s.numero}><Text style={s.numeroTxt}>1</Text></View><Text style={s.secao}>Forma de pagamento</Text></View>
+
+        <TouchableOpacity style={[s.opcao, !online && s.opcaoOn]} onPress={() => setMethod('local')} activeOpacity={0.85}>
+          <View style={[s.opcaoIcone, !online && s.opcaoIconeOn]}>
+            <Ionicons name="storefront-outline" size={20} color={!online ? '#fff' : T.muted} />
           </View>
-          <View style={{flex: 1, marginLeft: 12}}>
-            <Text style={styles.optionTitle}>Pagar no local (Presencial)</Text>
-            <Text style={styles.optionDesc}>Efetue o pagamento diretamente no estabelecimento no momento do atendimento/retirada.</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={s.opcaoTitulo}>Pagar no local</Text>
+            <Text style={s.opcaoDesc}>Pagamento diretamente no estabelecimento, no momento do atendimento ou da retirada.</Text>
           </View>
-          <View style={[styles.radioCircle, method === 'local' && styles.radioActive]}>
-             {method === 'local' && <View style={styles.radioInner} />}
-          </View>
+          <View style={[s.radio, !online && s.radioOn]}>{!online && <View style={s.radioMiolo} />}</View>
         </TouchableOpacity>
 
-        <TouchableOpacity style={[styles.optionCard, method !== 'local' && styles.optionCardActive]} onPress={() => setMethod('pix')}>
-          <View style={[styles.iconWrap, method !== 'local' && styles.iconWrapActive]}>
-            <Ionicons name="shield-checkmark" size={20} color={method !== 'local' ? COLORS.primary : COLORS.gray} />
+        <TouchableOpacity style={[s.opcao, online && s.opcaoOn]} onPress={() => setMethod('pix')} activeOpacity={0.85}>
+          <View style={[s.opcaoIcone, online && s.opcaoIconeOn]}>
+            <Ionicons name="shield-checkmark-outline" size={20} color={online ? '#fff' : T.muted} />
           </View>
-          <View style={{flex: 1, marginLeft: 12}}>
-            <Text style={styles.optionTitle}>Pagar online agora</Text>
-            <Text style={styles.optionDesc}>Garanta sua reserva antecipadamente com segurança e rapidez.</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={s.opcaoTitulo}>Pagar online</Text>
+            <Text style={s.opcaoDesc}>Rápido, prático e seguro. Garanta sua reserva agora.</Text>
           </View>
-          <View style={[styles.radioCircle, method !== 'local' && styles.radioActive]}>
-            {method !== 'local' && <View style={styles.radioInner} />}
-          </View>
+          <View style={[s.radio, online && s.radioOn]}>{online && <View style={s.radioMiolo} />}</View>
         </TouchableOpacity>
 
-        {/* MÉTODOS ONLINE (EXIBIDOS APENAS SE A OPÇÃO FOR ONLINE) */}
-        {method !== 'local' && (
-          <View style={styles.onlineMethodsContainer}>
-            <Text style={styles.sectionTitle}>2. Selecione a forma digital</Text>
-            <View style={styles.tabsRow}>
-              <TouchableOpacity style={[styles.tabBtn, method === 'cartao' && styles.tabActive]} onPress={() => setMethod('cartao')}>
-                <Ionicons name="card-outline" size={20} color={method === 'cartao' ? COLORS.primary : COLORS.gray} />
-                <Text style={[styles.tabText, method === 'cartao' && styles.tabTextActive]}>Cartão</Text>
+        {/* 2. MÉTODO ONLINE */}
+        {online && (
+          <>
+            <View style={s.tituloLinha}><View style={s.numero}><Text style={s.numeroTxt}>2</Text></View><Text style={s.secao}>Método de pagamento</Text></View>
+            <View style={s.abas}>
+              <TouchableOpacity style={[s.aba, method === 'cartao' && s.abaOn]} onPress={() => setMethod('cartao')} activeOpacity={0.85}>
+                <Ionicons name="card-outline" size={19} color={method === 'cartao' ? T.primary : T.muted} />
+                <Text style={[s.abaTxt, method === 'cartao' && { color: T.primary }]}>Cartão</Text>
               </TouchableOpacity>
-              
-              <TouchableOpacity style={[styles.tabBtn, method === 'pix' && styles.tabActive]} onPress={() => setMethod('pix')}>
-                <MaterialCommunityIcons name="qrcode-scan" size={20} color={method === 'pix' ? COLORS.success : COLORS.gray} />
-                <Text style={[styles.tabText, method === 'pix' && {color: COLORS.success, fontWeight:'800'}]}>Pix</Text>
+              <TouchableOpacity style={[s.aba, method === 'pix' && s.abaOn]} onPress={() => setMethod('pix')} activeOpacity={0.85}>
+                <MaterialCommunityIcons name="qrcode-scan" size={19} color={method === 'pix' ? T.primary : T.muted} />
+                <Text style={[s.abaTxt, method === 'pix' && { color: T.primary }]}>Pix</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[s.aba, method === 'boleto' && s.abaOn]} onPress={() => setMethod('boleto')} activeOpacity={0.85}>
+                <Ionicons name="barcode-outline" size={19} color={method === 'boleto' ? T.primary : T.muted} />
+                <Text style={[s.abaTxt, method === 'boleto' && { color: T.primary }]}>Boleto</Text>
               </TouchableOpacity>
             </View>
 
-            <View style={styles.secureBox}>
-              <Ionicons name="lock-closed" size={16} color={COLORS.success} />
-              <Text style={styles.secureText}>Pagamento processado de forma 100% segura com criptografia ponta-a-ponta.</Text>
+            {/* Explicação simples do método escolhido */}
+            <View style={s.explica}>
+              <Ionicons name={method === 'cartao' ? 'card-outline' : method === 'pix' ? 'flash-outline' : 'time-outline'} size={18} color={T.primary} />
+              <Text style={s.explicaTxt}>
+                {method === 'cartao'
+                  ? 'Cobrança no cartão de crédito agora, em até 12x sem juros. Sua reserva é confirmada na hora.'
+                  : method === 'pix'
+                    ? 'Aprovação imediata. Você recebe um QR Code para pagar pelo app do seu banco e a reserva é confirmada na hora.'
+                    : 'Compensa em até 2 dias úteis. A reserva é confirmada assim que o pagamento for identificado.'}
+              </Text>
             </View>
-          </View>
+
+            {method === 'cartao' && (
+              <View style={s.cartaoBox}>
+                <View>
+                  <Text style={s.campoRotulo}>Número do cartão</Text>
+                  <TextInput style={s.cartaoInput} placeholder="0000 0000 0000 0000" placeholderTextColor={T.faint} keyboardType="number-pad" maxLength={23} autoComplete="cc-number"
+                    value={cartao.numero} onChangeText={(t) => setCartao({ ...cartao, numero: t.replace(/\D/g, '').slice(0, 19).replace(/(.{4})/g, '$1 ').trim() })} />
+                </View>
+                <View>
+                  <Text style={s.campoRotulo}>Nome como está no cartão</Text>
+                  <TextInput style={s.cartaoInput} placeholder="NOME SOBRENOME" placeholderTextColor={T.faint} autoCapitalize="characters" autoComplete="cc-name"
+                    value={cartao.titular} onChangeText={(t) => setCartao({ ...cartao, titular: t.toUpperCase() })} />
+                </View>
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.campoRotulo}>Mês</Text>
+                    <TextInput style={s.cartaoInput} placeholder="MM" placeholderTextColor={T.faint} keyboardType="number-pad" maxLength={2}
+                      value={cartao.mes} onChangeText={(t) => setCartao({ ...cartao, mes: t.replace(/\D/g, '') })} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.campoRotulo}>Ano</Text>
+                    <TextInput style={s.cartaoInput} placeholder="AA" placeholderTextColor={T.faint} keyboardType="number-pad" maxLength={4}
+                      value={cartao.ano} onChangeText={(t) => setCartao({ ...cartao, ano: t.replace(/\D/g, '') })} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.campoRotulo}>Código (CVV)</Text>
+                    <TextInput style={s.cartaoInput} placeholder="123" placeholderTextColor={T.faint} keyboardType="number-pad" maxLength={4} secureTextEntry
+                      value={cartao.cvv} onChangeText={(t) => setCartao({ ...cartao, cvv: t.replace(/\D/g, '') })} />
+                  </View>
+                </View>
+
+                <Text style={[s.campoRotulo, { marginTop: 6 }]}>Em quantas parcelas?</Text>
+                {opcoesParcelas.length === 0 ? (
+                  <Text style={s.seguroTxt}>Calculando parcelas…</Text>
+                ) : (
+                  <View style={{ gap: 8 }}>
+                    {opcoesParcelas.map((o) => {
+                      const on = parcelas === o.parcelas;
+                      return (
+                        <TouchableOpacity key={o.parcelas} style={[s.parcelaLinha, on && s.parcelaLinhaOn]} onPress={() => setParcelas(o.parcelas)} activeOpacity={0.85}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[s.parcelaTxt, on && { color: T.primary }]}>
+                              {o.parcelas === 1 ? 'À vista' : `${o.parcelas}x de ${brl(o.valor_parcela)}`}
+                            </Text>
+                            <Text style={s.parcelaSub}>{o.parcelas === 1 ? brl(o.total) : `sem juros · total ${brl(o.total)}`}</Text>
+                          </View>
+                          <View style={[s.radio, on && s.radioOn]}>{on && <View style={s.radioMiolo} />}</View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                )}
+              </View>
+            )}
+
+            <View style={s.seguro}>
+              <Ionicons name="lock-closed" size={15} color={T.success} />
+              <Text style={s.seguroTxt}>Seus dados são criptografados de ponta a ponta.</Text>
+            </View>
+          </>
         )}
-      </ScrollView>
 
-      {/* FOOTER BARRA ELEVADA */}
-      <View style={styles.bottomBar}>
-        <View style={styles.priceContainerBottom}>
-            <Text style={styles.totalLabelBottom}>Total a pagar</Text>
-            <Text style={styles.totalValueBottom}>R$ {amountToPay.toFixed(2).replace('.', ',')}</Text>
+        <View style={s.confianca}>
+          <View style={s.confiancaLinha}>
+            <Ionicons name="shield-checkmark" size={20} color={T.success} />
+            <Text style={s.confiancaTxt}>
+              <Text style={s.confiancaForte}>Pagamento seguro. </Text>
+              É processado por uma processadora de pagamentos regulamentada. A Lokyva não guarda os dados do seu cartão.
+            </Text>
+          </View>
+          <View style={s.confiancaLinha}>
+            <Ionicons name="return-up-back-outline" size={20} color={T.primary} />
+            <Text style={s.confiancaTxt}>
+              <Text style={s.confiancaForte}>Cancelamento e estorno. </Text>
+              Cancele até 30 min antes do horário sem custo. Depois disso, {cancelamentoPct}% do valor é retido. Você pode pedir estorno em até 4 dias após pagar.
+            </Text>
+          </View>
         </View>
 
-        <TouchableOpacity style={styles.payBtn} onPress={processarPagamento} disabled={processing}>
+        <TouchableOpacity style={s.linkAjuda} onPress={() => router.push('/src/screens/ComoFuncionamPagamentos?perfil=cliente' as never)} activeOpacity={0.7}>
+          <Ionicons name="help-circle-outline" size={18} color={T.primary} />
+          <Text style={s.linkAjudaTxt}>Como funciona o pagamento e quais são as taxas</Text>
+          <Ionicons name="chevron-forward" size={16} color={T.faint} />
+        </TouchableOpacity>
+      </ScrollView>
+
+      {/* BARRA INFERIOR */}
+      <View style={s.barra}>
+        <TouchableOpacity style={[s.pagar, processing && { opacity: 0.7 }]} onPress={processarPagamento} disabled={processing} activeOpacity={0.88}>
           {processing ? (
-            <ActivityIndicator color={COLORS.white} />
+            <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.payBtnText}>
-              Confirmar Pagamento
-            </Text>
+            <>
+              <Ionicons name="lock-closed" size={17} color="#fff" />
+              <Text style={s.pagarTxt}>{!online ? 'Confirmar reserva' : method === 'cartao' ? (parcelas > 1 ? `Pagar ${parcelas}x de ${brl(amountToPay / parcelas)}` : `Pagar ${brl(amountToPay)}`) : method === 'pix' ? `Gerar Pix de ${brl(amountToPay)}` : `Gerar boleto de ${brl(amountToPay)}`}</Text>
+            </>
           )}
         </TouchableOpacity>
       </View>
@@ -330,84 +463,86 @@ export default function PagamentoScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#FAFAFA' },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FAFAFA' },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, backgroundColor: '#FFF', borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  backBtn: { padding: 4, backgroundColor: COLORS.lightGray, borderRadius: 50 },
-  headerTitle: { fontSize: 18, fontWeight: '800', color: COLORS.secondary },
-  
-  container: { padding: 20 },
-  
-  stepperContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, backgroundColor: '#FFF', padding: 16, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border },
-  stepBox: { alignItems: 'center' },
-  stepCircle: { width: 24, height: 24, borderRadius: 12, backgroundColor: COLORS.success, justifyContent: 'center', alignItems: 'center', marginBottom: 6 },
-  stepNumber: { color: COLORS.white, fontSize: 12, fontWeight: '900' },
-  stepText: { fontSize: 10, color: COLORS.gray, fontWeight: '600' },
-  stepLine: { flex: 1, height: 2, backgroundColor: COLORS.success, marginHorizontal: 8, marginBottom: 16 },
+const s = StyleSheet.create({
+  confianca: { backgroundColor: T.card, borderRadius: 20, padding: 16, marginTop: 8, gap: 12, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  confiancaLinha: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
+  confiancaTxt: { flex: 1, fontSize: 12, color: T.muted, lineHeight: 18 },
+  confiancaForte: { fontWeight: '800', color: T.ink },
+  linkAjuda: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: T.card, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 14, marginTop: 8, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  linkAjudaTxt: { flex: 1, fontSize: 13, fontWeight: '700', color: T.ink },
+  cartaoBox: { gap: 10, marginBottom: 12 },
+  cartaoInput: { backgroundColor: T.card, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 15, fontSize: 16, color: T.ink, borderWidth: 1.5, borderColor: T.line },
+  campoRotulo: { fontSize: 13, fontWeight: '700', color: T.ink, marginBottom: 6 },
+  explica: { flexDirection: 'row', gap: 10, alignItems: 'flex-start', backgroundColor: T.primarySoft, borderRadius: 14, padding: 12, marginTop: 12, marginBottom: 14 },
+  explicaTxt: { flex: 1, fontSize: 13, lineHeight: 19, color: T.ink },
+  parcelaSub: { fontSize: 12, color: T.muted, marginTop: 2 },
+  parcelaLinha: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 14, borderRadius: 14, borderWidth: 1, borderColor: T.line, backgroundColor: T.card },
+  parcelaLinhaOn: { borderColor: T.primary, backgroundColor: T.primarySoft },
+  parcelaTxt: { fontSize: 14, fontWeight: '600', color: T.ink },
+  safe: { flex: 1, backgroundColor: T.cream },
+  loading: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: T.cream },
+  loadingTxt: { marginTop: 12, color: T.muted, fontWeight: '600' },
 
-  orderCodeBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.primaryLight, padding: 10, borderRadius: 8, marginBottom: 16, gap: 8, borderWidth: 1, borderColor: '#FFDDC2' },
-  orderCodeText: { fontSize: 14, fontWeight: '800', color: COLORS.primary, textTransform: 'uppercase' },
+  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10 },
+  voltar: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center' },
+  headerTitulo: { fontSize: 17, fontWeight: '800', color: T.ink },
+  headerSub: { fontSize: 12, color: T.muted, marginTop: 1 },
+  cadeado: { width: 34, height: 34, borderRadius: 17, backgroundColor: T.successBg, alignItems: 'center', justifyContent: 'center' },
 
-  totalSummaryCard: { backgroundColor: COLORS.white, padding: 20, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border, marginBottom: 24, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
-  totalSummaryLabel: { fontSize: 14, color: COLORS.gray, fontWeight: '600', marginBottom: 4 },
-  totalSummaryValue: { fontSize: 36, fontWeight: '900', color: COLORS.secondary },
-  discountRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.greenLight, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, marginTop: 12, gap: 6 },
-  discountText: { fontSize: 12, color: COLORS.success, fontWeight: '700' },
+  passos: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginTop: 8, marginBottom: 22 },
+  passo: { alignItems: 'center', width: 64 },
+  passoCirculo: { width: 24, height: 24, borderRadius: 12, backgroundColor: T.primary, alignItems: 'center', justifyContent: 'center' },
+  passoCirculoAtual: { backgroundColor: T.primary, borderWidth: 3, borderColor: '#F8D9C8', width: 28, height: 28, borderRadius: 14, marginTop: -2 },
+  passoNum: { color: '#fff', fontSize: 12, fontWeight: '800' },
+  passoTxt: { fontSize: 10, color: T.muted, marginTop: 6, textAlign: 'center' },
+  passoTxtAtual: { color: T.primary, fontWeight: '800' },
+  passoLinha: { flex: 1, height: 2, backgroundColor: T.primary, marginTop: 11, marginHorizontal: -8 },
 
-  produtosCard: { backgroundColor: COLORS.white, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border, padding: 16, marginBottom: 20 },
-  produtosTitulo: { fontSize: 13, fontWeight: '800', color: COLORS.secondary, marginBottom: 12 },
-  produtoRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
-  produtoFoto: { width: 36, height: 36, borderRadius: 8, backgroundColor: COLORS.lightGray },
-  produtoFotoPlaceholder: { alignItems: 'center', justifyContent: 'center' },
-  produtoNome: { flex: 1, fontSize: 13, fontWeight: '600', color: COLORS.secondary },
-  produtoValor: { fontSize: 13, fontWeight: '700', color: COLORS.gray },
+  resumo: { backgroundColor: T.card, borderRadius: 24, padding: 18, marginBottom: 20, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 14, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  pedido: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: T.primarySoft, alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, marginBottom: 12 },
+  pedidoTxt: { fontSize: 12, fontWeight: '800', color: T.primary },
+  resumoTopo: { flexDirection: 'row', gap: 12, alignItems: 'center' },
+  resumoAvatar: { width: 56, height: 56, borderRadius: 16, backgroundColor: T.primarySoft, alignItems: 'center', justifyContent: 'center' },
+  resumoNome: { fontSize: 16, fontWeight: '800', color: T.ink },
+  resumoSub: { fontSize: 12, color: T.muted, marginTop: 2 },
+  resumoInfo: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 6 },
+  resumoInfoTxt: { fontSize: 12, fontWeight: '600', color: T.ink },
+  resumoTotal: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 16, paddingTop: 14, borderTopWidth: 1, borderTopColor: T.line },
+  resumoTotalRotulo: { fontSize: 13, fontWeight: '600', color: T.muted },
+  resumoTotalValor: { fontSize: 30, fontWeight: '800', color: T.ink, letterSpacing: -0.8 },
+  desconto: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: T.successBg, borderRadius: 10, padding: 10, marginTop: 12 },
+  descontoTxt: { flex: 1, fontSize: 12, fontWeight: '600', color: T.success },
 
-  sectionTitle: { fontSize: 16, fontWeight: '800', color: COLORS.secondary, marginBottom: 12 },
-  
-  optionCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.white, padding: 16, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border, marginBottom: 12 },
-  optionCardActive: { borderColor: COLORS.primary, backgroundColor: COLORS.primaryLight, borderWidth: 2 },
-  iconWrap: { width: 44, height: 44, borderRadius: 12, backgroundColor: COLORS.lightGray, justifyContent: 'center', alignItems: 'center' },
-  iconWrapActive: { backgroundColor: '#FFEDD5' },
-  optionTitle: { fontSize: 15, fontWeight: '800', color: COLORS.secondary, marginBottom: 2 },
-  optionDesc: { fontSize: 12, color: COLORS.gray, lineHeight: 16, paddingRight: 10 },
-  radioCircle: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: COLORS.border, justifyContent: 'center', alignItems: 'center', backgroundColor: '#FFF' },
-  radioActive: { borderColor: COLORS.primary },
-  radioInner: { width: 10, height: 10, borderRadius: 5, backgroundColor: COLORS.primary },
+  extras: { backgroundColor: T.card, borderRadius: 20, padding: 14, marginBottom: 18, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  extrasTitulo: { fontSize: 13, fontWeight: '800', color: T.ink, marginBottom: 10 },
+  extraLinha: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 },
+  extraFoto: { width: 40, height: 40, borderRadius: 10, backgroundColor: T.cream },
+  extraNome: { flex: 1, fontSize: 13, color: T.ink, fontWeight: '600' },
+  extraValor: { fontSize: 13, fontWeight: '800', color: T.ink },
 
-  onlineMethodsContainer: { marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: COLORS.border },
-  tabsRow: { flexDirection: 'row', gap: 12, marginBottom: 16 },
-  tabBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, borderRadius: 14, borderWidth: 1, borderColor: COLORS.border, gap: 8, backgroundColor: COLORS.white },
-  tabActive: { borderColor: COLORS.primary, backgroundColor: COLORS.primaryLight, borderWidth: 2 },
-  tabText: { fontSize: 15, fontWeight: '700', color: COLORS.gray },
-  tabTextActive: { color: COLORS.primary },
+  tituloLinha: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 8, marginBottom: 12 },
+  numero: { width: 24, height: 24, borderRadius: 12, backgroundColor: T.primarySoft, alignItems: 'center', justifyContent: 'center' },
+  numeroTxt: { fontSize: 12, fontWeight: '800', color: T.primary },
+  secao: { fontSize: 16, fontWeight: '800', color: T.ink },
 
-  secureBox: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#ECFDF5', padding: 16, borderRadius: 12, gap: 10, borderWidth: 1, borderColor: '#A7F3D0' },
-  secureText: { flex: 1, fontSize: 12, color: COLORS.success, fontWeight: '700', lineHeight: 18 },
+  opcao: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: T.card, borderRadius: 20, padding: 16, marginBottom: 12, borderWidth: 1.5, borderColor: 'transparent', shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 10, shadowOffset: { width: 0, height: 3 }, elevation: 2 },
+  opcaoOn: { borderColor: T.primary, backgroundColor: '#FFF8F1' },
+  opcaoIcone: { width: 44, height: 44, borderRadius: 14, backgroundColor: T.cream, alignItems: 'center', justifyContent: 'center' },
+  opcaoIconeOn: { backgroundColor: T.primary },
+  opcaoTitulo: { fontSize: 15, fontWeight: '800', color: T.ink },
+  opcaoDesc: { fontSize: 12, color: T.muted, marginTop: 2, lineHeight: 17 },
+  radio: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: T.line, alignItems: 'center', justifyContent: 'center' },
+  radioOn: { borderColor: T.primary },
+  radioMiolo: { width: 10, height: 10, borderRadius: 5, backgroundColor: T.primary },
 
-  // Footer ajustado
-  bottomBar: { 
-    position: 'absolute', 
-    bottom: 0, 
-    left: 0, 
-    right: 0, 
-    backgroundColor: COLORS.white, 
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: Platform.OS === 'ios' ? 40 : 24, // Elevação
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderTopWidth: 1, 
-    borderTopColor: COLORS.border,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 20
-  },
-  priceContainerBottom: { flex: 1 },
-  totalLabelBottom: { fontSize: 12, color: COLORS.gray, fontWeight: '600' },
-  totalValueBottom: { fontSize: 20, fontWeight: '900', color: COLORS.secondary },
-  payBtn: { backgroundColor: COLORS.primary, paddingVertical: 16, paddingHorizontal: 24, borderRadius: 14, alignItems: 'center', justifyContent: 'center', shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
-  payBtnText: { color: COLORS.white, fontSize: 15, fontWeight: '900' }
+  abas: { flexDirection: 'row', backgroundColor: '#E9E9EC', borderRadius: 16, padding: 4 },
+  aba: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderRadius: 12 },
+  abaOn: { backgroundColor: T.card, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
+  abaTxt: { fontSize: 14, fontWeight: '700', color: T.muted },
+  seguro: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: T.successBg, borderRadius: 12, padding: 12, marginTop: 14 },
+  seguroTxt: { flex: 1, fontSize: 12, color: T.success, fontWeight: '600' },
+
+  barra: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: T.card, paddingHorizontal: 20, paddingTop: 14, paddingBottom: 30, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 16, shadowOffset: { width: 0, height: -4 }, elevation: 12 },
+  pagar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: T.primary, height: 56, borderRadius: 28 },
+  pagarTxt: { color: '#fff', fontWeight: '800', fontSize: 16 },
 });

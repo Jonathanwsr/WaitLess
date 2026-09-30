@@ -21,9 +21,11 @@ use App\Http\Controllers\Api\CupomController;
 use App\Http\Controllers\Api\FilaController;
 use App\Http\Controllers\Api\FuncionarioAreaController;
 use App\Http\Controllers\Api\AdminFinanceiroController;
-use App\Services\MercadoPagoService; 
+use App\Http\Controllers\Api\AdminPromocaoController;
+use App\Http\Controllers\Api\AdminUsuarioController;
+use App\Services\MercadoPagoService;
 use App\Http\Controllers\Api\FavoritoController;
-use App\Http\Controllers\Api\MensagemController; 
+use App\Http\Controllers\Api\MensagemController;
 use App\Http\Controllers\Api\ExtratoProviderController;
 use App\Http\Controllers\Api\AssinaturaController;
 use App\Http\Middleware\CheckAdmin;
@@ -35,8 +37,8 @@ use App\Http\Controllers\Api\AvaliacaoController;
 use App\Http\Controllers\Api\ContratoController;
 use App\Http\Controllers\Api\EstornoController;
 use App\Http\Controllers\Api\TravelAssistantController;
-use Illuminate\Foundation\Application; 
-use Illuminate\Support\Facades\Route;  
+use Illuminate\Foundation\Application;
+use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
 /*
@@ -48,6 +50,16 @@ Route::get('/', [App\Http\Controllers\WelcomeController::class, 'index'])->name(
 
 // Vitrine pública dos parceiros premium (usada no carrossel da Welcome, sem exigir login)
 Route::get('/api/vitrine-premium', [AssinaturaController::class, 'vitrinePremium'])->name('api.vitrine-premium');
+
+// Divulgação: página pública do local (prévia bonita no WhatsApp/Instagram) e QR Code do link
+Route::get('/l/{estabelecimento}', [App\Http\Controllers\DivulgacaoController::class, 'pagina'])->name('local.publico');
+Route::get('/l/{estabelecimento}/qr.png', [App\Http\Controllers\DivulgacaoController::class, 'qr'])->name('local.qr');
+
+// Páginas legais públicas (linkadas no rodapé do site e na Central de Ajuda do app mobile)
+Route::get('/privacidade', fn () => Inertia::render('Legal/Privacidade'))->name('legal.privacidade');
+Route::get('/termos', fn () => Inertia::render('Legal/Termos', [
+    'versaoAtual' => config('termos.versao_atual'),
+]))->name('legal.termos');
 
 // Tela pública de detalhes de um serviço/aluguel (fotos, descrição e avaliações), sem exigir login
 Route::get('/vitrine/{tipo}/{id}', [App\Http\Controllers\WelcomeController::class, 'detalhes'])
@@ -82,10 +94,10 @@ Route::get('/meu-painel/producao', [App\Http\Controllers\Api\FuncionarioCarteira
 Route::post('/meu-painel/producao/fechar-dia', [App\Http\Controllers\Api\FuncionarioCarteiraController::class, 'fecharDia'])->name('funcionario.fechar_dia');
 
 
-// assinaturas 
+// assinaturas
 
 Route::post('/assinaturas/nova', [App\Http\Controllers\Api\AssinaturaController::class, 'assinar'])->name('assinatura.nova');
-    Route::post('/assinaturas/cancelar', [App\Http\Controllers\Api\AssinaturaController::class, 'cancelar'])->name('assinatura.cancelar'); 
+    Route::post('/assinaturas/cancelar', [App\Http\Controllers\Api\AssinaturaController::class, 'cancelar'])->name('assinatura.cancelar');
 
 
     Route::get('/financeiro/conta', function () {
@@ -102,23 +114,23 @@ Route::post('/assinaturas/nova', [App\Http\Controllers\Api\AssinaturaController:
 
 
 Route::get('/api/provider', [ProviderController::class, 'show'])->name('provider.show');
-    
+
     // 2. Rota POST: Salva ou atualiza o perfil (Singular!)
     Route::post('/api/provider', [ProviderController::class, 'store'])->name('provider.store');
 
     // troca a chave pix do provider
 
     Route::put('/api/provider', [ProviderController::class, 'update'])->name('provider.update');
-    
+
     // Dashboard
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
-    //avaliaçoes 
+    //avaliaçoes
 
     Route::get('/avaliacoes/{id}', [App\Http\Controllers\Api\AvaliacaoController::class, 'indexReact'])->name('avaliacoes.index');
     Route::post('/api/avaliacoes', [App\Http\Controllers\Api\AvaliacaoController::class, 'store'])->name('avaliacoes.store');
 
- // Rotas de Avaliações 
+ // Rotas de Avaliações
 Route::get('/avaliacoes', [App\Http\Controllers\Api\AvaliacaoController::class, 'indexReact'])->name('avaliacoes.geral');
 Route::get('/avaliacoes/{id}', [App\Http\Controllers\Api\AvaliacaoController::class, 'indexReact'])->name('avaliacoes.index');
 Route::post('/api/avaliacoes', [App\Http\Controllers\Api\AvaliacaoController::class, 'store'])->name('avaliacoes.store');
@@ -153,10 +165,46 @@ Route::post('/anfitriao/avaliacoes/{id}/responder', [App\Http\Controllers\Api\Av
         Route::post('/robos/{comando}/rodar', [AdminFinanceiroController::class, 'rodarRoboAgora'])->name('admin.financeiro.robos.rodar');
     });
 
+    Route::prefix('admin/promocoes')->middleware(['auth', CheckAdmin::class])->group(function () {
+        Route::get('/', [AdminPromocaoController::class, 'index'])->name('admin.promocoes.index');
+        Route::post('/', [AdminPromocaoController::class, 'store'])->name('admin.promocoes.store');
+        Route::post('/{promocao}', [AdminPromocaoController::class, 'update'])->name('admin.promocoes.update');
+        Route::patch('/{promocao}/toggle-ativo', [AdminPromocaoController::class, 'toggleAtivo'])->name('admin.promocoes.toggle-ativo');
+        Route::post('/{promocao}/executar', [AdminPromocaoController::class, 'executar'])->name('admin.promocoes.executar');
+        Route::delete('/{promocao}', [AdminPromocaoController::class, 'destroy'])->name('admin.promocoes.destroy');
+    });
+
+    Route::prefix('admin/usuarios')->middleware(['auth', CheckAdmin::class])->group(function () {
+        Route::get('/', [AdminUsuarioController::class, 'index'])->name('admin.usuarios.index');
+        Route::post('/{usuario}/liberar-plano', [AdminUsuarioController::class, 'liberarPlano'])->name('admin.usuarios.liberar-plano');
+        Route::post('/{usuario}/revogar-plano', [AdminUsuarioController::class, 'revogarPlano'])->name('admin.usuarios.revogar-plano');
+        Route::put('/{usuario}', [AdminUsuarioController::class, 'update'])->name('admin.usuarios.update');
+        Route::delete('/{usuario}', [AdminUsuarioController::class, 'destroy'])->name('admin.usuarios.destroy');
+    });
+
+    Route::prefix('admin/repasses')->middleware(['auth', CheckAdmin::class])->group(function () {
+        Route::get('/', [App\Http\Controllers\Api\AdminCarteiraController::class, 'index'])->name('admin.repasses.index');
+        Route::post('/{transferencia}/consultar', [App\Http\Controllers\Api\AdminCarteiraController::class, 'consultar'])->name('admin.repasses.consultar');
+        Route::post('/contas/{conta}/validar', [App\Http\Controllers\Api\AdminCarteiraController::class, 'validarConta'])->name('admin.repasses.contas.validar');
+    });
+
+    Route::prefix('admin/relatorios')->middleware(['auth', CheckAdmin::class])->group(function () {
+        Route::get('/', [App\Http\Controllers\Api\AdminRelatorioController::class, 'index'])->name('admin.relatorios.index');
+        Route::post('/custos', [App\Http\Controllers\Api\AdminRelatorioController::class, 'storeCusto'])->name('admin.relatorios.custos.store');
+        Route::put('/custos/{custo}', [App\Http\Controllers\Api\AdminRelatorioController::class, 'updateCusto'])->name('admin.relatorios.custos.update');
+        Route::delete('/custos/{custo}', [App\Http\Controllers\Api\AdminRelatorioController::class, 'destroyCusto'])->name('admin.relatorios.custos.destroy');
+    });
+
+    Route::prefix('admin/gamificacao')->middleware(['auth', CheckAdmin::class])->group(function () {
+        Route::get('/', [App\Http\Controllers\Api\AdminGamificacaoController::class, 'index'])->name('admin.gamificacao.index');
+        Route::post('/sugestoes/{sugestao}/responder', [App\Http\Controllers\Api\AdminGamificacaoController::class, 'responder'])->name('admin.gamificacao.sugestoes.responder');
+    });
+
     // Perfil
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+    Route::get('/profile/termos', [ProfileController::class, 'termos'])->name('perfil.termos');
 
     // Estabelecimentos
     Route::get('/estabelecimentos/create', [EstabelecimentoController::class, 'create'])->name('estabelecimentos.create');
@@ -167,23 +215,61 @@ Route::post('/anfitriao/avaliacoes/{id}/responder', [App\Http\Controllers\Api\Av
         ->name('estabelecimentos.index');
 
         Route::middleware('auth:sanctum')->get('/estabelecimentos/proximos', [DashboardController::class, 'getNearby']);
-       
+
        Route::get('/home', [DashboardController::class, 'showHome'])->name('home'); // 👈 name('home') minúsculo
        Route::get('/api/nearby', [DashboardController::class, 'getNearby'])->name('api.nearby');
 
 
-       
+
 
 Route::middleware(['auth'])->group(function () {
+    // Roteiro inteligente (premium) e agenda compartilhada do grupo
+    $viagens = App\Http\Controllers\Api\ViagemController::class;
+    Route::get('/viagens', [$viagens, 'index'])->name('viagens.index');
+    Route::get('/viagens/nova', [$viagens, 'nova'])->name('viagens.nova');
+    Route::post('/viagens/roteiro/previa', [$viagens, 'previa'])->name('viagens.previa');
+    Route::post('/viagens', [$viagens, 'store'])->name('viagens.store');
+    Route::get('/viagens/convite/{codigo}', [$viagens, 'entrarPorCodigo'])->name('viagens.convite');
+    Route::post('/viagens/convite/{codigo}', [$viagens, 'confirmarEntrada'])->name('viagens.convite.entrar');
+    Route::get('/viagens/{viagem}', [$viagens, 'show'])->whereNumber('viagem')->name('viagens.show');
+    Route::get('/viagens/{viagem}/painel', [$viagens, 'painel'])->name('viagens.painel');
+    Route::put('/viagens/{viagem}', [$viagens, 'update'])->name('viagens.update');
+    Route::delete('/viagens/{viagem}', [$viagens, 'destroy'])->name('viagens.destroy');
+    Route::post('/viagens/{viagem}/regenerar', [$viagens, 'regenerar'])->name('viagens.regenerar');
+    Route::post('/viagens/{viagem}/convidar', [$viagens, 'convidar'])->name('viagens.convidar');
+    Route::post('/viagens/{viagem}/presenca', [$viagens, 'presencaViagem'])->name('viagens.presenca');
+    Route::delete('/viagens/{viagem}/membros/{usuario}', [$viagens, 'removerMembro'])->name('viagens.membros.destroy');
+    Route::post('/viagens/{viagem}/itens', [$viagens, 'itemStore'])->name('viagens.itens.store');
+    Route::put('/viagens/{viagem}/itens/{item}', [$viagens, 'itemUpdate'])->name('viagens.itens.update');
+    Route::delete('/viagens/{viagem}/itens/{item}', [$viagens, 'itemDestroy'])->name('viagens.itens.destroy');
+    Route::post('/viagens/{viagem}/itens/{item}/presenca', [$viagens, 'presencaItem'])->name('viagens.itens.presenca');
+    Route::post('/viagens/{viagem}/reservas', [$viagens, 'compartilharReserva'])->name('viagens.reservas.store');
+    Route::post('/viagens/{viagem}/despesas', [$viagens, 'despesaStore'])->name('viagens.despesas.store');
+    Route::delete('/viagens/{viagem}/despesas/{despesa}', [$viagens, 'despesaDestroy'])->name('viagens.despesas.destroy');
+    Route::post('/viagens/{viagem}/pagamentos', [$viagens, 'pagamentoStore'])->name('viagens.pagamentos.store');
+    Route::get('/viagens/{viagem}/mensagens', [$viagens, 'mensagens'])->name('viagens.mensagens.index');
+    Route::post('/viagens/{viagem}/mensagens', [$viagens, 'mensagemStore'])->name('viagens.mensagens.store');
+});
+
+Route::middleware(['auth'])->group(function () {
+    // Carteira do proprietário (saldo Asaas, contas de destino validadas, repasse antecipado)
+    Route::get('/financeiro/carteira', [App\Http\Controllers\Api\CarteiraProprietarioController::class, 'index'])->name('carteira.asaas');
+    Route::get('/api/carteira-asaas', [App\Http\Controllers\Api\CarteiraProprietarioController::class, 'painel'])->name('carteira.asaas.painel');
+    Route::post('/api/carteira-asaas/contas', [App\Http\Controllers\Api\CarteiraProprietarioController::class, 'storeConta'])->name('carteira.asaas.contas.store');
+    Route::post('/api/carteira-asaas/contas/{conta}/validar', [App\Http\Controllers\Api\CarteiraProprietarioController::class, 'revalidarConta'])->name('carteira.asaas.contas.validar');
+    Route::post('/api/carteira-asaas/contas/{conta}/padrao', [App\Http\Controllers\Api\CarteiraProprietarioController::class, 'definirPadrao'])->name('carteira.asaas.contas.padrao');
+    Route::delete('/api/carteira-asaas/contas/{conta}', [App\Http\Controllers\Api\CarteiraProprietarioController::class, 'removerConta'])->name('carteira.asaas.contas.destroy');
+    Route::post('/api/carteira-asaas/sacar', [App\Http\Controllers\Api\CarteiraProprietarioController::class, 'sacar'])->name('carteira.asaas.sacar');
+
     // Rota da tela do Dashboard Financeiro Completo
     Route::get('/financeiro/extrato', [ExtratoProviderController::class, 'index'])->name('provider.financeiro');
-    
+
     // Rota para disparar downloads de relatórios por período em planilhas Excel (CSV)
     Route::get('/financeiro/extrato/exportar', [ExtratoProviderController::class, 'exportar'])->name('provider.financeiro.export');
 });
 
 
-   //produtos 
+   //produtos
 
     // 1. Criar Produto
    // 1. Criar Produto
@@ -249,11 +335,16 @@ Route::get('/pagamentos/elegiveis-estorno', [EstornoController::class, 'elegivei
 
 
 
-    
+
     // fRotas exclusivas do Administrador
-    Route::get('/api/admin/estornos', [EstornoController::class, 'adminIndex']);
-    Route::post('/api/admin/estornos/{id}/aprovar', [EstornoController::class, 'adminAprovar']);
-    Route::post('/api/admin/estornos/{id}/reprovar', [EstornoController::class, 'adminReprovar']);
+    Route::get('/api/admin/metricas', fn (\Illuminate\Http\Request $r) => response()->json(app(\App\Services\MetricasCrescimentoService::class)->gerar(max(1, (int) $r->query('dias', 30)))))
+        ->middleware(CheckAdmin::class)->name('admin.metricas');
+    // Sem CheckAdmin aqui, qualquer usuário autenticado (inclusive o próprio
+    // cliente que pediu o estorno) conseguia aprovar/reprovar estornos de
+    // QUALQUER UM — aprovar de verdade manda o dinheiro de volta pelo Asaas.
+    Route::get('/api/admin/estornos', [EstornoController::class, 'adminIndex'])->middleware(CheckAdmin::class);
+    Route::post('/api/admin/estornos/{id}/aprovar', [EstornoController::class, 'adminAprovar'])->middleware(CheckAdmin::class);
+    Route::post('/api/admin/estornos/{id}/reprovar', [EstornoController::class, 'adminReprovar'])->middleware(CheckAdmin::class);
 
 // Fica dentro do seu grupo de rotas logadas
 Route::post('/api/estornos/{pagamento_id}/solicitar', [EstornoController::class, 'solicitar']);
@@ -264,9 +355,9 @@ Route::prefix('api/estornos')->middleware(['auth'])->group(function () {
     Route::get('/lista', [EstornoController::class, 'minhasSolicitacoes']);
 
 
- 
-    
-    
+
+
+
     // Demais rotas
     Route::get('/{id}/detalhes', [EstornoController::class, 'detalhes']);
     Route::post('/solicitar/pagamento/{pagamento_id}', [EstornoController::class, 'solicitar']);
@@ -275,21 +366,23 @@ Route::prefix('api/estornos')->middleware(['auth'])->group(function () {
 
 // Rota para Cancelamento e Estorno de Agendamentos (Pelo Cliente)
 Route::post('/agendamentos/{id}/cancelar', [AgendamentoController::class, 'cancelarPeloCliente'])->name('cliente.agendamentos.cancelar');
-// adiar 
+// adiar
 Route::post('/agendamentos/{id}/chamar', [App\Http\Controllers\Api\AgendamentoController::class, 'chamar'])->name('agendamentos.chamar');
 Route::post('/agendamentos/{id}/adiar', [App\Http\Controllers\Api\AgendamentoController::class, 'adiar'])->name('agendamentos.adiar');
 
 
     Route::prefix('admin/estornos')->group(function () {
-        
+
         // Ver todos os estornos do sistema com filtros (status, categoria, dia, mês, ano)
-        Route::get('/', [EstornoController::class, 'adminIndex']);
-        
+        // Mesma falha do outro registro desta rota: sem CheckAdmin, qualquer
+        // usuário autenticado julgava (e aprovava de verdade) estorno de qualquer um.
+        Route::get('/', [EstornoController::class, 'adminIndex'])->middleware(CheckAdmin::class);
+
         // O administrador julga que o cliente tem razão e aprova a devolução (API Asaas)
-        Route::post('/{id}/aprovar', [EstornoController::class, 'adminAprovar']);
-        
+        Route::post('/{id}/aprovar', [EstornoController::class, 'adminAprovar'])->middleware(CheckAdmin::class);
+
         // O administrador julga que o prestador tem razão e recusa o estorno
-        Route::post('/{id}/reprovar', [EstornoController::class, 'adminReprovar']);
+        Route::post('/{id}/reprovar', [EstornoController::class, 'adminReprovar'])->middleware(CheckAdmin::class);
 
         Route::get('/estornos', [EstornoController::class, 'index'])->name('estornos.index');
 
@@ -309,11 +402,14 @@ Route::get('/meus-estornos', [EstornoController::class, 'index'])->name('cliente
 
     // 3. Abre a tela focada em um ID específico (Alterado para {id} para evitar conflitos no Ziggy)
     Route::get('/mensagens/{id}', [MensagemController::class, 'show'])->name('mensagens.show');
-    
+
     // 4. Salva a mensagem enviada
     Route::post('/mensagens/{id}/enviar', [MensagemController::class, 'enviarMensagem'])->name('mensagens.enviar');
-    
-    
+
+    // 5. Favorita/desfavorita uma conversa (por pessoa)
+    Route::post('/mensagens/{id}/favoritar', [MensagemController::class, 'favoritar'])->name('mensagens.favoritar');
+
+
     // Fila e Configurações (Aninhadas em Estabelecimentos)
    // Ambas as rotas agora chamam o método index do AgendamentoController
 Route::get('/fila', [App\Http\Controllers\Api\FilaController::class, 'index'])->name('fila.index');
@@ -328,15 +424,15 @@ Route::get('/estabelecimentos/{estabelecimento}/fila', [App\Http\Controllers\Api
     // ========================================================
     // Visualizar o status atual da assinatura
     Route::get('/minha-assinatura/status', [AssinaturaController::class, 'status'])->name('assinatura.status');
-    
+
     // Ação de assinar um novo plano (Recebe 'plano' e 'metodo' no Request)
     Route::post('/minha-assinatura/assinar', [AssinaturaController::class, 'assinar'])->name('assinaturas.assinar');
-    
+
     // Ação de cancelamento seguro (Mantém benefícios até o fim do ciclo)
     Route::post('/minha-assinatura/cancelar', [AssinaturaController::class, 'cancelar'])->name('assinaturas.cancelar');
 
     Route::post('/minha-assinatura/mudar-plano', [AssinaturaController::class, 'mudarPlano'])->name('assinaturas.mudar_plano');
-    
+
     // Atualização de dados financeiros (Ex: Endereço, travado para 1x ao mês)
     Route::put('/minha-assinatura/dados-financeiros', [AssinaturaController::class, 'atualizarDadosFinanceiros'])->name('assinaturas.dados_financeiros');
 
@@ -361,7 +457,7 @@ Route::get('/estabelecimentos/{estabelecimento}/fila', [App\Http\Controllers\Api
     Route::post('/catalogo/itens', [ItemAluguelController::class, 'store'])
         ->name('catalogo.itens.store');
 
-    // 3. Rota para editar um item existente 
+    // 3. Rota para editar um item existente
     // (Atenção: Usamos POST em vez de PUT porque envios com ficheiros/imagens no Inertia/Laravel funcionam melhor via POST)
     Route::post('/catalogo/itens/{id}', [ItemAluguelController::class, 'update'])
         ->name('catalogo.itens.update');
@@ -381,15 +477,15 @@ Route::get('/estabelecimentos/{estabelecimento}/fila', [App\Http\Controllers\Api
 
     // Rotas Privadas (Necessitam de Usuário Logado para Criar Viagens e Convidar Amigos)
     Route::middleware('auth')->group(function () {
-        
+
         // Listar todas as viagens do usuário (criadas por ele ou convidado)
         Route::get('/viagens', [TravelAssistantController::class, 'listarMinhasViagens'])->name('api.viagens.index');
-        
+
         // Criar uma nova viagem com orçamento, destino e gastos
         Route::post('/viagens', [TravelAssistantController::class, 'criarViagem'])->name('api.viagens.store');
 
         Route::get('/assistente-viagem', [TravelAssistantController::class, 'searchDestination'])->name('travel-assistant.index');
-        
+
         // Convidar colaborador para planejar junto por email
         Route::post('/viagens/{viagemId}/adicionar-amigo', [TravelAssistantController::class, 'adicionarMembroPorEmail'])->name('api.viagens.add-membro');
     });
@@ -397,13 +493,16 @@ Route::get('/estabelecimentos/{estabelecimento}/fila', [App\Http\Controllers\Api
 
      // Agrupando as rotas que precisam de autenticação
    Route::get('/favoritos', [FavoritoController::class, 'index'])->name('cliente.favoritos');
-  
+
 Route::post('/favoritos/toggle', [FavoritoController::class, 'toggleFavorito'])->name('api.favoritos.toggle');
 
 // comprovante PDF do agendamento
 // Modifique a rota para usar o namespace da Api (caso seu controller esteja lá)
 Route::get('/agendamentos/{id}/comprovante-pdf', [App\Http\Controllers\Api\AgendamentoController::class, 'gerarComprovantePDF'])
     ->name('agendamentos.comprovante')->middleware('auth');
+// comprovante PDF de uma locação avulsa (Aluguel)
+Route::get('/alugueis/{id}/comprovante-pdf', [App\Http\Controllers\Api\AgendamentoController::class, 'gerarComprovantePDFAluguel'])
+    ->name('alugueis.comprovante')->middleware('auth');
 Route::post('/rastreamento/update', [AgendamentoController::class, 'rastrearLocalizacao']);
 
 // Rota que alimenta o Mapa do Proprietário no App Mobile
@@ -412,18 +511,20 @@ Route::get('/proprietario/rastreamento', [AgendamentoController::class, 'rastrea
     ->name('proprietario.rastreamento');
     // Rota para listar favoritos e reservas
     Route::get('/favoritos', [FavoritoController::class, 'index']);
-    
+
     // Rota para favoritar/desfavoritar
     Route::post('/favoritos/toggle', [FavoritoController::class, 'toggleFavorito']);
 
 
-    //Detalhes cliente 
+    //Detalhes cliente
     Route::middleware(['auth'])->group(function () {
     // Rota para ver os detalhes do cliente
     Route::get('/meus-pedidos/agendamento/{id}', [AgendamentoController::class, 'detalhesAgendamento'])
     ->name('agendamentos.detalhes');
+    Route::get('/meus-pedidos/aluguel/{id}', [AgendamentoController::class, 'paginaDetalhesAluguel'])
+    ->name('alugueis.detalhes');
     Route::post('/triagens/{id}/salvar-nota', [AgendamentoController::class, 'salvarNotaTriagem'])->name('triagens.salvarNota');
-    
+
     // Rota para criar/remarcar agendamento
     Route::post('/agendamentos/remarcar', [AgendamentoController::class, 'remarcarServico'])->name('agendamentos.remarcar');
 
@@ -437,7 +538,7 @@ Route::get('/proprietario/rastreamento', [AgendamentoController::class, 'rastrea
 
         // ver conta da asass
         Route::get('/provider', [ProviderController::class, 'show']);
-    
+
     // Rota POST para salvar as informações enviadas (o método que você já tinha)
     Route::post('/provider', [ProviderController::class, 'store']);
 
@@ -446,14 +547,18 @@ Route::get('/proprietario/rastreamento', [AgendamentoController::class, 'rastrea
         ->name('contratos.templates.store');
     Route::put('/contratos/template/{id}', [ContratoController::class, 'updateTemplate'])
         ->name('contratos.templates.update');
+    Route::delete('/contratos/template/{id}', [ContratoController::class, 'destroyTemplate'])
+        ->name('contratos.templates.destroy');
 
-    // Rota para o cliente ou sistema gerar o contrato via Assinafy
-    Route::post('/reservas/{id}/gerar-assinafy', [ContratoController::class, 'gerarEEnviarAssinafy'])
-        ->name('reservas.gerar-assinafy');
+    // Gera o contrato (PDF + Word) pra uma reserva — sem assinatura eletrônica,
+    // o lojista só cria, edita o texto, baixa e manda pro cliente dele.
+    Route::post('/reservas/{id}/gerar-contrato', [ContratoController::class, 'gerarContrato'])
+        ->name('reservas.gerar-contrato');
+    Route::post('/contratos/{id}/enviar-email', [ContratoController::class, 'enviarPorEmail'])
+        ->name('contratos.enviar-email');
+    Route::delete('/contratos/{id}', [ContratoController::class, 'destroyContrato'])
+        ->name('contratos.gerados.destroy');
 
-        Route::post('/webhooks/assinafy', [ContratoController::class, 'webhookAssinafy'])
-    ->name('webhooks.assinafy')->withoutMiddleware([\App\Http\Middleware\VerifyCsrfToken::class]);
-    
 
     // Rota para buscar os detalhes de uma Reserva (Aluguel)
     Route::get('/agendamentos/{id}/detalhes', [AgendamentoController::class, 'detalhesAgendamento']);
@@ -493,14 +598,18 @@ Route::get('/itens/{id}/detalhes', [App\Http\Controllers\Api\ItemAluguelControll
 Route::post('/itens/{id}/reservar', [App\Http\Controllers\Api\AgendamentoController::class, 'reservarItem'])
     ->name('itens.reservar');
 
-    
+// Valor final + opções de parcelamento no cartão, calculados no servidor.
+Route::post('/itens/{id}/cotacao', [App\Http\Controllers\Api\AgendamentoController::class, 'cotarItem'])
+    ->name('itens.cotacao');
+
+
 
     Route::get('/itens/{id}/avaliacoes', [App\Http\Controllers\Api\AvaliacaoController::class, 'indexReact'])
     ->name('avaliacoes.pagina');
 
     Route::post('/avaliacoes', [AvaliacaoController::class, 'store'])->name('avaliacoes.store');
 
-        
+
 
 });
 
@@ -517,7 +626,7 @@ Route::post('/webhooks/d4sign', [AgendamentoController::class, 'webhookD4Sign'])
     // --- Rotas da Visão do CLIENTE ---
     // Acessar a página da loja para agendar
     Route::get('/agendar/{estabelecimento}', [ClienteAgendamentoController::class, 'show'])->name('cliente.agendar');
-    
+
     // Confirmar o agendamento
     Route::post('/agendar/{estabelecimento}', [ClienteAgendamentoController::class, 'store'])->name('cliente.agendar.store');
     Route::post('/agendamento/{agendamento}/pagar', [App\Http\Controllers\Api\ClienteAgendamentoController::class, 'pagarNovamente'])->name('pagamento.tentar_novamente');
@@ -526,23 +635,23 @@ Route::post('/webhooks/d4sign', [AgendamentoController::class, 'webhookD4Sign'])
 Route::get('/pagamento/sucesso/{agendamento}', [ClienteAgendamentoController::class, 'pagamentoSucesso'])->name('pagamento.sucesso');
 Route::get('/pagamento/falha/{agendamento}', [ClienteAgendamentoController::class, 'pagamentoFalha'])->name('pagamento.falha');
 
-// Rota principal do Dashboard financeiro 
+// Rota principal do Dashboard financeiro
   // 1. Rota que ABRE A TELA React (Inertia)
-   
+
     // 2. Rota que DEVOLVE OS DADOS JSON para o Axios
     Route::get('/meu-extrato', [FinanceiroController::class, 'dashboard'])->name('tela.financeiro.extrato');
 
     Route::get('/meu-extrato/exportar', [FinanceiroController::class, 'exportar'])->name('financeiro.exportar');
-    
+
     // 3. Rotas dos relatórios
     Route::post('/financeiro/relatorio/semanal', [FinanceiroController::class, 'enviarRelatorioSemanal']);
     Route::post('/financeiro/relatorio/mensal', [FinanceiroController::class, 'enviarRelatorioMensal']);
-  
+
 Route::post('/agendamento/{id}/cancelar', [App\Http\Controllers\Api\ClienteAgendamentoController::class, 'cancelar'])->name('cliente.agendamento.cancelar');
 
 
 // rotas do dashboard cliente
-    Route::get('/dashboard', [App\Http\Controllers\Api\DashboardController::class, 'index'])->name('dashboard');
+// (rota GET /dashboard já registrada, protegida por auth+verified, lá em cima)
 
     Route::post('/agendamento/{agendamento}/pagar', [App\Http\Controllers\Api\ClienteAgendamentoController::class, 'pagarNovamente'])->name('pagamento.tentar_novamente');
 
@@ -551,6 +660,7 @@ Route::get('/pagamento/status', [ClienteAgendamentoController::class, 'callbackM
 
     // explorar estabelecimentos
     Route::get('/explorar', [ClienteExplorarController::class, 'index'])->name('cliente.explorar');
+    Route::get('/explorar/estados', [ClienteExplorarController::class, 'estados'])->name('explorar.estados');
 
     // 2. Rota para exibir as avaliações de um Item específico a partir do Explorar
     Route::get('/explorar/{id}/avaliacoes', [ClienteExplorarController::class, 'mostrarAvaliacoes'])->name('explorar.avaliacoes');
@@ -568,20 +678,26 @@ Route::get('/pagamento/status', [ClienteAgendamentoController::class, 'callbackM
     // Ofertas exclusivas para clientes Premium (serviços, reservas e produtos com desconto/pontos)
     Route::get('/ofertas-premium', [OfertaPremiumController::class, 'index'])->name('cliente.ofertas_premium');
 
+    // Promoções e campanhas administradas pela Lokyva (pontos, ofertas por plano)
+    Route::get('/promocoes', [App\Http\Controllers\Api\ClientePromocaoController::class, 'index'])->name('cliente.promocoes');
+
 
     // Funcionários
     Route::post('/estabelecimentos/{estabelecimento}/funcionarios', [FuncionarioController::class, 'store'])->name('funcionarios.store');
     Route::put('/funcionarios/{funcionario}', [FuncionarioController::class, 'update'])->name('funcionarios.update');
-    
+
     Route::delete('/funcionarios/{funcionario}', [FuncionarioController::class, 'destroy'])->name('funcionarios.destroy');
+
+    // Convite de sócio (co-proprietário) — exclusivo do plano Sócio Premium.
+    Route::post('/estabelecimentos/{estabelecimento}/socios', [FuncionarioController::class, 'storeSocio'])->name('socios.store');
 
   Route::get('/funcionarios/{funcionario}/edit', [FuncionarioController::class, 'edit'])->name('funcionarios.edit');
 
   // Rota para ver os detalhes do cliente com seus agendamentos
 
   Route::get('/clientes/{id}/detalhes', [ClienteController::class, 'detalhes']);
-   
-   
+
+
     // Tela da Fila do Estabelecimento
 Route::match(['get', 'post'], '/estabelecimentos/{estabelecimento}/agenda-equipe', [App\Http\Controllers\Api\FilaController::class, 'agendaFuncionarios'])->name('estabelecimentos.agenda-equipe');
 // Adicione esta linha dentro do seu grupo de rotas autenticadas em routes/web.php
@@ -594,7 +710,7 @@ Route::post('/estabelecimentos/{estabelecimento}/atribuir-todos', [App\Http\Cont
 
 // agenda dos funcionários (visão do dono/gerente)
 Route::get('/estabelecimentos/{estabelecimento}/agenda-equipe', [App\Http\Controllers\Api\FilaController::class, 'agendaFuncionarios'])->name('estabelecimentos.agenda-equipe');
-    
+
     // Ações na Fila (Botões do dono estabelecimento ou admin/socio)
     Route::patch('/agendamentos/{agendamento}/status', [AgendamentoController::class, 'updateStatus'])->name('agendamentos.update-status');
     Route::patch('/agendamentos/{agendamento}/funcionario', [AgendamentoController::class, 'updateFuncionario'])->name('agendamentos.update-funcionario');
@@ -611,7 +727,7 @@ Route::get('/estabelecimentos/{estabelecimento}/agenda-equipe', [App\Http\Contro
      // Fila e Configurações (Aninhadas em Estabelecimentos)
     Route::get('/estabelecimentos/{estabelecimento}/fila', [EstabelecimentoController::class, 'fila'])->name('estabelecimentos.fila');
     Route::get('/estabelecimentos/{estabelecimento}/configuracoes', [EstabelecimentoController::class, 'configuracoes'])->name('estabelecimentos.configuracoes');
-    
+
     //  Página da Loja (Visão do Dono/Gerente)
     Route::get('/estabelecimentos/{estabelecimento}/loja', [EstabelecimentoController::class, 'loja'])->name('estabelecimentos.loja');
 
@@ -622,32 +738,37 @@ Route::get('/estabelecimentos/{estabelecimento}/agenda-equipe', [App\Http\Contro
     Route::patch('/carrinho/{id}', [App\Http\Controllers\Api\CarrinhoController::class, 'updatePatch'])->name('cliente.carrinho.patch');
     Route::delete('/carrinho/{id}', [App\Http\Controllers\Api\CarrinhoController::class, 'destroy'])->name('cliente.carrinho.destroy');
 
-    
-    
+
+
     // ROTAS DE CUPONS / GAMIFICAÇÃO
     Route::post('/estabelecimentos/{estabelecimento}/cupons', [CupomController::class, 'store'])->name('cupons.store');
     Route::put('/cupons/{cupom}', [CupomController::class, 'update'])->name('cupons.update');
     Route::delete('/cupons/{cupom}', [CupomController::class, 'destroy'])->name('cupons.destroy');
     Route::get('/estabelecimentos/{estabelecimento}/marketing', [App\Http\Controllers\Api\EstabelecimentoController::class, 'cupons'])->name('estabelecimentos.cupons');
+    Route::get('/tutoriais', [App\Http\Controllers\Api\EstabelecimentoController::class, 'tutoriais'])->name('tutoriais.dono');
+    Route::get('/minha-vitrine', [App\Http\Controllers\Api\EstabelecimentoController::class, 'vitrine'])->name('vitrine.dono');
 
     // ROTAS DA CARTEIRA E GAMIFICAÇÃO DO CLIENTE
     Route::get('/minha-carteira', [CarteiraController::class, 'index'])->name('cliente.carteira');
     Route::post('/minha-carteira/assinar-plus', [CarteiraController::class, 'assinarPlus'])->name('cliente.assinatura.plus');
      Route::post('/minha-carteira/resgatar/{cupom}', [App\Http\Controllers\Api\CarteiraController::class, 'resgatarCupom'])->name('cliente.resgatar.cupom');
 
-   Route::get('/carteira', [CarteiraController::class, 'index'])->name('carteira.index'); 
+   Route::get('/carteira', [CarteiraController::class, 'index'])->name('carteira.index');
      Route::post('/financeiro/funcionario/fechar-dia', [CarteiraController::class, 'fecharDia'])->name('funcionario.fechar_dia');
     Route::post('/financeiro/proprietario/sacar', [CarteiraController::class, 'solicitarSaque'])->name('proprietario.sacar');
     Route::post('/financeiro/cliente/resgatar/{cupom}', [CarteiraController::class, 'resgatarCupom'])->name('cliente.resgatar');
 
-    
-    
 
-     // Rota para abrir a tela de Mensagens/Sugestões
-Route::get('/cliente/mensagens', [ClienteCupomController::class, 'mensagens'])->name('cliente.mensagens');
+
+
+     // Rota para abrir a tela de Recompensas/Sugestões
+Route::get('/cliente/recompensas', [ClienteCupomController::class, 'recompensas'])->name('cliente.mensagens');
 
 // Rota POST que o React vai chamar quando o cliente clicar em "Resgatar"
 Route::post('/cliente/cupons/{id}/resgatar', [ClienteCupomController::class, 'resgatar'])->name('cliente.resgatar.cupom');
+
+// Valida (sem consumir) um código de cupom digitado no checkout de reserva/aluguel.
+Route::post('/cupons/validar', [ClienteCupomController::class, 'validar'])->name('cupons.validar');
 
      Route::middleware(['auth', CheckAdmin::class])->group(function () {
 
@@ -670,6 +791,6 @@ Route::post('/cliente/cupons/{id}/resgatar', [ClienteCupomController::class, 're
         ->name('admin.agendamentos.show');
     });
 
-  
+
 
 require __DIR__.'/auth.php';

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -6,574 +6,402 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
-  Alert,
   StyleSheet,
-  Modal, // Adicionado para criar o select customizado
+  Modal,
 } from 'react-native';
-import axios, { AxiosError } from 'axios';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from 'expo-router';
+import { Feather } from '@expo/vector-icons';
+import { alertar } from '../../services/alertar';
 
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api/mobile';
+const ENV_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api/mobile';
+const BASE_URL = ENV_URL.endsWith('/') ? ENV_URL.slice(0, -1) : ENV_URL;
+const API_URL = `${BASE_URL}/provider`;
 
-// --- TIPAGENS ---
-interface RegisterProviderProps {
-  navigation?: any;
-  userToken: string;
-}
-
-interface Estabelecimento {
-  id: string | number;
-  nome: string;
-}
-
-interface FormState {
+interface Provider {
+  id: number;
   name: string;
   email: string;
-  person_type: 'FISICA' | 'JURIDICA';
-  document: string;
-  birth_date: string;
-  income_value: string;
-  mobile_phone: string;
-  postal_code: string;
-  address: string;
-  address_number: string;
-  complement: string;
-  province: string;
-  company_type: string;
-  responsible_name: string;
-  responsible_cpf: string;
+  asaas_wallet_id: string | null;
+  asaas_status: string | null;
   pix_key_type: string;
   pix_key: string;
-  estabelecimento_id: string;
-  chave_pix_reserva: string;
 }
 
-interface ApiErrorResponse {
-  error?: string;
-}
+const FORM_INICIAL = {
+  name: '',
+  email: '',
+  person_type: 'FISICA' as 'FISICA' | 'JURIDICA',
+  document: '',
+  birth_date: '',
+  income_value: '',
+  mobile_phone: '',
+  postal_code: '',
+  address: '',
+  address_number: '',
+  complement: '',
+  province: '',
+  company_type: '',
+  responsible_name: '',
+  responsible_cpf: '',
+  pix_key_type: 'CPF',
+  pix_key: '',
+};
 
-// --- COMPONENTE SELECT CUSTOMIZADO (Substitui o Picker) ---
-const CustomSelect = ({ 
-  options, 
-  selectedValue, 
-  onValueChange, 
-  placeholder = 'Selecione uma opção' 
-}: { 
-  options: { label: string, value: string }[], 
-  selectedValue: string, 
-  onValueChange: (value: string) => void,
-  placeholder?: string
-}) => {
-  const [modalVisible, setModalVisible] = useState(false);
-  const selectedLabel = options.find(opt => opt.value === selectedValue)?.label || placeholder;
+const OPCOES_TIPO_EMPRESA = [
+  { label: 'MEI', value: 'MEI' },
+  { label: 'Empresário Individual', value: 'EI' },
+  { label: 'EIRELI', value: 'EIRELI' },
+  { label: 'LTDA', value: 'LTDA' },
+  { label: 'S/A', value: 'SA' },
+  { label: 'Outro', value: 'ANY_OTHER' },
+];
+
+const OPCOES_TIPO_PIX = [
+  { label: 'CPF', value: 'CPF' },
+  { label: 'CNPJ', value: 'CNPJ' },
+  { label: 'E-mail', value: 'EMAIL' },
+  { label: 'Telefone', value: 'PHONE' },
+  { label: 'Aleatória', value: 'RANDOM' },
+];
+
+function CampoSelect({ label, opcoes, valor, onSelecionar }: {
+  label: string;
+  opcoes: { label: string; value: string }[];
+  valor: string;
+  onSelecionar: (v: string) => void;
+}) {
+  const [aberto, setAberto] = useState(false);
+  const selecionado = opcoes.find((o) => o.value === valor);
 
   return (
-    <View>
-      <TouchableOpacity 
-        style={styles.selectButton} 
-        onPress={() => setModalVisible(true)}
-      >
-        <Text style={[styles.selectButtonText, !selectedValue && { color: '#999' }]}>
-          {selectedLabel}
+    <View style={{ marginBottom: 4 }}>
+      <TouchableOpacity style={styles.selectBtn} onPress={() => setAberto(true)}>
+        <Text style={[styles.selectBtnText, !selecionado && { color: '#A0A2A8' }]}>
+          {selecionado ? selecionado.label : `Selecione ${label.toLowerCase()}`}
         </Text>
+        <Feather name="chevron-down" size={18} color="#6A6C72" />
       </TouchableOpacity>
 
-      <Modal visible={modalVisible} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>{placeholder}</Text>
-            <ScrollView style={{ maxHeight: 300 }}>
-              {options.map((opt) => (
-                <TouchableOpacity
-                  key={opt.value}
-                  style={styles.modalOption}
-                  onPress={() => {
-                    onValueChange(opt.value);
-                    setModalVisible(false);
-                  }}
-                >
-                  <Text style={[
-                    styles.modalOptionText,
-                    selectedValue === opt.value && styles.modalOptionTextSelected
-                  ]}>
-                    {opt.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-            <TouchableOpacity 
-              style={styles.modalCancelBtn} 
-              onPress={() => setModalVisible(false)}
-            >
-              <Text style={styles.modalCancelText}>Cancelar</Text>
-            </TouchableOpacity>
+      <Modal visible={aberto} transparent animationType="fade" onRequestClose={() => setAberto(false)}>
+        <TouchableOpacity style={styles.selectOverlay} activeOpacity={1} onPress={() => setAberto(false)}>
+          <View style={styles.selectModal}>
+            <Text style={styles.selectModalTitulo}>{label}</Text>
+            {opcoes.map((op) => (
+              <TouchableOpacity
+                key={op.value}
+                style={styles.selectOpcao}
+                onPress={() => { onSelecionar(op.value); setAberto(false); }}
+              >
+                <Text style={[styles.selectOpcaoText, valor === op.value && { color: '#00A868', fontWeight: '800' }]}>{op.label}</Text>
+              </TouchableOpacity>
+            ))}
           </View>
-        </View>
+        </TouchableOpacity>
       </Modal>
     </View>
   );
-};
+}
 
-export default function RegisterProviderScreen({ navigation, userToken }: RegisterProviderProps) {
-  // Configuração do Axios com Token
-  const api = axios.create({
-    baseURL: BASE_URL,
-    headers: {
-      Authorization: `Bearer ${userToken}`,
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-    },
-  });
+export default function RegisterProviderScreen() {
+  const router = useRouter();
+  const [carregando, setCarregando] = useState(true);
+  const [enviando, setEnviando] = useState(false);
+  const [provider, setProvider] = useState<Provider | null>(null);
+  const [form, setForm] = useState(FORM_INICIAL);
 
-  // Estados dos Estabelecimentos
-  const [estabelecimentos, setEstabelecimentos] = useState<Estabelecimento[]>([]);
-  const [loadingEstabelecimentos, setLoadingEstabelecimentos] = useState<boolean>(true);
+  const getToken = async () => {
+    return (await AsyncStorage.getItem('@waitless_token')) || (await AsyncStorage.getItem('@lokyva_token'));
+  };
 
-  // Estado do Processamento
-  const [submitting, setSubmitting] = useState<boolean>(false);
-
-  // Estado do Formulário
-  const [form, setForm] = useState<FormState>({
-    name: '',
-    email: '',
-    person_type: 'FISICA',
-    document: '',
-    birth_date: '', 
-    income_value: '',
-    mobile_phone: '',
-    postal_code: '',
-    address: '',
-    address_number: '',
-    complement: '',
-    province: '',
-    company_type: 'MEI',
-    responsible_name: '',
-    responsible_cpf: '',
-    pix_key_type: 'CPF',
-    pix_key: '',
-    estabelecimento_id: '',
-    chave_pix_reserva: '',
-  });
-
-  // 1. Carregar Estabelecimentos do Usuário Logado
-  useEffect(() => {
-    fetchEstabelecimentos();
+  const carregar = useCallback(async () => {
+    try {
+      const token = await getToken();
+      if (!token) {
+        router.replace('/autenticacao/login' as never);
+        return;
+      }
+      const res = await fetch(API_URL, {
+        headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+      });
+      const json = await res.json();
+      setProvider(json.has_profile ? json.provider : null);
+    } catch (e) {
+      // segue com provider nulo — mostra o formulário de criação
+    } finally {
+      setCarregando(false);
+    }
   }, []);
 
-  const fetchEstabelecimentos = async () => {
-    try {
-      const response = await api.get('/mobile/estabelecimentos');
-      if (response.data.success) {
-        setEstabelecimentos(response.data.estabelecimentos || []);
-      }
-    } catch (error) {
-      Alert.alert('Atenção', 'Não foi possível carregar seus estabelecimentos.');
-    } finally {
-      setLoadingEstabelecimentos(false);
+  useEffect(() => {
+    carregar();
+  }, [carregar]);
+
+  const atualizar = (campo: keyof typeof FORM_INICIAL, valor: string) => {
+    setForm((f) => ({ ...f, [campo]: valor }));
+  };
+
+  // keyboardType só troca o teclado exibido — não bloqueia colar texto nem
+  // digitar por teclado físico. Como esta tela cria uma conta de recebimento
+  // de verdade no gateway de pagamento, filtramos os campos sensíveis aqui.
+  const atualizarSoNumeros = (campo: keyof typeof FORM_INICIAL, valor: string, tamanhoMax: number) => {
+    atualizar(campo, valor.replace(/\D/g, '').slice(0, tamanhoMax));
+  };
+
+  const atualizarValorMonetario = (campo: keyof typeof FORM_INICIAL, valor: string) => {
+    atualizar(campo, valor.replace(/[^0-9,]/g, ''));
+  };
+
+  const atualizarDataNascimento = (valor: string) => {
+    const digitos = valor.replace(/\D/g, '').slice(0, 8);
+    let formatado = digitos;
+    if (digitos.length > 4) formatado = `${digitos.slice(0, 4)}-${digitos.slice(4, 6)}${digitos.length > 6 ? '-' + digitos.slice(6, 8) : ''}`;
+    atualizar('birth_date', formatado);
+  };
+
+  const salvar = async () => {
+    const obrigatorios: (keyof typeof FORM_INICIAL)[] = [
+      'name', 'email', 'document', 'birth_date', 'income_value', 'mobile_phone',
+      'postal_code', 'address', 'address_number', 'province', 'pix_key',
+    ];
+    const faltando = obrigatorios.some((campo) => !form[campo]?.trim());
+    if (faltando) {
+      alertar('Campos obrigatórios', 'Preencha todos os campos para ativar sua carteira.');
+      return;
     }
-  };
-
-  // Helper para atualizar os campos do formulário com tipagem segura
-  const handleChange = <K extends keyof FormState>(field: K, value: FormState[K]) => {
-    setForm((prev) => ({ ...prev, [field]: value }));
-  };
-
-  // 2. Submeter Formulário
-  const handleSubmit = async () => {
-    // Validação local: PIX Reserva não pode ser igual ao PIX Principal
-    if (
-      form.chave_pix_reserva &&
-      form.chave_pix_reserva.trim() === form.pix_key.trim()
-    ) {
-      Alert.alert(
-        'Erro no PIX Reserva',
-        'A chave PIX Reserva deve ser diferente da chave PIX Principal.'
-      );
+    if (form.person_type === 'JURIDICA' && (!form.company_type || !form.responsible_name || !form.responsible_cpf)) {
+      alertar('Campos obrigatórios', 'Preencha os dados da empresa (tipo, responsável e CPF do responsável).');
       return;
     }
 
-    setSubmitting(true);
-
+    setEnviando(true);
     try {
-      const payload = {
-        ...form,
-        // Limpa chave reserva se não selecionou um estabelecimento
-        estabelecimento_id: form.estabelecimento_id || null,
-        chave_pix_reserva: form.estabelecimento_id ? form.chave_pix_reserva : null,
-      };
-
-      const response = await api.post('/mobile/provider', payload);
-
-      Alert.alert('Sucesso!', response.data.message || 'Perfil cadastrado com sucesso.', [
-        {
-          text: 'OK',
-          onPress: () => navigation?.goBack(),
+      const token = await getToken();
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
         },
-      ]);
-    } catch (error) {
-      const axiosError = error as AxiosError<ApiErrorResponse>;
-      const errorMessage =
-        axiosError.response?.data?.error ||
-        'Ocorreu um erro ao realizar o cadastro. Verifique os dados informados.';
-      
-      Alert.alert('Falha no Cadastro', errorMessage);
+        body: JSON.stringify(form),
+      });
+      const json = await res.json();
+
+      if (!res.ok) {
+        alertar('Erro', json?.error || 'Não foi possível ativar sua carteira agora.');
+        return;
+      }
+
+      alertar('Carteira ativada!', 'Sua carteira digital foi criada com sucesso. Enviamos um e-mail de confirmação.');
+      setProvider(json.provider);
+    } catch (e) {
+      alertar('Erro', 'Falha de conexão. Tente novamente.');
     } finally {
-      setSubmitting(false);
+      setEnviando(false);
     }
   };
 
-  // Opções para os Selects
-  const companyTypeOptions = [
-    { label: 'MEI', value: 'MEI' },
-    { label: 'EI', value: 'EI' },
-    { label: 'EIRELI', value: 'EIRELI' },
-    { label: 'LTDA', value: 'LTDA' },
-    { label: 'SA', value: 'SA' },
-    { label: 'Outro', value: 'ANY_OTHER' },
-  ];
+  if (carregando) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color='#FF7A00' />
+      </View>
+    );
+  }
 
-  const pixKeyTypeOptions = [
-    { label: 'CPF', value: 'CPF' },
-    { label: 'CNPJ', value: 'CNPJ' },
-    { label: 'E-mail', value: 'EMAIL' },
-    { label: 'Telefone', value: 'PHONE' },
-    { label: 'Chave Aleatória', value: 'RANDOM' },
-  ];
-
-  const estabelecimentoOptions = [
-    { label: 'Nenhum (Apenas Provedor)', value: '' },
-    ...estabelecimentos.map((est) => ({ label: est.nome, value: String(est.id) })),
-  ];
+  const carteiraAtiva = provider?.asaas_status === 'APPROVED' && provider?.asaas_wallet_id;
+  const carteiraPendente = provider && provider.asaas_status !== 'APPROVED';
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.title}>Cadastro de Conta Financeira</Text>
-      <Text style={styles.subtitle}>Configuração da sua conta de recebimento Asaas</Text>
-
-      {/* --- SEÇÃO 1: TIPO DE PESSOA --- */}
-      <Text style={styles.sectionTitle}>1. Tipo de Perfil</Text>
-      <View style={styles.rowToggle}>
-        <TouchableOpacity
-          style={[styles.btnToggle, form.person_type === 'FISICA' && styles.btnToggleActive]}
-          onPress={() => handleChange('person_type', 'FISICA')}
-        >
-          <Text style={[styles.txtToggle, form.person_type === 'FISICA' && styles.txtToggleActive]}>
-            Pessoa Física
-          </Text>
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+          <Feather name="arrow-left" size={22} color="#3A3A3A" />
         </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.btnToggle, form.person_type === 'JURIDICA' && styles.btnToggleActive]}
-          onPress={() => handleChange('person_type', 'JURIDICA')}
-        >
-          <Text style={[styles.txtToggle, form.person_type === 'JURIDICA' && styles.txtToggleActive]}>
-            Pessoa Jurídica
-          </Text>
-        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Carteira Digital</Text>
+        <View style={{ width: 40 }} />
       </View>
 
-      {/* --- SEÇÃO 2: DADOS PESSOAIS / EMPRESA --- */}
-      <Text style={styles.sectionTitle}>2. Dados do Provedor</Text>
-
-      <Text style={styles.label}>Nome Completo / Razão Social *</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="Ex: João da Silva"
-        value={form.name}
-        onChangeText={(v: string) => handleChange('name', v)}
-      />
-
-      <Text style={styles.label}>E-mail *</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="exemplo@email.com"
-        keyboardType="email-address"
-        autoCapitalize="none"
-        value={form.email}
-        onChangeText={(v: string) => handleChange('email', v)}
-      />
-
-      <Text style={styles.label}>{form.person_type === 'FISICA' ? 'CPF *' : 'CNPJ *'}</Text>
-      <TextInput
-        style={styles.input}
-        placeholder={form.person_type === 'FISICA' ? '000.000.000-00' : '00.000.000/0001-00'}
-        keyboardType="numeric"
-        value={form.document}
-        onChangeText={(v: string) => handleChange('document', v)}
-      />
-
-      <Text style={styles.label}>Data de Nascimento *</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="AAAA-MM-DD"
-        value={form.birth_date}
-        onChangeText={(v: string) => handleChange('birth_date', v)}
-      />
-
-      <Text style={styles.label}>Renda Mensal / Faturamento (R$) *</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="Ex: 2500,00"
-        keyboardType="numeric"
-        value={form.income_value}
-        onChangeText={(v: string) => handleChange('income_value', v)}
-      />
-
-      <Text style={styles.label}>Celular com DDD *</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="(00) 90000-0000"
-        keyboardType="phone-pad"
-        value={form.mobile_phone}
-        onChangeText={(v: string) => handleChange('mobile_phone', v)}
-      />
-
-      {/* CAMPOS CONDICIONAIS PARA PESSOA JURÍDICA */}
-      {form.person_type === 'JURIDICA' && (
-        <View style={styles.pjContainer}>
-          <Text style={styles.pjTitle}>Dados Específicos da Empresa</Text>
-
-          <Text style={styles.label}>Tipo de Empresa *</Text>
-          <CustomSelect 
-            options={companyTypeOptions}
-            selectedValue={form.company_type}
-            onValueChange={(v) => handleChange('company_type', v)}
-            placeholder="Selecione o tipo de empresa"
-          />
-
-          <Text style={styles.label}>Nome do Responsável *</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Nome do sócio responsável"
-            value={form.responsible_name}
-            onChangeText={(v: string) => handleChange('responsible_name', v)}
-          />
-
-          <Text style={styles.label}>CPF do Responsável *</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="000.000.000-00"
-            keyboardType="numeric"
-            value={form.responsible_cpf}
-            onChangeText={(v: string) => handleChange('responsible_cpf', v)}
-          />
+      {carteiraAtiva ? (
+        <ScrollView style={styles.container} contentContainerStyle={{ paddingVertical: 24 }}>
+          <View style={styles.statusCardAtiva}>
+            <View style={styles.statusIconBox}>
+              <Feather name="check-circle" size={32} color="#00A868" />
+            </View>
+            <Text style={styles.statusTitulo}>Carteira Ativa</Text>
+            <Text style={styles.statusDesc}>Você já pode receber seus pagamentos online direto na sua conta.</Text>
+            <View style={styles.walletIdBox}>
+              <Text style={styles.walletIdLabel}>ID da Carteira (Wallet ID)</Text>
+              <Text style={styles.walletIdValor}>{provider?.asaas_wallet_id}</Text>
+            </View>
+            <View style={styles.walletIdBox}>
+              <Text style={styles.walletIdLabel}>Chave Pix cadastrada</Text>
+              <Text style={styles.walletIdValor}>{provider?.pix_key} ({provider?.pix_key_type})</Text>
+            </View>
+          </View>
+        </ScrollView>
+      ) : carteiraPendente ? (
+        <View style={styles.centerState}>
+          <View style={styles.statusIconBoxPendente}>
+            <Feather name="clock" size={32} color="#D97706" />
+          </View>
+          <Text style={styles.statusTitulo}>Carteira em Análise</Text>
+          <Text style={styles.statusDesc}>Seus dados já foram enviados e estão em análise. Assim que aprovada, você poderá receber pagamentos por aqui.</Text>
         </View>
-      )}
-
-      {/* --- SEÇÃO 3: ENDEREÇO --- */}
-      <Text style={styles.sectionTitle}>3. Endereço</Text>
-
-      <Text style={styles.label}>CEP *</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="00000-000"
-        keyboardType="numeric"
-        value={form.postal_code}
-        onChangeText={(v: string) => handleChange('postal_code', v)}
-      />
-
-      <Text style={styles.label}>Logradouro (Rua/Avenida) *</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="Rua Exemplo"
-        value={form.address}
-        onChangeText={(v: string) => handleChange('address', v)}
-      />
-
-      <View style={styles.row}>
-        <View style={{ flex: 1, marginRight: 8 }}>
-          <Text style={styles.label}>Número *</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="123"
-            value={form.address_number}
-            onChangeText={(v: string) => handleChange('address_number', v)}
-          />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.label}>Bairro *</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Centro"
-            value={form.province}
-            onChangeText={(v: string) => handleChange('province', v)}
-          />
-        </View>
-      </View>
-
-      <Text style={styles.label}>Complemento</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="Apto, Sala, Bloco (Opcional)"
-        value={form.complement}
-        onChangeText={(v: string) => handleChange('complement', v)}
-      />
-
-      {/* --- SEÇÃO 4: PIX PRINCIPAL --- */}
-      <Text style={styles.sectionTitle}>4. Chave PIX Principal</Text>
-
-      <Text style={styles.label}>Tipo de Chave *</Text>
-      <CustomSelect 
-        options={pixKeyTypeOptions}
-        selectedValue={form.pix_key_type}
-        onValueChange={(v) => handleChange('pix_key_type', v)}
-        placeholder="Selecione o tipo de chave"
-      />
-
-      <Text style={styles.label}>Chave PIX Principal *</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="Informe sua chave PIX principal"
-        value={form.pix_key}
-        onChangeText={(v: string) => handleChange('pix_key', v)}
-      />
-
-      {/* --- SEÇÃO 5: ESTABELECIMENTO & PIX RESERVA (OPCIONAL) --- */}
-      <Text style={styles.sectionTitle}>5. Estabelecimento e PIX Reserva (Opcional)</Text>
-
-      <Text style={styles.label}>Vincular a um Estabelecimento</Text>
-      {loadingEstabelecimentos ? (
-        <ActivityIndicator size="small" color="#0066CC" style={{ marginVertical: 10 }} />
       ) : (
-        <CustomSelect 
-          options={estabelecimentoOptions}
-          selectedValue={form.estabelecimento_id}
-          onValueChange={(v) => handleChange('estabelecimento_id', v)}
-          placeholder="Selecione um estabelecimento"
-        />
-      )}
+        <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 40 }}>
+          <View style={styles.introBox}>
+            <View style={styles.introIconBox}>
+              <Feather name="credit-card" size={26} color="#282828" />
+            </View>
+            <Text style={styles.introTitulo}>Crie sua carteira para receber seus pagamentos online direto na sua conta</Text>
+            <Text style={styles.introDesc}>Preencha os dados abaixo para gerar sua carteira digital (Wallet ID) e começar a receber os repasses das suas reservas via Pix.</Text>
+            <View style={styles.porQue}>
+              <Text style={styles.porQueTitulo}>Por que preciso informar estes dados de novo?</Text>
+              <Text style={styles.porQueTexto}>
+                Seu cadastro no app serve para entrar na conta. Para receber dinheiro, abrimos uma conta de recebimento em seu nome numa processadora de pagamentos regulamentada, e ela exige a identificação completa de quem recebe. É uma regra do sistema financeiro para evitar fraudes. A conta fica no seu CPF/CNPJ e os repasses só saem para contas do mesmo titular.
+              </Text>
+              <Text style={styles.porQueTitulo}>O que acontece depois de enviar</Text>
+              <Text style={styles.porQueTexto}>
+                {'• Sua conta de recebimento é criada e seus clientes já podem pagar online.\n• Sua Carteira passa a funcionar: você vê o dia e o valor do próximo repasse, o que já entrou, as taxas e os valores estornados.\n• Você preenche uma vez só; os dados são usados apenas para abrir e manter a conta.'}
+              </Text>
+            </View>
+          </View>
 
-      {/* Se selecionou um estabelecimento, libera o campo do PIX Reserva */}
-      {!!form.estabelecimento_id && (
-        <>
-          <Text style={styles.label}>Chave PIX Reserva (Deve ser diferente da Principal)</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Chave PIX alternativa/reserva"
-            value={form.chave_pix_reserva}
-            onChangeText={(v: string) => handleChange('chave_pix_reserva', v)}
-          />
-        </>
-      )}
+          <Text style={styles.sectionLabel}>Dados pessoais</Text>
 
-      {/* BOTÃO SUBMIT */}
-      <TouchableOpacity
-        style={[styles.btnSubmit, submitting && styles.btnDisabled]}
-        onPress={handleSubmit}
-        disabled={submitting}
-      >
-        {submitting ? (
-          <ActivityIndicator color="#FFF" />
-        ) : (
-          <Text style={styles.btnSubmitText}>Cadastrar Conta Financeira</Text>
-        )}
-      </TouchableOpacity>
-    </ScrollView>
+          <View style={styles.toggleRow}>
+            <TouchableOpacity
+              style={[styles.toggleBtn, form.person_type === 'FISICA' && styles.toggleBtnAtivo]}
+              onPress={() => atualizar('person_type', 'FISICA')}
+            >
+              <Text style={[styles.toggleText, form.person_type === 'FISICA' && styles.toggleTextAtivo]}>Pessoa Física</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.toggleBtn, form.person_type === 'JURIDICA' && styles.toggleBtnAtivo]}
+              onPress={() => atualizar('person_type', 'JURIDICA')}
+            >
+              <Text style={[styles.toggleText, form.person_type === 'JURIDICA' && styles.toggleTextAtivo]}>Pessoa Jurídica</Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text style={styles.label}>Nome completo {form.person_type === 'JURIDICA' ? '(Razão Social)' : ''}</Text>
+          <TextInput style={styles.input} value={form.name} onChangeText={(v) => atualizar('name', v)} placeholderTextColor="#A0A2A8" />
+
+          <Text style={styles.label}>E-mail</Text>
+          <TextInput style={styles.input} value={form.email} onChangeText={(v) => atualizar('email', v)} keyboardType="email-address" autoCapitalize="none" placeholderTextColor="#A0A2A8" />
+
+          <Text style={styles.label}>{form.person_type === 'JURIDICA' ? 'CNPJ' : 'CPF'}</Text>
+          <TextInput style={styles.input} value={form.document} onChangeText={(v) => atualizarSoNumeros('document', v, 14)} placeholder="Somente números" keyboardType="number-pad" placeholderTextColor="#A0A2A8" />
+
+          <Text style={styles.label}>Data de nascimento</Text>
+          <TextInput style={styles.input} value={form.birth_date} onChangeText={atualizarDataNascimento} placeholder="AAAA-MM-DD" keyboardType="number-pad" placeholderTextColor="#A0A2A8" />
+
+          <Text style={styles.label}>Renda mensal (R$)</Text>
+          <TextInput style={styles.input} value={form.income_value} onChangeText={(v) => atualizarValorMonetario('income_value', v)} placeholder="Ex: 3000,00" keyboardType="decimal-pad" placeholderTextColor="#A0A2A8" />
+
+          <Text style={styles.label}>Celular</Text>
+          <TextInput style={styles.input} value={form.mobile_phone} onChangeText={(v) => atualizarSoNumeros('mobile_phone', v, 11)} placeholder="Somente números com DDD" keyboardType="phone-pad" placeholderTextColor="#A0A2A8" />
+
+          {form.person_type === 'JURIDICA' && (
+            <>
+              <Text style={styles.label}>Tipo de empresa</Text>
+              <CampoSelect label="Tipo de empresa" opcoes={OPCOES_TIPO_EMPRESA} valor={form.company_type} onSelecionar={(v) => atualizar('company_type', v)} />
+
+              <Text style={styles.label}>Nome do responsável</Text>
+              <TextInput style={styles.input} value={form.responsible_name} onChangeText={(v) => atualizar('responsible_name', v)} placeholderTextColor="#A0A2A8" />
+
+              <Text style={styles.label}>CPF do responsável</Text>
+              <TextInput style={styles.input} value={form.responsible_cpf} onChangeText={(v) => atualizarSoNumeros('responsible_cpf', v, 11)} keyboardType="number-pad" placeholderTextColor="#A0A2A8" />
+            </>
+          )}
+
+          <Text style={styles.sectionLabel}>Endereço</Text>
+
+          <Text style={styles.label}>CEP</Text>
+          <TextInput style={styles.input} value={form.postal_code} onChangeText={(v) => atualizarSoNumeros('postal_code', v, 8)} keyboardType="number-pad" placeholderTextColor="#A0A2A8" />
+
+          <Text style={styles.label}>Bairro</Text>
+          <TextInput style={styles.input} value={form.province} onChangeText={(v) => atualizar('province', v)} placeholderTextColor="#A0A2A8" />
+
+          <Text style={styles.label}>Endereço</Text>
+          <TextInput style={styles.input} value={form.address} onChangeText={(v) => atualizar('address', v)} placeholderTextColor="#A0A2A8" />
+
+          <Text style={styles.label}>Número</Text>
+          <TextInput style={styles.input} value={form.address_number} onChangeText={(v) => atualizar('address_number', v)} placeholderTextColor="#A0A2A8" />
+
+          <Text style={styles.label}>Complemento</Text>
+          <TextInput style={styles.input} value={form.complement} onChangeText={(v) => atualizar('complement', v)} placeholderTextColor="#A0A2A8" />
+
+          <Text style={styles.sectionLabel}>Chave Pix para recebimento</Text>
+
+          <Text style={styles.label}>Tipo de chave</Text>
+          <CampoSelect label="Tipo de chave" opcoes={OPCOES_TIPO_PIX} valor={form.pix_key_type} onSelecionar={(v) => atualizar('pix_key_type', v)} />
+
+          <Text style={styles.label}>Chave Pix</Text>
+          <TextInput style={styles.input} value={form.pix_key} onChangeText={(v) => atualizar('pix_key', v)} placeholderTextColor="#A0A2A8" />
+
+          <TouchableOpacity style={styles.salvarBtn} onPress={salvar} disabled={enviando}>
+            {enviando ? <ActivityIndicator color="#FFF" /> : <Text style={styles.salvarBtnText}>Ativar Carteira</Text>}
+          </TouchableOpacity>
+        </ScrollView>
+      )}
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8F9FA' },
-  content: { padding: 20, paddingBottom: 40 },
-  title: { fontSize: 22, fontWeight: 'bold', color: '#1A1A1A', marginBottom: 4 },
-  subtitle: { fontSize: 14, color: '#666', marginBottom: 20 },
-  sectionTitle: { fontSize: 16, fontWeight: '700', color: '#0066CC', marginTop: 20, marginBottom: 10 },
-  label: { fontSize: 13, fontWeight: '600', color: '#333', marginBottom: 5, marginTop: 8 },
-  input: {
-    backgroundColor: '#FFF',
-    borderWidth: 1,
-    borderColor: '#DDD',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-    color: '#333',
-  },
-  
-  // Estilos do Select Customizado
-  selectButton: {
-    backgroundColor: '#FFF',
-    borderWidth: 1,
-    borderColor: '#DDD',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-  },
-  selectButtonText: {
-    fontSize: 14,
-    color: '#333',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    padding: 20,
-  },
-  modalContent: {
-    backgroundColor: '#FFF',
-    borderRadius: 12,
-    padding: 20,
-    maxHeight: '80%',
-  },
-  modalTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    marginBottom: 15,
-    color: '#333',
-  },
-  modalOption: {
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#EEE',
-  },
-  modalOptionText: {
-    fontSize: 15,
-    color: '#333',
-  },
-  modalOptionTextSelected: {
-    color: '#0066CC',
-    fontWeight: 'bold',
-  },
-  modalCancelBtn: {
-    marginTop: 15,
-    paddingVertical: 12,
-    alignItems: 'center',
-    backgroundColor: '#F0F0F0',
-    borderRadius: 8,
-  },
-  modalCancelText: {
-    color: '#FF3B30',
-    fontWeight: 'bold',
-    fontSize: 15,
-  },
+  porQue: { backgroundColor: '#FFF7ED', borderRadius: 18, padding: 16, marginTop: 14 },
+  porQueTitulo: { fontSize: 14, fontWeight: '800', color: '#282828', marginTop: 2 },
+  porQueTexto: { fontSize: 13, color: '#6A6C72', lineHeight: 20, marginTop: 4, marginBottom: 10 },
+  safeArea: { flex: 1, backgroundColor: '#F5F5F5' },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F5F5F5' },
+  container: { flex: 1, paddingHorizontal: 16 },
 
-  rowToggle: { flexDirection: 'row', gap: 10, marginBottom: 10 },
-  btnToggle: {
-    flex: 1,
-    paddingVertical: 12,
-    borderWidth: 1,
-    borderColor: '#0066CC',
-    borderRadius: 8,
-    alignItems: 'center',
-    backgroundColor: '#FFF',
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1, borderBottomColor: '#F0F0F2',
   },
-  btnToggleActive: { backgroundColor: '#0066CC' },
-  txtToggle: { color: '#0066CC', fontWeight: 'bold' },
-  txtToggleActive: { color: '#FFF' },
-  pjContainer: {
-    backgroundColor: '#EBF3FA',
-    padding: 12,
-    borderRadius: 8,
-    marginVertical: 10,
-  },
-  pjTitle: { fontWeight: 'bold', color: '#004488', marginBottom: 5 },
-  row: { flexDirection: 'row' },
-  btnSubmit: {
-    backgroundColor: '#00A859',
-    paddingVertical: 15,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 30,
-  },
-  btnDisabled: { opacity: 0.6 },
-  btnSubmitText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
+  backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#F0F0F2', justifyContent: 'center', alignItems: 'center' },
+  headerTitle: { fontSize: 17, fontWeight: '800', color: '#282828' },
+
+  centerState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 },
+
+  introBox: { alignItems: 'center', paddingVertical: 28, paddingHorizontal: 8 },
+  introIconBox: { width: 60, height: 60, borderRadius: 18, backgroundColor: '#F0F0F2', justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
+  introTitulo: { fontSize: 18, fontWeight: '800', color: '#282828', textAlign: 'center', marginBottom: 8, lineHeight: 24 },
+  introDesc: { fontSize: 13, color: '#6A6C72', textAlign: 'center', lineHeight: 19 },
+
+  statusCardAtiva: { backgroundColor: '#FFFFFF', borderRadius: 20, padding: 24, alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  statusIconBox: { width: 64, height: 64, borderRadius: 20, backgroundColor: '#D1FAE5', justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
+  statusIconBoxPendente: { width: 64, height: 64, borderRadius: 20, backgroundColor: '#FEF3C7', justifyContent: 'center', alignItems: 'center', marginBottom: 16 },
+  statusTitulo: { fontSize: 19, fontWeight: '800', color: '#282828', marginBottom: 8, textAlign: 'center' },
+  statusDesc: { fontSize: 13, color: '#6A6C72', textAlign: 'center', lineHeight: 19, marginBottom: 20 },
+  walletIdBox: { width: '100%', backgroundColor: '#F5F5F5', borderRadius: 14, padding: 14, marginTop: 8 },
+  walletIdLabel: { fontSize: 10, fontWeight: '800', color: '#A0A2A8', textTransform: 'uppercase', marginBottom: 4 },
+  walletIdValor: { fontSize: 14, fontWeight: '700', color: '#282828' },
+
+  sectionLabel: { fontSize: 13, fontWeight: '800', color: '#282828', textTransform: 'uppercase', marginTop: 20, marginBottom: 10, letterSpacing: 0.3 },
+  label: { fontSize: 12, fontWeight: '800', color: '#6A6C72', textTransform: 'uppercase', marginBottom: 6, marginTop: 12 },
+  input: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E6E7E9', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, fontSize: 14, color: '#282828' },
+
+  toggleRow: { flexDirection: 'row', gap: 8, marginBottom: 4 },
+  toggleBtn: { flex: 1, paddingVertical: 12, borderRadius: 20, backgroundColor: '#FFFFFF', alignItems: 'center', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  toggleBtnAtivo: { backgroundColor: '#FF7A00', borderColor: '#FF7A00' },
+  toggleText: { fontSize: 13, fontWeight: '800', color: '#6A6C72' },
+  toggleTextAtivo: { color: '#FFFFFF' },
+
+  selectBtn: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#E6E7E9', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  selectBtnText: { fontSize: 14, color: '#282828' },
+  selectOverlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.6)', justifyContent: 'flex-end' },
+  selectModal: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 32 },
+  selectModalTitulo: { fontSize: 16, fontWeight: '800', color: '#282828', marginBottom: 14 },
+  selectOpcao: { paddingVertical: 12, paddingHorizontal: 8, borderRadius: 8 },
+  selectOpcaoText: { fontSize: 14, color: '#282828' },
+
+  salvarBtn: { backgroundColor: '#12A150', borderRadius: 14, paddingVertical: 16, alignItems: 'center', marginTop: 28 },
+  salvarBtnText: { color: '#FFFFFF', fontWeight: '800', fontSize: 15 },
 });

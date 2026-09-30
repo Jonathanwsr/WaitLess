@@ -15,6 +15,19 @@ use Carbon\Carbon;
 class FuncionarioMobileController extends Controller
 {
     /**
+     * Cargos que este endpoint pode criar/editar, e o papel real que cada um
+     * gera no usuário — igual à whitelist do FuncionarioController (web).
+     * Antes o campo 'cargo' do request era jogado direto em `users.papel` sem
+     * nenhuma validação: qualquer proprietário/gerente que descobrisse este
+     * endpoint (/v1/funcionarios) podia mandar cargo="admin" e criar (ou
+     * promover alguém) com acesso total de administrador da plataforma.
+     */
+    private const CARGOS_FUNCIONARIO = [
+        'Atendente' => 'atendente',
+        'Gerente'   => 'gerente',
+    ];
+
+    /**
      * Auxiliar para obter os IDs dos estabelecimentos pertencentes ao usuário logado.
      */
     private function getMeusEstabelecimentosIds($user)
@@ -97,7 +110,7 @@ class FuncionarioMobileController extends Controller
             'estabelecimento_id' => 'required|exists:estabelecimentos,id',
             'nome'               => 'required|string|max:255',
             'telefone'           => 'nullable|string|max:20',
-            'cargo'              => 'required|string|max:255',
+            'cargo'              => ['required', 'string', 'in:' . implode(',', array_keys(self::CARGOS_FUNCIONARIO))],
             'email'              => 'required|email|unique:users,email',
             'password'           => 'required|string|min:8',
         ]);
@@ -110,6 +123,16 @@ class FuncionarioMobileController extends Controller
             ], 403);
         }
 
+        $papel = self::CARGOS_FUNCIONARIO[$validated['cargo']];
+
+        // Criar um Gerente é um recurso do plano Sócio Premium — mesma regra do web/ConfiguracoesMobileController.
+        if ($papel === 'gerente' && $user->papel !== 'admin' && !$user->podeGerenciarEquipeAvancada()) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Criar gerentes é um recurso exclusivo do plano Sócio Premium. Faça upgrade em Minha assinatura.'
+            ], 403);
+        }
+
         DB::beginTransaction();
         try {
             // Cria conta de acesso de Usuário
@@ -117,7 +140,7 @@ class FuncionarioMobileController extends Controller
                 'name'     => $validated['nome'],
                 'email'    => $validated['email'],
                 'password' => Hash::make($validated['password']),
-                'papel'    => $validated['cargo'],
+                'papel'    => $papel,
             ]);
 
             // Cria o registro do Funcionário
@@ -129,6 +152,11 @@ class FuncionarioMobileController extends Controller
                 'cargo'              => $validated['cargo'],
                 'ativo'              => true,
             ]);
+
+            // Gerente também entra na tabela de gestão do local, igual ao web.
+            if ($papel === 'gerente') {
+                Estabelecimento::find($validated['estabelecimento_id'])->proprietarios()->attach($usuario->id, ['tipo' => 'gerente']);
+            }
 
             DB::commit();
 
@@ -207,7 +235,7 @@ class FuncionarioMobileController extends Controller
         $validated = $request->validate([
             'nome'               => 'required|string|max:255',
             'telefone'           => 'nullable|string|max:20',
-            'cargo'              => 'required|string|max:255',
+            'cargo'              => ['required', 'string', 'in:' . implode(',', array_keys(self::CARGOS_FUNCIONARIO))],
             'email'              => 'nullable|email|unique:users,email,' . $funcionario->usuario_id,
             'password'           => 'nullable|string|min:8',
             'estabelecimento_id' => 'required|exists:estabelecimentos,id'
@@ -220,8 +248,18 @@ class FuncionarioMobileController extends Controller
             ], 403);
         }
 
+        $papel = self::CARGOS_FUNCIONARIO[$validated['cargo']];
+        if ($papel === 'gerente' && $user->papel !== 'admin' && !$user->podeGerenciarEquipeAvancada()) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Promover a gerente é um recurso exclusivo do plano Sócio Premium. Faça upgrade em Minha assinatura.'
+            ], 403);
+        }
+
         DB::beginTransaction();
         try {
+            $papelAntigo = $funcionario->usuario_id ? User::find($funcionario->usuario_id)?->papel : null;
+
             // Atualiza dados do Funcionário
             $funcionario->update([
                 'nome'               => $validated['nome'],
@@ -235,7 +273,7 @@ class FuncionarioMobileController extends Controller
                 $usuarioVinculado = User::find($funcionario->usuario_id);
                 if ($usuarioVinculado) {
                     $usuarioVinculado->name = $validated['nome'];
-                    $usuarioVinculado->papel = $validated['cargo'];
+                    $usuarioVinculado->papel = $papel;
 
                     if (!empty($validated['email'])) {
                         $usuarioVinculado->email = $validated['email'];
@@ -246,6 +284,15 @@ class FuncionarioMobileController extends Controller
                     }
 
                     $usuarioVinculado->save();
+
+                    // Mantém a tabela de gestão do local coerente com o papel atual
+                    // (mesma lógica do web): sai se deixou de ser gerente, entra se passou a ser.
+                    $novoEstabelecimento = Estabelecimento::find($validated['estabelecimento_id']);
+                    if ($papelAntigo === 'gerente' && $papel !== 'gerente') {
+                        $novoEstabelecimento->proprietarios()->detach($usuarioVinculado->id);
+                    } elseif ($papel === 'gerente' && !$novoEstabelecimento->proprietarios()->where('users.id', $usuarioVinculado->id)->exists()) {
+                        $novoEstabelecimento->proprietarios()->attach($usuarioVinculado->id, ['tipo' => 'gerente']);
+                    }
                 }
             }
 

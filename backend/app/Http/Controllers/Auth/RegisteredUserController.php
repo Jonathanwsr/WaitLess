@@ -8,8 +8,9 @@ use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Http; 
+use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\Rules;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -36,13 +37,20 @@ class RegisteredUserController extends Controller
             'name' => 'required|string|max:255',
             'email' => 'required|string|lowercase|email|max:255|unique:'.User::class,
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
-            'papel' => 'required|string|in:admin,socio,user,gerente,atendente',
+            // Só os três papéis que a tela de cadastro realmente oferece (Cliente/
+            // Funcionário/Proprietário) podem ser auto-atribuídos aqui — "admin" e
+            // "gerente" eram aceitos por essa validação, permitindo que qualquer
+            // pessoa se cadastrasse como administrador da plataforma só mandando
+            // esse valor no corpo da requisição.
+            'papel' => 'required|string|in:user,atendente,socio',
             
-            // Novos campos do cliente
-            'cpf_cnpj' => 'required|string|max:18',
-            'mobile_phone' => 'required|string|max:20',
-            'phone' => 'nullable|string|max:20',
-            'postal_code' => 'required|string|max:10',
+            // Novos campos do cliente — só dígitos (e pontuação usual de
+            // máscara), pra barrar HTML/script ou texto solto nesses campos
+            // antes de ir pro gateway de pagamento.
+            'cpf_cnpj' => 'required|string|max:18|regex:/^[0-9.\-\/\s]+$/',
+            'mobile_phone' => 'required|string|max:20|regex:/^[0-9()\-\s]+$/',
+            'phone' => 'nullable|string|max:20|regex:/^[0-9()\-\s]+$/',
+            'postal_code' => 'required|string|max:10|regex:/^[0-9\-\s]+$/',
             'address' => 'required|string|max:255',
             'address_number' => 'required|string|max:20',
             'complement' => 'nullable|string|max:100',
@@ -52,6 +60,7 @@ class RegisteredUserController extends Controller
             'person_type' => 'required|in:FISICA,JURIDICA',
             'birth_date' => 'nullable|date',
             'notification_disabled' => 'nullable|boolean',
+            'codigo_indicacao' => 'nullable|string|max:12',
 
             // Novos campos de Perfil adicionados
             'onde_estudei' => 'nullable|string|max:255',
@@ -59,6 +68,11 @@ class RegisteredUserController extends Controller
             'idiomas' => 'nullable|string|max:255',
             'profissao' => 'nullable|string|max:255',
             'sobre_mim' => 'nullable|string|max:1000',
+
+            // Aceite do Termo de Compromisso — obrigatório, marcado manualmente
+            // pelo usuário (nunca aceito automaticamente). A validação real de
+            // "aceitou de verdade" fica no backend, não só no checkbox do front.
+            'termo_compromisso_aceito' => 'required|boolean|accepted',
         ]);
 
         // Limpa os dados para enviar apenas números para a API do Asaas
@@ -126,7 +140,31 @@ class RegisteredUserController extends Controller
                 'idiomas' => $request->idiomas,
                 'profissao' => $request->profissao,
                 'sobre_mim' => $request->sobre_mim,
+
+                // Aceite do Termo de Compromisso — a versão gravada é sempre a
+                // atual do servidor, não a que o front mandou.
+                'termo_compromisso_aceito' => (bool) $request->termo_compromisso_aceito,
+                'termo_compromisso_aceito_em' => now(),
+                'termo_compromisso_versao' => config('termos.versao_atual'),
+                'termo_compromisso_ip' => $request->ip(),
+                'termo_compromisso_user_agent' => $request->userAgent(),
             ]);
+            // Programa de indicação: liga o novo usuário a quem o convidou (código inválido é ignorado).
+            app(\App\Services\IndicacaoService::class)->registrar($user, $request->input('codigo_indicacao'));
+
+            // Bônus de boas-vindas: todo cliente novo (papel 'user') já
+            // entra com 100 pontos de fidelidade, visíveis no histórico.
+            if ($user->papel === 'user') {
+                $user->increment('pontos_saldo', 100);
+                DB::table('historico_pontos')->insert([
+                    'usuario_id' => $user->id,
+                    'estabelecimento_id' => null,
+                    'tipo' => 'ganho',
+                    'descricao' => 'Bônus de boas-vindas - cadastro na Lokyva',
+                    'quantidade' => 100,
+                    'created_at' => now(),
+                ]);
+            }
 
             // 4. TERCEIRO: Envio de e-mail de boas-vindas via Brevo API
             $brevoKey = config('services.brevo.key');

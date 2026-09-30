@@ -8,6 +8,20 @@ use Illuminate\Http\Request;
 
 class RegraPontuacaoController extends Controller
 {
+    /**
+     * Mesma checagem usada em Desconto/ContaPagamento: sem isso, qualquer
+     * usuário autenticado podia criar/editar/desativar regras de pontuação
+     * de QUALQUER estabelecimento.
+     */
+    private function garantirQueGerencia(Request $request, int $estabelecimentoId): void
+    {
+        $gerencia = $request->user()->estabelecimentos()
+            ->where('estabelecimentos.id', $estabelecimentoId)
+            ->exists();
+
+        abort_unless($gerencia, 403, 'Você não tem permissão para gerenciar regras de pontuação deste estabelecimento.');
+    }
+
     public function index(Request $request)
     {
         $query = RegraPontuacao::query();
@@ -27,6 +41,8 @@ class RegraPontuacaoController extends Controller
             'ativo' => 'boolean'
         ]);
 
+        $this->garantirQueGerencia($request, (int) $validated['estabelecimento_id']);
+
         $regra = RegraPontuacao::create($validated);
 
         return response()->json(['message' => 'Regra criada!', 'data' => $regra], 201);
@@ -40,6 +56,8 @@ class RegraPontuacaoController extends Controller
     public function update(Request $request, string $id)
     {
         $regra = RegraPontuacao::findOrFail($id);
+        $this->garantirQueGerencia($request, (int) $regra->estabelecimento_id);
+
         $validated = $request->validate([
             'tipo' => 'sometimes|string|max:100',
             'descricao' => 'sometimes|string',
@@ -51,9 +69,11 @@ class RegraPontuacaoController extends Controller
         return response()->json(['message' => 'Regra atualizada!', 'data' => $regra]);
     }
 
-    public function destroy(string $id)
+    public function destroy(Request $request, string $id)
     {
         $regra = RegraPontuacao::findOrFail($id);
+        $this->garantirQueGerencia($request, (int) $regra->estabelecimento_id);
+
         $regra->update(['ativo' => false]);
         return response()->json(['message' => 'Regra inativada.']);
     }

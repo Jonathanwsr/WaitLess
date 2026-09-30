@@ -5,6 +5,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // @ts-ignore - laravel-echo espera Pusher disponível globalmente, igual ao bootstrap.js do web
 global.Pusher = Pusher;
 
+// Interop: laravel-echo é um pacote ESM puro ("type": "module", exporta a
+// classe como `export default`). Em algumas configurações do Metro (bundler
+// do Expo), essa importação default não é desembrulhada automaticamente — em
+// vez da classe, `Echo` vira o objeto inteiro de exports do módulo, e
+// `new Echo(...)` falha com "Object cannot be used as a constructor". Isso
+// pega a classe de dentro de `.default` quando for o caso, sem depender de
+// mudar a configuração do bundler.
+const EchoConstructor: typeof Echo = ((Echo as unknown as { default?: typeof Echo })?.default) ?? Echo;
+
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api/mobile';
 // API_URL termina em ".../api/mobile" — a raiz da API (sem o prefixo /mobile) é onde vive o endpoint de auth.
 const API_ROOT = API_URL.replace(/\/mobile$/, '');
@@ -27,7 +36,7 @@ export async function obterEcho(): Promise<Echo<'reverb'>> {
 
   const token = (await AsyncStorage.getItem('@lokyva_token')) || (await AsyncStorage.getItem('@waitless_token'));
 
-  instanciaEcho = new Echo({
+  instanciaEcho = new EchoConstructor({
     broadcaster: 'reverb',
     key: REVERB_APP_KEY,
     wsHost: REVERB_HOST,

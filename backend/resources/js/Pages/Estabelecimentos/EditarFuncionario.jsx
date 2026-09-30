@@ -81,7 +81,7 @@ export default function EditarFuncionario({ auth, funcionario, estabelecimentos 
                 type="submit"
                 disabled={processing}
                 className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-bold text-white transition-colors shadow-sm ${
-                  processing ? 'bg-indigo-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
+                  processing ? 'bg-green-600 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700'
                 }`}
               >
                 <Check className="w-4 h-4" />

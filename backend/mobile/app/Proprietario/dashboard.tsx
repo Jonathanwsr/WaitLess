@@ -1,21 +1,11 @@
-import React, { useEffect, useState } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ActivityIndicator, 
-  TouchableOpacity, 
-  ScrollView,
-  Platform,
-  StatusBar,
-  Image,
-  useWindowDimensions
-} from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'; 
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as SecureStore from 'expo-secure-store';
+import React, { useCallback, useEffect, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Image } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
+import * as SecureStore from 'expo-secure-store';
+import { O } from '../../constants/OwnerTheme';
+import { OwnerScreen, Card, Rotulo, Metrica, Pilula, Vazio, Erro, api, brl } from '../../components/owner/ui';
+import { useCarga } from '../../components/owner/useCarga';
 
 interface Estabelecimento {
   id: number;
@@ -30,484 +20,277 @@ interface Estabelecimento {
 
 interface DashboardData {
   estabelecimentos: Estabelecimento[];
-  metricas: {
-    total_fila: number;
-    total_arrecadado: number;
-    ativos: number;
-  };
+  metricas: { total_fila: number; total_arrecadado: number; ativos: number };
+  financeiro?: { carteira_configurada: boolean; saldo_disponivel: number; receita_30_dias: number };
+  onboarding?: { locais: number; servicos: number; reservas: number };
+  premium?: boolean;
 }
 
-const ENV_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api/mobile';
-const cleanBaseUrl = ENV_URL.endsWith('/') ? ENV_URL.slice(0, -1) : ENV_URL;
-const API_URL = `${cleanBaseUrl}/proprietario/dashboard`;
+const ATALHOS = [
+  { icone: 'megaphone-outline', rotulo: 'Divulgar', rota: '/Proprietario/divulgar' },
+  { icone: 'school-outline', rotulo: 'Tutoriais', rota: '/Proprietario/tutorial' },
+  { icone: 'storefront-outline', rotulo: 'Vitrine', rota: '/Proprietario/vitrine' },
+  { icone: 'list-outline', rotulo: 'Fila', rota: 'local:/src/funcionario/Painel-funcioanario?origem=socio&estabelecimento_id=' },
+  { icone: 'calendar-outline', rotulo: 'Agenda', rota: 'local:/src/funcionario/AgendaEquipe?estabelecimento_id=' },
+  { icone: 'people-outline', rotulo: 'Equipe', rota: 'local:/Proprietario/FuncionariosScreen?id=' },
+  { icone: 'person-outline', rotulo: 'Clientes', rota: '/Proprietario/clientes' },
+  { icone: 'star-outline', rotulo: 'Avaliações', rota: '/Proprietario/avaliacoes' },
+  { icone: 'return-up-back-outline', rotulo: 'Estornos', rota: '/Proprietario/estornos' },
+  { icone: 'navigate-outline', rotulo: 'Rastreio', rota: '/Proprietario/MapaRastreamento', premium: true },
+  { icone: 'document-text-outline', rotulo: 'Contratos', rota: '/Proprietario/contratos', premium: true },
+  { icone: 'key-outline', rotulo: 'Locações', rota: '/Proprietario/LocacoesAvulsas' },
+];
 
 export default function ProprietarioDashboard() {
-  const [data, setData] = useState<DashboardData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [erroAPI, setErroAPI] = useState<string | null>(null);
-  const [userName, setUserName] = useState('Usuário');
-  const [userPhoto, setUserPhoto] = useState<string | null>(null); 
-  
-  // Controle de paginação (Mostra 10 por padrão)
-  const [itensVisiveis, setItensVisiveis] = useState(10);
-
   const router = useRouter();
-  const { width } = useWindowDimensions();
-  const insets = useSafeAreaInsets(); // Para lidar com o notch e a barra inferior do iOS
+  const [nome, setNome] = useState('');
+  const [foto, setFoto] = useState<string | null>(null);
+  const [naoLidas, setNaoLidas] = useState(0);
 
-  // Calcula a largura dinâmica para os cards de métricas (Grid de 2 colunas)
-  const metricCardWidth = (width - 56) / 2;
+  const { dados, carregando, atualizando, erro, recarregar, atualizar } = useCarga<DashboardData>(() => api('/proprietario/dashboard'));
 
-  const [naoLidasTotal, setNaoLidasTotal] = useState(0);
+  const carregarUsuario = useCallback(async () => {
+    try {
+      const salvo = await SecureStore.getItemAsync('userData');
+      if (salvo) {
+        const u = JSON.parse(salvo);
+        setNome(String(u.name || u.nome || '').split(' ')[0]);
+        setFoto(u.foto_perfil || u.foto || null);
+      }
+    } catch {
+      // segue sem nome
+    }
+  }, []);
+
+  const buscarNaoLidas = useCallback(async () => {
+    try {
+      const r = await api('/mensagens/nao-lidas');
+      setNaoLidas(r?.total || 0);
+    } catch {
+      // badge é opcional
+    }
+  }, []);
 
   useEffect(() => {
     carregarUsuario();
-    fetchDashboard();
-    fetchNaoLidas();
-    const intervalo = setInterval(fetchNaoLidas, 20000);
-    return () => clearInterval(intervalo);
-  }, []);
+    buscarNaoLidas();
+    const t = setInterval(buscarNaoLidas, 20000);
+    return () => clearInterval(t);
+  }, [carregarUsuario, buscarNaoLidas]);
 
-  const fetchNaoLidas = async () => {
-    try {
-      const token = await AsyncStorage.getItem('@waitless_token') || await AsyncStorage.getItem('@lokyva_token');
-      if (!token) return;
-      const response = await fetch(`${cleanBaseUrl}/mensagens/nao-lidas`, {
-        headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/json' }
-      });
-      if (!response.ok) return;
-      const json = await response.json();
-      setNaoLidasTotal(json.total || 0);
-    } catch (error) {
-      // não crítico, sino só fica sem badge
-    }
+  const locais = dados?.estabelecimentos || [];
+  const passosConcluidos = [dados?.onboarding?.locais, dados?.onboarding?.servicos, dados?.onboarding?.reservas].filter((n) => (n || 0) > 0).length;
+
+  const abrirPorLocal = (prefixo: string) => {
+    if (locais.length === 1) router.push(`${prefixo}${locais[0].id}` as never);
+    else router.push('/Proprietario/MeusEstabelecimentos' as never);
   };
 
-  const carregarUsuario = async () => {
-    try {
-      const userDataString = await SecureStore.getItemAsync('userData');
-      if (userDataString) {
-        const usuario = JSON.parse(userDataString);
-        if (usuario.nome) {
-          setUserName(usuario.nome.split(' ')[0]);
-        }
-        if (usuario.foto_perfil || usuario.foto) {
-          setUserPhoto(usuario.foto_perfil || usuario.foto);
-        }
-      }
-    } catch (error) {
-      console.log('Erro ao ler dados do usuário');
-    }
+  const abrirAtalho = (rota: string) => {
+    if (rota.startsWith('local:')) abrirPorLocal(rota.slice(6));
+    else router.push(rota as never);
   };
 
-  const handleSair = async () => {
-    await AsyncStorage.removeItem('@waitless_token');
-    await AsyncStorage.removeItem('@lokyva_token');
-    await SecureStore.deleteItemAsync('userData');
-    router.replace('/autenticacao/login');
-  };
-
-  const fetchDashboard = async () => {
-    try {
-      setErroAPI(null);
-      let token = await AsyncStorage.getItem('@waitless_token') || await AsyncStorage.getItem('@lokyva_token'); 
-
-      if (!token) {
-        router.replace('/autenticacao/login');
-        return;
-      }
-
-      const response = await fetch(API_URL, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Accept': 'application/json'
-        }
-      });
-
-      if (response.status === 401) {
-        await handleSair();
-        return;
-      }
-      
-      const textResponse = await response.text();
-      let json = JSON.parse(textResponse);
-
-      if (!response.ok) throw new Error('Erro na resposta');
-
-      setData(json);
-    } catch (error: any) {
-      setErroAPI('Desculpe, não conseguimos conectar aos servidores no momento.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const carregarMais = () => {
-    setItensVisiveis(prev => prev + 10);
-  };
-
-  const renderEstabelecimento = (item: Estabelecimento, index: number) => (
-    <View key={item.id || index} style={styles.estCard}>
-      <View style={styles.estHeader}>
-        <View style={styles.estAvatarPlaceholder}>
-          {item.foto_perfil ? (
-            <Image source={{ uri: item.foto_perfil }} style={styles.estAvatarImage} />
-          ) : (
-            <Text style={styles.estAvatarText}>{item.nome.charAt(0).toUpperCase()}</Text>
-          )}
-        </View>
-        <View style={styles.estInfo}>
-          <View style={styles.estTitleRow}>
-            <Text style={styles.estTitle} numberOfLines={1}>{item.nome}</Text>
-            <View style={[styles.statusDot, { backgroundColor: item.ativo ? '#10B981' : '#EF4444' }]} />
-          </View>
-          <Text style={styles.estSubtitle}>
-            Nota {item.avaliacao_media || '0.0'} • {item.funcionarios_count} Membros
-          </Text>
-        </View>
-        <TouchableOpacity style={styles.estMoreBtn}>
-          <Feather name="more-horizontal" size={24} color="#94A3B8" />
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.estFilaBox}>
-        <View>
-          <Text style={styles.estFilaLabel}>Na fila agora</Text>
-          <Text style={styles.estFilaValue}>{item.fila_agora || 0}</Text>
-        </View>
-        <View style={styles.estFilaIconBox}>
-          <Feather name="users" size={20} color="#10B981" />
-        </View>
-      </View>
-
-      <View style={styles.estActionsRow}>
-        <TouchableOpacity 
-          style={styles.estActionBtn} 
-          onPress={() => router.push(`/src/screens/AcompanhamentoFilaScreen?id=${item.id}`)}
-        >
-          <Feather name="list" size={16} color="#475569" />
-          <Text style={styles.estActionText}>Fila</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity
-          style={styles.estActionBtn}
-          onPress={() => router.push(`/Proprietario/FuncionariosScreen?id=${item.id}`)}
-        >
-          <Feather name="user" size={16} color="#475569" />
-          <Text style={styles.estActionText}>Equipe</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.estActionBtn}
-          onPress={() => router.push(`/src/funcionario/AgendaEquipe?estabelecimento_id=${item.id}` as never)}
-        >
-          <Feather name="bar-chart-2" size={16} color="#475569" />
-          <Text style={styles.estActionText}>Produção</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity 
-          style={styles.estActionBtn} 
-          onPress={() => router.push(`/Proprietario/ConfiguracoesMobile?id=${item.id}&nome=${encodeURIComponent(item.nome)}`)}
-        >
-          <Feather name="settings" size={16} color="#475569" />
-          <Text style={styles.estActionText}>Ajustes</Text>
-        </TouchableOpacity>
-      </View>
+  const direita = (
+    <View style={s.acoes}>
+      <TouchableOpacity style={s.iconBtn} onPress={() => router.push('/mensagens' as never)} activeOpacity={0.7}>
+        <Ionicons name="notifications-outline" size={20} color={O.ink} />
+        {naoLidas > 0 && (
+          <View style={s.badge}><Text style={s.badgeTxt}>{naoLidas > 9 ? '9+' : naoLidas}</Text></View>
+        )}
+      </TouchableOpacity>
+      <TouchableOpacity style={s.avatar} onPress={() => router.push('/Proprietario/perfil' as never)} activeOpacity={0.8}>
+        {foto ? <Image source={{ uri: foto }} style={s.avatarImg} /> : <Text style={s.avatarTxt}>{(nome || 'S').charAt(0).toUpperCase()}</Text>}
+      </TouchableOpacity>
     </View>
   );
 
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#10B981" />
-      </View>
-    );
-  }
-
-  if (erroAPI) {
-    return (
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.erroContainer}>
-          <View style={styles.erroIconContainer}>
-            <Feather name="wifi-off" size={48} color="#EF4444" />
-          </View>
-          <Text style={styles.erroTitulo}>Oops!</Text>
-          <Text style={styles.erroTexto}>{erroAPI}</Text>
-          <Text style={styles.erroSubTexto}>Verifique sua conexão de internet.</Text>
-
-          <TouchableOpacity style={styles.btnTentar} onPress={() => { setLoading(true); fetchDashboard(); }}>
-            <Text style={styles.btnTentarTexto}>Tentar Novamente</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.btnSairErro} onPress={handleSair}>
-            <Text style={styles.btnSairErroTexto}>Voltar para Login</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  const estabelecimentosData = data?.estabelecimentos || [];
-  const estabelecimentosPaginados = estabelecimentosData.slice(0, itensVisiveis);
-  const temMaisItens = estabelecimentosData.length > itensVisiveis;
-
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F8FAFC" />
-      
-      {/* HEADER */}
-      <View style={styles.topHeader}>
-        <View style={styles.topHeaderLeft}>
-          <View style={styles.avatarMini}>
-            {userPhoto ? (
-              <Image source={{ uri: userPhoto }} style={styles.avatarMiniImage} />
-            ) : (
-              <Text style={styles.avatarMiniText}>{userName.charAt(0).toUpperCase()}</Text>
-            )}
-          </View>
-          <View>
-            <Text style={styles.greetingLight}>Bem-vindo de volta,</Text>
-            <Text style={styles.greetingText}>{userName}</Text>
-          </View>
-        </View>
-        <TouchableOpacity style={styles.notificationBtn} onPress={() => router.push('/(tabs)/caixa-entrada' as never)}>
-          <Feather name="bell" size={20} color="#64748B" />
-          {naoLidasTotal > 0 && (
-            <View style={styles.notificationBadge}>
-              <Text style={styles.notificationBadgeText}>{naoLidasTotal > 9 ? '9+' : naoLidasTotal}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-        
-        {/* TÍTULO */}
-        <View style={styles.titleSection}>
-          <Text style={styles.pageTitle}>Visão Geral</Text>
-        </View>
-
-        {/* GRID DE MÉTRICAS RESPONSIVO */}
-        <View style={styles.metricsWrapper}>
-          <View style={[styles.metricCard, { width: metricCardWidth }]}>
-            <View style={styles.metricHeader}>
-              <View style={[styles.metricIconBox, { backgroundColor: '#EFF6FF' }]}>
-                <Feather name="users" size={18} color="#3B82F6" />
+    <OwnerScreen
+      titulo="Painel"
+      saudacao={nome || undefined}
+      semVoltar
+      direita={direita}
+      aba="painel"
+      carregando={carregando && !dados}
+      atualizando={atualizando}
+      onAtualizar={atualizar}
+    >
+      {erro && !dados ? (
+        <Erro mensagem={erro} aoTentar={recarregar} />
+      ) : dados && (
+        <>
+          {/* PRIMEIROS PASSOS */}
+          {passosConcluidos < 3 && (
+            <View style={s.inicio}>
+              <View style={s.inicioTopo}>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.inicioTitulo}>Comece por aqui</Text>
+                  <Text style={s.inicioSub}>{passosConcluidos} de 3 etapas concluídas</Text>
+                </View>
+                <View style={s.inicioBarra}><View style={[s.inicioBarraOn, { width: `${(passosConcluidos / 3) * 100}%` }]} /></View>
               </View>
-            </View>
-            <Text style={styles.metricValue}>{data?.metricas?.total_fila || 0}</Text>
-            <Text style={styles.metricDesc}>Pessoas na fila</Text>
-          </View>
-
-          <View style={[styles.metricCard, { width: metricCardWidth }]}>
-            <View style={styles.metricHeader}>
-              <View style={[styles.metricIconBox, { backgroundColor: '#ECFDF5' }]}>
-                <Feather name="dollar-sign" size={18} color="#10B981" />
-              </View>
-            </View>
-            <Text style={styles.metricValue}>R$ {data?.metricas?.total_arrecadado || '0,00'}</Text>
-            <Text style={styles.metricDesc}>Faturamento mês</Text>
-          </View>
-
-          <View style={[styles.metricCard, { width: metricCardWidth }]}>
-            <View style={styles.metricHeader}>
-              <View style={[styles.metricIconBox, { backgroundColor: '#F5F3FF' }]}>
-                <Feather name="briefcase" size={18} color="#8B5CF6" />
-              </View>
-            </View>
-            <Text style={styles.metricValue}>{data?.metricas?.ativos || 0}</Text>
-            <Text style={styles.metricDesc}>Estabelecimentos</Text>
-          </View>
-
-          <View style={[styles.metricCard, { width: metricCardWidth }]}>
-            <View style={styles.metricHeader}>
-              <View style={[styles.metricIconBox, { backgroundColor: '#FFF7ED' }]}>
-                <Feather name="trending-up" size={18} color="#F97316" />
-              </View>
-            </View>
-            <Text style={styles.metricValue}>R$ 0,00</Text>
-            <Text style={styles.metricDesc}>Lucro financeiro</Text>
-          </View>
-        </View>
-
-        {/* AÇÕES E BOTÃO CRIAR */}
-        <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitle}>Seus Locais</Text>
-        </View>
-
-        <ScrollView 
-          horizontal 
-          showsHorizontalScrollIndicator={false} 
-          style={styles.quickActionsScroll} 
-          contentContainerStyle={styles.quickActionsContainer}
-        >
-          {/* BOTÃO CRIAR MODERNO E DESTACADO */}
-          <TouchableOpacity 
-            style={styles.btnCriarModerno} 
-            onPress={() => router.push('/Proprietario/CriarEstabelecimento')}
-          >
-            <View style={styles.btnCriarIconBox}>
-              <Feather name="plus" size={16} color="#10B981" />
-            </View>
-            <Text style={styles.btnCriarTexto}>Novo Local</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.btnLocacoesAvulsas}
-            onPress={() => router.push('/Proprietario/LocacoesAvulsas' as never)}
-          >
-            <View style={styles.btnLocacoesIconBox}>
-              <Feather name="key" size={16} color="#FF5A00" />
-            </View>
-            <Text style={styles.btnLocacoesTexto}>Locações Avulsas</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.quickActionPill} onPress={() => router.push('/Proprietario/FuncionariosScreen')}>
-            <Text style={styles.quickActionText}>Equipe</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.quickActionPill}>
-            <Text style={styles.quickActionText}>Contas</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.quickActionPill}>
-            <Text style={styles.quickActionText}>Suporte</Text>
-          </TouchableOpacity>
-        </ScrollView>
-
-        {/* LISTA DE ESTABELECIMENTOS COM PAGINAÇÃO MANUAL */}
-        <View style={styles.listaContainer}>
-          {estabelecimentosPaginados.length > 0 ? (
-            estabelecimentosPaginados.map((item, index) => renderEstabelecimento(item, index))
-          ) : (
-            <View style={styles.emptyState}>
-              <Feather name="map-pin" size={40} color="#CBD5E1" />
-              <Text style={styles.emptyStateText}>Nenhum local cadastrado ainda.</Text>
+              {[
+                { id: 'local', rotulo: 'Cadastrar um local', ok: (dados.onboarding?.locais || 0) > 0 },
+                { id: 'servico', rotulo: 'Criar um serviço', ok: (dados.onboarding?.servicos || 0) > 0 },
+                { id: 'reserva', rotulo: 'Criar uma reserva', ok: (dados.onboarding?.reservas || 0) > 0 },
+              ].map((p) => (
+                <TouchableOpacity key={p.id} style={s.inicioItem} activeOpacity={0.7} onPress={() => router.push(`/Proprietario/tutorial?fluxo=${p.id}` as never)}>
+                  <Ionicons name={p.ok ? 'checkmark-circle' : 'ellipse-outline'} size={22} color={p.ok ? O.success : O.faint} />
+                  <Text style={[s.inicioItemTxt, p.ok && s.inicioItemOk]}>{p.rotulo}</Text>
+                  {!p.ok && <Text style={s.inicioVer}>Ver passo a passo</Text>}
+                </TouchableOpacity>
+              ))}
             </View>
           )}
 
-          {/* BOTÃO DE CARREGAR MAIS (SÓ APARECE SE TIVER > 10 ITENS NÃO VISÍVEIS) */}
-          {temMaisItens && (
-            <TouchableOpacity style={styles.btnCarregarMais} onPress={carregarMais}>
-              <Text style={styles.btnCarregarMaisText}>Carregar Mais Locais</Text>
-              <Feather name="chevron-down" size={16} color="#3B82F6" />
+          {/* DESTAQUE FINANCEIRO */}
+          <TouchableOpacity style={s.hero} activeOpacity={0.9} onPress={() => router.push('/Proprietario/financeiro' as never)}>
+            <View style={s.heroTopo}>
+              <Text style={s.heroRotulo}>Receita nos últimos 30 dias</Text>
+              <Ionicons name="arrow-forward" size={18} color="rgba(255,255,255,0.6)" />
+            </View>
+            <Text style={s.heroValor}>{brl(dados.financeiro?.receita_30_dias)}</Text>
+            <View style={s.heroRodape}>
+              <View>
+                <Text style={s.heroSub}>Saldo disponível</Text>
+                <Text style={s.heroSubValor}>{brl(dados.financeiro?.saldo_disponivel)}</Text>
+              </View>
+              {dados.financeiro && !dados.financeiro.carteira_configurada && (
+                <View style={s.heroAviso}><Text style={s.heroAvisoTxt}>Configurar conta</Text></View>
+              )}
+            </View>
+          </TouchableOpacity>
+
+          <View style={s.grade}>
+            <Metrica rotulo="Na fila agora" valor={dados.metricas.total_fila} icone="people-outline" tom={dados.metricas.total_fila ? 'alerta' : 'neutro'} />
+            <Metrica rotulo="Locais ativos" valor={dados.metricas.ativos} icone="storefront-outline" tom="positivo" />
+          </View>
+
+          {/* ATALHOS */}
+          <Rotulo>Acesso rápido</Rotulo>
+          <View style={s.atalhosGrade}>
+            {ATALHOS.map((a) => (
+              <TouchableOpacity key={a.rotulo} style={s.atalho} onPress={() => abrirAtalho(a.rota)} activeOpacity={0.7} accessibilityRole="button" accessibilityLabel={a.rotulo}>
+                <View style={s.atalhoIcone}>
+                  <Ionicons name={a.icone as any} size={24} color={O.accent} />
+                  {'premium' in a && a.premium && dados.premium === false && (
+                    <View style={s.cadeado}><Ionicons name="lock-closed" size={9} color="#7A4A00" /></View>
+                  )}
+                </View>
+                <Text style={s.atalhoTxt} numberOfLines={1}>{a.rotulo}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* LOCAIS */}
+          <Rotulo direita={
+            <TouchableOpacity onPress={() => router.push('/Proprietario/CriarEstabelecimento' as never)} style={s.novo}>
+              <Ionicons name="add" size={16} color={O.accent} />
+              <Text style={s.novoTxt}>Novo local</Text>
             </TouchableOpacity>
-          )}
-        </View>
-      </ScrollView>
+          }>
+            Seus locais
+          </Rotulo>
 
-      {/* MENU INFERIOR */}
-      <View style={[styles.bottomMenu, { paddingBottom: insets.bottom || 10 }]}>
-        <TouchableOpacity style={styles.menuItem}>
-          <View style={styles.menuIconActiveBg}>
-            <Feather name="grid" size={20} color="#10B981" />
-          </View>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.menuItem}>
-          <Feather name="list" size={22} color="#94A3B8" />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.menuItem}>
-          <Feather name="scissors" size={22} color="#94A3B8" />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.menuItem}>
-          <Feather name="calendar" size={22} color="#94A3B8" />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.menuItem} onPress={() => router.push('/src/screens/PerfilAnfitriao')}>
-          <Feather name="user" size={22} color="#94A3B8" />
-        </TouchableOpacity>
-      </View>
-    </SafeAreaView>
+          {locais.length === 0 ? (
+            <Card><Vazio icone="storefront-outline" titulo="Cadastre seu primeiro local" texto="Depois disso, você acompanha fila, equipe, reservas e financeiro por aqui." /></Card>
+          ) : (
+            locais.map((l) => (
+              <Card key={l.id}>
+                <View style={s.localTopo}>
+                  <View style={s.localFoto}>
+                    {l.foto_perfil ? <Image source={{ uri: l.foto_perfil }} style={s.localFotoImg} /> : <Text style={s.localInicial}>{l.nome.charAt(0).toUpperCase()}</Text>}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.localNome} numberOfLines={1}>{l.nome}</Text>
+                    <Text style={s.localSub}>
+                      Nota {Number(l.avaliacao_media || 0).toFixed(1)} · {l.funcionarios_count} {l.funcionarios_count === 1 ? 'membro' : 'membros'}
+                    </Text>
+                  </View>
+                  <Pilula texto={l.ativo ? 'Ativo' : 'Inativo'} tom={l.ativo ? 'positivo' : 'negativo'} />
+                </View>
+
+                <View style={s.localFila}>
+                  <Text style={s.localFilaRotulo}>Na fila agora</Text>
+                  <Text style={s.localFilaValor}>{l.fila_agora || 0}</Text>
+                </View>
+
+                <View style={s.localAcoes}>
+                  {[
+                    { t: 'Vitrine', i: 'storefront-outline', r: `/Proprietario/vitrine?estabelecimento_id=${l.id}` },
+                    { t: 'Fila', i: 'list-outline', r: `/src/funcionario/Painel-funcioanario?origem=socio&estabelecimento_id=${l.id}` },
+                    { t: 'Equipe', i: 'people-outline', r: `/Proprietario/FuncionariosScreen?id=${l.id}` },
+                    { t: 'Agenda', i: 'calendar-outline', r: `/src/funcionario/AgendaEquipe?estabelecimento_id=${l.id}` },
+                    { t: 'Ajustes', i: 'options-outline', r: `/Proprietario/ConfiguracoesMobile?id=${l.id}&nome=${encodeURIComponent(l.nome)}` },
+                  ].map((b) => (
+                    <TouchableOpacity key={b.t} style={s.localBtn} onPress={() => router.push(b.r as never)} activeOpacity={0.7}>
+                      <Ionicons name={b.i as any} size={17} color={O.accent} />
+                      <Text style={s.localBtnTxt}>{b.t}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </Card>
+            ))
+          )}
+        </>
+      )}
+    </OwnerScreen>
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#F8FAFC' },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8FAFC' },
-  
-  // HEADER
-  topHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, paddingTop: 16, paddingBottom: 10, backgroundColor: '#F8FAFC' },
-  topHeaderLeft: { flexDirection: 'row', alignItems: 'center' },
-  avatarMini: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#E2E8F0', justifyContent: 'center', alignItems: 'center', marginRight: 12, overflow: 'hidden' },
-  avatarMiniImage: { width: '100%', height: '100%' },
-  avatarMiniText: { color: '#0F172A', fontWeight: 'bold', fontSize: 18 },
-  greetingLight: { fontSize: 12, color: '#64748B', marginBottom: 2 },
-  greetingText: { fontSize: 18, fontWeight: '800', color: '#0F172A' },
-  notificationBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#FFFFFF', justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 8, elevation: 2 },
-  notificationBadge: { position: 'absolute', top: 6, right: 6, minWidth: 16, height: 16, paddingHorizontal: 3, borderRadius: 8, backgroundColor: '#EF4444', borderWidth: 2, borderColor: '#FFF', justifyContent: 'center', alignItems: 'center' },
-  notificationBadgeText: { color: '#FFF', fontSize: 9, fontWeight: '800' },
+const s = StyleSheet.create({
+  acoes: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  iconBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: O.card, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  badge: { position: 'absolute', top: -3, right: -3, minWidth: 18, height: 18, borderRadius: 9, backgroundColor: O.accent, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, borderWidth: 2, borderColor: O.canvas },
+  badgeTxt: { color: '#fff', fontSize: 10, fontWeight: '800' },
+  avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: O.ink, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  avatarImg: { width: '100%', height: '100%' },
+  avatarTxt: { color: '#fff', fontWeight: '700', fontSize: 16 },
 
-  container: { flex: 1 },
-  
-  titleSection: { paddingHorizontal: 24, paddingTop: 20, paddingBottom: 16 },
-  pageTitle: { fontSize: 24, fontWeight: '900', color: '#0F172A', letterSpacing: -0.5 },
+  hero: { backgroundColor: O.accent, borderRadius: 26, padding: 22, marginBottom: 14 },
+  heroTopo: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  heroRotulo: { color: 'rgba(255,255,255,0.85)', fontSize: 13, fontWeight: '600' },
+  heroValor: { color: '#fff', fontSize: 34, fontWeight: '800', letterSpacing: -1, marginTop: 6 },
+  heroRodape: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 18, paddingTop: 16, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.25)' },
+  heroSub: { color: 'rgba(255,255,255,0.8)', fontSize: 12, fontWeight: '600' },
+  heroSubValor: { color: '#fff', fontSize: 16, fontWeight: '700', marginTop: 2 },
+  heroAviso: { backgroundColor: 'rgba(255,255,255,0.22)', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 10 },
+  heroAvisoTxt: { color: '#fff', fontSize: 12, fontWeight: '700' },
 
-  // GRID DE MÉTRICAS (RESPONSIVO)
-  metricsWrapper: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 24, justifyContent: 'space-between', gap: 8 },
-  metricCard: { backgroundColor: '#FFFFFF', borderRadius: 24, padding: 16, marginBottom: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.03, shadowRadius: 10, elevation: 2 },
-  metricHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  metricIconBox: { width: 36, height: 36, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
-  metricValue: { fontSize: 22, fontWeight: '900', color: '#0F172A', letterSpacing: -0.5 },
-  metricDesc: { fontSize: 12, color: '#64748B', marginTop: 4, fontWeight: '500' },
+  grade: { flexDirection: 'row', gap: 12, marginBottom: 6 },
 
-  // AÇÕES RÁPIDAS & BOTÃO CRIAR MODERNO
-  sectionHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 24, marginTop: 24, marginBottom: 16 },
-  sectionTitle: { fontSize: 18, fontWeight: '800', color: '#0F172A' },
-  
-  quickActionsScroll: { paddingLeft: 24, marginBottom: 24 },
-  quickActionsContainer: { paddingRight: 48, gap: 12, alignItems: 'center' },
-  
-  // Design Moderno do Botão Novo Local
-  btnCriarModerno: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#10B981', paddingLeft: 6, paddingRight: 16, paddingVertical: 6, borderRadius: 30, shadowColor: '#10B981', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 4 },
-  btnCriarIconBox: { width: 28, height: 28, backgroundColor: '#FFFFFF', borderRadius: 14, justifyContent: 'center', alignItems: 'center', marginRight: 8 },
-  btnCriarTexto: { fontSize: 13, fontWeight: '700', color: '#FFFFFF' },
+  inicio: { backgroundColor: O.card, borderRadius: 24, padding: 18, marginBottom: 14, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  inicioTopo: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 6 },
+  inicioTitulo: { fontSize: 17, fontWeight: '800', color: O.ink, letterSpacing: -0.3 },
+  inicioSub: { fontSize: 12, color: O.muted, marginTop: 2, fontWeight: '500' },
+  inicioBarra: { width: 80, height: 8, borderRadius: 4, backgroundColor: O.soft, overflow: 'hidden' },
+  inicioBarraOn: { height: 8, borderRadius: 4, backgroundColor: O.success },
+  inicioItem: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderTopWidth: 1, borderTopColor: '#F0F0F2' },
+  inicioItemTxt: { flex: 1, fontSize: 15, fontWeight: '600', color: O.ink },
+  inicioItemOk: { color: O.muted, textDecorationLine: 'line-through' },
+  inicioVer: { fontSize: 12, fontWeight: '700', color: O.accent },
 
-  btnLocacoesAvulsas: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFFFFF', paddingLeft: 6, paddingRight: 16, paddingVertical: 6, borderRadius: 30, borderWidth: 1.5, borderColor: '#FF5A00' },
-  btnLocacoesIconBox: { width: 28, height: 28, backgroundColor: '#FFF3EC', borderRadius: 14, justifyContent: 'center', alignItems: 'center', marginRight: 8 },
-  btnLocacoesTexto: { fontSize: 13, fontWeight: '700', color: '#FF5A00' },
-  
-  // Pílulas normais
-  quickActionPill: { backgroundColor: '#FFFFFF', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.03, shadowRadius: 5, elevation: 1 },
-  quickActionText: { fontSize: 13, fontWeight: '600', color: '#475569' },
+  atalhos: { paddingHorizontal: 20, gap: 12, paddingBottom: 6 },
+  atalhosGrade: { flexDirection: 'row', flexWrap: 'wrap', rowGap: 14 },
+  atalho: { width: '25%', alignItems: 'center' },
+  atalhoIcone: { width: 60, height: 60, borderRadius: 30, backgroundColor: O.card, alignItems: 'center', justifyContent: 'center', marginBottom: 8, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  cadeado: { position: 'absolute', top: -2, right: -2, width: 20, height: 20, borderRadius: 10, backgroundColor: '#FBBF24', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: O.canvas },
+  atalhoTxt: { fontSize: 12, fontWeight: '600', color: O.ink },
 
-  // LISTA E CARDS
-  listaContainer: { paddingHorizontal: 24, paddingBottom: 40, gap: 16 },
-  estCard: { backgroundColor: '#FFFFFF', borderRadius: 24, padding: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.04, shadowRadius: 15, elevation: 3 },
-  estHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
-  estAvatarPlaceholder: { width: 48, height: 48, borderRadius: 16, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center', marginRight: 14, overflow: 'hidden' },
-  estAvatarImage: { width: '100%', height: '100%' },
-  estAvatarText: { fontSize: 18, fontWeight: 'bold', color: '#0F172A' },
-  estInfo: { flex: 1, justifyContent: 'center' },
-  estTitleRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  estTitle: { fontSize: 16, fontWeight: '800', color: '#0F172A', marginRight: 8, flexShrink: 1 },
-  statusDot: { width: 8, height: 8, borderRadius: 4 },
-  estSubtitle: { fontSize: 13, color: '#64748B', fontWeight: '500' },
-  estMoreBtn: { padding: 4 },
-  
-  estFilaBox: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#F8FAFC', borderRadius: 16, padding: 16, marginBottom: 16, borderWidth: 1, borderColor: '#F1F5F9' },
-  estFilaLabel: { fontSize: 12, color: '#64748B', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
-  estFilaValue: { fontSize: 24, fontWeight: '900', color: '#0F172A' },
-  estFilaIconBox: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#ECFDF5', justifyContent: 'center', alignItems: 'center' },
+  novo: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#FFF1E4', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16 },
+  novoTxt: { fontSize: 12, fontWeight: '700', color: O.accent },
 
-  estActionsRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 8 },
-  estActionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#F8FAFC', paddingVertical: 12, borderRadius: 14, borderWidth: 1, borderColor: '#F1F5F9' },
-  estActionText: { fontSize: 12, fontWeight: '700', color: '#475569', marginLeft: 6 },
-
-  // ESTADO VAZIO & PAGINAÇÃO
-  emptyState: { paddingVertical: 40, alignItems: 'center', justifyContent: 'center' },
-  emptyStateText: { marginTop: 12, fontSize: 14, color: '#94A3B8', fontWeight: '500' },
-  btnCarregarMais: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#EFF6FF', paddingVertical: 16, borderRadius: 20, marginTop: 10 },
-  btnCarregarMaisText: { color: '#3B82F6', fontWeight: '700', fontSize: 14, marginRight: 8 },
-
-  // MENU INFERIOR
-  bottomMenu: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', backgroundColor: '#FFFFFF', paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F1F5F9' },
-  menuItem: { alignItems: 'center', justifyContent: 'center', flex: 1, height: 50 },
-  menuIconActiveBg: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#ECFDF5', justifyContent: 'center', alignItems: 'center' },
-
-  // ERROS AMIGÁVEIS
-  erroContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
-  erroIconContainer: { marginBottom: 24, padding: 24, backgroundColor: '#FEF2F2', borderRadius: 100 },
-  erroTitulo: { fontSize: 32, fontWeight: '900', color: '#0F172A', marginBottom: 12, letterSpacing: -1 },
-  erroTexto: { fontSize: 16, color: '#475569', textAlign: 'center', marginBottom: 8, fontWeight: '600' },
-  erroSubTexto: { fontSize: 14, color: '#94A3B8', textAlign: 'center', marginBottom: 40 },
-  btnTentar: { backgroundColor: '#10B981', paddingHorizontal: 32, paddingVertical: 18, borderRadius: 30, marginBottom: 16, width: '100%', alignItems: 'center', shadowColor: '#10B981', shadowOffset: {width: 0, height: 4}, shadowOpacity: 0.3, shadowRadius: 8, elevation: 4 },
-  btnTentarTexto: { color: '#FFF', fontWeight: '800', fontSize: 16 },
-  btnSairErro: { paddingHorizontal: 32, paddingVertical: 18, borderRadius: 30, backgroundColor: '#F1F5F9', width: '100%', alignItems: 'center' },
-  btnSairErroTexto: { color: '#475569', fontWeight: '700', fontSize: 16 },
+  localTopo: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  localFoto: { width: 48, height: 48, borderRadius: 16, backgroundColor: O.soft, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  localFotoImg: { width: '100%', height: '100%' },
+  localInicial: { fontSize: 18, fontWeight: '700', color: O.muted },
+  localNome: { fontSize: 16, fontWeight: '700', color: O.ink },
+  localSub: { fontSize: 12, color: O.muted, marginTop: 2 },
+  localFila: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: O.soft, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, marginTop: 14 },
+  localFilaRotulo: { fontSize: 13, color: O.muted, fontWeight: '600' },
+  localFilaValor: { fontSize: 20, fontWeight: '800', color: O.ink },
+  localAcoes: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  localBtn: { flex: 1, alignItems: 'center', gap: 4, paddingVertical: 10, borderRadius: 16, backgroundColor: '#FFF7EF' },
+  localBtnTxt: { fontSize: 11, fontWeight: '600', color: O.ink },
 });

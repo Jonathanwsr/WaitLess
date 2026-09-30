@@ -1,21 +1,22 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, router } from '@inertiajs/react';
 import { useState, useEffect } from 'react';
-import { 
-    CalendarIcon, 
-    ArrowDownTrayIcon, 
-    ArrowTrendingUpIcon, 
+import {
+    CalendarIcon,
+    ArrowDownTrayIcon,
+    ArrowTrendingUpIcon,
     ArrowTrendingDownIcon,
     EllipsisVerticalIcon,
     CreditCardIcon,
     ArrowsRightLeftIcon,
     DevicePhoneMobileIcon,
-    MagnifyingGlassIcon
+    MagnifyingGlassIcon,
+    DocumentTextIcon
 } from '@heroicons/react/24/outline';
 
 // Os parâmetros vêm diretamente do ExtratoProviderController
 export default function DashboardFinanceiro({ auth, extrato = {}, resumoCards = {}, filtrosDados = {}, filtrosAtuais = {}, dadosGraficos = {} }) {
-    
+
     // Configura os estados com os valores que vieram da URL (se houver) para manter o filtro ativo
     const [filtroDataInicio, setFiltroDataInicio] = useState(filtrosAtuais.data_inicio || '');
     const [filtroDataFim, setFiltroDataFim] = useState(filtrosAtuais.data_fim || '');
@@ -73,7 +74,32 @@ export default function DashboardFinanceiro({ auth, extrato = {}, resumoCards = 
 
             <div className="min-h-screen bg-[#F8FAFC] pb-12 pt-6">
                 <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8">
-                    
+
+                    {/* UPSELL PREMIUM — este extrato básico está disponível pra
+                        qualquer plano; o extrato completo (gráficos, exportação,
+                        relatório semanal por e-mail) é exclusivo do plano Premium. */}
+                    {auth?.user?.plano_assinatura?.toLowerCase() !== 'premium' && (
+                        <div className="mb-8 bg-gradient-to-r from-gray-900 to-gray-800 rounded-2xl p-5 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                            <div className="flex items-center gap-4">
+                                <div className="w-11 h-11 rounded-xl bg-[#FF5A00]/20 flex items-center justify-center shrink-0">
+                                    <ArrowTrendingUpIcon className="w-6 h-6 text-[#FF5A00]" />
+                                </div>
+                                <div>
+                                    <p className="text-white font-bold text-sm">Este é o extrato básico</p>
+                                    <p className="text-gray-400 text-xs mt-0.5">
+                                        No plano Premium você tem gráficos completos, exportação e um resumo financeiro enviado toda semana no seu e-mail.
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => router.get(route('assinatura.status'))}
+                                className="shrink-0 bg-[#FF5A00] hover:bg-orange-600 text-white text-sm font-bold px-5 py-2.5 rounded-xl transition whitespace-nowrap"
+                            >
+                                Ver plano Premium
+                            </button>
+                        </div>
+                    )}
+
                     {/* CABEÇALHO */}
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
                         <div>
@@ -174,14 +200,14 @@ export default function DashboardFinanceiro({ auth, extrato = {}, resumoCards = 
 
                     {/* CONTEÚDO PRINCIPAL (TABELA + SIDEBAR) */}
                     <div className="flex flex-col xl:flex-row gap-6">
-                        
+
                         {/* TABELA ESQUERDA (DADOS VIVOS) */}
                         <div className="flex-1 bg-white border border-gray-100 rounded-2xl shadow-sm overflow-hidden flex flex-col">
                             <div className="p-5 border-b border-gray-50 flex items-center gap-3">
                                 <h2 className="text-lg font-bold text-gray-900">Movimentações</h2>
                                 <span className="bg-gray-100 text-gray-500 text-xs font-bold px-2.5 py-1 rounded-full">{extrato.total} registros encontrados</span>
                             </div>
-                            
+
                             <div className="overflow-x-auto min-h-[400px]">
                                 <table className="w-full text-left">
                                     <thead>
@@ -199,7 +225,7 @@ export default function DashboardFinanceiro({ auth, extrato = {}, resumoCards = 
                                         {extrato.data?.map((item) => {
                                             const dataObj = new Date(item.created_at);
                                             const isCredito = item.tipo === 'credito';
-                                            
+
                                             // Ícones Condicionais de Pagamento
                                             let MetodoIcon = CreditCardIcon;
                                             if(item.metodo_pagamento === 'pix') MetodoIcon = DevicePhoneMobileIcon;
@@ -218,7 +244,7 @@ export default function DashboardFinanceiro({ auth, extrato = {}, resumoCards = 
                                                     </td>
                                                     <td className="px-5 py-4">
                                                         <p className="text-sm font-semibold text-gray-900">{item.descricao}</p>
-                                                        <p className="text-xs text-gray-500 font-medium">Ref: {item.origem_type.includes('Aluguel') ? 'Reserva de Locação' : 'Serviço Agendado'}</p>
+                                                        <p className="text-xs text-gray-500 font-medium">Ref: {item.origem_type?.includes('Aluguel') ? 'Reserva de Locação' : 'Serviço Agendado'}</p>
                                                     </td>
                                                     <td className="px-5 py-4">
                                                         <p className="text-sm font-semibold text-gray-900">{item.usuario?.name || 'Sistema'}</p>
@@ -262,7 +288,7 @@ export default function DashboardFinanceiro({ auth, extrato = {}, resumoCards = 
                                 </p>
                                 <div className="flex flex-wrap items-center gap-1">
                                     {extrato.links?.map((link, index) => (
-                                        <button 
+                                        <button
                                             key={index}
                                             onClick={() => { if(link.url) router.get(link.url, {}, { preserveScroll: true }) }}
                                             disabled={!link.url}
@@ -276,7 +302,7 @@ export default function DashboardFinanceiro({ auth, extrato = {}, resumoCards = 
 
                         {/* SIDEBAR DIREITA (GRÁFICOS E RESUMOS LATERAIS) */}
                         <div className="w-full xl:w-[350px] flex flex-col gap-6">
-                            
+
                             <div className="bg-white p-6 border border-gray-100 rounded-2xl shadow-sm">
                                 <h3 className="text-sm font-bold text-gray-900 mb-5">Resumo do período</h3>
                                 <div className="space-y-3 text-sm border-b border-gray-100 pb-4 mb-4">
@@ -307,16 +333,16 @@ export default function DashboardFinanceiro({ auth, extrato = {}, resumoCards = 
 
                             {/* Gráfico Donut de Receitas por Meio de Pagamento */}
                             <div className="bg-white p-6 border border-gray-100 rounded-2xl shadow-sm">
-                                <h3 className="text-sm font-bold text-gray-900 mb-6">Receitas por método (Via Asaas)</h3>
-                                
+                                <h3 className="text-sm font-bold text-gray-900 mb-6">Receitas por método</h3>
+
                                 {dadosGraficos.formas_pagamento?.length > 0 ? (
                                     <div className="flex flex-col sm:flex-row xl:flex-col sm:items-center xl:items-stretch gap-6 mb-2">
-                                        <div className="relative w-20 h-20 rounded-full flex items-center justify-center shrink-0 mx-auto" 
+                                        <div className="relative w-20 h-20 rounded-full flex items-center justify-center shrink-0 mx-auto"
                                             // Este gradiente é apenas ilustrativo por falta de lib de gráficos, numa versão em prod use Recharts
                                             style={{ background: 'conic-gradient(#10B981 0% 44%, #3B82F6 44% 82%, #8B5CF6 82% 92%, #F59E0B 92% 100%)' }}>
                                             <div className="w-12 h-12 bg-white rounded-full"></div>
                                         </div>
-                                        
+
                                         <div className="flex-1 space-y-3 text-xs w-full">
                                             {dadosGraficos.formas_pagamento.map((graf, idx) => (
                                                 <div key={idx} className="flex items-center justify-between">

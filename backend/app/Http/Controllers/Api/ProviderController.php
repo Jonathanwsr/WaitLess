@@ -4,9 +4,11 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Provider;
+use App\Services\Carteira\CarteiraService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Database\QueryException;
 use Exception;
 
@@ -148,10 +150,21 @@ class ProviderController extends Controller
                 'pix_key_type' => $validated['pix_key_type'],
                 'pix_key' => trim($validated['pix_key']),
 
-                'asaas_wallet_id' => $asaasData['walletId'], 
-                'asaas_api_key' => $asaasData['apiKey'] ?? null,     
+                'asaas_wallet_id' => $asaasData['walletId'],
+                'asaas_api_key' => $asaasData['apiKey'] ?? null,
                 'asaas_status' => $asaasData['status'] ?? 'PENDING',
             ]);
+
+            $this->validarChavePixEmSegundoPlano($provider);
+
+            try {
+                Mail::to($provider->email)->queue(new \App\Mail\NotificacaoTexto(
+                    'Sua carteira Lokyva foi ativada',
+                    "Olá, {$provider->name}!\n\nSua carteira digital Lokyva foi ativada com sucesso.\n\nID da carteira (Wallet ID): {$provider->asaas_wallet_id}\nStatus: {$provider->asaas_status}\n\nA partir de agora você já pode receber os repasses das suas reservas diretamente pela plataforma."
+                ));
+            } catch (Exception $e) {
+                Log::error('Erro ao enviar e-mail de confirmação de carteira (Brevo): ' . $e->getMessage());
+            }
 
             return response()->json([
                 'message' => 'Sua conta de recebimento foi criada e configurada com sucesso.',
@@ -237,6 +250,8 @@ class ProviderController extends Controller
                 'pix_key' => trim($validated['pix_key']),
             ]);
 
+            $this->validarChavePixEmSegundoPlano($provider);
+
             return response()->json([
                 'message' => 'Chave PIX atualizada com sucesso!',
                 'provider' => $provider
@@ -248,6 +263,27 @@ class ProviderController extends Controller
             return response()->json([
                 'error' => 'Ocorreu um erro interno ao tentar atualizar sua chave PIX.'
             ], 500);
+        }
+    }
+
+    /**
+     * Registra a chave Pix do cadastro como conta de repasse e manda o Pix de R$ 0,01
+     * de validação depois que a resposta já foi enviada ao usuário (não trava o cadastro).
+     * Se falhar, a conta fica com o motivo salvo e a rotina carteira:sincronizar tenta de novo.
+     */
+    private function validarChavePixEmSegundoPlano(Provider $provider): void
+    {
+        try {
+            $carteira = app(CarteiraService::class);
+            $conta = $carteira->sincronizarContaDoCadastro($provider);
+
+            if ($conta && !$conta->estaValidada()) {
+                dispatch(function () use ($carteira, $conta) {
+                    $carteira->validarConta($conta->fresh());
+                })->afterResponse();
+            }
+        } catch (Exception $e) {
+            Log::error('Erro ao registrar conta de repasse do cadastro: ' . $e->getMessage());
         }
     }
 }

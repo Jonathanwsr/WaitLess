@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
   TextInput,
   useWindowDimensions,
   SafeAreaView,
@@ -20,6 +19,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as WebBrowser from 'expo-web-browser';
 
 import MeusAgendamentosScreen from '../src/screens/MeusAgendamentos';
+import { alertar } from '../../services/alertar';
 
 // EXPO_PUBLIC_API_URL já vem terminando em "/mobile" — removemos esse sufixo
 // antes de recompor as URLs para não gerar ".../api/mobile/mobile".
@@ -28,14 +28,14 @@ const cleanBaseUrl = ENV_URL.replace(/\/mobile\/?$/, '').replace(/\/+$/, '');
 const API_URL = `${cleanBaseUrl}/mobile`;
 
 const COLORS = {
-  primary: '#FF5A00',
+  primary: '#FF7A00',
   primaryLight: '#FFF0E6',
   secondary: '#1A1A1A',
-  gray: '#6B7280',
+  gray: '#6A6C72',
   lightGray: '#F8F9FA',
   border: '#EAEAEA',
   white: '#FFFFFF',
-  success: '#10B981',
+  success: '#00A868',
 };
 
 interface Servico {
@@ -147,13 +147,13 @@ function FormularioReserva({
 
   const confirmarReserva = async () => {
     if (tipo === 'servico' && !servicoSelecionado) {
-      return Alert.alert('Escolha um serviço', 'Selecione qual serviço você quer agendar.');
+      return alertar('Escolha um serviço', 'Selecione qual serviço você quer agendar.');
     }
     if (!dataSelecionada || dataSelecionada.length < 10) {
-      return Alert.alert('Data obrigatória', 'Informe a data no formato DD/MM/AAAA.');
+      return alertar('Data obrigatória', 'Informe a data no formato DD/MM/AAAA.');
     }
     if (tipo === 'servico' && (!horarioSelecionado || horarioSelecionado.length < 5)) {
-      return Alert.alert('Horário obrigatório', 'Informe o horário no formato HH:MM.');
+      return alertar('Horário obrigatório', 'Informe o horário no formato HH:MM.');
     }
 
     setEnviando(true);
@@ -186,22 +186,22 @@ function FormularioReserva({
       const data = await res.json();
 
       if (!res.ok) {
-        Alert.alert('Não foi possível continuar', data.error || 'Verifique os dados e tente novamente.');
+        alertar('Não foi possível continuar', data.error || 'Verifique os dados e tente novamente.');
         return;
       }
 
       if (data.payment_url) {
         await WebBrowser.openBrowserAsync(data.payment_url);
       } else {
-        Alert.alert(
-          'Reserva registrada! 🎉',
+        alertar(
+          'Reserva registrada',
           data.message || (data.pin ? `Seu código de check-in é ${data.pin}.` : 'Confira os detalhes em "Meus agendamentos".')
         );
       }
 
       router.replace('/(tabs)/reservas' as never);
     } catch (e) {
-      Alert.alert('Sem conexão', 'Não foi possível falar com o servidor agora. Verifique sua internet e tente novamente.');
+      alertar('Sem conexão', 'Não foi possível falar com o servidor agora. Verifique sua internet e tente novamente.');
     } finally {
       setEnviando(false);
     }
@@ -243,7 +243,7 @@ function FormularioReserva({
         <TouchableOpacity onPress={() => router.replace('/(tabs)/reservas' as never)} style={styles.iconCircle}>
           <Ionicons name="chevron-back" size={22} color={COLORS.secondary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{tipo === 'servico' ? 'Agendar serviço' : 'Alugar item'}</Text>
+        <View style={{ flex: 1 }} />
         <View style={{ width: 40 }} />
       </View>
 

@@ -1,17 +1,19 @@
-import React from 'react';
+import React, { useState } from 'react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { Head, usePage, useForm } from '@inertiajs/react';
-import { 
-    BanknotesIcon, CheckCircleIcon, 
-    LockClosedIcon, ExclamationTriangleIcon, 
+import { Head, usePage, useForm, router } from '@inertiajs/react';
+import axios from 'axios';
+import {
+    BanknotesIcon, CheckCircleIcon,
+    LockClosedIcon, ExclamationTriangleIcon,
     ListBulletIcon, BuildingOfficeIcon, GlobeAltIcon,
-    WalletIcon, ArrowDownRightIcon, UserIcon, EnvelopeIcon, PlusCircleIcon, ChartBarIcon
+    WalletIcon, ArrowDownRightIcon, UserIcon, EnvelopeIcon, PlusCircleIcon, ChartBarIcon,
+    XMarkIcon, IdentificationIcon, MapPinIcon, KeyIcon, SparklesIcon
 } from '@heroicons/react/24/solid';
 
 const formatarMoeda = (valor) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor || 0);
 
-export default function Carteira({ papel, dadosFuncionario, dadosProprietario, dadosAdmin }) {
-    const { auth, flash, errors } = usePage().props;
+export default function Carteira({ papel, dadosFuncionario, dadosProprietario, dadosAdmin, dadosCliente }) {
+    const { auth, flash, errors, taxaPlataforma = 6 } = usePage().props;
 
     return (
         <AuthenticatedLayout 
@@ -41,6 +43,7 @@ export default function Carteira({ papel, dadosFuncionario, dadosProprietario, d
                     {(papel === 'gerente' || papel === 'atendente') && <ViewFuncionario data={dadosFuncionario || {}} />}
                     {papel === 'socio' && <ViewProprietario data={dadosProprietario || {}} />}
                     {papel === 'admin' && <ViewAdmin data={dadosAdmin || {}} />}
+                    {papel === 'user' && <ViewCliente data={dadosCliente || {}} />}
                 </div>
             </div>
         </AuthenticatedLayout>
@@ -156,34 +159,43 @@ function ViewFuncionario({ data }) {
 // ==========================================
 function ViewProprietario({ data }) {
     const { post, processing } = useForm();
-    const { 
-        saldo_disponivel = 0, 
-        pode_sacar = false, 
-        data_proximo_saque = null, 
+    const [modalAberto, setModalAberto] = useState(false);
+    const {
+        saldo_disponivel = 0,
+        pode_sacar = false,
+        data_proximo_saque = null,
         extrato = [],
         asaas_status = null
     } = data;
 
     if (!asaas_status || asaas_status !== 'APPROVED') {
         return (
-            <div className="bg-white ring-1 ring-gray-900/5 rounded-3xl p-8 sm:p-16 text-center max-w-2xl mx-auto shadow-sm relative overflow-hidden">
-                <div className="absolute inset-0 bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:16px_16px] opacity-30"></div>
-                
-                <div className="relative z-10">
-                    <div className="w-20 h-20 bg-indigo-50/80 backdrop-blur-sm rounded-2xl flex items-center justify-center mx-auto mb-6 rotate-3">
-                        <WalletIcon className="w-10 h-10 text-indigo-600 -rotate-3" />
+            <>
+                <div className="bg-white ring-1 ring-gray-900/5 rounded-3xl p-8 sm:p-16 text-center max-w-2xl mx-auto shadow-sm relative overflow-hidden">
+                    <div className="absolute inset-0 bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:16px_16px] opacity-30"></div>
+
+                    <div className="relative z-10">
+                        <div className="w-20 h-20 bg-indigo-50/80 backdrop-blur-sm rounded-2xl flex items-center justify-center mx-auto mb-6 rotate-3">
+                            <WalletIcon className="w-10 h-10 text-indigo-600 -rotate-3" />
+                        </div>
+                        <h2 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight mb-4">
+                            {asaas_status === 'PENDING' ? 'Carteira em Análise' : 'Ative sua Carteira Digital'}
+                        </h2>
+                        <p className="text-gray-500 font-medium mb-8 text-sm sm:text-base leading-relaxed max-w-lg mx-auto">
+                            {asaas_status === 'PENDING'
+                                ? 'Seus dados já foram enviados e sua carteira está em análise pelo Asaas. Assim que for aprovada, você poderá receber e sacar seus repasses por aqui.'
+                                : 'Para receber os repasses dos seus agendamentos diretamente na sua conta bancária via Pix, configure sua carteira agora.'}
+                        </p>
+                        {asaas_status !== 'PENDING' && (
+                            <button onClick={() => setModalAberto(true)} className="bg-gray-900 hover:bg-gray-800 text-white px-6 sm:px-8 py-3.5 sm:py-4 rounded-xl font-semibold transition-all active:scale-95 shadow-md flex items-center justify-center gap-2 mx-auto w-full sm:w-auto">
+                                <PlusCircleIcon className="w-5 h-5" /> Configurar Carteira
+                            </button>
+                        )}
                     </div>
-                    <h2 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight mb-4">
-                        Ative sua Carteira Digital
-                    </h2>
-                    <p className="text-gray-500 font-medium mb-8 text-sm sm:text-base leading-relaxed max-w-lg mx-auto">
-                        Para receber os repasses dos seus agendamentos diretamente na sua conta bancária via Pix, configure sua carteira agora.
-                    </p>
-                    <button className="bg-gray-900 hover:bg-gray-800 text-white px-6 sm:px-8 py-3.5 sm:py-4 rounded-xl font-semibold transition-all active:scale-95 shadow-md flex items-center justify-center gap-2 mx-auto w-full sm:w-auto">
-                        <PlusCircleIcon className="w-5 h-5" /> Configurar Carteira
-                    </button>
                 </div>
-            </div>
+
+                <ModalCriarCarteira aberto={modalAberto} onFechar={() => setModalAberto(false)} />
+            </>
         );
     }
 
@@ -280,6 +292,285 @@ function ViewProprietario({ data }) {
 }
 
 // ==========================================
+// MODAL: CRIAR / ATIVAR CARTEIRA (Wallet ID Asaas)
+// ==========================================
+const FORM_CARTEIRA_INICIAL = {
+    name: '',
+    email: '',
+    person_type: 'FISICA',
+    document: '',
+    birth_date: '',
+    income_value: '',
+    mobile_phone: '',
+    postal_code: '',
+    address: '',
+    address_number: '',
+    complement: '',
+    province: '',
+    company_type: '',
+    responsible_name: '',
+    responsible_cpf: '',
+    pix_key_type: 'CPF',
+    pix_key: '',
+};
+
+function ModalCriarCarteira({ aberto, onFechar }) {
+    const [form, setForm] = useState(FORM_CARTEIRA_INICIAL);
+    const [enviando, setEnviando] = useState(false);
+    const [erro, setErro] = useState(null);
+
+    if (!aberto) return null;
+
+    const atualizar = (campo, valor) => setForm((f) => ({ ...f, [campo]: valor }));
+
+    const enviar = async (e) => {
+        e.preventDefault();
+        setEnviando(true);
+        setErro(null);
+
+        try {
+            await axios.post(route('provider.store'), form);
+            onFechar();
+            setForm(FORM_CARTEIRA_INICIAL);
+            router.reload();
+        } catch (err) {
+            setErro(err?.response?.data?.error || 'Não foi possível ativar sua carteira agora. Verifique os dados e tente novamente.');
+        } finally {
+            setEnviando(false);
+        }
+    };
+
+    const campoClasse = "w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400";
+    const labelClasse = "text-xs font-bold text-gray-500 uppercase block mb-1.5";
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm overflow-y-auto">
+            <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-2xl w-full shadow-2xl my-8">
+                <div className="flex items-center justify-between mb-6">
+                    <div>
+                        <h3 className="text-2xl font-black text-gray-900">Ativar Carteira Digital</h3>
+                        <p className="text-sm text-gray-500 mt-1">Precisamos desses dados para gerar sua Wallet ID no Asaas.</p>
+                    </div>
+                    <button onClick={onFechar} className="p-2 hover:bg-gray-100 rounded-full">
+                        <XMarkIcon className="w-5 h-5 text-gray-500" />
+                    </button>
+                </div>
+
+                {erro && (
+                    <div className="bg-red-50 border border-red-200 text-red-700 p-3.5 rounded-xl mb-5 text-sm font-semibold flex items-start gap-2">
+                        <ExclamationTriangleIcon className="w-5 h-5 shrink-0 mt-0.5" /> {erro}
+                    </div>
+                )}
+
+                <form onSubmit={enviar} className="space-y-6">
+                    {/* DADOS PESSOAIS */}
+                    <div>
+                        <div className="flex items-center gap-2 mb-3">
+                            <IdentificationIcon className="w-4 h-4 text-indigo-600" />
+                            <h4 className="text-sm font-black text-gray-800 uppercase tracking-wide">Dados pessoais</h4>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="sm:col-span-2 flex gap-2">
+                                <button type="button" onClick={() => atualizar('person_type', 'FISICA')} className={`flex-1 py-2.5 rounded-xl text-sm font-bold border transition ${form.person_type === 'FISICA' ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-gray-200 text-gray-600'}`}>Pessoa Física</button>
+                                <button type="button" onClick={() => atualizar('person_type', 'JURIDICA')} className={`flex-1 py-2.5 rounded-xl text-sm font-bold border transition ${form.person_type === 'JURIDICA' ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-gray-200 text-gray-600'}`}>Pessoa Jurídica</button>
+                            </div>
+
+                            <div className="sm:col-span-2">
+                                <label className={labelClasse}>Nome completo {form.person_type === 'JURIDICA' ? '(Razão Social)' : ''}</label>
+                                <input required type="text" value={form.name} onChange={e => atualizar('name', e.target.value)} className={campoClasse} />
+                            </div>
+
+                            <div>
+                                <label className={labelClasse}>E-mail</label>
+                                <input required type="email" value={form.email} onChange={e => atualizar('email', e.target.value)} className={campoClasse} />
+                            </div>
+                            <div>
+                                <label className={labelClasse}>{form.person_type === 'JURIDICA' ? 'CNPJ' : 'CPF'}</label>
+                                <input required type="text" value={form.document} onChange={e => atualizar('document', e.target.value)} placeholder="Somente números" className={campoClasse} />
+                            </div>
+
+                            <div>
+                                <label className={labelClasse}>Data de nascimento</label>
+                                <input required type="date" value={form.birth_date} onChange={e => atualizar('birth_date', e.target.value)} className={campoClasse} />
+                            </div>
+                            <div>
+                                <label className={labelClasse}>Renda mensal (R$)</label>
+                                <input required type="text" value={form.income_value} onChange={e => atualizar('income_value', e.target.value)} placeholder="Ex: 3000,00" className={campoClasse} />
+                            </div>
+
+                            <div className="sm:col-span-2">
+                                <label className={labelClasse}>Celular</label>
+                                <input required type="text" value={form.mobile_phone} onChange={e => atualizar('mobile_phone', e.target.value)} placeholder="Somente números com DDD" className={campoClasse} />
+                            </div>
+
+                            {form.person_type === 'JURIDICA' && (
+                                <>
+                                    <div>
+                                        <label className={labelClasse}>Tipo de empresa</label>
+                                        <select required value={form.company_type} onChange={e => atualizar('company_type', e.target.value)} className={campoClasse}>
+                                            <option value="">Selecione...</option>
+                                            <option value="MEI">MEI</option>
+                                            <option value="EI">Empresário Individual</option>
+                                            <option value="EIRELI">EIRELI</option>
+                                            <option value="LTDA">LTDA</option>
+                                            <option value="SA">S/A</option>
+                                            <option value="ANY_OTHER">Outro</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className={labelClasse}>Nome do responsável</label>
+                                        <input required type="text" value={form.responsible_name} onChange={e => atualizar('responsible_name', e.target.value)} className={campoClasse} />
+                                    </div>
+                                    <div className="sm:col-span-2">
+                                        <label className={labelClasse}>CPF do responsável</label>
+                                        <input required type="text" value={form.responsible_cpf} onChange={e => atualizar('responsible_cpf', e.target.value)} className={campoClasse} />
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* ENDEREÇO */}
+                    <div className="border-t border-gray-100 pt-5">
+                        <div className="flex items-center gap-2 mb-3">
+                            <MapPinIcon className="w-4 h-4 text-indigo-600" />
+                            <h4 className="text-sm font-black text-gray-800 uppercase tracking-wide">Endereço</h4>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label className={labelClasse}>CEP</label>
+                                <input required type="text" value={form.postal_code} onChange={e => atualizar('postal_code', e.target.value)} className={campoClasse} />
+                            </div>
+                            <div>
+                                <label className={labelClasse}>Bairro</label>
+                                <input required type="text" value={form.province} onChange={e => atualizar('province', e.target.value)} className={campoClasse} />
+                            </div>
+                            <div>
+                                <label className={labelClasse}>Endereço</label>
+                                <input required type="text" value={form.address} onChange={e => atualizar('address', e.target.value)} className={campoClasse} />
+                            </div>
+                            <div>
+                                <label className={labelClasse}>Número</label>
+                                <input required type="text" value={form.address_number} onChange={e => atualizar('address_number', e.target.value)} className={campoClasse} />
+                            </div>
+                            <div className="sm:col-span-2">
+                                <label className={labelClasse}>Complemento</label>
+                                <input type="text" value={form.complement} onChange={e => atualizar('complement', e.target.value)} className={campoClasse} />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* CHAVE PIX */}
+                    <div className="border-t border-gray-100 pt-5">
+                        <div className="flex items-center gap-2 mb-3">
+                            <KeyIcon className="w-4 h-4 text-indigo-600" />
+                            <h4 className="text-sm font-black text-gray-800 uppercase tracking-wide">Chave Pix para recebimento</h4>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label className={labelClasse}>Tipo de chave</label>
+                                <select value={form.pix_key_type} onChange={e => atualizar('pix_key_type', e.target.value)} className={campoClasse}>
+                                    <option value="CPF">CPF</option>
+                                    <option value="CNPJ">CNPJ</option>
+                                    <option value="EMAIL">E-mail</option>
+                                    <option value="PHONE">Telefone</option>
+                                    <option value="RANDOM">Aleatória</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className={labelClasse}>Chave Pix</label>
+                                <input required type="text" value={form.pix_key} onChange={e => atualizar('pix_key', e.target.value)} className={campoClasse} />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="flex gap-3 pt-2">
+                        <button type="button" onClick={onFechar} className="flex-1 py-3 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold transition">Cancelar</button>
+                        <button type="submit" disabled={enviando} className="flex-1 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold shadow-lg transition disabled:opacity-60">
+                            {enviando ? 'Ativando...' : 'Ativar Carteira'}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+}
+
+// ==========================================
+// VISÃO DO CLIENTE — Saldo e histórico de pontos
+// ==========================================
+function ViewCliente({ data }) {
+    const { pontos_saldo = 0, historico_pontos = [] } = data;
+
+    return (
+        <div className="space-y-6 sm:space-y-8">
+            <div className="bg-gradient-to-br from-orange-600 via-orange-500 to-amber-400 rounded-3xl p-6 sm:p-10 lg:p-12 shadow-xl text-white relative overflow-hidden">
+                <div className="absolute right-0 top-0 w-1/2 h-full bg-gradient-to-l from-white/10 to-transparent pointer-events-none"></div>
+                <SparklesIcon className="absolute -right-10 -bottom-10 w-56 h-56 text-white/10 pointer-events-none rotate-12" />
+
+                <div className="relative z-10">
+                    <div className="flex items-center gap-3 mb-8">
+                        <div className="p-2 bg-white/15 rounded-xl backdrop-blur-md border border-white/10 shadow-sm">
+                            <SparklesIcon className="w-5 h-5 text-white" />
+                        </div>
+                        <p className="text-xs sm:text-sm font-bold uppercase tracking-widest text-white/90">Seus pontos Lokyva</p>
+                    </div>
+
+                    <h2 className="text-5xl sm:text-6xl lg:text-7xl font-black tracking-tighter mb-2">
+                        {pontos_saldo}
+                    </h2>
+                    <p className="text-white/80 text-sm font-medium">pontos disponíveis para trocar por recompensas</p>
+                </div>
+            </div>
+
+            <div className="bg-white rounded-3xl p-6 sm:p-8 ring-1 ring-gray-900/5 shadow-sm">
+                <div className="flex items-center gap-3 mb-6">
+                    <div className="p-2 bg-gray-50 rounded-lg border border-gray-100">
+                        <ListBulletIcon className="w-5 h-5 text-gray-900" />
+                    </div>
+                    <h3 className="text-lg sm:text-xl font-bold text-gray-900">
+                        Histórico de pontos
+                    </h3>
+                </div>
+
+                {historico_pontos.length > 0 ? (
+                    <div className="space-y-3">
+                        {historico_pontos.map((item) => {
+                            const ganho = item.tipo === 'ganho';
+                            return (
+                                <div key={item.id} className="group flex justify-between items-center p-4 rounded-2xl hover:bg-slate-50 transition-colors border border-transparent hover:border-slate-100">
+                                    <div className="flex items-center gap-4 min-w-0">
+                                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${ganho ? 'bg-emerald-50 border-emerald-100/50' : 'bg-rose-50 border-rose-100/50'}`}>
+                                            {ganho
+                                                ? <PlusCircleIcon className="w-5 h-5 text-emerald-600" />
+                                                : <ArrowDownRightIcon className="w-5 h-5 text-rose-600" />}
+                                        </div>
+                                        <div className="min-w-0">
+                                            <p className="font-semibold text-gray-900 text-sm sm:text-base truncate">{item.descricao}</p>
+                                            <p className="text-xs font-medium text-gray-500 mt-0.5 truncate">
+                                                {item.estabelecimento_nome || 'Plataforma Lokyva'} · {new Date(item.created_at).toLocaleDateString('pt-BR')}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <p className={`font-black text-base sm:text-lg shrink-0 ml-3 ${ganho ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                        {ganho ? '+' : '-'}{item.quantidade}
+                                    </p>
+                                </div>
+                            );
+                        })}
+                    </div>
+                ) : (
+                    <div className="text-center py-12 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+                        <SparklesIcon className="w-8 h-8 text-slate-300 mx-auto mb-3" />
+                        <p className="text-slate-500 font-medium text-sm">Você ainda não tem pontos registrados.</p>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+// ==========================================
 // VISÃO DO ADMIN (Global)
 // ==========================================
 function ViewAdmin({ data }) {
@@ -298,7 +589,7 @@ function ViewAdmin({ data }) {
                 <div className="relative z-10 flex flex-col items-start">
                     <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 mb-6 backdrop-blur-md">
                         <GlobeAltIcon className="w-4 h-4 text-teal-400"/>
-                        <p className="text-[10px] sm:text-xs font-bold text-slate-300 uppercase tracking-widest">Lucro da Plataforma (12%)</p>
+                        <p className="text-[10px] sm:text-xs font-bold text-slate-300 uppercase tracking-widest">Lucro da Plataforma ({taxaPlataforma}%)</p>
                     </div>
                     <h2 className="text-4xl sm:text-6xl lg:text-7xl font-black text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-emerald-200 tracking-tighter">
                         {formatarMoeda(lucro_plataforma)}

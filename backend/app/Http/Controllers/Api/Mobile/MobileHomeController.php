@@ -50,7 +50,8 @@ class MobileHomeController extends Controller
                 (float) $lng
             )
                 ->filter(fn ($est) => $est['distance'] !== null && $est['distance'] <= $radius)
-                ->sortBy('distance')
+                // Donos premium aparecem primeiro; dentro de cada grupo, do mais perto ao mais longe.
+                ->sortBy(fn ($est) => [$est['destaque_premium'] ? 0 : 1, $est['distance']])
                 ->values();
 
             if ($proximos->isNotEmpty()) {
@@ -59,8 +60,7 @@ class MobileHomeController extends Controller
         }
 
         // 2) SÓCIOS/DONOS PREMIUM (sem ninguém perto — dá mais visibilidade a quem paga)
-        $planosPremium = ['premium', 'premium-socio', 'premium-anual', 'premium-socio-anual'];
-        $idsUsuariosPremium = User::whereIn('plano_assinatura', $planosPremium)->pluck('id');
+        $idsUsuariosPremium = app(\App\Services\DestaquePremiumService::class)->idsUsuariosPremium();
 
         if ($idsUsuariosPremium->isNotEmpty()) {
             $estabelecimentosPremium = Estabelecimento::where('ativo', true)
@@ -84,7 +84,14 @@ class MobileHomeController extends Controller
 
     private function formatarEstabelecimentos($estabelecimentos, $lat = null, $lng = null)
     {
-        return $estabelecimentos->map(function (Estabelecimento $est) use ($lat, $lng) {
+        $premiumIds = app(\App\Services\DestaquePremiumService::class)->idsEstabelecimentosPremium();
+
+        $servicos = DB::table('servicos')
+            ->where('ativo', true)->whereNull('deleted_at')
+            ->selectRaw('estabelecimento_id, MIN(valor) as min_valor, COUNT(*) as total, BOOL_OR(tem_promocao) as promo')
+            ->groupBy('estabelecimento_id')->get()->keyBy('estabelecimento_id');
+
+        return $estabelecimentos->map(function (Estabelecimento $est) use ($lat, $lng, $premiumIds, $servicos) {
             $distancia = ($lat && $lng && $est->latitude && $est->longitude)
                 ? $this->calcularDistanciaKm((float) $lat, (float) $lng, (float) $est->latitude, (float) $est->longitude)
                 : null;
@@ -94,17 +101,23 @@ class MobileHomeController extends Controller
                 ->whereIn('status', ['pendente', 'confirmado'])
                 ->count();
 
+            $resumo = $servicos->get($est->id);
+
             return [
                 'id' => $est->id,
                 'nome' => $est->nome,
                 'tipo' => $est->ramo_atuacao,
-                'foto_perfil' => $est->foto_perfil,
+                'foto_perfil' => $est->foto_perfil ?: $est->foto_banner,
                 'avaliacao_media' => (float) $est->avaliacao_media,
                 'total_avaliacoes' => $est->total_avaliacoes,
                 'cidade' => $est->cidade,
                 'estado' => $est->estado,
                 'distance' => $distancia !== null ? round($distancia, 1) : null,
                 'fila_atual' => $filaAtual,
+                'valor_desde' => $resumo ? (float) $resumo->min_valor : null,
+                'total_servicos' => $resumo ? (int) $resumo->total : 0,
+                'tem_promocao' => $resumo ? (bool) $resumo->promo : false,
+                'destaque_premium' => $premiumIds->contains($est->id),
             ];
         });
     }
@@ -120,6 +133,53 @@ class MobileHomeController extends Controller
             + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLng / 2) ** 2;
 
         return $raioTerraKm * (2 * atan2(sqrt($a), sqrt(1 - $a)));
+    }
+
+    /**
+     * Avaliações que o próprio cliente já publicou (tela "Meus comentários").
+     */
+    public function minhasAvaliacoes(Request $request)
+    {
+        $avaliacoes = DB::table('avaliacoes')
+            ->leftJoin('estabelecimentos', 'avaliacoes.estabelecimento_id', '=', 'estabelecimentos.id')
+            ->leftJoin('agendamentos', 'avaliacoes.agendamento_id', '=', 'agendamentos.id')
+            ->leftJoin('servicos', 'agendamentos.servico_id', '=', 'servicos.id')
+            ->where('avaliacoes.usuario_id', $request->user()->id)
+            ->orderByDesc('avaliacoes.created_at')
+            ->select(
+                'avaliacoes.id',
+                'avaliacoes.nota',
+                'avaliacoes.comentario',
+                'avaliacoes.fotos',
+                'avaliacoes.publica',
+                'avaliacoes.resposta_anfitriao',
+                'avaliacoes.data_resposta',
+                'avaliacoes.created_at',
+                'estabelecimentos.nome as local_nome',
+                'estabelecimentos.ramo_atuacao',
+                'estabelecimentos.foto_perfil as local_foto',
+                'servicos.nome as servico_nome'
+            )
+            ->get()
+            ->map(function ($a) {
+                $fotos = is_string($a->fotos) ? json_decode($a->fotos, true) : [];
+                return [
+                    'id' => $a->id,
+                    'nota' => (float) $a->nota,
+                    'comentario' => $a->comentario,
+                    'local_nome' => $a->local_nome,
+                    'ramo_atuacao' => $a->ramo_atuacao,
+                    'local_foto' => $a->local_foto,
+                    'servico_nome' => $a->servico_nome,
+                    'total_fotos' => is_array($fotos) ? count($fotos) : 0,
+                    'publica' => (bool) $a->publica,
+                    'resposta' => $a->resposta_anfitriao,
+                    'data_resposta' => $a->data_resposta,
+                    'created_at' => $a->created_at,
+                ];
+            });
+
+        return response()->json(['data' => $avaliacoes]);
     }
 
     /**
@@ -171,9 +231,12 @@ class MobileHomeController extends Controller
             )
             ->get();
 
-        // 2. Busca o histórico detalhado de ganhos e usos de pontos
+        // 2. Busca o histórico detalhado de ganhos e usos de pontos.
+        // LEFT JOIN (não INNER JOIN): entradas globais — bônus de cadastro,
+        // pontos de promoção de admin, renovação de plano — têm
+        // estabelecimento_id nulo e desapareciam do extrato com INNER JOIN.
         $historico = DB::table('historico_pontos')
-            ->join('estabelecimentos', 'historico_pontos.estabelecimento_id', '=', 'estabelecimentos.id')
+            ->leftJoin('estabelecimentos', 'historico_pontos.estabelecimento_id', '=', 'estabelecimentos.id')
             ->where('historico_pontos.usuario_id', $user->id)
             ->select(
                 'historico_pontos.id',
@@ -186,8 +249,13 @@ class MobileHomeController extends Controller
             ->orderBy('historico_pontos.created_at', 'desc')
             ->get();
 
+        // Nível pelo total já ganho (usar pontos em descontos não rebaixa o cliente).
+        $pontosGanhos = (int) DB::table('historico_pontos')->where('usuario_id', $user->id)->where('tipo', 'ganho')->sum('quantidade');
+
         return response()->json([
             'status' => 'success',
+            'pontos_saldo' => $user->pontos_saldo,
+            'nivel' => \App\Support\NiveisFidelidade::para($pontosGanhos),
             'saldos' => $saldos,
             'historico' => $historico
         ], 200);

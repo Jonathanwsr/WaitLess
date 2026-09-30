@@ -72,7 +72,16 @@ class FavoritoController extends Controller
                 return $fav->servico;
             });
 
-        // 3. Reservas (Separadas por status)
+        // 3. Reservas (aluguéis/hospedagens) favoritas
+        $itensAluguel = Favorito::with('itemAluguel.estabelecimento:id,name,foto_perfil,cidade,estado')
+            ->where('usuario_id', $userId)
+            ->whereNotNull('item_aluguel_id')
+            ->get()
+            ->map(fn ($fav) => $fav->itemAluguel)
+            ->filter()
+            ->values();
+
+        // 4. Agendamentos (Separados por status)
         $agendamentos = Agendamento::with(['servico', 'estabelecimento'])
             ->where('usuario_id', $userId)
             ->orderBy('data_agendamento', 'desc')
@@ -89,6 +98,7 @@ class FavoritoController extends Controller
         return Inertia::render('Cliente/Favoritos', [
             'estabelecimentos' => $estabelecimentos,
             'servicos'         => $servicos,
+            'itensAluguel'     => $itensAluguel,
             'reservas'         => $reservas
         ]);
     }

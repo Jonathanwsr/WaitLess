@@ -186,9 +186,7 @@ class AssinaturaController extends Controller
                 $nomePlanoFormatado = strtoupper($planoEscolhido);
                 $mensagemEmail = "Olá, {$user->name}!\n\nSua assinatura do Plano {$nomePlanoFormatado} foi iniciada com sucesso na Lokyva.\n\nVocê ganhou 7 dias de teste totalmente gratuitos! Sua primeira cobrança de R$ " . number_format($valorPlano, 2, ',', '.') . " ocorrerá apenas no dia " . $dataPrimeiraCobranca->format('d/m/Y') . ".\n\nAproveite todos os seus benefícios!\nEquipe Lokyva.";
                 
-                Mail::raw($mensagemEmail, function ($mail) use ($user, $nomePlanoFormatado) {
-                    $mail->to($user->email)->subject("Bem-vindo ao Plano {$nomePlanoFormatado} - 7 Dias Grátis!");
-                });
+                Mail::to($user->email)->queue(new \App\Mail\NotificacaoTexto("Bem-vindo ao Plano {$nomePlanoFormatado} - 7 Dias Grátis!", $mensagemEmail));
             } catch (\Exception $e) {
                 Log::error("Erro ao enviar email Brevo de assinatura: " . $e->getMessage());
             }

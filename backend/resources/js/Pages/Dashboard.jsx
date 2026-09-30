@@ -1,23 +1,24 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link } from '@inertiajs/react';
-import { 
-    UsersIcon, 
-    CurrencyDollarIcon, 
-    BuildingOfficeIcon, 
-    PlusIcon, 
-    StarIcon, 
-    UserGroupIcon, 
-    Cog6ToothIcon, 
+import {
+    UsersIcon,
+    CurrencyDollarIcon,
+    BuildingOfficeIcon,
+    PlusIcon,
+    StarIcon,
+    UserGroupIcon,
+    Cog6ToothIcon,
     EllipsisVerticalIcon,
     ChevronLeftIcon,
     ChevronRightIcon,
     ChartBarIcon,
     CreditCardIcon,
-    WalletIcon, 
-    BanknotesIcon, 
+    WalletIcon,
+    BanknotesIcon,
     CommandLineIcon,
     ArrowUturnLeftIcon,
-    KeyIcon
+    KeyIcon,
+    EyeIcon
 } from '@heroicons/react/24/outline';
 
 export default function Dashboard({ auth, estabelecimentos = [], metricas = {} }) {
@@ -38,7 +39,7 @@ export default function Dashboard({ auth, estabelecimentos = [], metricas = {} }
 
             {/* Container Principal com a cor de fundo customizada FBF9F9 */}
             <div className="bg-[#FBF9F9] dark:bg-gray-900 min-h-screen -m-4 sm:-m-8 p-4 sm:p-8 space-y-8 animate-fadeIn">
-                
+
                 {/* --- SEÇÃO 1: Métricas Principais (4 Colunas) --- */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
                     {/* Card 1: Pessoas na fila */}
@@ -103,13 +104,13 @@ export default function Dashboard({ auth, estabelecimentos = [], metricas = {} }
                     <h3 className="text-xl font-bold text-gray-900 dark:text-white">
                         Meus Estabelecimentos
                     </h3>
-                    
+
                     <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-                        
+
                         {/* 👉 BOTÃO CONDICIONAL: APARECE APENAS SE FOR ADMIN */}
                         {(auth?.user?.papel === 'admin' || auth?.user?.role === 'admin') && (
-                            <Link 
-                                href={route('admin.financeiro.index')} 
+                            <Link
+                                href={route('admin.financeiro.index')}
                                 className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 border border-transparent text-sm font-semibold text-white rounded-xl hover:bg-indigo-700 transition shadow-sm"
                             >
                                 <CommandLineIcon className="w-4 h-4 text-indigo-200" />
@@ -118,8 +119,8 @@ export default function Dashboard({ auth, estabelecimentos = [], metricas = {} }
                         )}
 
                         {/* 👉 BOTÃO DE ESTORNOS */}
-                        <Link 
-                            href={route('estornos.index')} 
+                        <Link
+                            href={route('estornos.index')}
                             className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-700 dark:text-gray-200 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition shadow-sm"
                         >
                             <ArrowUturnLeftIcon className="w-4 h-4 text-rose-500" />
@@ -127,8 +128,8 @@ export default function Dashboard({ auth, estabelecimentos = [], metricas = {} }
                         </Link>
 
                         {/* 👉 NOVO BOTÃO: AVALIAÇÕES (Dinâmico para Admin e Anfitrião) */}
-                        <Link 
-                            href={auth?.user?.papel === 'admin' || auth?.user?.role === 'admin' ? route('admin.avaliacoes.index') : route('anfitriao.avaliacoes.index')} 
+                        <Link
+                            href={auth?.user?.papel === 'admin' || auth?.user?.role === 'admin' ? route('admin.avaliacoes.index') : route('anfitriao.avaliacoes.index')}
                             className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-700 dark:text-gray-200 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition shadow-sm"
                         >
                             <StarIcon className="w-4 h-4 text-amber-500" />
@@ -140,29 +141,15 @@ export default function Dashboard({ auth, estabelecimentos = [], metricas = {} }
                             Equipe
                         </button>
 
-                        <Link 
-                            href="/financeiro/conta" 
-                            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-700 dark:text-gray-200 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition shadow-sm"
-                        >
-                            <CreditCardIcon className="w-4 h-4 text-gray-500" />
-                            Contas
-                        </Link>
 
-                        <Link 
-                            href="/carteira" 
+                        <Link
+                            href={route('carteira.asaas')}
                             className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-700 dark:text-gray-200 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition shadow-sm"
                         >
                             <WalletIcon className="w-4 h-4 text-gray-500" />
                             Carteira
                         </Link>
 
-                        <Link 
-                            href={route('provider.financeiro')} 
-                            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-700 dark:text-gray-200 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition shadow-sm"
-                        >
-                            <BanknotesIcon className="w-4 h-4 text-emerald-600" />
-                            Extrato Geral
-                        </Link>
 
                         {/* 👉 NOVO BOTÃO ADICIONADO AQUI CONFORME SOLICITADO */}
                         <Link
@@ -180,7 +167,7 @@ export default function Dashboard({ auth, estabelecimentos = [], metricas = {} }
                             Locações Avulsas
                         </Link>
 
-                        <Link 
+                        <Link
                             href={route('estabelecimentos.create')}
                             className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-[#006837] text-white text-sm font-semibold rounded-xl hover:bg-[#00522b] transition shadow-sm"
                         >
@@ -199,7 +186,7 @@ export default function Dashboard({ auth, estabelecimentos = [], metricas = {} }
                         <p className="text-gray-500 dark:text-gray-400 max-w-sm mx-auto mb-6 text-sm leading-relaxed">
                             Parece que você ainda não cadastrou nenhuma clínica, barbearia ou loja. Comece agora para gerenciar suas filas.
                         </p>
-                        <Link 
+                        <Link
                             href={route('estabelecimentos.create')}
                             className="inline-flex items-center gap-2 px-5 py-2.5 bg-gray-900 dark:bg-white dark:text-gray-900 text-white font-semibold rounded-xl hover:bg-gray-800 transition shadow-md"
                         >
@@ -211,8 +198,8 @@ export default function Dashboard({ auth, estabelecimentos = [], metricas = {} }
                     /* CARDS LIST */
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                         {estabelecimentos.map((local) => (
-                            <div 
-                                key={local.id} 
+                            <div
+                                key={local.id}
                                 className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-2xl p-5 shadow-sm hover:shadow-md transition flex flex-col justify-between"
                             >
                                 <div>
@@ -222,9 +209,9 @@ export default function Dashboard({ auth, estabelecimentos = [], metricas = {} }
                                             {/* Avatar/Logo com Letra Inicial */}
                                             <div className="w-12 h-12 shrink-0 rounded-xl bg-[#F8F9FA] dark:bg-gray-700 flex items-center justify-center border border-gray-100 dark:border-gray-600 shadow-xs">
                                                 {local.foto_perfil ? (
-                                                    <img 
-                                                        src={local.foto_perfil} 
-                                                        alt={`Logo ${local.nome}`} 
+                                                    <img
+                                                        src={local.foto_perfil}
+                                                        alt={`Logo ${local.nome}`}
                                                         className="w-full h-full object-cover rounded-xl"
                                                     />
                                                 ) : (
@@ -233,16 +220,16 @@ export default function Dashboard({ auth, estabelecimentos = [], metricas = {} }
                                                     </span>
                                                 )}
                                             </div>
-                                            
+
                                             <div className="min-w-0">
                                                 <h4 className="font-bold text-gray-900 dark:text-white text-base truncate mb-0.5">
                                                     {local.nome}
                                                 </h4>
-                                                
+
                                                 {/* Avaliação e Total de Funcionários */}
                                                 <div className="flex items-center gap-2 text-xs text-gray-400 font-medium">
                                                     <div className="text-amber-500 flex items-center gap-0.5 font-semibold">
-                                                        <StarIcon className="w-3.5 h-3.5 fill-amber-500 text-amber-500" /> 
+                                                        <StarIcon className="w-3.5 h-3.5 fill-amber-500 text-amber-500" />
                                                         {Number(local.avaliacao_media || 0).toFixed(2)}
                                                     </div>
                                                     <span>•</span>
@@ -256,8 +243,8 @@ export default function Dashboard({ auth, estabelecimentos = [], metricas = {} }
 
                                         {/* Status Dot e Menu Dropdown */}
                                         <div className="flex items-center gap-2 shrink-0 pt-1">
-                                            <span 
-                                                className={`h-2.5 w-2.5 rounded-full ${local.ativo ? 'bg-emerald-500' : 'bg-rose-500'}`} 
+                                            <span
+                                                className={`h-2.5 w-2.5 rounded-full ${local.ativo ? 'bg-emerald-500' : 'bg-rose-500'}`}
                                                 title={local.ativo ? "Aberto" : "Fechado"}
                                             />
                                             <button className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition">
@@ -278,25 +265,33 @@ export default function Dashboard({ auth, estabelecimentos = [], metricas = {} }
                                 </div>
 
                                 {/* Botões de Ação do Card (3 botões perfeitamente alinhados) */}
-                                <div className="grid grid-cols-3 gap-2">
-                                    <Link 
-                                        href={route('estabelecimentos.fila', local.id)} 
+                                <div className="grid grid-cols-4 gap-2">
+                                    <Link
+                                        href={route('vitrine.dono', { estabelecimento_id: local.id })}
+                                        className="flex flex-col items-center justify-center py-2 px-1 bg-[#FFF3EC] hover:bg-orange-100 rounded-xl transition border border-transparent"
+                                    >
+                                        <EyeIcon className="w-5 h-5 text-[#FF5A00] mb-1" />
+                                        <span className="text-[11px] font-bold text-[#C2410C]">Vitrine</span>
+                                    </Link>
+
+                                    <Link
+                                        href={route('estabelecimentos.fila', local.id)}
                                         className="flex flex-col items-center justify-center py-2 px-1 bg-[#F8F9FA] dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-xl transition border border-transparent"
                                     >
                                         <UserGroupIcon className="w-5 h-5 text-gray-900 dark:text-gray-300 mb-1" />
                                         <span className="text-[11px] font-bold text-gray-900 dark:text-gray-300">Ver fila</span>
                                     </Link>
 
-                                    <Link 
-                                        href={route('estabelecimentos.agenda-equipe', local.id)} 
+                                    <Link
+                                        href={route('estabelecimentos.agenda-equipe', local.id)}
                                         className="flex flex-col items-center justify-center py-2 px-1 bg-[#F8F9FA] dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-xl transition border border-transparent"
                                     >
                                         <UserGroupIcon className="w-5 h-5 text-gray-900 dark:text-gray-300 mb-1" />
                                         <span className="text-[11px] font-bold text-gray-900 dark:text-gray-300">Equipe</span>
                                     </Link>
 
-                                    <Link 
-                                        href={route('estabelecimentos.configuracoes', local.id)} 
+                                    <Link
+                                        href={route('estabelecimentos.configuracoes', local.id)}
                                         className="flex flex-col items-center justify-center py-2 px-1 bg-[#F8F9FA] dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-xl transition border border-transparent"
                                     >
                                         <Cog6ToothIcon className="w-5 h-5 text-gray-900 dark:text-gray-300 mb-1" />
@@ -314,19 +309,19 @@ export default function Dashboard({ auth, estabelecimentos = [], metricas = {} }
                         <button className="w-9 h-9 flex items-center justify-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 rounded-lg hover:bg-gray-50 transition shadow-xs">
                             <ChevronLeftIcon className="w-4 h-4" />
                         </button>
-                        
+
                         <button className="w-9 h-9 flex items-center justify-center bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 font-bold text-sm rounded-lg transition shadow-xs">
                             1
                         </button>
-                        
+
                         <button className="w-9 h-9 flex items-center justify-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 font-semibold text-sm rounded-lg hover:bg-gray-50 transition shadow-xs">
                             2
                         </button>
-                        
+
                         <button className="w-9 h-9 flex items-center justify-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 font-semibold text-sm rounded-lg hover:bg-gray-50 transition shadow-xs">
                             3
                         </button>
-                        
+
                         <button className="w-9 h-9 flex items-center justify-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 rounded-lg hover:bg-gray-50 transition shadow-xs">
                             <ChevronRightIcon className="w-4 h-4" />
                         </button>

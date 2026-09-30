@@ -59,7 +59,10 @@ class DashboardController extends Controller
                     'total_fila' => $dadosEstabelecimentos->sum('fila_agora'),
                     'total_arrecadado' => $dadosEstabelecimentos->sum('arrecadacao_total'),
                     'ativos' => $dadosEstabelecimentos->where('ativo', true)->count(),
-                ]
+                ],
+                'financeiro' => $this->resumoFinanceiro($user),
+                'onboarding' => $this->progressoInicial($user, $estabelecimentos->pluck('id')),
+                'premium' => $user->papel === 'admin' || $user->isPremium(),
             ], 200);
 
         } catch (\Exception $e) {
@@ -67,6 +70,41 @@ class DashboardController extends Controller
             Log::error('Erro no Dashboard: ' . $e->getMessage());
             return response()->json(['error' => 'Erro interno: ' . $e->getMessage()], 500);
         }
+    }
+
+    /** Quantos locais, serviços e reservas (locações) o sócio já cadastrou — alimenta o passo a passo do painel. */
+    private function progressoInicial($user, $idsLocais): array
+    {
+        $servicos = \App\Models\Servico::whereIn('estabelecimento_id', $idsLocais)->count();
+        $reservas = \App\Models\ItemAluguel::catalogo()->where('estabelecimento_id', $user->id)->count();
+
+        return [
+            'locais' => $idsLocais->count(),
+            'servicos' => $servicos,
+            'reservas' => $reservas,
+        ];
+    }
+
+    /** Saldo da carteira do sócio + receita dos últimos 30 dias (mesma base do extrato). */
+    private function resumoFinanceiro($user): array
+    {
+        $carteira = \App\Models\Provider::where('user_id', $user->id)->first();
+
+        $providerIds = \Illuminate\Support\Facades\DB::table('providers')
+            ->join('estabelecimento_usuario', 'providers.user_id', '=', 'estabelecimento_usuario.usuario_id')
+            ->whereIn('estabelecimento_usuario.estabelecimento_id', \Illuminate\Support\Facades\DB::table('estabelecimento_usuario')->where('usuario_id', $user->id)->pluck('estabelecimento_id'))
+            ->pluck('providers.id');
+
+        $receita30 = (float) \App\Models\ExtratoProvider::whereIn('provider_id', $providerIds)
+            ->where('tipo', 'credito')
+            ->where('created_at', '>=', now()->subDays(30))
+            ->sum('valor_bruto');
+
+        return [
+            'carteira_configurada' => (bool) $carteira,
+            'saldo_disponivel' => (float) ($carteira->valor_disponivel ?? 0),
+            'receita_30_dias' => $receita30,
+        ];
     }
 
     /**
@@ -82,6 +120,14 @@ class DashboardController extends Controller
 
         if (!in_array($user->papel, ['admin', 'socio', 'gerente'])) {
             return response()->json(['error' => 'Acesso não autorizado para o papel: ' . $user->papel], 403);
+        }
+
+        // Ver os clientes a caminho do local é um recurso Premium (mesma regra do web).
+        if (!($user->papel === 'admin' || $user->isPremium())) {
+            return response()->json([
+                'error' => 'Seja Premium para ver seus clientes a caminho do seu local.',
+                'premium_necessario' => true,
+            ], 403);
         }
 
         $meusEstabelecimentosIds = $user->estabelecimentos()->pluck('estabelecimentos.id');
@@ -109,6 +155,13 @@ class DashboardController extends Controller
                     'longitude' => $agendamento->estabelecimento?->longitude,
                 ],
                 'servico' => $agendamento->servico?->nome,
+                'ultima_localizacao' => $agendamento->ultima_localizacao_em ? [
+                    'latitude' => (float) $agendamento->ultima_latitude,
+                    'longitude' => (float) $agendamento->ultima_longitude,
+                    'heading' => $agendamento->ultimo_heading !== null ? (float) $agendamento->ultimo_heading : null,
+                    'velocidade' => $agendamento->ultima_velocidade !== null ? (float) $agendamento->ultima_velocidade : null,
+                    'atualizado_em' => $agendamento->ultima_localizacao_em->toIso8601String(),
+                ] : null,
             ]),
         ]);
     }

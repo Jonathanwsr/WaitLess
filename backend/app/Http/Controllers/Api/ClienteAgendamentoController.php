@@ -6,12 +6,16 @@ use App\Http\Controllers\Controller;
 use App\Models\Estabelecimento;
 use App\Models\Agendamento;
 use App\Models\Aluguel;
-use App\Models\Pagamento; 
+use App\Models\Pagamento;
+use App\Services\Agendamento\VagasServicoService;
+use App\Services\CupomService;
 use App\Services\PagamentoService;
+use App\Services\PontosService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB; 
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 use Carbon\Carbon;
 use Inertia\Inertia;
 use Exception;
@@ -19,12 +23,12 @@ use Exception;
 class ClienteAgendamentoController extends Controller
 {
     protected $pagamentoService;
-    
-    // Taxa da plataforma WaitLess definida como 12% conforme regras de negócio
-    protected $taxaApp = 0.12; 
 
-    public function __construct(PagamentoService $pagamentoService)
-    {
+
+    public function __construct(
+        PagamentoService $pagamentoService,
+        private CupomService $cupomService
+    ) {
         $this->pagamentoService = $pagamentoService;
     }
 
@@ -62,6 +66,8 @@ class ClienteAgendamentoController extends Controller
             'estabelecimento' => $estabelecimento->only(['id', 'nome', 'foto_perfil', 'bairro', 'cidade', 'estado', 'telefone']),
             'servicos' => $estabelecimento->servicos()->where('ativo', true)->get(),
             'pedidoProdutoPendente' => $pedidoProdutoPendente,
+            'funcionarios' => \App\Models\Funcionario::where('estabelecimento_id', $estabelecimento->id)->where('ativo', true)->orderBy('nome')->get(['id', 'nome', 'cargo']),
+            'cuponsRecomendados' => $this->cupomService->recomendados(Auth::user(), $estabelecimento->id, $estabelecimento->servicos()->where('ativo', true)->pluck('id')->all()),
         ]);
     }
 
@@ -74,16 +80,29 @@ class ClienteAgendamentoController extends Controller
             'forma_pagamento'  => 'required|string|in:online_agora,online_depois,presencial',
             'metodo_pagamento' => 'nullable|required_if:forma_pagamento,online_agora|string|in:pix,cartao,boleto',
             'parcelas'         => 'nullable|integer|min:1|max:12',
-            'desconto_id'      => 'nullable|exists:descontos,id' 
+            'desconto_id'      => 'nullable|exists:descontos,id',
+            'pontos_utilizados' => 'nullable|integer|min:0',
+            'cupom_codigo'     => 'nullable|string|max:60',
+            'funcionario_id'   => 'nullable|integer',
         ]);
 
         $dataHoraAgendada = Carbon::parse($validated['data_agendamento'] . ' ' . $validated['hora_agendamento']);
         if ($dataHoraAgendada->isPast()) return back()->withErrors(['hora_agendamento' => 'Não é possível agendar no passado!']);
 
         $servico = $estabelecimento->servicos()->findOrFail($validated['servico_id']);
-        
+
         $configuracoes = is_string($servico->configuracoes) ? json_decode($servico->configuracoes, true) : ($servico->configuracoes ?? []);
         $funcionarioId = $configuracoes['funcionario_padrao'] ?? null;
+
+        // O cliente pode escolher o profissional; sem escolha vale o padrão do serviço.
+        if (!empty($validated['funcionario_id'])) {
+            $escolhido = \App\Models\Funcionario::where('id', $validated['funcionario_id'])
+                ->where('estabelecimento_id', $estabelecimento->id)->where('ativo', true)->first();
+            if (!$escolhido) {
+                return back()->withErrors(['funcionario_id' => 'Este profissional não atende neste local.']);
+            }
+            $funcionarioId = $escolhido->id;
+        }
         $tipoPagamentoServico = $configuracoes['tipo_pagamento'] ?? 'hibrido';
 
         if ($validated['forma_pagamento'] === 'presencial' && $tipoPagamentoServico === 'online') {
@@ -91,11 +110,17 @@ class ClienteAgendamentoController extends Controller
         }
 
         try {
+            app(VagasServicoService::class)->verificar($servico, $validated['data_agendamento'], $validated['hora_agendamento']);
+        } catch (ValidationException $e) {
+            return back()->withErrors($e->errors());
+        }
+
+        try {
             DB::beginTransaction();
 
             $formaEscolhida = $validated['forma_pagamento'];
             $isPresencial = ($formaEscolhida === 'presencial');
-            
+
             $valorTotal = $servico->valor;
             $pontosNecessarios = 0;
 
@@ -127,7 +152,39 @@ class ClienteAgendamentoController extends Controller
                 }
             }
 
-            $codigoPin = $isPresencial ? (string) mt_rand(1000, 9999) : null;
+            // Pontos de fidelidade (saldo GLOBAL, users.pontos_saldo) — só se o
+            // serviço aceitar resgate de pontos.
+            $user = Auth::user();
+            $pontosAplicados = 0;
+            $valorDescontoPontos = 0.0;
+            if ($servico->aceita_pontos && $request->filled('pontos_utilizados')) {
+                $pontosSolicitados = (int) $validated['pontos_utilizados'];
+                if ($servico->maximo_pontos_permitidos) {
+                    $pontosSolicitados = min($pontosSolicitados, (int) $servico->maximo_pontos_permitidos);
+                }
+                $pontosAplicados = PontosService::pontosAplicaveis($user, $pontosSolicitados, $valorTotal);
+                if ($pontosAplicados > 0) {
+                    $valorDescontoPontos = PontosService::pontosParaValor($pontosAplicados);
+                    $valorTotal = max(0, $valorTotal - $valorDescontoPontos);
+                }
+            }
+
+            // Cupom (App\Models\Cupom) — valida código, aplica desconto e só
+            // marca como usado depois que o agendamento é criado com sucesso.
+            $cupomAplicado = null;
+            $valorDescontoCupom = 0.0;
+            if ($request->filled('cupom_codigo')) {
+                $cupomAplicado = $this->cupomService->buscarValidoParaUsuario($validated['cupom_codigo'], $user, $estabelecimento->id, $servico->id);
+                $valorDescontoCupom = $this->cupomService->calcularDesconto($cupomAplicado, $valorTotal);
+                $valorTotal = max(0, $valorTotal - $valorDescontoCupom);
+            }
+
+            // Serviço gratuito (ou que zerou com cupom/pontos/desconto): não existe o
+            // que cobrar, então não faz sentido gerar PIX/boleto/cartão — a reserva
+            // já nasce confirmada, sem passar pelo gateway de pagamento.
+            $ehGratuito = $valorTotal <= 0;
+
+            $codigoPin = ($isPresencial || $ehGratuito) ? (string) mt_rand(1000, 9999) : null;
 
             $agendamento = Agendamento::create([
                 'estabelecimento_id' => $estabelecimento->id,
@@ -136,9 +193,13 @@ class ClienteAgendamentoController extends Controller
                 'funcionario_id'     => $funcionarioId,
                 'data_agendamento'   => $validated['data_agendamento'],
                 'hora_agendamento'   => $validated['hora_agendamento'],
-                'status'             => $isPresencial ? 'pendente' : 'aguardando_pagamento', 
-                'status_pagamento'   => $isPresencial ? 'presencial' : 'pendente',
+                'status'             => $ehGratuito ? 'confirmado' : ($isPresencial ? 'pendente' : 'aguardando_pagamento'),
+                'status_pagamento'   => $ehGratuito ? 'pago' : ($isPresencial ? 'presencial' : 'pendente'),
                 'valor_final'        => $valorTotal,
+                'pontos_utilizados'  => $pontosAplicados,
+                'valor_desconto_pontos' => $pontosAplicados > 0 ? $valorDescontoPontos : null,
+                'cupom_id'           => $cupomAplicado?->id,
+                'valor_desconto_cupom' => $cupomAplicado ? $valorDescontoCupom : null,
                 'codigo_verificacao' => $codigoPin,
             ]);
 
@@ -154,6 +215,23 @@ class ClienteAgendamentoController extends Controller
                 ]);
             }
 
+            if ($pontosAplicados > 0) {
+                $user->decrement('pontos_saldo', $pontosAplicados);
+                DB::table('historico_pontos')->insert([
+                    'usuario_id'         => Auth::id(),
+                    'estabelecimento_id' => null,
+                    'agendamento_id'     => $agendamento->id,
+                    'tipo'               => 'uso',
+                    'descricao'          => "Desconto de R$ " . number_format($valorDescontoPontos, 2, ',', '.') . " usando {$pontosAplicados} pontos",
+                    'quantidade'         => $pontosAplicados,
+                    'created_at'         => now()
+                ]);
+            }
+
+            if ($cupomAplicado) {
+                $this->cupomService->marcarUsado($user, $cupomAplicado);
+            }
+
             if ($isPresencial) {
                 Pagamento::create([
                     'usuario_id'         => Auth::id(),
@@ -161,15 +239,27 @@ class ClienteAgendamentoController extends Controller
                     'agendamento_id'     => $agendamento->id,
                     'gateway_pagamento'  => null,
                     'valor'              => $valorTotal,
-                    'taxa'               => round($valorTotal * $this->taxaApp, 2),      
-                    'valor_liquido'      => $valorTotal - round($valorTotal * $this->taxaApp, 2), 
+                    'taxa'               => round($valorTotal * \App\Support\Taxas::fracao(), 2),
+                    'valor_liquido'      => $valorTotal - round($valorTotal * \App\Support\Taxas::fracao(), 2),
                     'status'             => 'pendente',
-                    'metodo_pagamento'   => 'presencial', 
+                    'metodo_pagamento'   => 'presencial',
+                ]);
+            } elseif ($ehGratuito) {
+                Pagamento::create([
+                    'usuario_id'         => Auth::id(),
+                    'estabelecimento_id' => $estabelecimento->id,
+                    'agendamento_id'     => $agendamento->id,
+                    'gateway_pagamento'  => null,
+                    'valor'              => 0,
+                    'taxa'               => 0,
+                    'valor_liquido'      => 0,
+                    'status'             => 'pago',
+                    'metodo_pagamento'   => 'gratuito',
                 ]);
             }
 
             $cobrancaAsaas = null;
-            if ($formaEscolhida === 'online_agora') {
+            if (!$ehGratuito && $formaEscolhida === 'online_agora') {
                 $user = Auth::user();
                 $cobrancaAsaas = $this->pagamentoService->criarCobrancaAsaas(
                     $agendamento,
@@ -181,18 +271,25 @@ class ClienteAgendamentoController extends Controller
 
             DB::commit();
 
+            if ($ehGratuito) {
+                return redirect()->route('dashboard')->with('success', 'Reserva gratuita confirmada! O seu PIN de segurança foi gerado.');
+            }
+
             if ($formaEscolhida === 'online_agora' && !empty($cobrancaAsaas['invoice_url'])) {
                 return Inertia::location($cobrancaAsaas['invoice_url']);
             }
-            
+
             if ($formaEscolhida === 'online_depois') {
                 return redirect()->route('dashboard')->with('warning', 'Vaga reservada! Pague online pelo painel antes do prazo expirar.');
             }
 
             return redirect()->route('dashboard')->with('success', 'Agendamento confirmado! O seu PIN de segurança foi gerado para pagamento no local.');
 
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            DB::rollBack();
+            return back()->withErrors($e->errors());
         } catch (Exception $e) {
-            DB::rollBack(); 
+            DB::rollBack();
             Log::error("Erro no processamento do agendamento: " . $e->getMessage());
             return back()->withErrors(['error' => 'Falha ao processar o agendamento no gateway Asaas. Tente novamente.']);
         }
@@ -223,7 +320,7 @@ class ClienteAgendamentoController extends Controller
             if (!$agendamento->servico) return back()->with('error', 'Serviço inexistente.');
 
             $user = Auth::user();
-            
+
             Pagamento::where('agendamento_id', $agendamento->id)->where('status', 'pendente')->delete();
 
             $cobrancaAsaas = $this->pagamentoService->criarCobrancaAsaas(
@@ -236,7 +333,7 @@ class ClienteAgendamentoController extends Controller
             if (empty($cobrancaAsaas['invoice_url'])) {
                 return back()->with('error', 'Serviço de faturamento indisponível no momento.');
             }
-            
+
             return Inertia::location($cobrancaAsaas['invoice_url']);
 
         } catch (Exception $e) {
@@ -253,7 +350,7 @@ class ClienteAgendamentoController extends Controller
     {
         try {
             $agendamento = Agendamento::with('estabelecimento')->find($id);
-            
+
             if (!$agendamento) return back()->with('error', 'Agendamento não encontrado.');
             if ($agendamento->usuario_id != Auth::id()) return back()->with('error', 'Você não tem permissão para cancelar este agendamento.');
             if ($agendamento->status === 'cancelado') return back()->with('warning', 'Este agendamento já se encontra cancelado.');
@@ -263,12 +360,12 @@ class ClienteAgendamentoController extends Controller
 
             // Lógica de Reembolso para Pagamentos Online
             if (in_array($agendamento->status_pagamento, ['pago', 'pago_online']) && $pagamento && $pagamento->id_transacao_gateway) {
-                
+
                 $dataHoraServico = Carbon::parse($agendamento->data_agendamento . ' ' . $agendamento->hora_agendamento);
                 $limiteGratis = $dataHoraServico->copy()->subMinutes(30);
-                
+
                 $isCancelamentoGratis = Carbon::now()->lessThanOrEqualTo($limiteGratis);
-                
+
                 $valorOriginal = $pagamento->valor;
                 $valorEstorno = $valorOriginal;
                 $taxaCancelamento = 0;
@@ -292,7 +389,7 @@ class ClienteAgendamentoController extends Controller
                     $this->reverterPontosDeFidelidade($agendamento);
 
                     $pagamento->update(['status' => 'estornado', 'valor_liquido' => 0]);
-                    
+
                     // Registra no extrato do lojista a dedução da devolução
                     $providerId = DB::table('providers')
                         ->where('user_id', $agendamento->estabelecimento->user_id ?? 0) // Ajuste conforme seu relacionamento de dono
@@ -326,7 +423,7 @@ class ClienteAgendamentoController extends Controller
 
             // O simples fato do status ser 'cancelado' tira ele da fila de atendimento no frontend/backend
             $agendamento->update(['status' => 'cancelado', 'status_pagamento' => ($pagamento && $pagamento->status === 'estornado') ? 'estornado' : 'cancelado']);
-            
+
             if ($pagamento && $pagamento->status !== 'estornado') {
                 $pagamento->update(['status' => 'cancelado']);
             }
@@ -347,7 +444,7 @@ class ClienteAgendamentoController extends Controller
     {
         try {
             $aluguel = Aluguel::with('estabelecimento')->find($id);
-            
+
             if (!$aluguel) return back()->with('error', 'Locação não encontrada.');
             if ($aluguel->locatario_id != Auth::id()) return back()->with('error', 'Permissão negada.');
             if ($aluguel->status === 'cancelado') return back()->with('warning', 'Esta locação já está cancelada.');
@@ -356,12 +453,12 @@ class ClienteAgendamentoController extends Controller
             $mensagemAlerta = 'Reserva de aluguel cancelada com sucesso.';
 
             if (in_array($aluguel->status, ['pago', 'confirmado']) && $pagamento && $pagamento->id_transacao_gateway) {
-                
+
                 $dataHoraInicio = Carbon::parse($aluguel->data_inicio . ' ' . $aluguel->hora_inicio);
                 $limiteGratis = $dataHoraInicio->copy()->subDay(); // 1 DIA DE ANTECEDÊNCIA
-                
+
                 $isCancelamentoGratis = Carbon::now()->lessThanOrEqualTo($limiteGratis);
-                
+
                 $valorOriginal = $pagamento->valor;
                 $valorEstorno = $valorOriginal;
                 $taxaCancelamento = 0;
@@ -381,7 +478,7 @@ class ClienteAgendamentoController extends Controller
                     $this->reverterPontosDeFidelidade($aluguel, true); // true = é aluguel
 
                     $pagamento->update(['status' => 'estornado', 'valor_liquido' => 0]);
-                    
+
                     // Lógica similar de extrato omitida por brevidade (idêntica ao Agendamento)
                     DB::commit();
 
@@ -425,7 +522,9 @@ class ClienteAgendamentoController extends Controller
                 'usuario_id'         => $userId,
                 'estabelecimento_id' => $entidade->estabelecimento_id,
                 $colunaFiltro        => $entidade->id,
-                'tipo'               => 'perda',
+                // historico_pontos.tipo só aceita 'ganho'/'uso' (CHECK constraint) —
+                // 'perda' não existe e derrubava todo o cancelamento com erro de banco.
+                'tipo'               => 'uso',
                 'descricao'          => 'Estorno de pontos por cancelamento do cliente',
                 'quantidade'         => $pontosGanhosNessaTransacao,
                 'created_at'         => now()

@@ -20,9 +20,22 @@ COPY . .
 RUN composer install --no-dev --optimize-autoloader
 RUN npm install && npm run build
 
-# Configura a porta do Render e a URL interna do Banco de Dados
+# Porta do Render. IMPORTANTE: DATABASE_URL NÃO é definida aqui de propósito —
+# o Render já injeta essa variável automaticamente em qualquer serviço com um
+# Postgres vinculado, e antes havia uma senha de banco de produção fixa neste
+# arquivo (exposta pra sempre no histórico do Git). Se por algum motivo o
+# Render não estiver injetando DATABASE_URL sozinho, configure-a manualmente
+# como variável de ambiente secreta no painel do serviço — nunca aqui no código.
 ENV PORT=10000
-ENV DATABASE_URL="postgresql://lokyva_byn2_user:Z2rHOXgwq2wXrVy80F4pUABmDY2fvf1Y@dpg-dao089740ujc73de4aag-a/lokyva_byn2?sslmode=require"
 
-# Limpa o cache, roda as migrations e inicia o servidor do Laravel
-CMD sh -c "php artisan config:clear && php artisan migrate --force && php artisan serve --host=0.0.0.0 --port=$PORT"
+# Limpa o cache, roda as migrations, sobe um worker da fila (e-mails de
+# confirmação de pagamento, fila, etc. — sem isso eles ficam parados pra
+# sempre na tabela `jobs`, nunca saindo) e inicia o servidor do Laravel.
+# O worker roda em loop (reinicia sozinho se cair) e em segundo plano.
+# IMPORTANTE: o " > /tmp/queue-worker.log 2>&1" no processo em segundo plano
+# não é opcional — sem redirecionar a saída dele pra outro lugar, ele herda a
+# mesma stdout do container e a aplicação FICA TRAVADA para sempre esperando
+# esse processo (que nunca termina) antes de sequer chegar no "php artisan
+# serve" — foi exatamente isso que deixou o app "rodando" no Render mas sem
+# responder nada (tela em branco): o servidor nunca chegava a subir.
+CMD sh -c "php artisan config:clear && php artisan migrate --force && (while true; do php artisan queue:work --tries=3 --max-time=3600 --sleep=3; done > /tmp/queue-worker.log 2>&1 &) && php artisan serve --host=0.0.0.0 --port=$PORT"

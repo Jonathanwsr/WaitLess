@@ -17,14 +17,14 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const COLORS = {
-  primary: '#FF5A00',
-  primaryLight: '#FFF0E6',
-  secondary: '#111827',
+  primary: '#282828',
+  primaryLight: '#F0F0F2',
+  secondary: '#282828',
   black: '#000000',
-  gray: '#6B7280',
-  lightGray: '#F9FAFB',
+  gray: '#6A6C72',
+  lightGray: '#F5F5F5',
   white: '#FFFFFF',
-  border: '#E5E7EB',
+  border: '#E6E7E9',
 };
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api/mobile';

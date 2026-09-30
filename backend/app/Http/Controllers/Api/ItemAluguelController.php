@@ -16,12 +16,29 @@ use Carbon\Carbon;
 class ItemAluguelController extends Controller
 {
     /**
+     * Confere se o usuário logado administra o estabelecimento informado.
+     * Sem isso: `store()` não checava nada (qualquer usuário podia criar item
+     * pra qualquer estabelecimento); `update()` só comparava o
+     * estabelecimento_id ATUAL do item com o que veio no próprio request —
+     * ou seja, bastava mandar o id certo (público, visível no catálogo) pra
+     * passar; `destroy()` não checava absolutamente nada.
+     */
+    private function garantirQueGerenciaEstabelecimento(int $estabelecimentoId): void
+    {
+        $gerencia = Auth::user()->estabelecimentos()
+            ->where('estabelecimentos.id', $estabelecimentoId)
+            ->exists();
+
+        abort_unless($gerencia, 403, 'Você não tem permissão para gerenciar o catálogo deste estabelecimento.');
+    }
+
+    /**
      * Retorna a lista de itens de locação para popular o catálogo dinamicamente.
      */
     public function index(Request $request)
     {
         $user = Auth::user();
-        
+
         // Pega o ID do estabelecimento atual do usuário
         $estabelecimentoId = $user->estabelecimentos()->first()->id ?? null;
 
@@ -39,7 +56,7 @@ class ItemAluguelController extends Controller
                 $item->funcionarios_responsaveis = json_decode($item->funcionarios_responsaveis) ?? [];
                 $item->dias_disponiveis = json_decode($item->dias_disponiveis) ?? [];
                 $item->horarios_disponiveis = json_decode($item->horarios_disponiveis) ?? [];
-                
+
                 return $item;
             });
 
@@ -78,7 +95,7 @@ class ItemAluguelController extends Controller
         } elseif ($request->ordem === 'maior_desconto') {
             $query->where('tem_promocao', true)->orderBy('valor_desconto', 'desc');
         } else {
-            $query->latest(); 
+            $query->latest();
         }
 
         $itens = $query->paginate(20);
@@ -114,16 +131,16 @@ class ItemAluguelController extends Controller
             'intervalo_entre_reservas_minutos' => 'nullable|integer',
             'datas_bloqueadas' => 'nullable|array',
             'horarios_bloqueados' => 'nullable|array',
-            
+
             'observacoes' => 'nullable|string',
             'observacoes_disponibilidade' => 'nullable|string',
-            
+
             'disponibilidade_por_data' => 'nullable|boolean',
             'quantidade_padrao' => 'nullable|integer|min:0',
-            'tipo_quantidade' => 'nullable|string|max:50', 
+            'tipo_quantidade' => 'nullable|string|max:50',
             'dias_disponiveis' => 'nullable|array',
             'horarios_disponiveis' => 'nullable|array',
-            
+
             'periodo_faturamento_padrao' => 'nullable|string|max:100',
             'permitir_pagamento' => 'nullable|string|max:100',
             'valor' => 'nullable|numeric|min:0',
@@ -131,20 +148,23 @@ class ItemAluguelController extends Controller
             'percentual_desconto' => 'nullable|numeric|min:0|max:100',
             'valor_final' => 'nullable|numeric|min:0',
             'status' => 'nullable|string|max:50',
-            
+
             'valor_diaria' => 'nullable|numeric|min:0',
             'valor_semanal' => 'nullable|numeric|min:0',
             'valor_mensal' => 'nullable|numeric|min:0',
             'valor_caucao' => 'nullable|numeric|min:0',
-            
+
             'recursos_oferecidos' => 'nullable|array',
             'acessorios' => 'nullable|array',
             'funcionarios_responsaveis' => 'nullable|array',
-            
+
             'fotos' => 'nullable|array|max:24',
-            'fotos.*' => 'nullable|image|mimes:jpeg,png,jpg,webp,gif|max:2048', 
+            'fotos.*' => 'nullable|image|mimes:jpeg,png,jpg,webp,gif|max:2048',
 
             'capacidade_pessoas' => 'nullable|integer|min:0',
+            'modelo_precificacao' => 'nullable|in:pacote,por_pessoa',
+            'pessoas_incluidas' => 'nullable|integer|min:1',
+            'valor_pessoa_extra' => 'nullable|numeric|min:0',
             'area_total' => 'nullable|numeric|min:0',
             'area_construida' => 'nullable|numeric|min:0',
             'numero_quartos' => 'nullable|integer|min:0',
@@ -239,6 +259,7 @@ class ItemAluguelController extends Controller
     public function store(Request $request)
     {
         $dados = $request->validate($this->regrasValidacao());
+        $this->garantirQueGerenciaEstabelecimento((int) $dados['estabelecimento_id']);
 
         $fotosCaminhos = [];
         if ($request->has('fotos') && is_array($request->fotos)) {
@@ -288,26 +309,24 @@ class ItemAluguelController extends Controller
     public function update(Request $request, $id)
     {
         $item = ItemAluguel::findOrFail($id);
-
-        if ($item->estabelecimento_id != $request->estabelecimento_id) { 
-            abort(403, 'Ação não autorizada.'); 
-        }
+        $this->garantirQueGerenciaEstabelecimento((int) $item->estabelecimento_id);
 
         $dados = $request->validate($this->regrasValidacao());
+        $this->garantirQueGerenciaEstabelecimento((int) $dados['estabelecimento_id']);
 
         $fotosCaminhos = [];
         if ($request->has('fotos') && is_array($request->fotos)) {
             foreach ($request->fotos as $foto) {
-                if (is_file($foto)) { 
+                if (is_file($foto)) {
                     if (!HiveAiService::isSafe($foto)) {
                         throw ValidationException::withMessages([
                             'fotos' => 'Uma ou mais imagens enviadas violam nossas políticas de segurança.'
                         ]);
                     }
-                    $fotosCaminhos[] = '/storage/' . $foto->store('itens_aluguel', 'public'); 
-                } 
-                elseif (is_string($foto)) { 
-                    $fotosCaminhos[] = $foto; 
+                    $fotosCaminhos[] = '/storage/' . $foto->store('itens_aluguel', 'public');
+                }
+                elseif (is_string($foto)) {
+                    $fotosCaminhos[] = $foto;
                 }
             }
         }
@@ -352,6 +371,7 @@ class ItemAluguelController extends Controller
     public function destroy($id)
     {
         $item = ItemAluguel::findOrFail($id);
+        $this->garantirQueGerenciaEstabelecimento((int) $item->estabelecimento_id);
 
         $fotos = json_decode($item->fotos, true) ?? [];
         foreach ($fotos as $fotoUrl) {
@@ -372,7 +392,7 @@ class ItemAluguelController extends Controller
         // 1. CORREÇÃO DO ERRO 500: Trocado 'nome' por 'name' na busca da relação
         // Adicionada a relação 'alugueis' para verificar as reservas ativas
         $item = ItemAluguel::with([
-            'estabelecimento:id,name,foto_perfil,cidade,estado',
+            'estabelecimento:id,name,foto_perfil,cidade,estado,created_at',
             'alugueis' => function($q) {
                 $q->whereNotIn('status', ['cancelado', 'reprovada']);
             }
@@ -387,15 +407,15 @@ class ItemAluguelController extends Controller
         $item->fotos = is_string($item->fotos) ? json_decode($item->fotos, true) : ($item->fotos ?? []);
         $item->recursos_oferecidos = is_string($item->recursos_oferecidos) ? json_decode($item->recursos_oferecidos, true) : ($item->recursos_oferecidos ?? []);
         $item->acessorios = is_string($item->acessorios) ? json_decode($item->acessorios, true) : ($item->acessorios ?? []);
-        
+
         $item->dias_disponiveis = is_string($item->dias_disponiveis) ? json_decode($item->dias_disponiveis, true) : ($item->dias_disponiveis ?? []);
         $item->horarios_disponiveis = is_string($item->horarios_disponiveis) ? json_decode($item->horarios_disponiveis, true) : ($item->horarios_disponiveis ?? []);
 
         // 3. CÁLCULO DE VAGAS E DISPONIBILIDADE
         $dataConsulta = $request->get('data', Carbon::today()->toDateString());
-        
+
         $vagasTotaisDia = intval($item->quantidade_padrao ?: ($item->quantidade ?: 1));
-        
+
         // Verifica se há configuração de quantidade específica para a data atual
         if ($item->disponibilidade_por_data && is_array($item->dias_disponiveis)) {
             foreach ($item->dias_disponiveis as $diaConfig) {
@@ -415,7 +435,7 @@ class ItemAluguelController extends Controller
                 $dataInicio = $aluguel->data_inicio ?? $aluguel->data_agendamento ?? null;
                 $dataFim = $aluguel->data_fim ?? $aluguel->data_inicio ?? $aluguel->data_agendamento ?? null;
                 if (!$dataInicio) return false;
-                
+
                 return $dataInicio <= $dataConsulta && $dataFim >= $dataConsulta;
             });
 
@@ -435,7 +455,7 @@ class ItemAluguelController extends Controller
                         $hInicio = $h['inicio'];
                         $hFim = $h['fim'];
                         $vagasTotaisHora = intval($h['quantidade'] ?? $vagasTotaisDia);
-                        
+
                         $ocupadasHora = $reservasDoDia->filter(function($aluguel) use ($hInicio, $hFim) {
                             $resInicio = $aluguel->horario_inicio ?? '00:00';
                             $resFim = $aluguel->horario_fim ?? '23:59';
@@ -468,12 +488,68 @@ class ItemAluguelController extends Controller
             'status' => $vagasLivresDia > 0 ? 'disponivel' : 'esgotado'
         ];
 
-        // 5. IMPORTANTÍSSIMO: Esconde a relação 'alugueis' antes de mandar para o React. 
+        // Datas já esgotadas (para o calendário desabilitar e mostrar "Esgotado" sem outra chamada).
+        $item->datas_indisponiveis = app(\App\Services\Locacao\DisponibilidadeService::class)->datasEsgotadas($item);
+
+        // 5. IMPORTANTÍSSIMO: Esconde a relação 'alugueis' antes de mandar para o React.
         // Isso evita que o cliente atual veja as informações (nome, valores pagos, e-mails) de outros clientes.
         $item->unsetRelation('alugueis');
 
+        // 6. Reputação REAL do anfitrião (nada de nota/avaliação inventada na tela).
+        $baseAvaliacoes = \Illuminate\Support\Facades\DB::table('avaliacoes')
+            ->where('estabelecimento_id', $item->estabelecimento_id)
+            ->where('publica', true);
+
+        $stats = (clone $baseAvaliacoes)->selectRaw(
+            'COUNT(*) as total, AVG(nota) as media, AVG(nota_limpeza) as limpeza, AVG(nota_localizacao) as localizacao, '
+            . 'AVG(nota_precisao) as precisao, AVG(nota_custo_beneficio) as custo_beneficio, AVG(nota_comunicacao) as comunicacao, AVG(nota_checkin) as checkin'
+        )->first();
+
+        $total = (int) ($stats->total ?? 0);
+        $arredondar = fn ($v) => $v === null ? null : round((float) $v, 1);
+
+        $previa = (clone $baseAvaliacoes)
+            ->join('users', 'users.id', '=', 'avaliacoes.usuario_id')
+            ->orderByDesc('avaliacoes.created_at')
+            ->limit(3)
+            ->get(['users.name as autor', 'users.foto_perfil as foto', 'avaliacoes.nota', 'avaliacoes.comentario', 'avaliacoes.created_at'])
+            ->map(fn ($a) => [
+                'autor' => $a->autor,
+                'foto' => $a->foto,
+                'nota' => (float) $a->nota,
+                'comentario' => $a->comentario,
+                'data' => Carbon::parse($a->created_at)->locale('pt_BR')->translatedFormat('F \d\e Y'),
+            ]);
+
+        $media = $total > 0 ? $arredondar($stats->media) : null;
+
+        $avaliacoes = [
+            'total' => $total,
+            'media' => $media,
+            'criterios' => array_filter([
+                'Limpeza' => $arredondar($stats->limpeza ?? null),
+                'Localização' => $arredondar($stats->localizacao ?? null),
+                'Precisão' => $arredondar($stats->precisao ?? null),
+                'Custo-benefício' => $arredondar($stats->custo_beneficio ?? null),
+                'Comunicação' => $arredondar($stats->comunicacao ?? null),
+                'Check-in' => $arredondar($stats->checkin ?? null),
+            ], fn ($v) => $v !== null),
+            'previa' => $previa,
+        ];
+
+        $anfitriao = [
+            'nome' => $item->estabelecimento->name ?? null,
+            'foto' => $item->estabelecimento->foto_perfil ?? null,
+            'desde' => optional($item->estabelecimento?->created_at)->locale('pt_BR')->translatedFormat('F \d\e Y'),
+            // Superanfitrião: reputação consistente (nota alta com volume mínimo de avaliações).
+            'superanfitriao' => $total >= 10 && $media !== null && $media >= 4.8,
+        ];
+
         return Inertia::render('Cliente/DetalhesItem', [
-            'item' => $item
+            'item' => $item,
+            'avaliacoes' => $avaliacoes,
+            'anfitriao' => $anfitriao,
+            'cuponsRecomendados' => app(\App\Services\CupomService::class)->recomendados(Auth::user(), $item->estabelecimento_id, null, $item->id),
         ]);
     }
 }

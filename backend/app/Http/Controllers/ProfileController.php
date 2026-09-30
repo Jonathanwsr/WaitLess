@@ -69,6 +69,24 @@ class ProfileController extends Controller
         ]);
     }
 
+    /**
+     * Tela "Perfil → Termos e Compromissos": mostra o registro real do aceite
+     * do usuário (versão, data, IP) e dá acesso ao texto completo do termo.
+     */
+    public function termos(Request $request): Response
+    {
+        $user = $request->user();
+
+        return Inertia::render('Profile/Termos', [
+            'aceite' => [
+                'aceito' => (bool) $user->termo_compromisso_aceito,
+                'aceito_em' => $user->termo_compromisso_aceito_em,
+                'versao' => $user->termo_compromisso_versao,
+                'versao_atual' => config('termos.versao_atual'),
+            ],
+        ]);
+    }
+
     public function update(ProfileUpdateRequest $request): RedirectResponse
     {
         $user = $request->user();

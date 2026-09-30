@@ -111,7 +111,7 @@ export default function Carrinho({ auth, itensCarrinho = [] }) {
 
                 {itensValidos.length === 0 ? (
                     // =======================================================
-                    // 👉 ESTADO VAZIO: COMO NA SEGUNDA IMAGEM OK
+                    // 👉 ESTADO VAZIO: TEXTO AJUSTADO
                     // =======================================================
                     <div className="flex flex-col items-center justify-center text-center pt-24 pb-32">
                         <div className="bg-gray-100 p-8 rounded-full mb-10 border border-gray-200">
@@ -119,7 +119,7 @@ export default function Carrinho({ auth, itensCarrinho = [] }) {
                         </div>
                         <h3 className="text-3xl font-black text-gray-900 tracking-tight">Seu carrinho está vazio</h3>
                         <p className="text-gray-500 text-base mt-3 mb-12 max-w-lg leading-relaxed font-medium">
-                            Navegue pelos estabelecimentos e adicione serviços ao carrinho para agendar o seu horário de atendimento sem filas.
+                            Navegue pelos estabelecimentos parceiros e adicione serviços ou locações ao seu carrinho para agendar o seu atendimento de forma rápida e sem filas.
                         </p>
                         <Link 
                             href={route('cliente.explorar')} 

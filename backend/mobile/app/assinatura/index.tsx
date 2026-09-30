@@ -8,28 +8,28 @@ import {
   ActivityIndicator,
   SafeAreaView,
   Modal,
-  Alert,
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import * as WebBrowser from 'expo-web-browser';
 import { Plano, PLANOS_SOCIO, PLANOS_CLIENTE } from '../../constants/planos';
+import { alertar } from '../../services/alertar';
 
 const COLORS = {
-  primary: '#FF5A00',
-  primaryLight: '#FFF0E6',
-  secondary: '#111827',
+  primary: '#FF7A00',
+  primaryLight: '#FFF1E4',
+  secondary: '#282828',
   black: '#000000',
-  gray: '#6B7280',
-  lightGray: '#F9FAFB',
+  gray: '#6A6C72',
+  lightGray: '#F5F5F5',
   white: '#FFFFFF',
-  border: '#E5E7EB',
-  green: '#10B981',
+  border: '#E6E7E9',
+  green: '#00A868',
   red: '#DC2626',
   indigo: '#4F46E5',
   indigoLight: '#EEF2FF',
@@ -156,28 +156,28 @@ export default function AssinaturaScreen() {
       const json = await res.json();
 
       if (!res.ok) {
-        Alert.alert('Não foi possível continuar', json.error || 'Tente novamente em instantes.');
+        alertar('Não foi possível continuar', json.error || 'Tente novamente em instantes.');
         return;
       }
 
       if (json.gateway_link) {
         await WebBrowser.openBrowserAsync(json.gateway_link);
       } else {
-        Alert.alert('Tudo certo!', json.message || 'Operação realizada com sucesso.');
+        alertar('Tudo certo!', json.message || 'Operação realizada com sucesso.');
       }
 
       setPlanoSelecionado(null);
       setMostrarPlanos(false);
       carregar();
     } catch (e) {
-      Alert.alert('Erro', 'Não foi possível processar sua solicitação agora.');
+      alertar('Erro', 'Não foi possível processar sua solicitação agora.');
     } finally {
       setProcessando(false);
     }
   };
 
   const cancelarAssinatura = () => {
-    Alert.alert(
+    alertar(
       'Cancelar assinatura',
       'Tem certeza que deseja cancelar? O acesso fica disponível até o fim do ciclo vigente.',
       [
@@ -194,10 +194,10 @@ export default function AssinaturaScreen() {
                 headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
               });
               const json = await res.json();
-              Alert.alert(res.ok ? 'Assinatura cancelada' : 'Não foi possível cancelar', json.message || json.error || '');
+              alertar(res.ok ? 'Assinatura cancelada' : 'Não foi possível cancelar', json.message || json.error || '');
               carregar();
             } catch (e) {
-              Alert.alert('Erro', 'Não foi possível cancelar agora.');
+              alertar('Erro', 'Não foi possível cancelar agora.');
             } finally {
               setProcessando(false);
             }
@@ -227,7 +227,7 @@ export default function AssinaturaScreen() {
         ) : (
           <View style={styles.headerBtn} />
         )}
-        <Text style={styles.headerTitle}>Minha Assinatura</Text>
+        <View style={{ flex: 1 }} />
         <View style={styles.headerBtn} />
       </View>
 
@@ -447,17 +447,17 @@ function CardPlano({ plano, hasSubscription, onEscolher }: { plano: Plano; hasSu
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: COLORS.white, paddingTop: Platform.OS === 'android' ? 25 : 0 },
+  safeArea: { flex: 1, backgroundColor: '#F5F5F5', paddingTop: Platform.OS === 'android' ? 25 : 0 },
   loadingBox: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   headerBar: {
     height: 54, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
   headerBtn: { padding: 6, width: 34 },
-  headerTitle: { fontSize: 17, fontWeight: '900', color: COLORS.secondary },
+  headerTitle: { fontSize: 17, fontWeight: '800', color: COLORS.secondary },
   scrollContent: { padding: 16, paddingBottom: 60 },
 
-  card: { backgroundColor: COLORS.white, borderRadius: 20, borderWidth: 1, borderColor: COLORS.border, padding: 18 },
+  card: { backgroundColor: COLORS.white, borderRadius: 20, padding: 18, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
   cardTitle: { fontSize: 18, fontWeight: '800', color: COLORS.secondary },
   cardSubtitle: { fontSize: 13, color: COLORS.gray, marginTop: 4, marginBottom: 16 },
 
@@ -483,7 +483,7 @@ const styles = StyleSheet.create({
   linkCancelarTexto: { color: COLORS.gray, fontSize: 13, fontWeight: '600', textDecorationLine: 'underline' },
 
   planosSection: { marginTop: 32 },
-  planosTitulo: { fontSize: 22, fontWeight: '900', color: COLORS.secondary, textAlign: 'center' },
+  planosTitulo: { fontSize: 22, fontWeight: '800', color: COLORS.secondary, textAlign: 'center' },
   planosSubtitulo: { fontSize: 14, color: COLORS.gray, textAlign: 'center', marginTop: 8, marginBottom: 20, lineHeight: 20 },
 
   toggleCiclo: { flexDirection: 'row', backgroundColor: COLORS.lightGray, borderRadius: 999, padding: 4, marginBottom: 20, alignSelf: 'center' },
@@ -507,7 +507,7 @@ const styles = StyleSheet.create({
 
   planoPrecoOriginal: { fontSize: 12, color: COLORS.gray, marginTop: 14, textDecorationLine: 'line-through' },
   planoPrecoRow: { flexDirection: 'row', alignItems: 'baseline', marginTop: 4, marginBottom: 4 },
-  planoPreco: { fontSize: 32, fontWeight: '900', color: COLORS.secondary },
+  planoPreco: { fontSize: 32, fontWeight: '800', color: COLORS.secondary },
   planoPrecoCiclo: { fontSize: 14, color: COLORS.gray, marginLeft: 6 },
 
   badgeTeste: { alignSelf: 'flex-start', backgroundColor: COLORS.indigoLight, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, marginTop: 8, marginBottom: 4 },

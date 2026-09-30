@@ -33,11 +33,13 @@ import {
     CurrencyDollarIcon
 } from '@heroicons/react/24/solid';
 
-export default function Configuracoes({ auth, estabelecimento, meusEstabelecimentos, funcionarios, servicos, itensAluguel = [], itens_aluguel = [], produtos = [] }) {
+export default function Configuracoes({ auth, estabelecimento, meusEstabelecimentos, funcionarios, servicos, itensAluguel = [], itens_aluguel = [], produtos = [], categoriasServicos = [] }) {
     // ==========================================
     // 1. RECUPERA A ABA ATIVA DO LOCALSTORAGE
     // ==========================================
     const [activeTab, setActiveTab] = useState(() => {
+        const abaUrl = new URLSearchParams(window.location.search).get('aba');
+        if (['detalhes', 'equipe', 'servicos', 'reservas_alugueis'].includes(abaUrl)) return abaUrl;
         let tab = localStorage.getItem('lokyva_active_tab') || 'detalhes';
         if (tab === 'financeiro') tab = 'detalhes'; // Fallback se tinha ficado no cache
         return tab;
@@ -58,7 +60,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
     };
 
     const [mensagemSucesso, setMensagemSucesso] = useState('');
-    const { flash = {} } = usePage().props;
+    const { flash = {}, taxaPlataforma = 6 } = usePage().props;
 
     const mostrarMensagem = (msg) => {
         setMensagemSucesso(msg);
@@ -330,7 +332,9 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         tipo_servico: '',
         descricao: '',
         valor: '',
+        gratuito: false,
         duracao_minutos: '30',
+        vagas_por_horario: '1',
         funcionario_id: '',
         tipo_pagamento: 'hibrido',
         dias_disponiveis: ['segunda', 'terca', 'quarta', 'quinta', 'sexta'],
@@ -376,6 +380,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                 descricao: formServico.data.descricao,
                 valor: formServico.data.valor,
                 duracao_minutos: formServico.data.duracao_minutos,
+                vagas_por_horario: formServico.data.vagas_por_horario || 1,
                 horarios_disponiveis: formServico.data.horarios_disponiveis,
                 dias_disponiveis: formServico.data.dias_disponiveis,
                 tem_cupom: formServico.data.tem_cupom,
@@ -423,6 +428,11 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         
         formServico.transform((data) => ({
             ...data,
+            // Serviço gratuito: garante valor 0 e desliga qualquer promoção (não
+            // faz sentido "descontar" algo que já é de graça), não importa o que
+            // sobrou no campo desabilitado.
+            valor: data.gratuito ? 0 : data.valor,
+            tem_promocao: data.gratuito ? false : data.tem_promocao,
             fotos_existentes: quadradosFotos.filter(f => typeof f === 'string' && f !== null),
             fotos: quadradosFotos.filter(f => f instanceof File),
             _method: isEditingServico ? 'put' : 'post'
@@ -461,7 +471,9 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
             tipo_servico: servico.tipo_servico || '',
             descricao: servico.descricao || '',
             valor: servico.valor,
+            gratuito: Number(servico.valor) === 0,
             duracao_minutos: servico.duracao_minutos,
+            vagas_por_horario: servico.vagas_por_horario || 1,
             funcionario_id: config.funcionario_padrao || '',
             tipo_pagamento: config.tipo_pagamento || 'hibrido',
             dias_disponiveis: config.dias_disponiveis || ['segunda', 'terca', 'quarta', 'quinta', 'sexta'],
@@ -763,11 +775,11 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
             const pontosInseridos = parseInt(simulacaoPontos) || 0;
             const maxPontosPermitidos = parseInt(formItem.data.maximo_pontos_permitidos) || 0;
             const pontosValidos = Math.min(pontosInseridos, maxPontosPermitidos);
-            descontoPontos = pontosValidos / 100; // 100 pontos = R$ 1,00
+            descontoPontos = pontosValidos / 1000; // 1000 pontos = R$ 1,00
         }
         
         const valorClienteFinal = Math.max(0, val - descontoPromocao - descontoPontos);
-        const taxaLokyva = valorClienteFinal * 0.12; 
+        const taxaLokyva = valorClienteFinal * (Number(taxaPlataforma) / 100); 
         const valorLiquido = valorClienteFinal - taxaLokyva;
         
         return {
@@ -797,7 +809,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                <div className="mt-auto border-t border-dashed border-gray-300 pt-3 space-y-2">
                    {parseFloat(sim.descPromocao) > 0 && <p className="text-[11px] font-bold text-green-600 flex justify-between"><span>Promoção Ativa</span> <span>- R$ {sim.descPromocao}</span></p>}
                    {parseFloat(sim.descPontos) > 0 && <p className="text-[11px] font-bold text-blue-600 flex justify-between"><span>Desconto em Pontos</span> <span>- R$ {sim.descPontos}</span></p>}
-                   <p className="text-[11px] font-bold text-red-500 flex justify-between"><span>Taxa LOKYVA (12%)</span> <span>- R$ {sim.taxa}</span></p>
+                   <p className="text-[11px] font-bold text-red-500 flex justify-between"><span>Taxa LOKYVA ({taxaPlataforma}%)</span> <span>- R$ {sim.taxa}</span></p>
                    <p className="text-sm text-green-700 font-black flex justify-between bg-green-100 px-3 py-2 rounded-xl mt-2 border border-green-200"><span>Líquido a Receber</span> <span>R$ {sim.liquido}</span></p>
                </div>
             </div>
@@ -1006,7 +1018,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                             </button>
 
                             <Link href={route('estabelecimentos.contratos', estabelecimento.id)} className="text-left px-4 py-3 rounded-xl text-sm font-bold transition whitespace-nowrap flex items-center gap-2 text-gray-600 hover:bg-gray-100">
-                                <DocumentCheckIcon className="w-5 h-5"/> Contratos (Assinafy)
+                                <DocumentCheckIcon className="w-5 h-5"/> Contratos
                             </Link>
 
                             <Link href={`/estabelecimentos/${estabelecimento.id}/loja`} className="mt-4 text-left px-4 py-3 rounded-xl text-sm font-bold transition whitespace-nowrap flex items-center gap-2 text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 shadow-sm">
@@ -1146,7 +1158,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                             </div>
                                         </div>
 
-                                        <div className="flex justify-end pt-6"><PrimaryButton className="bg-[#FF5A00] px-8 py-3 rounded-xl shadow-lg">Salvar Alterações</PrimaryButton></div>
+                                        <div className="flex justify-end pt-6"><PrimaryButton className="bg-green-600 px-8 py-3 rounded-xl shadow-lg">Salvar Alterações</PrimaryButton></div>
                                     </form>
                                 </div>
                                 
@@ -1312,7 +1324,11 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                 <div className="mt-10 flex justify-between items-end mt-auto">
                                                     <button onClick={() => { fecharVisualizacaoServico(); editarServico(visualizandoServico); }} className="px-8 py-4 bg-[#0F172A] text-white font-bold rounded-2xl shadow-lg">Editar Serviço</button>
                                                     <div className="text-right">
-                                                        <span className="text-5xl font-black text-[#FF5A00] tracking-tight"><span className="text-2xl text-gray-400">R$ </span>{Number(visualizandoServico.valor).toFixed(2)}</span>
+                                                        {Number(visualizandoServico.valor) === 0 ? (
+                                                            <span className="text-4xl font-black text-green-600 tracking-tight">Grátis</span>
+                                                        ) : (
+                                                            <span className="text-5xl font-black text-[#FF5A00] tracking-tight"><span className="text-2xl text-gray-400">R$ </span>{Number(visualizandoServico.valor).toFixed(2)}</span>
+                                                        )}
                                                     </div>
                                                 </div>
                                             </div>
@@ -1326,26 +1342,40 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                         <form onSubmit={submitServico} className="space-y-6">
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                                 <div>
-                                                    <InputLabel value="Categoria / Tipo de Serviço *" />
+                                                    <InputLabel value="Categoria do Serviço *" />
                                                     <select className="mt-1 w-full border-gray-300 rounded-lg shadow-sm focus:border-[#FF5A00]" value={formServico.data.tipo_servico ?? ''} onChange={e => formServico.setData('tipo_servico', e.target.value)} required>
                                                         <option value="">Selecione...</option>
-                                                        <option value="Beleza e Estética">Beleza e Estética</option>
-                                                        <option value="Saúde e Bem-Estar">Saúde e Bem-Estar</option>
-                                                         <option value="Automotivo">Automotivo</option>
-                                                         <option value="Turismo e Viagens">Turismo e Viagens</option>
-                                                        <option value="Casa e Construção">Casa e Construção</option>
-                                                        <option value="Casa e Construção">Casamentos e aniversários</option>
-                                                        <option value="Tecnologia">Tecnologia</option>
-                                                        <option value="Educação e Cursos">Educação e Cursos</option>
-                                                        <option value="Eventos e Entretenimento">Eventos e Entretenimento</option>
-                                                        <option value="Serviços Profissionais">Serviços Profissionais</option>
-                                                        <option value="Pets e Animais">Pets e Animais</option>
+                                                        {categoriasServicos.map((c) => (
+                                                            <option key={c.valor} value={c.valor}>{c.valor}</option>
+                                                        ))}
                                                     </select>
+                                                    <p className="text-xs text-gray-400 mt-1">É essa categoria que aparece nos filtros do Explorar para o cliente.</p>
                                                 </div>
                                                 <div><InputLabel value="Nome do Serviço *" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formServico.data.nome ?? ''} onChange={e => formServico.setData('nome', e.target.value)} required /></div>
-                                                <div><InputLabel value="Valor (R$) *" /><TextInput type="number" step="0.01" className="w-full mt-1 focus:border-[#FF5A00]" value={formServico.data.valor ?? ''} onChange={e => formServico.setData('valor', e.target.value)} required /></div>
+                                                <div>
+                                                    <InputLabel value={formServico.data.gratuito ? 'Valor (R$)' : 'Valor (R$) *'} />
+                                                    <TextInput
+                                                        type="number" step="0.01" min="0"
+                                                        className="w-full mt-1 focus:border-[#FF5A00] disabled:bg-gray-100 disabled:text-gray-400"
+                                                        value={formServico.data.gratuito ? '0' : (formServico.data.valor ?? '')}
+                                                        onChange={e => formServico.setData('valor', e.target.value)}
+                                                        disabled={formServico.data.gratuito}
+                                                        required={!formServico.data.gratuito}
+                                                    />
+                                                    <label className="mt-2 flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">
+                                                        <input
+                                                            type="checkbox"
+                                                            className="rounded border-gray-300 text-[#FF5A00] focus:ring-[#FF5A00]"
+                                                            checked={!!formServico.data.gratuito}
+                                                            onChange={e => formServico.setData('gratuito', e.target.checked)}
+                                                        />
+                                                        Este serviço é gratuito (sem cobrança)
+                                                    </label>
+                                                    <p className="text-xs text-gray-400 mt-1">Vale pra qualquer tipo de reserva — de mesa de restaurante a serviço de salão. Marque aqui pra reservar sem cobrar nada.</p>
+                                                </div>
                                                 <div><InputLabel value="Duração (Minutos) *" /><TextInput type="number" className="w-full mt-1 focus:border-[#FF5A00]" value={formServico.data.duracao_minutos ?? ''} onChange={e => formServico.setData('duracao_minutos', e.target.value)} required /></div>
-                                                
+                                                <div><InputLabel value="Vagas por horário" /><TextInput type="number" min="1" max="100" className="w-full mt-1 focus:border-[#FF5A00]" value={formServico.data.vagas_por_horario ?? ''} onChange={e => formServico.setData('vagas_por_horario', e.target.value)} /><p className="text-xs text-gray-500 mt-1">Quantas pessoas cabem no mesmo horário — número de cadeiras numa mesa, vagas numa reserva, ou clientes atendidos ao mesmo tempo. Ao lotar, o horário some para novos clientes.</p></div>
+
                                                 <div className="md:col-span-2">
                                                     <InputLabel value="Descrição Pública" />
                                                     <textarea className="mt-1 w-full border-gray-300 rounded-xl focus:border-[#FF5A00]" rows="3" value={formServico.data.descricao ?? ''} onChange={e => formServico.setData('descricao', e.target.value)}></textarea>
@@ -1431,19 +1461,19 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                     </label>
                                                 </div>
 
-                                                <div className="bg-white p-5 rounded-2xl shadow-sm border border-orange-100 mb-4">
-                                                    <label className="flex items-center justify-between cursor-pointer mb-4">
+                                                <div className={`bg-white p-5 rounded-2xl shadow-sm border border-orange-100 mb-4 ${formServico.data.gratuito ? 'opacity-50' : ''}`}>
+                                                    <label className={`flex items-center justify-between mb-4 ${formServico.data.gratuito ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
                                                         <div>
                                                             <span className="font-bold text-sm text-gray-900 block">Habilitar Desconto Promocional?</span>
-                                                            <span className="text-xs text-gray-500">Aparece na tela de Ofertas Premium para os clientes.</span>
+                                                            <span className="text-xs text-gray-500">{formServico.data.gratuito ? 'Não se aplica a um serviço gratuito.' : 'Aparece na tela de Ofertas Premium para os clientes.'}</span>
                                                         </div>
                                                         <div className="relative inline-flex items-center">
-                                                            <input type="checkbox" className="sr-only peer" checked={formServico.data.tem_promocao} onChange={e => formServico.setData('tem_promocao', e.target.checked)} />
+                                                            <input type="checkbox" className="sr-only peer" checked={!formServico.data.gratuito && formServico.data.tem_promocao} disabled={formServico.data.gratuito} onChange={e => formServico.setData('tem_promocao', e.target.checked)} />
                                                             <div className="w-11 h-6 bg-gray-200 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#FF5A00]"></div>
                                                         </div>
                                                     </label>
 
-                                                    {formServico.data.tem_promocao && (
+                                                    {!formServico.data.gratuito && formServico.data.tem_promocao && (
                                                         <div className="grid grid-cols-2 gap-4 animate-in fade-in slide-in-from-top-2 pt-4 border-t border-gray-100">
                                                             <div>
                                                                 <InputLabel value="Tipo de Desconto" />
@@ -1476,7 +1506,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                         <div className="animate-in fade-in slide-in-from-top-2 pt-4 border-t border-gray-100">
                                                             <InputLabel value="Máximo de Pontos Permitidos" />
                                                             <TextInput type="number" min="1" className="mt-1 w-full focus:border-[#FF5A00]" value={formServico.data.maximo_pontos_permitidos ?? ''} onChange={e => formServico.setData('maximo_pontos_permitidos', e.target.value)} placeholder="Ex: 100 pontos" required={formServico.data.aceita_pontos} />
-                                                            <p className="text-[10px] text-gray-400 mt-1">Lembre-se: 100 pontos = R$ 1,00 de desconto.</p>
+                                                            <p className="text-[10px] text-gray-400 mt-1">Lembre-se: 1000 pontos = R$ 1,00 de desconto.</p>
                                                         </div>
                                                     )}
                                                 </div>
@@ -1519,12 +1549,20 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                         {servicos.map(s => (
                                             <div key={s.id} className="py-4 flex justify-between items-center">
                                                 <div>
-                                                    <h4 className="font-bold text-gray-900 flex items-center gap-2">
+                                                    <h4 className="font-bold text-gray-900 flex items-center gap-2 flex-wrap">
                                                         {s.nome}
+                                                        {(() => {
+                                                            const cat = categoriasServicos.find((c) => c.valor === s.tipo_servico);
+                                                            return cat ? (
+                                                                <span className="text-[10px] font-black px-2 py-0.5 rounded uppercase tracking-wider" style={{ backgroundColor: `${cat.cor}1A`, color: cat.cor }}>
+                                                                    {cat.valor}
+                                                                </span>
+                                                            ) : null;
+                                                        })()}
                                                         {s.somente_premium && <span className="text-[10px] font-black bg-orange-100 text-[#FF5A00] px-2 py-0.5 rounded uppercase tracking-wider flex items-center gap-1"><LockClosedIcon className="w-3 h-3"/> Premium</span>}
                                                         {s.tem_promocao && <span className="text-[10px] font-black bg-red-100 text-red-700 px-2 py-0.5 rounded uppercase tracking-wider">Promoção Ativa</span>}
                                                     </h4>
-                                                    <p className="text-sm text-gray-500">R$ {s.valor} • {s.duracao_minutos} min</p>
+                                                    <p className="text-sm text-gray-500">{Number(s.valor) === 0 ? <span className="text-green-600 font-bold">Grátis</span> : `R$ ${s.valor}`} • {s.duracao_minutos} min • {s.vagas_por_horario || 1} {(s.vagas_por_horario || 1) === 1 ? 'vaga' : 'vagas'} por horário</p>
                                                 </div>
                                                 <div className="flex gap-2">
                                                     <button onClick={() => visualizarServico(s)} className="text-xs font-bold text-gray-700 bg-gray-100 border px-3 py-1.5 rounded-lg transition">Ver</button>
@@ -1575,7 +1613,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
 
                                                 <div className="p-4 bg-gray-50 border rounded-xl font-medium text-sm text-gray-700 space-y-2">
                                                     <p><strong>Cobrança Ativa por:</strong> <span className="capitalize">{visualizandoItem.periodo_faturamento_padrao}</span></p>
-                                                    <p><strong>Regra de Transação:</strong> {visualizandoItem.permitir_pagamento === 'online' ? 'Online (Taxa Retida de 12%)' : 'Presencial (Saldo Devedor de 12% Acumulado)'}</p>
+                                                    <p><strong>Regra de Transação:</strong> {visualizandoItem.permitir_pagamento === 'online' ? `Online (Taxa Retida de ${taxaPlataforma}%)` : `Presencial (Saldo Devedor de ${taxaPlataforma}% Acumulado)`}</p>
                                                     {visualizandoItem.exige_contrato && <p className="text-orange-600 mt-2 flex items-center gap-1"><DocumentCheckIcon className="w-4 h-4"/> Este item exige assinatura de contrato.</p>}
                                                 </div>
 
@@ -1817,7 +1855,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                                 <div className="animate-in fade-in slide-in-from-top-2 pt-4 border-t border-gray-100">
                                                                     <InputLabel value="Máximo de Pontos Permitidos por Reserva" />
                                                                     <TextInput type="number" min="1" className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.maximo_pontos_permitidos ?? ''} onChange={e => formItem.setData('maximo_pontos_permitidos', e.target.value)} placeholder="Ex: 100 pontos" required={formItem.data.aceita_pontos} />
-                                                                    <p className="text-[10px] text-gray-400 mt-1">Lembre-se: 100 pontos = R$ 1,00 de desconto.</p>
+                                                                    <p className="text-[10px] text-gray-400 mt-1">Lembre-se: 1000 pontos = R$ 1,00 de desconto.</p>
                                                                 </div>
                                                             )}
                                                         </div>
@@ -1852,7 +1890,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                                     <CurrencyDollarIcon className="w-5 h-5 text-[#FF5A00]"/> Simulador de Repasse Financeiro
                                                                 </h4>
                                                                 <p className="text-[11px] text-gray-500 mb-6 leading-relaxed max-w-2xl">
-                                                                    Veja quanto o cliente vai pagar e o valor líquido exato que vai entrar na sua conta após aplicar a taxa da LOKYVA (12%) e os seus descontos e pontos.
+                                                                    Veja quanto o cliente vai pagar e o valor líquido exato que vai entrar na sua conta após aplicar a taxa da LOKYVA ({taxaPlataforma}%) e os seus descontos e pontos.
                                                                 </p>
                                                                 
                                                                 {formItem.data.aceita_pontos && (
@@ -2233,7 +2271,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                 </div>
                                             )}
 
-                                            {!esImovel && (
+                                            {(esVeiculo || esEquipamento || cat === 'outro') && (
                                                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-in fade-in">
                                                     <div className="p-6 bg-gray-50 border rounded-3xl space-y-4">
                                                         <h4 className="text-sm font-black text-gray-800 uppercase tracking-wider flex items-center gap-2"><ArrowDownTrayIcon className="w-4 h-4 text-gray-400" /> Endereço de Retirada Completo</h4>

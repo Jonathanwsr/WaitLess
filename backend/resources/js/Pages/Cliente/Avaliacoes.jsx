@@ -53,7 +53,7 @@ const StarRating = ({ label, icon: Icon, value, onChange }) => (
     </div>
 );
 
-export default function Avaliacoes({ auth, item, avaliacoes, estatisticas, itemNaoEncontrado, tipo }) {
+export default function Avaliacoes({ auth, item, avaliacoes, estatisticas, itemNaoEncontrado, tipo, opcoesFiltro = null, metricas = null, porServico = [], porReserva = [], filtros = {} }) {
     const { url, errors, flash } = usePage().props;
     const searchParams = new URLSearchParams(window.location.search);
     const agendamentoId = searchParams.get('agendamento');
@@ -312,6 +312,12 @@ export default function Avaliacoes({ auth, item, avaliacoes, estatisticas, itemN
         </div>
     );
 
+    const aplicarFiltroSocio = (novos) => {
+        const params = { ...filtros, ...novos };
+        Object.keys(params).forEach((k) => { if (params[k] === '' || params[k] == null || k === 'page') delete params[k]; });
+        router.get(route('anfitriao.avaliacoes.index'), params, { preserveState: true, preserveScroll: true });
+    };
+
     const labelContexto = aluguelId || tipo === 'aluguel' ? 'reserva/espaço' : 'serviço';
     
     let tituloPagina = item?.nome || 'Avaliações';
@@ -372,7 +378,7 @@ export default function Avaliacoes({ auth, item, avaliacoes, estatisticas, itemN
                     <div className="mb-6 sm:mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
                         <div>
                             <h1 className="text-2xl sm:text-3xl md:text-4xl font-black text-gray-900 mb-1 sm:mb-2 tracking-tight">
-                                {isAdmin ? 'Moderação de Avaliações' : isAnfitriao ? 'Avaliações do seu Negócio' : `Avaliações: ${item?.nome}`}
+                                {isAdmin ? 'Moderação de Avaliações' : isAnfitriao ? 'Avaliações recebidas' : `Avaliações: ${item?.nome}`}
                             </h1>
                             <p className="text-sm sm:text-base text-gray-500 font-medium">
                                 {isAdmin ? 'Analise denúncias e mantenha a qualidade da plataforma.' : isAnfitriao ? 'Acompanhe o que os clientes estão dizendo sobre seus serviços e estabelecimentos.' : 'Veja o que os clientes que já utilizaram têm a dizer.'}
@@ -384,6 +390,93 @@ export default function Avaliacoes({ auth, item, avaliacoes, estatisticas, itemN
                             </button>
                         )}
                     </div>
+
+                    {/* PAINEL DO SÓCIO: filtros por local / serviço / reserva + métricas */}
+                    {isAnfitriao && opcoesFiltro && (
+                        <div className="mb-8 space-y-6">
+                            <div className="bg-white rounded-3xl border border-gray-200 p-5 sm:p-6 shadow-sm">
+                                <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider mb-4">Ver avaliações de</h3>
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div>
+                                        <label className="text-xs font-bold text-gray-500 uppercase block mb-1.5">Local</label>
+                                        <select
+                                            value={filtros.estabelecimento_id || ''}
+                                            onChange={(e) => aplicarFiltroSocio({ estabelecimento_id: e.target.value, servico_id: '', item_id: '' })}
+                                            className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#FF5A00]/30"
+                                        >
+                                            <option value="">Todos os locais (geral)</option>
+                                            {opcoesFiltro.locais.map((l) => <option key={l.id} value={l.id}>{l.nome}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-gray-500 uppercase block mb-1.5">Serviço</label>
+                                        <select
+                                            value={filtros.servico_id || ''}
+                                            onChange={(e) => aplicarFiltroSocio({ servico_id: e.target.value, item_id: '' })}
+                                            className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#FF5A00]/30"
+                                        >
+                                            <option value="">Todos os serviços</option>
+                                            {opcoesFiltro.servicos
+                                                .filter((sv) => !filtros.estabelecimento_id || String(sv.estabelecimento_id) === String(filtros.estabelecimento_id))
+                                                .map((sv) => <option key={sv.id} value={sv.id}>{sv.nome}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-gray-500 uppercase block mb-1.5">Reserva (locação)</label>
+                                        <select
+                                            value={filtros.item_id || ''}
+                                            onChange={(e) => aplicarFiltroSocio({ item_id: e.target.value, servico_id: '' })}
+                                            className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#FF5A00]/30"
+                                        >
+                                            <option value="">Todas as reservas</option>
+                                            {opcoesFiltro.itens.map((it) => <option key={it.id} value={it.id}>{it.nome}</option>)}
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {metricas && (
+                                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+                                    {[
+                                        { rotulo: 'Avaliações', valor: estatisticas?.total_avaliacoes ?? 0 },
+                                        { rotulo: 'Nota média', valor: estatisticas?.media_geral ? Number(estatisticas.media_geral).toFixed(1).replace('.', ',') : '—' },
+                                        { rotulo: 'Curtidas', valor: metricas.curtidas },
+                                        { rotulo: 'Respondidas', valor: metricas.respondidas },
+                                        { rotulo: 'Sem resposta', valor: metricas.pendentes },
+                                        { rotulo: 'Com fotos', valor: metricas.com_fotos },
+                                        { rotulo: 'Denunciadas', valor: metricas.denunciadas },
+                                    ].map((m) => (
+                                        <div key={m.rotulo} className="bg-white rounded-2xl border border-gray-200 p-4 shadow-sm text-center">
+                                            <p className="text-2xl font-black text-gray-900">{m.valor}</p>
+                                            <p className="text-[11px] font-bold text-gray-400 uppercase tracking-wider mt-1">{m.rotulo}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {(porServico.length > 0 || porReserva.length > 0) && (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    {[{ titulo: 'Por serviço', lista: porServico, chave: 'servico_id' }, { titulo: 'Por reserva (locação)', lista: porReserva, chave: 'item_id' }].map((bloco) => bloco.lista.length > 0 && (
+                                        <div key={bloco.titulo} className="bg-white rounded-3xl border border-gray-200 p-5 shadow-sm">
+                                            <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider mb-3">{bloco.titulo}</h3>
+                                            <div className="divide-y divide-gray-100">
+                                                {bloco.lista.map((r) => (
+                                                    <button key={r.id} type="button" onClick={() => aplicarFiltroSocio({ [bloco.chave]: r.id, [bloco.chave === 'servico_id' ? 'item_id' : 'servico_id']: '' })} className="w-full flex items-center justify-between py-3 text-left hover:bg-gray-50 rounded-lg px-2 transition">
+                                                        <span className="font-semibold text-gray-800 text-sm truncate pr-3">{r.nome}</span>
+                                                        <span className="flex items-center gap-3 text-xs font-bold text-gray-500 shrink-0">
+                                                            <span className="flex items-center gap-1 text-gray-900"><Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" /> {String(r.media).replace('.', ',')}</span>
+                                                            <span>{r.total} aval.</span>
+                                                            <span>{r.curtidas} curtidas</span>
+                                                        </span>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {/* WIZARD DE AVALIAÇÃO EM 2 PASSOS (APENAS CLIENTE) */}
                     <AnimatePresence>

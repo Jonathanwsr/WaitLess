@@ -121,14 +121,27 @@ class ProdutoController extends Controller
         try {
             $produto = Produto::findOrFail($id);
 
-            // Se o estabelecimento estiver sendo alterado, verifica a permissão na pivot
+            // Antes só checava permissão quando o estabelecimento_id estava MUDANDO —
+            // ou seja, qualquer usuário autenticado podia editar produto de outro
+            // estabelecimento contanto que não tentasse movê-lo. Agora checa sempre,
+            // no estabelecimento atual do produto.
+            $temPermissaoAtual = DB::table('estabelecimento_usuario')
+                ->where('usuario_id', Auth::id())
+                ->where('estabelecimento_id', $produto->estabelecimento_id)
+                ->exists();
+
+            if (!$temPermissaoAtual) {
+                return response()->json(['error' => 'Você não tem permissão para editar este produto.'], 403);
+            }
+
+            // Se o estabelecimento estiver sendo alterado, verifica a permissão no destino também
             if ($request->has('estabelecimento_id') && $request->estabelecimento_id != $produto->estabelecimento_id) {
-                $temPermissao = DB::table('estabelecimento_usuario')
+                $temPermissaoDestino = DB::table('estabelecimento_usuario')
                     ->where('usuario_id', Auth::id())
                     ->where('estabelecimento_id', $request->estabelecimento_id)
                     ->exists();
 
-                if (!$temPermissao) {
+                if (!$temPermissaoDestino) {
                     return response()->json(['error' => 'Permissão negada para alterar para este estabelecimento.'], 403);
                 }
             }
@@ -166,6 +179,19 @@ class ProdutoController extends Controller
     {
         try {
             $produto = Produto::withTrashed()->findOrFail($id);
+
+            // Não tinha NENHUMA checagem de dono aqui — qualquer usuário autenticado
+            // conseguia apagar (forceDelete, permanente) o produto de qualquer
+            // estabelecimento só sabendo/adivinhando o id.
+            $temPermissao = DB::table('estabelecimento_usuario')
+                ->where('usuario_id', Auth::id())
+                ->where('estabelecimento_id', $produto->estabelecimento_id)
+                ->exists();
+
+            if (!$temPermissao) {
+                return response()->json(['error' => 'Você não tem permissão para apagar este produto.'], 403);
+            }
+
             $produto->forceDelete();
             return response()->json(['message' => 'Produto apagado com sucesso.']);
         } catch (\Exception $e) {
@@ -195,9 +221,22 @@ class ProdutoController extends Controller
             ->orderBy('created_at', 'desc')
             ->get();
 
+        // Serviços e reservas (locações) aos quais o produto pode ser vinculado.
+        $listaServicos = \App\Models\Servico::whereIn('estabelecimento_id', $estabelecimentosIds)
+            ->where('ativo', true)
+            ->orderBy('nome')
+            ->get(['id', 'nome', 'estabelecimento_id']);
+
+        $listaReservas = \App\Models\ItemAluguel::catalogo()
+            ->where('estabelecimento_id', $usuarioId)
+            ->orderBy('nome')
+            ->get(['id', 'nome', 'categoria']);
+
         return Inertia::render('Estabelecimentos/ProdutoManager', [
             'produtos'         => $produtos,
-            'estabelecimentos' => $estabelecimentos
+            'estabelecimentos' => $estabelecimentos,
+            'listaServicos'    => $listaServicos,
+            'listaReservas'    => $listaReservas,
         ]);
     }
 

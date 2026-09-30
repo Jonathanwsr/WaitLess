@@ -13,18 +13,19 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const COLORS = {
-  primary: '#FF5A00',
-  primaryLight: '#FFF0E6',
-  secondary: '#111827',
+  primary: '#282828',
+  accent: '#FF7A00',
+  primaryLight: '#E6E7E9',
+  secondary: '#282828',
   black: '#000000',
-  gray: '#6B7280',
-  lightGray: '#F9FAFB',
+  gray: '#6A6C72',
+  lightGray: '#F0F0F2',
   white: '#FFFFFF',
-  border: '#E5E7EB',
+  border: '#E6E7E9',
 };
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api/mobile';
@@ -115,7 +116,7 @@ export default function CaixaEntrada() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.headerBar}>
-        <Text style={styles.headerTitle}>Mensagens</Text>
+        <View style={{ flex: 1 }} />
       </View>
 
       {loading ? (
@@ -249,7 +250,7 @@ const styles = StyleSheet.create({
     height: 20,
     paddingHorizontal: 5,
     borderRadius: 10,
-    backgroundColor: COLORS.primary,
+    backgroundColor: COLORS.accent,
     justifyContent: 'center',
     alignItems: 'center',
   },

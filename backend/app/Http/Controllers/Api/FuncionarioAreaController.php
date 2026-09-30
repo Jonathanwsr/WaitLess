@@ -138,9 +138,7 @@ class FuncionarioAreaController extends Controller
         if ($agendamento->usuario && $agendamento->usuario->email) {
             $local = $agendamento->estabelecimento->nome ?? 'o estabelecimento';
             $mensagem = "Olá {$agendamento->usuario->name}!\n\nChegou a sua vez!\nDirija-se à cadeira do profissional designado em {$local} para iniciar seu atendimento.\nLembre-se de apresentar seu PIN de segurança no final.\n\nEquipe Lokyva.";
-            Mail::raw($mensagem, function ($msg) use ($agendamento) {
-                $msg->to($agendamento->usuario->email)->subject('Sua vez chegou! - Lokyva');
-            });
+            Mail::to($agendamento->usuario->email)->queue(new \App\Mail\NotificacaoTexto('Sua vez chegou! - Lokyva', $mensagem));
         }
 
         return back()->with('success', 'Cliente chamado! O cliente foi notificado.');
@@ -177,9 +175,7 @@ class FuncionarioAreaController extends Controller
         if ($agendamento->usuario && $agendamento->usuario->email) {
             $horaStr = substr($novaHora, 0, 5);
             $mensagem = "Olá {$agendamento->usuario->name},\n\nVocê não compareceu quando chamado. Para que não perca seu atendimento, realocamos você para o final da fila.\nSeu novo horário previsto é às {$horaStr}.\n\nAcompanhe no app.\n\nEquipe Lokyva.";
-            Mail::raw($mensagem, function ($msg) use ($agendamento) {
-                $msg->to($agendamento->usuario->email)->subject('Você foi movido para o fim da fila - Lokyva');
-            });
+            Mail::to($agendamento->usuario->email)->queue(new \App\Mail\NotificacaoTexto('Você foi movido para o fim da fila - Lokyva', $mensagem));
         }
 
         return back()->with('error', "Cliente ausente movido para o final da fila (Hora: " . substr($novaHora, 0, 5) . ").");
@@ -234,7 +230,7 @@ public function finalizarComCodigo(Request $request, $id)
             }
 
             $valorFinal = $valorOriginal - $desconto;
-            $taxaMarketplace = $valorFinal * 0.12; 
+            $taxaMarketplace = \App\Support\Taxas::sobre($valorFinal); 
             $estabelecimento = Estabelecimento::find($agendamento->estabelecimento_id);
 
             // Processamento do Pagamento (Registrando Físico ou Confirmando Online)

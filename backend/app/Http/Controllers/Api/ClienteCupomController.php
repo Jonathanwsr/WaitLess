@@ -6,16 +6,18 @@ use App\Http\Controllers\Controller;
 use App\Models\Cupom;
 use App\Models\Estabelecimento;
 use App\Models\Agendamento;
+use App\Services\CupomService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 
 class ClienteCupomController extends Controller
 {
     /**
-     * MÁGICA 1: TELA DE MENSAGENS E SUGESTÕES DO CLIENTE
+     * MÁGICA 1: TELA DE RECOMPENSAS E SUGESTÕES DO CLIENTE
      */
-    public function mensagens()
+    public function recompensas()
     {
         $user = Auth::user();
 
@@ -41,10 +43,11 @@ class ClienteCupomController extends Controller
             $q->where('ativo', true);
         }])->take(4)->get();
 
-        return Inertia::render('Cliente/Mensagens', [
+        return Inertia::render('Cliente/Recompensas', [
             'meusCupons' => $meusCupons,
             'sugestoesLojas' => $sugestoesLojas,
-            'pontosAtuais' => $user->pontos_saldo
+            'pontosAtuais' => $user->pontos_saldo,
+            'indicacao' => app(\App\Services\IndicacaoService::class)->resumo($user),
         ]);
     }
 
@@ -61,8 +64,12 @@ class ClienteCupomController extends Controller
             return back()->with('error', 'Este cupom não está mais ativo.');
         }
 
-        if ($cupom->apenas_plus && $user->plano_assinatura !== 'plus') {
-            return back()->with('error', 'Este cupom é exclusivo para assinantes WaitLess Plus.');
+        if ($cupom->apenas_plus && !$user->isPremium()) {
+            return back()->with('error', 'Este cupom é exclusivo para assinantes premium.');
+        }
+
+        if ($mensagem = app(\App\Services\CupomService::class)->motivoDeInelegibilidade($cupom, $user)) {
+            return back()->with('error', $mensagem);
         }
 
         if ($user->pontos_saldo < $cupom->pontos_custo) {
@@ -89,5 +96,36 @@ class ClienteCupomController extends Controller
         } catch (\Exception $e) {
             return back()->with('error', 'Erro ao processar o resgate. Tente novamente.');
         }
+    }
+
+    /**
+     * Valida (sem consumir) um código de cupom digitado no checkout — usado
+     * pela tela de "Agendar" pra mostrar o desconto antes de confirmar a
+     * reserva. O cupom só é de fato marcado como usado quando a reserva é
+     * criada (ClienteAgendamentoController::store / AgendamentoController::storeAluguel).
+     */
+    public function validar(Request $request, CupomService $cupomService)
+    {
+        $validated = $request->validate([
+            'codigo' => 'required|string|max:60',
+            'estabelecimento_id' => 'nullable|exists:estabelecimentos,id',
+            'servico_id' => 'nullable|integer',
+            'item_aluguel_id' => 'nullable|integer',
+        ]);
+
+        try {
+            $cupom = $cupomService->buscarValidoParaUsuario($validated['codigo'], Auth::user(), $validated['estabelecimento_id'] ?? null, $validated['servico_id'] ?? null, $validated['item_aluguel_id'] ?? null);
+        } catch (ValidationException $e) {
+            return response()->json(['error' => collect($e->errors())->collapse()->first() ?? 'Cupom inválido.'], 422);
+        }
+
+        return response()->json([
+            'cupom' => [
+                'codigo' => $cupom->codigo,
+                'titulo' => $cupom->titulo,
+                'tipo_desconto' => $cupom->tipo_desconto,
+                'valor_desconto' => $cupom->valor_desconto,
+            ],
+        ]);
     }
 }

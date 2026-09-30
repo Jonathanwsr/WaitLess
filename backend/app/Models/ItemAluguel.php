@@ -15,6 +15,8 @@ class ItemAluguel extends Model
 
     protected $guarded = ['id'];
 
+    protected $appends = ['permite_entrega'];
+
     protected $casts = [
         'disponivel' => 'boolean',
         'ativo' => 'boolean',
@@ -48,6 +50,8 @@ class ItemAluguel extends Model
     
         'valor_final'              => 'decimal:2',
         'fotos'                    => 'array',
+        'horario_retirada'         => 'datetime:H:i',
+        'horario_entrega'          => 'datetime:H:i',
 
     ];
 
@@ -64,6 +68,41 @@ class ItemAluguel extends Model
         'Equipamentos' => ['equipamento', 'ferramenta', 'gerador', 'compressor', 'camera', 'drone', 'notebook', 'projetor', 'audio_video', 'tenda'],
         'Outros' => ['outro'],
     ];
+
+    /**
+     * Categorias de bens "móveis" — só neles faz sentido combinar local de
+     * entrega/retirada (e devolução). Imóveis, espaços, quadras e serviços
+     * são usados no próprio local, então não têm esse conceito.
+     */
+    const CATEGORIAS_COM_ENTREGA = [
+        // Veículos
+        'carro', 'moto', 'bicicleta', 'bicicleta_eletrica', 'patinete', 'patinete_eletrico', 'van', 'onibus',
+        'micro_onibus', 'caminhao', 'carreta', 'motorhome', 'trailer', 'jet_ski', 'barco', 'lancha', 'iate', 'caiaque',
+        // Equipamentos
+        'equipamento', 'ferramenta', 'equipamento_construcao', 'equipamento_agricola', 'equipamento_industrial',
+        'andaime', 'betoneira', 'gerador', 'compressor', 'escada',
+        // Tecnologia
+        'camera', 'camera_fotografica', 'camera_filmagem', 'drone', 'notebook', 'computador', 'tablet', 'projetor',
+        'impressora', 'monitor', 'videogame',
+        // Áudio e vídeo
+        'audio_video', 'caixa_som', 'mesa_som', 'microfone', 'telão', 'painel_led', 'iluminacao', 'karaoke',
+        // Eventos
+        'palco', 'tenda', 'cadeira', 'mesa', 'decoracao', 'brinquedo_inflavel',
+        // Vestuário
+        'roupa', 'terno', 'vestido', 'fantasia',
+        // Sem categoria específica: assume-se um objeto
+        'outro',
+    ];
+
+    public static function categoriaPermiteEntrega(?string $categoria): bool
+    {
+        return $categoria !== null && in_array($categoria, self::CATEGORIAS_COM_ENTREGA, true);
+    }
+
+    public function getPermiteEntregaAttribute(): bool
+    {
+        return self::categoriaPermiteEntrega($this->categoria);
+    }
 
     public function estabelecimento(): BelongsTo
     {

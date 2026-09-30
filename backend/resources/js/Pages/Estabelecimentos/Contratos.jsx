@@ -1,6 +1,5 @@
 import React, { useState, useRef } from 'react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import InputError from '@/Components/InputError';
 import InputLabel from '@/Components/InputLabel';
 import TextInput from '@/Components/TextInput';
 import PrimaryButton from '@/Components/PrimaryButton';
@@ -10,12 +9,13 @@ import {
     PencilSquareIcon, EyeIcon, ArrowDownTrayIcon, 
     XMarkIcon, CheckBadgeIcon, ShieldCheckIcon,
     BuildingOfficeIcon, ChevronRightIcon,
-    TagIcon, PrinterIcon, ArrowLeftIcon,
-    ArchiveBoxIcon, ClockIcon, CheckCircleIcon, 
-    ArrowTopRightOnSquareIcon, TrashIcon, UserGroupIcon
+    ArrowLeftIcon, ArchiveBoxIcon, ClockIcon, 
+    CheckCircleIcon, ArrowTopRightOnSquareIcon, 
+    TrashIcon, UserGroupIcon, DocumentDuplicateIcon,
+    BoltIcon, SparklesIcon
 } from '@heroicons/react/24/solid';
 
-export default function Contratos({ auth, estabelecimento, templates = [], contratosGerados = { data: [] }, reservasPendentes = [] }) {
+function ContratosConteudo({ auth, estabelecimento, templates = [], contratosGerados = { data: [] }, reservasPendentes = [] }) {
     const { flash = {} } = usePage().props;
     const [activeTab, setActiveTab] = useState('modelos'); 
     const [mensagemSucesso, setMensagemSucesso] = useState('');
@@ -73,15 +73,15 @@ export default function Contratos({ auth, estabelecimento, templates = [], contr
     });
 
     const variaveisMagicas = [
-        { desc: 'Nome do Locador', tag: '{{LOCADOR_NOME}}' },
-        { desc: 'Documento do Locador', tag: '{{LOCADOR_DOCUMENTO}}' },
-        { desc: 'Nome do Locatário', tag: '{{LOCATARIO_NOME}}' },
-        { desc: 'CPF do Locatário', tag: '{{LOCATARIO_DOCUMENTO}}' },
-        { desc: 'E-mail do Locatário', tag: '{{LOCATARIO_EMAIL}}' },
-        { desc: 'Nome do Item/Imóvel', tag: '{{ITEM_NOME}}' },
+        { desc: 'Nome Locador', tag: '{{LOCADOR_NOME}}' },
+        { desc: 'Doc Locador', tag: '{{LOCADOR_DOCUMENTO}}' },
+        { desc: 'Nome Locatário', tag: '{{LOCATARIO_NOME}}' },
+        { desc: 'CPF Locatário', tag: '{{LOCATARIO_DOCUMENTO}}' },
+        { desc: 'E-mail Locatário', tag: '{{LOCATARIO_EMAIL}}' },
+        { desc: 'Nome do Item', tag: '{{ITEM_NOME}}' },
         { desc: 'Valor Total', tag: '{{VALOR_TOTAL}}' },
-        { desc: 'Data de Início', tag: '{{DATA_INICIO}}' },
-        { desc: 'Data de Término', tag: '{{DATA_FIM}}' },
+        { desc: 'Data Início', tag: '{{DATA_INICIO}}' },
+        { desc: 'Data Término', tag: '{{DATA_FIM}}' },
     ];
 
     const textoContratoPadrao = `
@@ -104,52 +104,9 @@ Regido pela Lei nº 8.245/1991 (Lei do Inquilinato) e pelo Código Civil Brasile
 
 <h3>3. DO PRAZO DA LOCAÇÃO</h3>
 <p>A locação terá início em <strong>{{DATA_INICIO}}</strong> e término em <strong>{{DATA_FIM}}</strong>, perfazendo o prazo total de {{PRAZO_DIAS}} dias/meses.</p>
-<p><strong>Parágrafo Primeiro:</strong> Findo o prazo estipulado, caso o LOCATÁRIO permaneça no imóvel/posse do bem por mais de 30 (trinta) dias sem oposição expressa do LOCADOR, a locação prorrogar-se-á automaticamente por prazo indeterminado, nos termos do art. 47 da Lei nº 8.245/1991, mantidas as demais cláusulas e condições contratuais.</p>
-<p><strong>Parágrafo Segundo:</strong> Qualquer das partes poderá denunciar o contrato a qualquer tempo, mediante aviso prévio por escrito de 30 (trinta) dias, respeitado o prazo mínimo de vigência.</p>
 
 <h3>4. DO VALOR E FORMA DE PAGAMENTO</h3>
 <p>O valor total da locação é de <strong>R$ {{VALOR_TOTAL}}</strong>, sendo o aluguel mensal no valor de R$ {{VALOR_MENSAL}} ({{VALOR_MENSAL_EXTENSO}}).</p>
-<p><strong>Parágrafo Primeiro:</strong> Os pagamentos serão realizados até o dia {{DIA_VENCIMENTO}} de cada mês, mediante {{FORMA_PAGAMENTO}} (PIX, transferência bancária ou outro meio acordado), em favor do LOCADOR.</p>
-<p><strong>Parágrafo Segundo:</strong> O atraso no pagamento acarretará, independentemente de notificação:</p>
-<ul>
-  <li>Multa moratória de 10% (dez por cento) sobre o valor devido;</li>
-  <li>Juros de mora de 1% (um por cento) ao mês, pro rata die;</li>
-  <li>Correção monetária pelo IPCA ou índice oficial que o substitua.</li>
-</ul>
-<p><strong>Parágrafo Terceiro:</strong> O LOCATÁRIO arcará com todas as despesas ordinárias de condomínio, IPTU, contas de consumo (água, luz, gás, internet etc.), salvo disposição expressa em contrário.</p>
-
-<h3>5. DA ENTREGA, CONSERVAÇÃO E VISTORIA</h3>
-<p>O bem é entregue ao LOCATÁRIO em perfeito estado de conservação, limpeza e funcionamento, conforme Termo de Vistoria Inicial assinado pelas partes (Anexo I).</p>
-<p><strong>Parágrafo Primeiro:</strong> O LOCATÁRIO obriga-se a manter o bem em perfeito estado, realizando, às suas expensas, todas as reparações e conservações necessárias, exceto as decorrentes de desgaste natural ou vício oculto.</p>
-<p><strong>Parágrafo Segundo:</strong> O LOCADOR ou seu representante poderá realizar vistorias periódicas, mediante aviso prévio de 24 (vinte e quatro) horas, respeitando a privacidade do LOCATÁRIO.</p>
-<p><strong>Parágrafo Terceiro:</strong> Ao final da locação, o LOCATÁRIO deverá devolver o bem no mesmo estado em que o recebeu, ressalvado o desgaste natural, sob pena de retenção da caução e cobrança de indenização por danos.</p>
-
-<h3>6. DA CAUÇÃO / GARANTIA</h3>
-<p>O LOCATÁRIO prestou garantia no valor equivalente a {{MESES_CAUCAO}} mês(es) de aluguel, no montante de R$ {{VALOR_CAUCAO}}, mediante {{TIPO_GARANTIA}} (depósito em dinheiro, fiança, seguro fiança etc.).</p>
-<p>A caução será devolvida ao LOCATÁRIO no prazo máximo de 30 (trinta) dias após a entrega do bem, deduzidos eventuais débitos, multas ou danos.</p>
-
-<h3>7. DAS OBRIGAÇÕES E PROIBIÇÕES DO LOCATÁRIO</h3>
-<ul>
-  <li>Não sublocar, ceder ou transferir o bem, no todo ou em parte, sem prévia autorização escrita do LOCADOR;</li>
-  <li>Não realizar reformas, alterações ou pinturas sem consentimento prévio e por escrito do LOCADOR;</li>
-  <li>Não permitir a utilização do bem por terceiros não autorizados;</li>
-  <li>Manter o bem seguro e protegido contra sinistros;</li>
-  <li>Comunicar imediatamente ao LOCADOR qualquer defeito ou necessidade de reparo;</li>
-  <li>Respeitar as normas de convivência e regulamentos aplicáveis.</li>
-</ul>
-
-<h3>8. DA RESCISÃO E MULTA RESCISÓRIA</h3>
-<p>Qualquer descumprimento das obrigações contratuais autorizará a parte inocente a rescindir o contrato de pleno direito, mediante notificação extrajudicial, sem prejuízo da cobrança de multas, aluguéis atrasados e indenizações por danos.</p>
-<p><strong>Parágrafo Único:</strong> Em caso de rescisão antecipada por iniciativa do LOCATÁRIO, este pagará multa rescisória equivalente a 3 (três) meses de aluguel, proporcionalmente ao tempo restante de contrato, conforme jurisprudência e boa-fé contratual.</p>
-
-<h3>9. DAS DESPESAS E TRIBUTOS</h3>
-<p>Todas as despesas ordinárias e extraordinárias relativas ao bem durante a locação serão de responsabilidade do LOCATÁRIO, exceto as que por lei ou convenção forem atribuídas ao LOCADOR.</p>
-
-<h3>10. DO FORO E DISPOSIÇÕES GERAIS</h3>
-<p>As partes elegem o foro da Comarca de {{CIDADE_FORO}} para dirimir quaisquer controvérsias oriundas deste contrato, renunciando a qualquer outro, por mais privilegiado que seja.</p>
-<p><strong>Parágrafo Primeiro:</strong> Este contrato obriga as partes, seus herdeiros e sucessores.</p>
-<p><strong>Parágrafo Segundo:</strong> Os anexos (Termo de Vistoria, Comprovantes de Pagamento etc.) integram o presente instrumento para todos os fins de direito.</p>
-<p><strong>Parágrafo Terceiro:</strong> Fica expressamente vedada a compensação de aluguéis com eventuais créditos do LOCATÁRIO.</p>
 
 <br><br><br>
 
@@ -163,21 +120,7 @@ Regido pela Lei nº 8.245/1991 (Lei do Inquilinato) e pelo Código Civil Brasile
     
     <p>_________________________________________________________</p>
     <p><strong>{{LOCATARIO_NOME}}</strong><br>Locatário(a) - CPF: {{LOCATARIO_DOCUMENTO}}</p>
-    
-    <br><br>
-    
-    <p><strong>Testemunhas:</strong></p>
-    
-    <p>_________________________________________________________</p>
-    <p>Nome: ______________________________ CPF: ________________</p>
-    
-    <p>_________________________________________________________</p>
-    <p>Nome: ______________________________ CPF: ________________</p>
 </div>
-
-<p style="font-size: 0.9em; margin-top: 50px; text-align: center;">
-    <strong>Anexos:</strong> I – Termo de Vistoria e Descrição do Bem | II – Comprovante de Pagamento da Caução (se aplicável)
-</p>
     `;
 
     const carregarTextoPadrao = () => {
@@ -200,7 +143,7 @@ Regido pela Lei nº 8.245/1991 (Lei do Inquilinato) e pelo Código Civil Brasile
             const reserva = listaPendentes.find(r => r.id.toString() === formTemplate.data.aluguel_id.toString());
             if (reserva) {
                 locatarioNome = reserva.locatario?.name || locatarioNome;
-                locatarioDoc = reserva.locatario?.cpf || locatarioDoc;
+                locatarioDoc = reserva.locatario?.cpf_cnpj || locatarioDoc;
                 locatarioEmail = reserva.locatario?.email || locatarioEmail;
                 itemNome = reserva.item?.nome || itemNome;
                 valorTotal = Number(reserva.valor_total).toFixed(2);
@@ -241,7 +184,6 @@ Regido pela Lei nº 8.245/1991 (Lei do Inquilinato) e pelo Código Civil Brasile
     const submitTemplate = (e) => {
         e.preventDefault();
 
-        // Roda as validações de segurança cibernética
         const erroSeguranca = validarSeguranca(formTemplate.data.conteudo);
         if (erroSeguranca) {
             alert(erroSeguranca);
@@ -249,14 +191,14 @@ Regido pela Lei nº 8.245/1991 (Lei do Inquilinato) e pelo Código Civil Brasile
         }
 
         if (formTemplate.data.aplicabilidade === 'especifica' && formTemplate.data.aluguel_id) {
-            router.post(route('reservas.gerar-assinafy', formTemplate.data.aluguel_id), {
+            router.post(route('reservas.gerar-contrato', formTemplate.data.aluguel_id), {
                 conteudo_customizado: formTemplate.data.conteudo,
                 titulo: formTemplate.data.titulo
             }, {
                 preserveScroll: true,
                 onSuccess: () => {
                     cancelarEdicao();
-                    mostrarMensagem('Contrato gerado e enviado com sucesso por E-mail e liberado para WhatsApp!');
+                    mostrarMensagem('Contrato gerado com sucesso! Envie para o cliente na aba "Contratos Gerados".');
                     setActiveTab('assinados');
                 }
             });
@@ -268,7 +210,7 @@ Regido pela Lei nº 8.245/1991 (Lei do Inquilinato) e pelo Código Civil Brasile
                 preserveScroll: true,
                 onSuccess: () => {
                     cancelarEdicao();
-                    mostrarMensagem('Modelo atualizado com sucesso!');
+                    mostrarMensagem('Modelo atualizado com sucesso na biblioteca!');
                 }
             });
         } else {
@@ -276,7 +218,7 @@ Regido pela Lei nº 8.245/1991 (Lei do Inquilinato) e pelo Código Civil Brasile
                 preserveScroll: true,
                 onSuccess: () => {
                     cancelarEdicao();
-                    mostrarMensagem('Novo modelo salvo com sucesso!');
+                    mostrarMensagem('Novo modelo salvo com sucesso na biblioteca!');
                 }
             });
         }
@@ -297,19 +239,19 @@ Regido pela Lei nº 8.245/1991 (Lei do Inquilinato) e pelo Código Civil Brasile
     };
 
     const deletarTemplate = (id) => {
-        if (window.confirm("Tem certeza que deseja apagar este modelo de contrato?")) {
+        if (window.confirm("Tem certeza que deseja excluir permanentemente este modelo de contrato?")) {
             router.delete(route('contratos.templates.destroy', id), {
                 preserveScroll: true,
-                onSuccess: () => mostrarMensagem('Modelo de contrato apagado.')
+                onSuccess: () => mostrarMensagem('Modelo de contrato removido com sucesso.')
             });
         }
     };
 
     const deletarContratoGerado = (id) => {
-        if (window.confirm("Atenção: Apagar este registro removerá o histórico do contrato. O cliente já não poderá acessá-lo. Continuar?")) {
+        if (window.confirm("Atenção: A exclusão removerá o histórico deste contrato. O cliente perderá o acesso. Deseja continuar?")) {
             router.delete(route('contratos.gerados.destroy', id), {
                 preserveScroll: true,
-                onSuccess: () => mostrarMensagem('Histórico do contrato apagado.')
+                onSuccess: () => mostrarMensagem('Histórico do contrato removido com sucesso.')
             });
         }
     };
@@ -329,7 +271,7 @@ Regido pela Lei nº 8.245/1991 (Lei do Inquilinato) e pelo Código Civil Brasile
         
         Object.keys(dadosAtuais).forEach(tag => {
             const regex = new RegExp(tag, 'g');
-            htmlRenderizado = htmlRenderizado.replace(regex, `<span style="background-color: #fef08a; padding: 0 4px; border-radius: 4px; font-weight: bold; color: #854d0e;">${dadosAtuais[tag]}</span>`);
+            htmlRenderizado = htmlRenderizado.replace(regex, `<span style="background-color: #FEF3C7; padding: 2px 6px; border-radius: 4px; font-weight: 700; color: #92400E; border: 1px solid #FDE68A;">${dadosAtuais[tag]}</span>`);
         });
 
         htmlRenderizado = htmlRenderizado.replace(/\n/g, '<br/>');
@@ -342,53 +284,49 @@ Regido pela Lei nº 8.245/1991 (Lei do Inquilinato) e pelo Código Civil Brasile
         printWindow.document.write(`
             <html>
                 <head>
-                    <title>Contrato Digital</title>
+                    <title>Visualização de Contrato</title>
                     <style>
-                        body { font-family: 'Helvetica', Arial, sans-serif; padding: 40px; color: #333; line-height: 1.6; max-width: 800px; margin: 0 auto; }
-                        h1 { text-align: center; color: #0F172A; text-transform: uppercase; font-size: 20px; border-bottom: 2px solid #EEE; padding-bottom: 10px; margin-bottom: 30px;}
-                        .footer { margin-top: 50px; font-size: 11px; text-align: center; color: #999; border-top: 1px solid #eee; padding-top: 20px; font-weight: bold; }
-                        span { background-color: transparent !important; color: #000 !important; font-weight: normal !important; }
+                        body { font-family: 'Inter', 'Helvetica', Arial, sans-serif; padding: 40px; color: #1F2937; line-height: 1.6; max-width: 800px; margin: 0 auto; }
+                        h1 { text-align: center; color: #111827; text-transform: uppercase; font-size: 22px; border-bottom: 2px solid #E5E7EB; padding-bottom: 12px; margin-bottom: 30px;}
+                        .footer { margin-top: 50px; font-size: 12px; text-align: center; color: #9CA3AF; border-top: 1px solid #E5E7EB; padding-top: 20px; font-weight: bold; }
+                        span { background-color: transparent !important; color: #000 !important; font-weight: normal !important; border: none !important; padding: 0 !important; }
                     </style>
                 </head>
                 <body>
                     <h1>${formTemplate.data.titulo || 'Contrato de Locação'}</h1>
-                    <div>
-                        ${previewHtml}
-                    </div>
-                    <div class="footer">
-                        Contrato digital via Waitless
-                    </div>
+                    <div>${previewHtml}</div>
+                    <div class="footer">Documento gerado eletronicamente via plataforma Lokyva</div>
                 </body>
             </html>
         `);
         printWindow.document.close();
-        
-        setTimeout(() => {
-            printWindow.print();
-        }, 500);
+        setTimeout(() => printWindow.print(), 500);
     };
 
     return (
         <AuthenticatedLayout
             header={
-                <div className="flex flex-col max-w-5xl mx-auto w-full">
-                    <div className="text-xs text-gray-500 font-bold mb-2 flex items-center gap-1">
-                        <BuildingOfficeIcon className="w-3 h-3"/> Estabelecimentos <ChevronRightIcon className="w-3 h-3"/> 
+                <div className="flex flex-col max-w-6xl mx-auto w-full">
+                    {/* BREADCRUMB */}
+                    <div className="text-xs text-gray-500 font-semibold mb-3 flex items-center gap-1.5 uppercase tracking-wide">
+                        <BuildingOfficeIcon className="w-3.5 h-3.5"/> Estabelecimentos 
+                        <ChevronRightIcon className="w-3 h-3 text-gray-300"/> 
                         {lojaSegura.id && (
-                            <Link href={route('estabelecimentos.configuracoes', lojaSegura.id)} className="hover:text-orange-500 transition">Configurações</Link> 
+                            <Link href={route('estabelecimentos.configuracoes', lojaSegura.id)} className="hover:text-indigo-600 transition">Configurações</Link> 
                         )}
-                        <ChevronRightIcon className="w-3 h-3"/> <span className="text-gray-900">Contratos Assinafy</span>
+                        <ChevronRightIcon className="w-3 h-3 text-gray-300"/> 
+                        <span className="text-indigo-600 font-bold">Contratos</span>
                     </div>
 
-                    <div className="flex items-center justify-between mt-1">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mt-1">
                         <div>
-                            <h2 className="text-2xl font-bold leading-tight text-gray-900 flex items-center gap-3">
-                                <DocumentCheckIcon className="w-7 h-7 text-blue-600" /> Gestor de Contratos
+                            <h2 className="text-2xl sm:text-3xl font-black leading-tight text-gray-900 flex items-center gap-3 tracking-tight">
+                                <DocumentCheckIcon className="w-8 h-8 text-indigo-600" /> Gestor de Contratos
                             </h2>
-                            <p className="text-sm text-gray-500">Centralize as regras de negócio e assinaturas de {lojaSegura.nome || 'Loja'}</p>
+                            <p className="text-sm text-gray-500 mt-1.5 font-medium">Crie, gerencie e envie termos jurídicos de forma automatizada.</p>
                         </div>
                         {lojaSegura.id && (
-                            <Link href={route('estabelecimentos.configuracoes', lojaSegura.id)} className="text-sm font-bold text-gray-600 bg-white border border-gray-200 px-4 py-2 rounded-lg hover:bg-gray-50 transition flex items-center gap-2 shadow-sm">
+                            <Link href={route('estabelecimentos.configuracoes', lojaSegura.id)} className="inline-flex items-center justify-center gap-2 text-sm font-bold text-gray-700 bg-white border border-gray-200 px-5 py-2.5 rounded-xl hover:bg-gray-50 hover:text-gray-900 transition shadow-sm w-full sm:w-auto">
                                 <ArrowLeftIcon className="w-4 h-4"/> Voltar
                             </Link>
                         )}
@@ -396,34 +334,43 @@ Regido pela Lei nº 8.245/1991 (Lei do Inquilinato) e pelo Código Civil Brasile
                 </div>
             }
         >
-            <Head title="Gestor de Contratos - Assinafy" />
+            <Head title="Gestor de Contratos - Lokyva" />
 
-            <div className="bg-[#FBF9F9] min-h-screen pb-12">
+            <div className="bg-gray-50/50 min-h-screen pb-16">
                 
+                {/* NOTIFICAÇÕES TOAST */}
                 {(mensagemSucesso || flash?.success || flash?.error) && (
-                    <div className="max-w-5xl mx-auto mt-4 px-4 sm:px-6 lg:px-8 space-y-2">
+                    <div className="max-w-6xl mx-auto pt-6 px-4 sm:px-6 lg:px-8">
                         {(mensagemSucesso || flash?.success) && (
-                            <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded-xl shadow-sm flex items-center gap-2 animate-in fade-in slide-in-from-top-4">
-                                <CheckBadgeIcon className="w-5 h-5" /> <strong className="font-bold">Sucesso!</strong> {mensagemSucesso || flash.success}
+                            <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 px-5 py-4 rounded-2xl shadow-sm flex items-center gap-3 animate-in fade-in slide-in-from-top-4">
+                                <CheckBadgeIcon className="w-6 h-6 text-emerald-500 shrink-0" /> 
+                                <span className="text-sm font-medium"><strong className="font-bold">Sucesso!</strong> {mensagemSucesso || flash.success}</span>
                             </div>
                         )}
                         {flash?.error && (
-                            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-xl shadow-sm flex items-center gap-2 animate-in fade-in">
-                                <ShieldCheckIcon className="w-5 h-5" /> <strong className="font-bold">Erro:</strong> {flash.error}
+                            <div className="bg-red-50 border border-red-200 text-red-800 px-5 py-4 rounded-2xl shadow-sm flex items-center gap-3 animate-in fade-in">
+                                <ShieldCheckIcon className="w-6 h-6 text-red-500 shrink-0" /> 
+                                <span className="text-sm font-medium"><strong className="font-bold">Ação bloqueada:</strong> {flash.error}</span>
                             </div>
                         )}
                     </div>
                 )}
 
-                {/* CONTAINER CENTRALIZADO */}
-                <div className="max-w-5xl mx-auto mt-6 px-4 sm:px-6 lg:px-8">
+                <div className="max-w-6xl mx-auto mt-6 px-4 sm:px-6 lg:px-8">
                     
-                    <div className="flex space-x-2 border-b border-gray-200 mb-8 overflow-x-auto">
-                        <button onClick={() => setActiveTab('modelos')} className={`pb-4 px-4 text-sm font-bold border-b-2 transition whitespace-nowrap flex items-center gap-2 ${activeTab === 'modelos' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-                            <PencilSquareIcon className="w-5 h-5" /> Criador de Modelos
+                    {/* TABS (Segmented Control) */}
+                    <div className="flex p-1 space-x-1 bg-gray-200/60 rounded-xl max-w-md mb-8 shadow-inner">
+                        <button 
+                            onClick={() => setActiveTab('modelos')} 
+                            className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-bold rounded-lg transition-all duration-200 ${activeTab === 'modelos' ? 'bg-white text-indigo-700 shadow shadow-gray-200/50 ring-1 ring-gray-200' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/80'}`}
+                        >
+                            <PencilSquareIcon className="w-4 h-4" /> Criador de Modelos
                         </button>
-                        <button onClick={() => setActiveTab('assinados')} className={`pb-4 px-4 text-sm font-bold border-b-2 transition whitespace-nowrap flex items-center gap-2 ${activeTab === 'assinados' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-                            <DocumentTextIcon className="w-5 h-5" /> Tabela de Assinaturas
+                        <button 
+                            onClick={() => setActiveTab('assinados')} 
+                            className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-bold rounded-lg transition-all duration-200 ${activeTab === 'assinados' ? 'bg-white text-indigo-700 shadow shadow-gray-200/50 ring-1 ring-gray-200' : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200/80'}`}
+                        >
+                            <DocumentTextIcon className="w-4 h-4" /> Contratos Gerados
                         </button>
                     </div>
 
@@ -433,175 +380,244 @@ Regido pela Lei nº 8.245/1991 (Lei do Inquilinato) e pelo Código Civil Brasile
                     {activeTab === 'modelos' && (
                         <div className="space-y-8 animate-in fade-in">
                             
-                            <div className="bg-white p-6 sm:p-10 rounded-3xl shadow-sm border border-gray-200">
-                                <div className="flex flex-col md:flex-row justify-between md:items-start mb-6 gap-4">
+                            {/* EDITOR DE CONTRATOS */}
+                            <div className="bg-white p-6 sm:p-10 rounded-[2rem] shadow-sm border border-gray-100 ring-1 ring-gray-900/5">
+                                <div className="flex flex-col lg:flex-row justify-between lg:items-center mb-8 gap-5 border-b border-gray-100 pb-6">
                                     <div>
-                                        <h3 className="text-2xl font-black text-gray-900 flex items-center gap-2">
-                                            {isEditing ? <><PencilSquareIcon className="w-6 h-6 text-blue-500"/> Editando Modelo</> : <><PlusIcon className="w-6 h-6 text-blue-500"/> Redigir Novo Contrato</>}
+                                        <h3 className="text-2xl font-black text-gray-900 flex items-center gap-2.5">
+                                            {isEditing ? <><PencilSquareIcon className="w-7 h-7 text-indigo-500"/> Editando Modelo Salvo</> : <><PlusIcon className="w-7 h-7 text-indigo-500"/> Redigir Novo Contrato</>}
                                         </h3>
-                                        <p className="text-sm text-gray-500 mt-1">Escreva os termos jurídicos e use as variáveis para auto-completar nomes e datas.</p>
+                                        <p className="text-sm text-gray-500 mt-1.5">Escreva os termos jurídicos e utilize as variáveis para preenchimento inteligente.</p>
                                     </div>
-                                    <button onClick={carregarTextoPadrao} type="button" className="px-4 py-2 bg-gray-900 hover:bg-black text-white text-xs font-bold rounded-lg shadow transition flex items-center gap-2 shrink-0">
-                                        <DocumentTextIcon className="w-4 h-4"/> Usar Padrão Profissional
+                                    <button 
+                                        onClick={carregarTextoPadrao} 
+                                        type="button" 
+                                        className="px-5 py-2.5 bg-gray-900 hover:bg-gray-800 text-white text-sm font-bold rounded-xl shadow-md shadow-gray-900/10 transition-transform active:scale-95 flex items-center justify-center gap-2 shrink-0"
+                                    >
+                                        <BoltIcon className="w-4 h-4 text-yellow-400"/> Carregar Padrão Lokyva
                                     </button>
                                 </div>
 
                                 <form onSubmit={submitTemplate} className="space-y-8">
                                     
-                                    <div className="bg-gray-50 p-5 rounded-2xl border border-gray-200">
-                                        <InputLabel value="Onde este contrato será usado? *" className="mb-3 text-gray-800" />
-                                        <div className="flex flex-col sm:flex-row gap-4">
-                                            <label className={`flex-1 border p-4 rounded-xl cursor-pointer transition ${formTemplate.data.aplicabilidade === 'padrao' ? 'bg-blue-50 border-blue-300 ring-2 ring-blue-500' : 'bg-white hover:bg-gray-100'}`}>
-                                                <div className="flex items-center gap-2">
-                                                    <input type="radio" name="aplicabilidade" value="padrao" checked={formTemplate.data.aplicabilidade === 'padrao'} onChange={() => formTemplate.setData('aplicabilidade', 'padrao')} className="text-blue-600 focus:ring-blue-500"/>
-                                                    <span className="font-bold text-gray-900">Salvar na Biblioteca</span>
+                                    {/* APLICABILIDADE (Radio Cards) */}
+                                    <div>
+                                        <InputLabel value="Objetivo deste contrato *" className="mb-3 text-gray-900 font-bold" />
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <label className={`relative flex cursor-pointer rounded-2xl border p-5 focus:outline-none transition-all duration-200 ${formTemplate.data.aplicabilidade === 'padrao' ? 'bg-indigo-50/50 border-indigo-600 ring-1 ring-indigo-600 shadow-sm' : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'}`}>
+                                                <div className="flex items-start gap-4 w-full">
+                                                    <div className="flex items-center h-6">
+                                                        <input type="radio" name="aplicabilidade" value="padrao" checked={formTemplate.data.aplicabilidade === 'padrao'} onChange={() => formTemplate.setData('aplicabilidade', 'padrao')} className="h-5 w-5 rounded-full border-gray-300 text-indigo-600 focus:ring-indigo-600"/>
+                                                    </div>
+                                                    <div className="flex flex-col flex-1">
+                                                        <span className={`block text-sm font-bold ${formTemplate.data.aplicabilidade === 'padrao' ? 'text-indigo-900' : 'text-gray-900'}`}>Salvar na Biblioteca</span>
+                                                        <span className="block text-xs text-gray-500 mt-1 leading-relaxed">Crie um modelo reutilizável para que o sistema o anexe automaticamente a futuras reservas.</span>
+                                                    </div>
+                                                    <ArchiveBoxIcon className={`w-6 h-6 shrink-0 ${formTemplate.data.aplicabilidade === 'padrao' ? 'text-indigo-600' : 'text-gray-300'}`} />
                                                 </div>
-                                                <p className="text-xs text-gray-500 mt-1 ml-6">Deixar pronto para que o sistema use automaticamente no futuro.</p>
                                             </label>
 
-                                            <label className={`flex-1 border p-4 rounded-xl cursor-pointer transition ${formTemplate.data.aplicabilidade === 'especifica' ? 'bg-orange-50 border-orange-300 ring-2 ring-orange-500' : 'bg-white hover:bg-gray-100'}`}>
-                                                <div className="flex items-center gap-2">
-                                                    <input type="radio" name="aplicabilidade" value="especifica" checked={formTemplate.data.aplicabilidade === 'especifica'} onChange={() => formTemplate.setData('aplicabilidade', 'especifica')} className="text-orange-600 focus:ring-orange-500"/>
-                                                    <span className="font-bold text-gray-900">Enviar para Reserva Pendente</span>
+                                            <label className={`relative flex cursor-pointer rounded-2xl border p-5 focus:outline-none transition-all duration-200 ${formTemplate.data.aplicabilidade === 'especifica' ? 'bg-orange-50/50 border-orange-500 ring-1 ring-orange-500 shadow-sm' : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'}`}>
+                                                <div className="flex items-start gap-4 w-full">
+                                                    <div className="flex items-center h-6">
+                                                        <input type="radio" name="aplicabilidade" value="especifica" checked={formTemplate.data.aplicabilidade === 'especifica'} onChange={() => formTemplate.setData('aplicabilidade', 'especifica')} className="h-5 w-5 rounded-full border-gray-300 text-orange-600 focus:ring-orange-600"/>
+                                                    </div>
+                                                    <div className="flex flex-col flex-1">
+                                                        <span className={`block text-sm font-bold ${formTemplate.data.aplicabilidade === 'especifica' ? 'text-orange-900' : 'text-gray-900'}`}>Uso Único (Enviar para Reserva)</span>
+                                                        <span className="block text-xs text-gray-500 mt-1 leading-relaxed">Redija um contrato personalizado e envie diretamente a um cliente que possui uma reserva pendente.</span>
+                                                    </div>
+                                                    <DocumentTextIcon className={`w-6 h-6 shrink-0 ${formTemplate.data.aplicabilidade === 'especifica' ? 'text-orange-500' : 'text-gray-300'}`} />
                                                 </div>
-                                                <p className="text-xs text-gray-500 mt-1 ml-6">Criar este texto e enviá-lo diretamente a um cliente que está à espera.</p>
                                             </label>
                                         </div>
 
-                                        {formTemplate.data.aplicabilidade === 'especifica' && (
-                                            <div className="mt-4 pt-4 border-t border-gray-200 animate-in fade-in slide-in-from-top-2">
-                                                <InputLabel value="Selecione o Cliente / Reserva *" />
+                                        {/* Dropdown de Reservas Pendentes com Animação */}
+                                        <div className={`transition-all duration-300 overflow-hidden ${formTemplate.data.aplicabilidade === 'especifica' ? 'max-h-40 mt-5 opacity-100' : 'max-h-0 opacity-0'}`}>
+                                            <div className="bg-orange-50/50 border border-orange-200 p-5 rounded-xl">
+                                                <InputLabel value="Selecione o Cliente / Reserva pendente *" className="text-orange-900" />
                                                 <select 
-                                                    className="w-full mt-1 border-orange-300 rounded-xl text-sm focus:border-orange-500 focus:ring-orange-500 bg-white" 
+                                                    className="w-full mt-2 border-orange-200 rounded-xl text-sm focus:border-orange-500 focus:ring-orange-500 bg-white shadow-sm py-2.5" 
                                                     value={formTemplate.data.aluguel_id} 
                                                     onChange={e => formTemplate.setData('aluguel_id', e.target.value)}
                                                     required={formTemplate.data.aplicabilidade === 'especifica'}
                                                 >
-                                                    <option value="">Selecione uma reserva que exige contrato...</option>
+                                                    <option value="">Selecione uma reserva vinculada...</option>
                                                     {listaPendentes.map(res => (
                                                         <option key={res.id} value={res.id}>
-                                                            {res.codigo_reserva} - Cliente: {res.locatario?.name} (Item: {res.item?.nome})
+                                                            ID: {res.codigo_reserva} — Cliente: {res.locatario?.name} (Item: {res.item?.nome})
                                                         </option>
                                                     ))}
                                                 </select>
-                                                {listaPendentes.length === 0 && <p className="text-xs text-orange-600 mt-2">Você não possui reservas pendentes de contrato no momento.</p>}
+                                                {listaPendentes.length === 0 && <p className="text-xs text-orange-600 font-medium mt-2 flex items-center gap-1"><ShieldCheckIcon className="w-4 h-4"/> Nenhuma reserva aguardando contrato no momento.</p>}
                                             </div>
-                                        )}
+                                        </div>
                                     </div>
 
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-gray-100">
                                         <div className="md:col-span-2">
-                                            <InputLabel value="Título de Identificação (Visível para você) *" />
-                                            <TextInput className="w-full mt-1 focus:border-blue-500 focus:ring-blue-500" value={formTemplate.data.titulo} onChange={e => formTemplate.setData('titulo', e.target.value)} placeholder="Ex: Contrato de Imóveis Padrão 2026" required />
+                                            <InputLabel value="Título de Identificação (Visível apenas para você) *" />
+                                            <TextInput 
+                                                className="w-full mt-2 focus:border-indigo-500 focus:ring-indigo-500 rounded-xl" 
+                                                value={formTemplate.data.titulo} 
+                                                onChange={e => formTemplate.setData('titulo', e.target.value)} 
+                                                placeholder="Ex: Contrato Padrão - Imóveis Comerciais 2026" 
+                                                required 
+                                            />
                                         </div>
                                         
                                         {formTemplate.data.aplicabilidade === 'padrao' && (
                                             <>
                                                 <div>
-                                                    <InputLabel value="Vincular a qual tipo de reserva? *" />
-                                                    <select className="w-full mt-1 border-gray-300 rounded-xl text-sm focus:border-blue-500 focus:ring-blue-500" value={formTemplate.data.tipo_reserva} onChange={e => formTemplate.setData('tipo_reserva', e.target.value)} required>
-                                                        <option value="geral">Geral (Todos os Itens)</option>
-                                                        <option value="carro">Veículos / Carros</option>
+                                                    <InputLabel value="Vincular a qual tipo de serviço? *" />
+                                                    <select 
+                                                        className="w-full mt-2 border-gray-300 rounded-xl text-sm focus:border-indigo-500 focus:ring-indigo-500 shadow-sm py-2.5" 
+                                                        value={formTemplate.data.tipo_reserva} 
+                                                        onChange={e => formTemplate.setData('tipo_reserva', e.target.value)} 
+                                                        required
+                                                    >
+                                                        <option value="geral">Geral (Padrão para todos)</option>
+                                                        <option value="carro">Veículos / Frota</option>
                                                         <option value="casa">Imóveis / Espaços</option>
                                                         <option value="equipamento">Máquinas e Equipamentos</option>
                                                     </select>
                                                 </div>
 
-                                                <div className="flex items-center pt-6">
-                                                    <label className="flex items-center gap-2 cursor-pointer bg-gray-50 px-4 py-2 rounded-lg border hover:bg-gray-100 transition w-full">
-                                                        <input type="checkbox" className="rounded text-blue-600 focus:ring-blue-500 w-5 h-5" checked={formTemplate.data.padrao} onChange={e => formTemplate.setData('padrao', e.target.checked)} />
-                                                        <span className="text-sm font-bold text-gray-700">Tornar Modelo Padrão Oficial</span>
+                                                <div className="flex items-end">
+                                                    <label className="flex items-center gap-3 cursor-pointer bg-gray-50 px-5 py-2.5 rounded-xl border border-gray-200 hover:bg-gray-100 transition w-full h-[42px]">
+                                                        <input 
+                                                            type="checkbox" 
+                                                            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-600 w-4 h-4" 
+                                                            checked={formTemplate.data.padrao} 
+                                                            onChange={e => formTemplate.setData('padrao', e.target.checked)} 
+                                                        />
+                                                        <span className="text-sm font-bold text-gray-700">Tornar Modelo Padrão da Categoria</span>
                                                     </label>
                                                 </div>
                                             </>
                                         )}
                                     </div>
 
-                                    {/* 👉 UI MÁGICA REFORMULADA */}
-                                    <div>
-                                        <div className="border border-blue-200 bg-blue-50/50 p-6 rounded-t-2xl border-b-0">
+                                    {/* ÁREA DO EDITOR E VARIÁVEIS */}
+                                    <div className="pt-2">
+                                        <div className="border border-gray-200 bg-gray-50 rounded-t-2xl border-b-0 p-5">
                                             <div className="flex justify-between items-center mb-4">
-                                                <InputLabel value="Variáveis de Auto-Preenchimento" className="text-blue-900 font-black text-base" />
-                                                <span className="text-[10px] uppercase font-bold text-blue-500 tracking-widest">Clique no card para inserir</span>
+                                                <InputLabel value="Variáveis Dinâmicas (Auto-Preenchimento)" className="text-gray-800 font-bold" />
+                                                <span className="text-[10px] uppercase font-bold text-indigo-500 tracking-widest hidden sm:block">Clique para inserir no texto</span>
                                             </div>
-                                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
                                                 {variaveisMagicas.map(v => (
                                                     <button 
                                                         type="button" 
                                                         key={v.tag} 
                                                         onClick={() => insertTag(v.tag)} 
-                                                        className="flex flex-col items-center justify-center p-3 bg-white border border-blue-200 text-blue-800 rounded-xl shadow-sm hover:bg-blue-600 hover:text-white transition group" 
+                                                        className="flex flex-col items-center justify-center p-2.5 bg-white border border-gray-200 text-gray-700 rounded-lg shadow-sm hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700 transition group" 
                                                         title="Inserir Variável"
                                                     >
-                                                        <span className="text-[11px] font-black uppercase text-center mb-1 group-hover:text-blue-100">{v.desc}</span>
-                                                        <span className="text-xs font-mono font-bold">{v.tag}</span>
+                                                        <span className="text-[10px] font-bold uppercase text-center mb-1 text-gray-500 group-hover:text-indigo-600">{v.desc}</span>
+                                                        <span className="text-[11px] font-mono font-semibold bg-gray-100 px-1.5 py-0.5 rounded text-gray-600 group-hover:bg-indigo-100 group-hover:text-indigo-700">{v.tag}</span>
                                                     </button>
                                                 ))}
                                             </div>
                                         </div>
 
-                                        <div className="relative">
+                                        <div className="relative group">
                                             <textarea 
                                                 ref={textareaRef}
-                                                className="w-full border-gray-300 rounded-b-2xl focus:border-blue-500 focus:ring-blue-500 font-mono text-sm leading-relaxed p-6 bg-white min-h-[400px] shadow-inner" 
+                                                className="w-full border-gray-200 rounded-b-2xl focus:border-indigo-500 focus:ring-indigo-500 font-mono text-sm leading-relaxed p-6 bg-white min-h-[450px] shadow-inner transition-colors resize-y" 
                                                 value={formTemplate.data.conteudo || ''} 
                                                 onChange={e => formTemplate.setData('conteudo', e.target.value)} 
                                                 placeholder="Pelo presente instrumento, a locadora {{LOCADOR_NOME}}..."
                                                 required
                                             ></textarea>
                                             
-                                            <div className="absolute top-4 right-4">
-                                                <button type="button" onClick={gerarPreview} disabled={!formTemplate.data.conteudo} className="text-xs font-bold text-white bg-gray-900 hover:bg-black px-4 py-2 rounded-lg flex items-center gap-2 shadow-md disabled:opacity-50 transition">
-                                                    <EyeIcon className="w-4 h-4"/> Ver Prévia
+                                            <div className="absolute top-4 right-4 opacity-70 group-hover:opacity-100 transition-opacity">
+                                                <button 
+                                                    type="button" 
+                                                    onClick={gerarPreview} 
+                                                    disabled={!formTemplate.data.conteudo} 
+                                                    className="text-xs font-bold text-gray-700 bg-white border border-gray-200 hover:bg-gray-50 px-4 py-2.5 rounded-xl flex items-center gap-2 shadow-sm disabled:opacity-50 transition"
+                                                >
+                                                    <EyeIcon className="w-4 h-4 text-indigo-500"/> Ver Prévia Visual
                                                 </button>
                                             </div>
                                         </div>
                                     </div>
 
-                                    {/* 👉 BOTÃO VERDE */}
-                                    <div className="flex justify-end gap-3 pt-6 border-t border-gray-100">
-                                        {isEditing && <button type="button" onClick={cancelarEdicao} className="px-6 py-3 font-bold text-gray-500 hover:text-gray-800 transition">Cancelar Edição</button>}
+                                    {/* AÇÕES FINAIS */}
+                                    <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 pt-6 border-t border-gray-100">
+                                        {isEditing && (
+                                            <button type="button" onClick={cancelarEdicao} className="px-6 py-3 font-bold text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-xl transition">
+                                                Cancelar Edição
+                                            </button>
+                                        )}
                                         
                                         {formTemplate.data.aplicabilidade === 'especifica' ? (
-                                            <PrimaryButton className="px-8 py-4 bg-green-600 hover:bg-green-700 rounded-xl shadow-lg text-lg flex items-center gap-2 transition" disabled={formTemplate.processing || (formTemplate.data.aplicabilidade === 'especifica' && !formTemplate.data.aluguel_id)}>
+                                            <PrimaryButton className="px-8 py-3.5 bg-green-600 hover:bg-green-700 focus:bg-green-700 active:bg-green-800 rounded-xl shadow-md text-base flex justify-center items-center gap-2 transition" disabled={formTemplate.processing || !formTemplate.data.aluguel_id}>
                                                 <DocumentCheckIcon className="w-5 h-5"/> Enviar Contrato ao Cliente
                                             </PrimaryButton>
                                         ) : (
-                                            <PrimaryButton className="px-8 py-4 bg-green-600 hover:bg-green-700 rounded-xl shadow-lg text-lg flex items-center gap-2 transition" disabled={formTemplate.processing}>
-                                                <ArchiveBoxIcon className="w-5 h-5"/> {isEditing ? 'Atualizar Modelo na Biblioteca' : 'Salvar Novo Modelo'}
+                                            <PrimaryButton className="px-8 py-3.5 bg-green-600 hover:bg-green-700 focus:bg-indigo-700 active:bg-indigo-800 rounded-xl shadow-md text-base flex justify-center items-center gap-2 transition" disabled={formTemplate.processing}>
+                                                <ArchiveBoxIcon className="w-5 h-5"/> {isEditing ? 'Atualizar Modelo' : 'Salvar na Biblioteca'}
                                             </PrimaryButton>
                                         )}
                                     </div>
                                 </form>
                             </div>
 
-                            <div className="bg-white rounded-3xl shadow-sm border border-gray-200 overflow-hidden mt-8">
-                                <div className="p-6 border-b border-gray-100 bg-gray-50 flex items-center gap-2">
-                                    <ArchiveBoxIcon className="w-6 h-6 text-gray-400"/>
-                                    <h3 className="font-black text-gray-900 text-lg">Sua Biblioteca de Contratos</h3>
+                            {/* BIBLIOTECA DE TEMPLATES */}
+                            <div className="bg-white rounded-[2rem] shadow-sm border border-gray-100 overflow-hidden mt-10">
+                                <div className="p-6 sm:p-8 border-b border-gray-100 flex items-center gap-3">
+                                    <div className="p-2.5 bg-indigo-50 rounded-xl">
+                                        <DocumentDuplicateIcon className="w-6 h-6 text-indigo-600"/>
+                                    </div>
+                                    <div>
+                                        <h3 className="font-black text-gray-900 text-xl">Sua Biblioteca de Modelos</h3>
+                                        <p className="text-sm text-gray-500">Acesse, edite ou apague os contratos padrões da sua loja.</p>
+                                    </div>
                                 </div>
-                                <div className="divide-y divide-gray-100">
+                                
+                                <div className="bg-gray-50/30">
                                     {listaTemplates.length === 0 ? (
-                                        <p className="p-12 text-center text-sm text-gray-500 font-medium">Você ainda não salvou nenhum modelo padrão.</p>
+                                        <div className="p-16 flex flex-col items-center justify-center text-center">
+                                            <ArchiveBoxIcon className="w-16 h-16 text-gray-200 mb-4" />
+                                            <h4 className="text-lg font-bold text-gray-900">Nenhum modelo salvo</h4>
+                                            <p className="text-sm text-gray-500 mt-1 max-w-sm">Você ainda não possui modelos na biblioteca. Utilize o editor acima para criar o primeiro.</p>
+                                        </div>
                                     ) : (
-                                        <div className="grid grid-cols-1 md:grid-cols-2 p-4 gap-4">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 p-6 gap-6">
                                             {listaTemplates.map(tpl => (
-                                                <div key={tpl.id} className="p-5 border border-gray-100 rounded-2xl hover:border-blue-300 hover:shadow-md transition bg-white flex flex-col h-full">
-                                                    <div className="flex items-start justify-between mb-3">
-                                                        <h4 className="font-black text-gray-900 text-base leading-tight pr-4">{tpl.titulo}</h4>
-                                                        {tpl.padrao === 1 && <span className="bg-blue-100 text-blue-700 text-[10px] font-black px-2.5 py-1 rounded-md uppercase tracking-wider shrink-0">Padrão</span>}
-                                                    </div>
-                                                    <p className="text-xs text-gray-500 font-bold mb-4 uppercase tracking-widest bg-gray-50 inline-block px-3 py-1 rounded-md self-start">
-                                                        Uso: {tpl.tipo_reserva}
+                                                <div key={tpl.id} className="p-6 border border-gray-200 rounded-2xl hover:border-indigo-300 hover:shadow-lg hover:shadow-indigo-900/5 transition-all bg-white flex flex-col h-full group relative">
+                                                    
+                                                    {tpl.padrao === 1 && (
+                                                        <div className="absolute -top-3 -right-3 bg-indigo-100 border border-indigo-200 text-indigo-700 text-[10px] font-black px-3 py-1 rounded-full shadow-sm uppercase tracking-wider">
+                                                            Padrão
+                                                        </div>
+                                                    )}
+
+                                                    <h4 className="font-black text-gray-900 text-lg leading-tight mb-2 pr-4">{tpl.titulo}</h4>
+                                                    
+                                                    <p className="text-[11px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-1.5 mb-6">
+                                                        <TagIcon className="w-3.5 h-3.5" /> {tpl.tipo_reserva}
                                                     </p>
-                                                    <div className="flex gap-2 mt-auto border-t border-gray-50 pt-4">
-                                                        <button onClick={() => { formTemplate.setData('conteudo', tpl.conteudo); gerarPreview(); }} className="flex-1 text-xs font-bold text-gray-700 bg-gray-100 hover:bg-gray-200 py-2.5 rounded-xl transition flex justify-center items-center gap-1">
+                                                    
+                                                    <div className="flex gap-2 mt-auto">
+                                                        <button 
+                                                            onClick={() => { formTemplate.setData('conteudo', tpl.conteudo); gerarPreview(); }} 
+                                                            className="flex-1 text-xs font-bold text-gray-700 bg-gray-50 hover:bg-gray-100 border border-gray-200 py-2.5 rounded-xl transition flex justify-center items-center gap-1.5"
+                                                        >
                                                             <EyeIcon className="w-4 h-4"/> LER
                                                         </button>
-                                                        <button onClick={() => editarTemplate(tpl)} className="flex-1 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-100 py-2.5 rounded-xl transition flex justify-center items-center gap-1">
+                                                        <button 
+                                                            onClick={() => editarTemplate(tpl)} 
+                                                            className="flex-1 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-100 py-2.5 rounded-xl transition flex justify-center items-center gap-1.5"
+                                                        >
                                                             <PencilSquareIcon className="w-4 h-4"/> EDITAR
                                                         </button>
-                                                        <button onClick={() => deletarTemplate(tpl.id)} className="w-10 flex-shrink-0 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 border border-red-100 py-2.5 rounded-xl transition flex justify-center items-center">
+                                                        <button 
+                                                            onClick={() => deletarTemplate(tpl.id)} 
+                                                            className="w-11 flex-shrink-0 text-xs font-bold text-red-500 bg-white hover:bg-red-50 border border-gray-200 hover:border-red-200 py-2.5 rounded-xl transition flex justify-center items-center"
+                                                            title="Excluir"
+                                                        >
                                                             <TrashIcon className="w-4 h-4"/>
                                                         </button>
                                                     </div>
@@ -618,84 +634,107 @@ Regido pela Lei nº 8.245/1991 (Lei do Inquilinato) e pelo Código Civil Brasile
                     {/* ABA 2: CONTRATOS GERADOS E ASSINADOS                     */}
                     {/* ======================================================== */}
                     {activeTab === 'assinados' && (
-                        <div className="bg-white rounded-3xl shadow-sm border border-gray-200 overflow-hidden animate-in fade-in">
-                            <div className="p-6 md:p-8 border-b border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                                <div>
-                                    <h3 className="text-2xl font-black text-gray-900">Documentos Assinados e Pendentes</h3>
-                                    <p className="text-sm text-gray-500 mt-1">Gerencie todos os contratos que já foram enviados aos clientes.</p>
+                        <div className="bg-white rounded-[2rem] shadow-sm border border-gray-100 overflow-hidden animate-in fade-in">
+                            <div className="p-6 md:p-8 border-b border-gray-100 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gray-50/50">
+                                <div className="flex items-center gap-4">
+                                    <div className="p-3 bg-white border border-gray-200 rounded-2xl shadow-sm hidden sm:block">
+                                        <UserGroupIcon className="w-8 h-8 text-indigo-600" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-xl sm:text-2xl font-black text-gray-900">Histórico de Contratos</h3>
+                                        <p className="text-sm text-gray-500 mt-1">Consulte, baixe ou reenvie contratos vinculados a clientes.</p>
+                                    </div>
                                 </div>
-                                <UserGroupIcon className="w-10 h-10 text-gray-300 hidden md:block" />
                             </div>
                             
                             <div className="overflow-x-auto">
                                 <table className="w-full text-left text-sm whitespace-nowrap">
-                                    <thead className="bg-gray-50 text-gray-500 font-bold uppercase text-[10px] tracking-widest border-b border-gray-200">
+                                    <thead className="bg-white text-gray-400 font-bold uppercase text-[10px] tracking-widest border-b border-gray-100">
                                         <tr>
-                                            <th className="p-5">ID / Localizador</th>
-                                            <th className="p-5">Locatário</th>
-                                            <th className="p-5">Item Resumo</th>
-                                            <th className="p-5">Situação Jurídica</th>
-                                            <th className="p-5 text-right">Ações</th>
+                                            <th className="px-6 py-4">Protocolo / Reserva</th>
+                                            <th className="px-6 py-4">Cliente (Locatário)</th>
+                                            <th className="px-6 py-4">Serviço Vinculado</th>
+                                            <th className="px-6 py-4">Status de Envio</th>
+                                            <th className="px-6 py-4 text-right">Opções</th>
                                         </tr>
                                     </thead>
-                                    <tbody className="divide-y divide-gray-100">
+                                    <tbody className="divide-y divide-gray-50">
                                         {listaContratos.length === 0 ? (
                                             <tr>
-                                                <td colSpan="5" className="p-16 text-center text-gray-400">
-                                                    <DocumentTextIcon className="w-16 h-16 mx-auto mb-4 opacity-20"/>
-                                                    <span className="font-bold text-base">Ainda não enviou nenhum contrato.</span>
+                                                <td colSpan="5" className="px-6 py-20 text-center text-gray-400">
+                                                    <DocumentTextIcon className="w-16 h-16 mx-auto mb-4 text-gray-200"/>
+                                                    <span className="font-bold text-base text-gray-500">Nenhum contrato foi gerado para clientes ainda.</span>
                                                 </td>
                                             </tr>
                                         ) : (
                                             listaContratos.map(contrato => (
-                                                <tr key={contrato.id} className="hover:bg-gray-50 transition group">
-                                                    <td className="p-5 font-mono text-xs font-bold text-gray-500">{contrato.numero_contrato || contrato.aluguel?.codigo_reserva}</td>
-                                                    <td className="p-5 font-black text-gray-900">{contrato.aluguel?.locatario?.name || 'Desconhecido'}</td>
-                                                    <td className="p-5 font-medium text-gray-600 truncate max-w-[200px]" title={contrato.aluguel?.item?.nome}>
-                                                        {contrato.aluguel?.item?.nome || 'N/A'}
+                                                <tr key={contrato.id} className="hover:bg-gray-50/80 transition group">
+                                                    <td className="px-6 py-4 font-mono text-xs font-bold text-gray-500">
+                                                        #{contrato.numero_contrato || contrato.aluguel?.codigo_reserva}
                                                     </td>
-                                                    <td className="p-5">
-                                                        {contrato.assinado ? (
-                                                            <span className="inline-flex items-center gap-1.5 bg-green-100 text-green-800 text-[10px] font-black px-3 py-1.5 rounded-lg uppercase tracking-wider border border-green-200">
-                                                                <CheckCircleIcon className="w-4 h-4"/> Assinado
+                                                    <td className="px-6 py-4 font-black text-gray-900">
+                                                        {contrato.aluguel?.locatario?.name || 'Não Informado'}
+                                                    </td>
+                                                    <td className="px-6 py-4 font-medium text-gray-600">
+                                                        <div className="truncate max-w-[200px]" title={contrato.aluguel?.item?.nome}>
+                                                            {contrato.aluguel?.item?.nome || 'Item Removido/N/A'}
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        {contrato.enviado_em ? (
+                                                            <span className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 text-[10px] font-black px-2.5 py-1.5 rounded-md uppercase tracking-wider border border-emerald-200">
+                                                                <CheckCircleIcon className="w-3.5 h-3.5"/> Enviado
                                                             </span>
                                                         ) : (
-                                                            <span className="inline-flex items-center gap-1.5 bg-amber-100 text-amber-800 text-[10px] font-black px-3 py-1.5 rounded-lg uppercase tracking-wider border border-amber-200">
-                                                                <ClockIcon className="w-4 h-4"/> Aguardando
+                                                            <span className="inline-flex items-center gap-1.5 bg-amber-50 text-amber-700 text-[10px] font-black px-2.5 py-1.5 rounded-md uppercase tracking-wider border border-amber-200">
+                                                                <ClockIcon className="w-3.5 h-3.5"/> Pendente
                                                             </span>
                                                         )}
                                                     </td>
-                                                    <td className="p-5 text-right space-x-2 flex items-center justify-end">
-                                                        {/* Botão Baixar PDF */}
+                                                    <td className="px-6 py-4 text-right space-x-2 flex items-center justify-end">
                                                         {contrato.arquivo_pdf && (
-                                                            <a href={'/storage/' + contrato.arquivo_pdf} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-bold text-blue-700 bg-blue-50 px-3 py-2 rounded-xl border border-blue-200 hover:bg-blue-100 transition shadow-sm">
-                                                                <ArrowDownTrayIcon className="w-4 h-4"/> PDF
+                                                            <a href={'/storage/' + contrato.arquivo_pdf} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center w-8 h-8 text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition" title="Baixar PDF">
+                                                                <span className="text-[10px] font-black tracking-tighter">PDF</span>
                                                             </a>
                                                         )}
-                                                        
-                                                        {/* Botões se ainda NÃO estiver assinado */}
-                                                        {!contrato.assinado && contrato.url_assinatura && (
-                                                            <>
-                                                                <a href={contrato.url_assinatura} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs font-bold text-gray-700 bg-gray-50 px-3 py-2 rounded-xl border border-gray-200 hover:bg-gray-100 transition shadow-sm">
-                                                                    <ArrowTopRightOnSquareIcon className="w-4 h-4"/> Copiar Link
-                                                                </a>
 
-                                                                {/* 👉 Novo Botão Integrado com WhatsApp */}
-                                                                {contrato.aluguel?.locatario?.telefone && (
-                                                                    <a 
-                                                                        href={`https://api.whatsapp.com/send?phone=55${contrato.aluguel.locatario.telefone.replace(/\D/g, '')}&text=${encodeURIComponent(`Olá, ${contrato.aluguel.locatario.name}! Segue o seu contrato referente à locação na WaitLess para assinatura digital. É rápido e seguro: ${contrato.url_assinatura}`)}`}
-                                                                        target="_blank" 
-                                                                        rel="noopener noreferrer" 
-                                                                        className="inline-flex items-center gap-1 text-xs font-bold text-white bg-green-500 px-3 py-2 rounded-xl border border-green-600 hover:bg-green-600 transition shadow-sm"
-                                                                    >
-                                                                        WhatsApp
-                                                                    </a>
-                                                                )}
-                                                            </>
+                                                        {contrato.arquivo_docx && (
+                                                            <a href={'/storage/' + contrato.arquivo_docx} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center w-8 h-8 text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition" title="Baixar Word (DOCX)">
+                                                                <span className="text-[10px] font-black tracking-tighter">DOC</span>
+                                                            </a>
                                                         )}
 
-                                                        {/* Botão Apagar */}
-                                                        <button onClick={() => deletarContratoGerado(contrato.id)} className="inline-flex items-center gap-1 text-xs font-bold text-red-500 bg-white border border-red-100 px-3 py-2 rounded-xl hover:bg-red-50 hover:text-red-700 transition opacity-0 group-hover:opacity-100 ml-2">
+                                                        {contrato.aluguel?.locatario?.email && (
+                                                            <button
+                                                                onClick={() => router.post(route('contratos.enviar-email', contrato.id), {}, {
+                                                                    preserveScroll: true,
+                                                                    onSuccess: () => mostrarMensagem('Contrato enviado com sucesso para o e-mail do cliente!'),
+                                                                })}
+                                                                className="inline-flex items-center justify-center w-8 h-8 text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition"
+                                                                title="Reenviar por E-mail"
+                                                            >
+                                                                <ArrowTopRightOnSquareIcon className="w-4 h-4"/>
+                                                            </button>
+                                                        )}
+
+                                                        {contrato.aluguel?.locatario?.telefone && contrato.arquivo_pdf && (
+                                                            <a
+                                                                href={`https://api.whatsapp.com/send?phone=55${contrato.aluguel.locatario.telefone.replace(/\D/g, '')}&text=${encodeURIComponent(`Olá, ${contrato.aluguel.locatario.name}! Segue o seu contrato referente à reserva na Lokyva: ${window.location.origin}/storage/${contrato.arquivo_pdf}`)}`}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="inline-flex items-center justify-center w-8 h-8 text-green-600 bg-green-50 rounded-lg hover:bg-green-100 transition"
+                                                                title="Enviar via WhatsApp"
+                                                            >
+                                                                {/* Simula icone simples whatsapp usando formato de balao Heroicons ou SVG puro */}
+                                                                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z"/></svg>
+                                                            </a>
+                                                        )}
+
+                                                        <button 
+                                                            onClick={() => deletarContratoGerado(contrato.id)} 
+                                                            className="inline-flex items-center justify-center w-8 h-8 text-gray-400 bg-transparent rounded-lg hover:bg-red-50 hover:text-red-600 transition ml-2" 
+                                                            title="Excluir Histórico"
+                                                        >
                                                             <TrashIcon className="w-4 h-4"/>
                                                         </button>
                                                     </td>
@@ -714,29 +753,30 @@ Regido pela Lei nº 8.245/1991 (Lei do Inquilinato) e pelo Código Civil Brasile
             {/* MODAL DE PRÉ-VISUALIZAÇÃO (SIMULA FOLHA A4)              */}
             {/* ======================================================== */}
             {showPreview && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/80 backdrop-blur-sm p-4 sm:p-6 animate-in fade-in">
-                    <div className="bg-gray-100 w-full max-w-4xl h-[95vh] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden border border-gray-300">
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-gray-900/80 backdrop-blur-sm p-4 sm:p-6 animate-in fade-in">
+                    <div className="bg-gray-100 w-full max-w-4xl h-[95vh] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden border border-gray-300 ring-1 ring-white/20">
                         
-                        <div className="bg-white px-6 py-5 border-b border-gray-200 flex justify-between items-center shrink-0">
+                        {/* Header do Preview */}
+                        <div className="bg-white px-6 py-4 border-b border-gray-200 flex flex-col sm:flex-row justify-between sm:items-center gap-4 shrink-0">
                             <div>
-                                <h3 className="font-black text-gray-900 flex items-center gap-2 text-lg"><EyeIcon className="w-6 h-6 text-blue-500"/> Validador de Contrato</h3>
-                                <p className="text-xs text-gray-500 mt-1 font-medium">Os campos marcados em amarelo simulam as informações reais para verificação.</p>
+                                <h3 className="font-black text-gray-900 flex items-center gap-2 text-lg"><EyeIcon className="w-6 h-6 text-indigo-500"/> Validador Visual de Contrato</h3>
+                                <p className="text-xs text-gray-500 mt-1 font-medium">Os campos em destaque (amarelo) simulam as informações do sistema para conferência.</p>
                             </div>
-                            <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-3 self-end sm:self-auto">
                                 <button onClick={imprimirPreview} className="px-5 py-2.5 bg-gray-900 text-white text-sm font-bold rounded-xl flex items-center gap-2 hover:bg-black transition shadow-md">
-                                    <ArrowDownTrayIcon className="w-4 h-4"/> Imprimir / Salvar PDF
+                                    <PrinterIcon className="w-4 h-4"/> Imprimir PDF
                                 </button>
-                                <button onClick={() => setShowPreview(false)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-full transition bg-gray-100">
-                                    <XMarkIcon className="w-6 h-6"/>
+                                <button onClick={() => setShowPreview(false)} className="p-2.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition bg-gray-50 border border-gray-200">
+                                    <XMarkIcon className="w-5 h-5"/>
                                 </button>
                             </div>
                         </div>
 
-                        {/* Corpo do Modal - Simula Papel A4 com scroll independente */}
-                        <div className="flex-1 overflow-y-auto p-6 md:p-12 bg-gray-200 flex justify-center">
+                        {/* Corpo do Modal - Simula Papel A4 */}
+                        <div className="flex-1 overflow-y-auto p-4 sm:p-8 md:p-12 bg-gray-200 flex justify-center custom-scrollbar">
                             <div 
-                                className="bg-white shadow-xl p-10 md:p-16 w-full max-w-[800px] text-[15px] text-gray-800 leading-[1.8] border border-gray-300"
-                                style={{ minHeight: '1122px' }} /* Altura proporcional a A4 */
+                                className="bg-white shadow-xl p-8 sm:p-12 md:p-16 w-full max-w-[794px] text-[14px] text-gray-800 leading-[1.8] border border-gray-300 mx-auto"
+                                style={{ minHeight: '1122px' }} /* Altura proporcional a A4 (794x1122) */
                                 dangerouslySetInnerHTML={{ __html: previewHtml }}
                             />
                         </div>
@@ -744,6 +784,52 @@ Regido pela Lei nº 8.245/1991 (Lei do Inquilinato) e pelo Código Civil Brasile
                 </div>
             )}
 
+            {/* CSS Global Adicional para Scrollbar do modal */}
+            <style dangerouslySetInnerHTML={{__html: `
+                .custom-scrollbar::-webkit-scrollbar {
+                    width: 8px;
+                }
+                .custom-scrollbar::-webkit-scrollbar-track {
+                    background: transparent;
+                }
+                .custom-scrollbar::-webkit-scrollbar-thumb {
+                    background-color: #cbd5e1;
+                    border-radius: 20px;
+                }
+            `}} />
         </AuthenticatedLayout>
     );
+}
+
+// Sem plano Premium: mostra o convite para assinar em vez da tela de contratos.
+export default function Contratos(props) {
+    if (props.premiumNecessario) {
+        return (
+            <AuthenticatedLayout user={props.auth?.user}>
+                <Head title="Contratos" />
+                <div className="max-w-2xl mx-auto px-4 py-16 text-center">
+                    <div className="mx-auto w-20 h-20 rounded-full bg-orange-100 flex items-center justify-center mb-6">
+                        <SparklesIcon className="w-10 h-10 text-[#FF5A00]" />
+                    </div>
+                    <h1 className="text-3xl font-black text-gray-900 tracking-tight">Contratos é um recurso Premium</h1>
+                    <p className="mt-4 text-gray-500 leading-relaxed">
+                        Com o plano Premium você cria modelos de contrato, gera o documento de cada reserva em PDF e Word e envia direto para o e-mail do cliente.
+                    </p>
+                    <ul className="mt-8 space-y-3 text-left max-w-md mx-auto text-gray-700 font-medium">
+                        <li className="flex items-start gap-3"><DocumentTextIcon className="w-5 h-5 text-[#FF5A00] shrink-0 mt-0.5" /> Modelos de contrato personalizados com variáveis automáticas</li>
+                        <li className="flex items-start gap-3"><ArrowDownTrayIcon className="w-5 h-5 text-[#FF5A00] shrink-0 mt-0.5" /> Geração em PDF e Word para cada reserva</li>
+                        <li className="flex items-start gap-3"><CheckCircleIcon className="w-5 h-5 text-[#FF5A00] shrink-0 mt-0.5" /> Envio por e-mail ao cliente com um clique</li>
+                    </ul>
+                    <Link
+                        href={route('assinatura.status')}
+                        className="mt-10 inline-flex items-center gap-2 px-8 py-4 rounded-2xl bg-[#FF5A00] hover:bg-[#e04f00] text-white font-bold shadow-lg transition"
+                    >
+                        <SparklesIcon className="w-5 h-5" /> Seja Premium
+                    </Link>
+                </div>
+            </AuthenticatedLayout>
+        );
+    }
+
+    return <ContratosConteudo {...props} />;
 }

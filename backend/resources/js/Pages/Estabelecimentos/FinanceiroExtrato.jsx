@@ -11,12 +11,13 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip as RechartsTooltip } 
 const COLORS = ['#10B981', '#3B82F6', '#8B5CF6', '#F59E0B', '#6B7280'];
 
 export default function FinanceiroExtrato({ auth, dados, filtros_atuais }) {
-    const { errors } = usePage().props;
+    const { errors, taxaPlataforma = 6 } = usePage().props;
     const user = auth.user;
 
     // 1. BLOQUEIO DE ACESSO (Apenas Admin ou Premium)
-    const isPremium = user?.plano_assinatura?.toLowerCase() === 'premium';
-    const isAdmin = user?.tipo === 'admin';
+    const isPremium = user?.plano_assinatura?.toLowerCase() === 'premium'
+        && user?.asaas_subscription_status?.toUpperCase() !== 'CANCELLED';
+    const isAdmin = user?.papel?.toLowerCase() === 'admin';
 
     if (!isPremium && !isAdmin) {
         return (
@@ -58,7 +59,7 @@ export default function FinanceiroExtrato({ auth, dados, filtros_atuais }) {
         const novosFiltros = { ...filtros, [campo]: valor, pagina: 1 };
         setFiltros(novosFiltros);
         
-        router.get('/meu-extrato', novosFiltros, {
+        router.get(route('tela.financeiro.extrato'), novosFiltros, {
             preserveState: true,
             preserveScroll: true,
             only: ['dados', 'filtros_atuais']
@@ -71,7 +72,7 @@ export default function FinanceiroExtrato({ auth, dados, filtros_atuais }) {
 
     const exportarDados = (formato) => {
         const queryParams = new URLSearchParams({ ...filtros, formato }).toString();
-        window.location.href = `/meu-extrato/exportar?${queryParams}`;
+        window.location.href = `${route('financeiro.exportar')}?${queryParams}`;
         setMostrarExportacao(false);
     };
 
@@ -181,7 +182,7 @@ export default function FinanceiroExtrato({ auth, dados, filtros_atuais }) {
                                 <div>
                                     <div className="flex items-center gap-1 mb-1">
                                         <p className="text-[10px] md:text-xs text-gray-500 font-medium uppercase">DESPESAS TOTAIS</p>
-                                        <span title="Inclui a taxa de 12% da plataforma e o saldo devedor de pagamentos presenciais (retidos até o pagamento online)." className="cursor-help">
+                                        <span title={`Inclui a taxa de ${taxaPlataforma}% da plataforma e o saldo devedor de pagamentos presenciais (retidos até o pagamento online).`} className="cursor-help">
                                             <Info className="w-3 h-3 text-gray-400" />
                                         </span>
                                     </div>

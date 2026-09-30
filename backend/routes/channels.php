@@ -41,6 +41,13 @@ Broadcast::channel('conversa.{conversaId}', function ($user, $conversaId) {
         return true;
     }
 
+    // Conversa sobre uma locação/aluguel: `estabelecimento_id` aqui é
+    // direto o `users.id` do dono (locações não passam por um
+    // Estabelecimento de verdade), então ele é liberado diretamente.
+    if ($conversa->aluguel_id && (int) $user->id === (int) $conversa->estabelecimento_id) {
+        return true;
+    }
+
     // Qualquer pessoa vinculada ao estabelecimento (sócio, gerente, atendente...)
     return \Illuminate\Support\Facades\DB::table('estabelecimento_usuario')
         ->where('usuario_id', $user->id)
@@ -73,4 +80,24 @@ Broadcast::channel('rastreamento.{agendamentoId}', function ($user, $agendamento
 
     // Se não for nem o dono do agendamento nem o gerente do local, barra o acesso.
     return false;
+});
+// =====================================================================
+// CANAL DE ATIVIDADE DA EQUIPE (sócio/gerente acompanham em tempo real
+// o que funcionários e gerentes fazem nos agendamentos do estabelecimento)
+// =====================================================================
+Broadcast::channel('atividade-equipe.{estabelecimentoId}', function ($user, $estabelecimentoId) {
+    if (!in_array($user->papel, ['admin', 'socio', 'gerente'])) {
+        return false;
+    }
+
+    return $user->estabelecimentos()->where('estabelecimentos.id', $estabelecimentoId)->exists();
+});
+
+// =====================================================================
+// CANAL DO CHAT DO GRUPO DA VIAGEM (só quem participa da viagem)
+// =====================================================================
+Broadcast::channel('viagem.{viagemId}', function ($user, $viagemId) {
+    $viagem = \App\Models\Viagem::find($viagemId);
+
+    return $viagem && $viagem->temMembro((int) $user->id);
 });

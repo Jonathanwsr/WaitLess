@@ -3,21 +3,21 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head } from '@inertiajs/react';
 import axios from 'axios'; // <-- Importando axios
 
-export default function FinanceiroConta({ auth, userToken }) {
+export default function FinanceiroConta({ auth }) {
   const [formData, setFormData] = useState({
     person_type: 'FISICA',
     name: '',
     email: '',
     document: '',
-    birth_date: '', 
-    income_value: '', 
+    birth_date: '',
+    income_value: '',
     mobile_phone: '',
     postal_code: '',
     address: '',
     address_number: '',
     complement: '',
     province: '',
-    company_type: 'MEI', 
+    company_type: 'MEI',
     responsible_name: '',
     responsible_cpf: '',
     pix_key_type: 'CPF',
@@ -30,18 +30,14 @@ export default function FinanceiroConta({ auth, userToken }) {
 
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState({ type: '', text: '' });
-  
+
   const addressNumberRef = useRef(null);
 
   // --- CARREGAR DADOS INICIAIS USANDO AXIOS ---
   useEffect(() => {
     const fetchProfile = async () => {
       try {
-        const response = await axios.get('/api/provider', {
-          headers: {
-            'Authorization': `Bearer ${userToken}`,
-          }
-        });
+        const response = await axios.get('/api/provider');
 
         // O axios já valida o status 2xx, e entrega os dados em response.data
         if (response.data.has_profile) {
@@ -56,7 +52,7 @@ export default function FinanceiroConta({ auth, userToken }) {
     };
 
     fetchProfile();
-  }, [userToken]);
+  }, []);
 
   // --- AUXILIARES DE FORMATAÇÃO PARA EXIBIÇÃO ---
   const formatDateToBR = (dateStr) => {
@@ -94,10 +90,10 @@ export default function FinanceiroConta({ auth, userToken }) {
 
   // --- MÁSCARAS DE DIGITAÇÃO DO FORMULÁRIO ---
   const applyMask = (value, type, personType = 'FISICA') => {
-    let v = value || ''; 
+    let v = value || '';
 
     if (type === 'document') {
-      v = v.replace(/\D/g, ""); 
+      v = v.replace(/\D/g, "");
       if (personType === 'FISICA') {
         v = v.replace(/(\d{3})(\d)/, "$1.$2");
         v = v.replace(/(\d{3})(\d)/, "$1.$2");
@@ -108,7 +104,7 @@ export default function FinanceiroConta({ auth, userToken }) {
         v = v.replace(/\.(\d{3})(\d)/, ".$1/$2");
         v = v.replace(/(\d{4})(\d{1,2})$/, "$1-$2");
       }
-    } 
+    }
     else if (type === 'responsible_cpf') {
       v = v.replace(/\D/g, "");
       v = v.replace(/(\d{3})(\d)/, "$1.$2");
@@ -119,18 +115,18 @@ export default function FinanceiroConta({ auth, userToken }) {
       v = v.replace(/\D/g, "");
       v = v.replace(/^(\d{2})(\d)/g, "($1) $2");
       v = v.replace(/(\d)(\d{4})$/, "$1-$2");
-    } 
+    }
     else if (type === 'postal_code') {
       v = v.replace(/\D/g, "");
       v = v.replace(/^(\d{5})(\d)/, "$1-$2");
     }
-    else if (type === 'birth_date') { 
+    else if (type === 'birth_date') {
       v = v.replace(/\D/g, "");
       v = v.replace(/(\d{2})(\d)/, "$1/$2");
       v = v.replace(/(\d{2})(\d)/, "$1/$2");
       v = v.substring(0, 10);
     }
-    else if (type === 'income_value') { 
+    else if (type === 'income_value') {
       v = v.replace(/\D/g, "");
       if (v !== "") {
         v = (parseInt(v) / 100).toFixed(2).replace(".", ",");
@@ -143,19 +139,19 @@ export default function FinanceiroConta({ auth, userToken }) {
   };
 
   const sanitizeText = (value, type) => {
-    if (!value) return ''; 
-    let sanitized = value.replace(/[<>]/g, ''); 
+    if (!value) return '';
+    let sanitized = value.replace(/[<>]/g, '');
     sanitized = sanitized.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{1FAB0}-\u{1FABF}\u{1FAC0}-\u{1FACF}\u{1FAD0}-\u{1FADF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '');
 
     if (type === 'name' || type === 'responsible_name') {
-      sanitized = sanitized.replace(/[^a-zA-ZÀ-ÿ\s]/g, ''); 
+      sanitized = sanitized.replace(/[^a-zA-ZÀ-ÿ\s]/g, '');
     }
     return sanitized;
   };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    
+
     if (name === 'person_type') {
       setFormData({ ...formData, person_type: value, document: '' });
       return;
@@ -172,12 +168,12 @@ export default function FinanceiroConta({ auth, userToken }) {
   };
 
   const handleCepBlur = async (e) => {
-    const cep = e.target.value.replace(/\D/g, ''); 
+    const cep = e.target.value.replace(/\D/g, '');
     if (cep.length === 8) {
       try {
         const res = await axios.get(`https://viacep.com.br/ws/${cep}/json/`);
         const data = res.data;
-        
+
         if (!data.erro) {
           setFormData((prev) => ({
             ...prev,
@@ -185,7 +181,7 @@ export default function FinanceiroConta({ auth, userToken }) {
             province: data.bairro || prev.province,
             complement: data.complemento || prev.complement,
           }));
-          
+
           if (addressNumberRef.current) {
             addressNumberRef.current.focus();
           }
@@ -216,11 +212,7 @@ export default function FinanceiroConta({ auth, userToken }) {
 
     try {
       // ENVIANDO O POST USANDO AXIOS
-      const response = await axios.post('/api/provider', payload, {
-        headers: {
-          'Authorization': `Bearer ${userToken}`
-        }
-      });
+      const response = await axios.post('/api/provider', payload);
 
       const data = response.data;
 
@@ -228,7 +220,7 @@ export default function FinanceiroConta({ auth, userToken }) {
         setProviderData(data.provider);
         setHasProfile(true);
       }
-      
+
     } catch (error) {
       // Tratamento de erros do axios
       if (error.response) {
@@ -282,26 +274,26 @@ export default function FinanceiroConta({ auth, userToken }) {
 
       <div className="bg-[#FBF9F9] dark:bg-gray-900 min-h-screen py-8 px-4 sm:px-6 lg:px-8">
         <div className="max-w-3xl mx-auto">
-          
+
           {/* 2. MODO EXIBIÇÃO */}
           {hasProfile && providerData ? (
             <div className="space-y-6">
-              
+
               <div className="bg-emerald-50 dark:bg-emerald-950/40 p-4 rounded-2xl font-medium border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-sm sm:text-base shadow-sm">
-             
+
 
 Sua conta está pronta para receber pagamentos!
 Seus dados no provedor financeiro foram configurados com sucesso.
 
 Comece a vender: Crie agora mesmo seus serviços ou agendamentos de reservas.
 
-Acesse sua carteira: Faça login no site ou aplicativo do Asaas utilizando o seu e-mail cadastrado.
+Acesse sua carteira: Entre na área Financeiro do painel ou do aplicativo com o seu e-mail cadastrado.
 
 Acompanhe seu saldo: Gerencie todos os seus recebimentos diretamente pelo painel.
               </div>
 
               <div className="bg-white dark:bg-gray-800 p-6 sm:p-8 border border-gray-100 dark:border-gray-700 rounded-2xl shadow-sm space-y-8">
-                
+
                 <div>
                   <div className="flex items-center gap-3 mb-4 border-b border-gray-100 dark:border-gray-700 pb-2">
                     <span className="px-2.5 py-1 text-xs font-bold rounded-md bg-[#006837]/10 text-[#006837] dark:bg-[#006837]/20 dark:text-[#008f4c]">
@@ -309,7 +301,7 @@ Acompanhe seu saldo: Gerencie todos os seus recebimentos diretamente pelo painel
                     </span>
                     <h3 className="text-lg font-bold text-gray-900 dark:text-white">Informações Cadastrais</h3>
                   </div>
-                  
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                     <div>
                       <p className="text-gray-400 dark:text-gray-500 font-medium">Nome Completo / Razão Social</p>
@@ -393,7 +385,7 @@ Acompanhe seu saldo: Gerencie todos os seus recebimentos diretamente pelo painel
                     </div>
                     <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-100/50 dark:bg-emerald-950/50 px-2.5 py-1 rounded-full self-start sm:self-auto">
                       <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                      Integrado com Asaas
+                      Recebimento automático
                     </div>
                   </div>
                 </div>
@@ -401,14 +393,30 @@ Acompanhe seu saldo: Gerencie todos os seus recebimentos diretamente pelo painel
               </div>
             </div>
           ) : (
-            
+
             // 3. MODO CRIAÇÃO
             <div className="bg-white dark:bg-gray-800 p-6 sm:p-8 border border-gray-100 dark:border-gray-700 rounded-2xl shadow-sm">
               <h3 className="text-xl font-bold mb-2 text-gray-900 dark:text-white">Perfil Financeiro</h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-8">
-                Preencha seus dados para habilitar o recebimento automático na sua conta da assas .
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                Preencha seus dados para habilitar o recebimento automático na sua conta de recebimento.
               </p>
-              
+
+              <div className="mb-8 rounded-2xl border border-orange-100 bg-[#FFF8F3] p-4 sm:p-5 text-sm text-gray-700">
+                <p className="font-black text-gray-900">Por que preciso informar estes dados de novo?</p>
+                <p className="mt-1 leading-relaxed">
+                  Seu cadastro no app serve para entrar na sua conta. Para receber dinheiro, abrimos uma conta de recebimento em seu nome
+                  numa processadora de pagamentos regulamentada, e ela exige a identificação completa de quem recebe. É uma regra do
+                  sistema financeiro para evitar fraudes. A conta fica no seu CPF/CNPJ, e os repasses só saem para contas do mesmo titular.
+                </p>
+                <p className="font-black text-gray-900 mt-3">O que acontece depois de enviar</p>
+                <ul className="mt-1 space-y-1 list-disc pl-5 leading-relaxed">
+                  <li>Sua conta de recebimento é criada e seus clientes já podem pagar online.</li>
+                  <li>Você cadastra a conta ou chave Pix de destino e confirmamos com um Pix de R$ 0,01.</li>
+                  <li>Sua <b>Carteira</b> passa a funcionar: você vê o dia e o valor do próximo repasse, o que já entrou, as taxas e os valores estornados.</li>
+                </ul>
+                <p className="mt-3 text-xs text-gray-500">Você preenche uma vez só. Os dados são usados apenas para abrir e manter a sua conta de recebimento.</p>
+              </div>
+
               {message.text && (
                 <div className={`p-4 mb-8 rounded-xl font-medium ${message.type === 'error' ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-green-50 text-green-700 border border-green-200'}`}>
                   {message.text}
@@ -416,7 +424,7 @@ Acompanhe seu saldo: Gerencie todos os seus recebimentos diretamente pelo painel
               )}
 
               <form onSubmit={handleSubmit} className="space-y-6">
-                
+
                 {/* --- TIPO DE CONTA --- */}
                 <div className="flex flex-wrap gap-4 border-b border-gray-100 dark:border-gray-700 pb-6">
                   <label className="flex items-center space-x-2 cursor-pointer">
@@ -431,37 +439,37 @@ Acompanhe seu saldo: Gerencie todos os seus recebimentos diretamente pelo painel
 
                 {/* --- DADOS BÁSICOS --- */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                  
+
                   <div className="sm:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Nome Completo / Razão Social</label>
                     <input type="text" name="name" value={formData.name} onChange={handleChange} required className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-xl p-2.5 focus:ring-[#006837] focus:border-[#006837]" />
                   </div>
-                  
+
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{formData.person_type === 'FISICA' ? 'CPF' : 'CNPJ'}</label>
-                    <input 
-                      type="text" 
-                      name="document" 
-                      value={formData.document} 
-                      onChange={handleChange} 
-                      required 
-                      maxLength={formData.person_type === 'FISICA' ? 14 : 18} 
+                    <input
+                      type="text"
+                      name="document"
+                      value={formData.document}
+                      onChange={handleChange}
+                      required
+                      maxLength={formData.person_type === 'FISICA' ? 14 : 18}
                       placeholder={formData.person_type === 'FISICA' ? '000.000.000-00' : '00.000.000/0000-00'}
-                      className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-xl p-2.5 focus:ring-[#006837] focus:border-[#006837]" 
+                      className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-xl p-2.5 focus:ring-[#006837] focus:border-[#006837]"
                     />
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Data de Nascimento / Fundação</label>
-                    <input 
-                      type="text" 
-                      name="birth_date" 
-                      value={formData.birth_date} 
-                      onChange={handleChange} 
-                      required 
+                    <input
+                      type="text"
+                      name="birth_date"
+                      value={formData.birth_date}
+                      onChange={handleChange}
+                      required
                       placeholder="DD/MM/AAAA"
                       maxLength="10"
-                      className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-xl p-2.5 focus:ring-[#006837] focus:border-[#006837]" 
+                      className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-xl p-2.5 focus:ring-[#006837] focus:border-[#006837]"
                     />
                   </div>
 
@@ -469,14 +477,14 @@ Acompanhe seu saldo: Gerencie todos os seus recebimentos diretamente pelo painel
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       {formData.person_type === 'FISICA' ? 'Renda Mensal' : 'Faturamento Mensal'}
                     </label>
-                    <input 
-                      type="text" 
-                      name="income_value" 
-                      value={formData.income_value} 
-                      onChange={handleChange} 
-                      required 
+                    <input
+                      type="text"
+                      name="income_value"
+                      value={formData.income_value}
+                      onChange={handleChange}
+                      required
                       placeholder="R$ 0,00"
-                      className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-xl p-2.5 focus:ring-[#006837] focus:border-[#006837]" 
+                      className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-xl p-2.5 focus:ring-[#006837] focus:border-[#006837]"
                     />
                   </div>
 
@@ -529,14 +537,14 @@ Acompanhe seu saldo: Gerencie todos os seus recebimentos diretamente pelo painel
                   </div>
                   <div className="col-span-1">
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Número</label>
-                    <input 
-                      type="text" 
-                      name="address_number" 
-                      value={formData.address_number} 
-                      onChange={handleChange} 
-                      ref={addressNumberRef} 
-                      required 
-                      className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-xl p-2.5 focus:ring-[#006837] focus:border-[#006837]" 
+                    <input
+                      type="text"
+                      name="address_number"
+                      value={formData.address_number}
+                      onChange={handleChange}
+                      ref={addressNumberRef}
+                      required
+                      className="w-full border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-xl p-2.5 focus:ring-[#006837] focus:border-[#006837]"
                     />
                   </div>
                   <div className="col-span-1">
@@ -568,8 +576,8 @@ Acompanhe seu saldo: Gerencie todos os seus recebimentos diretamente pelo painel
                   </div>
                 </div>
 
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   disabled={loading}
                   className="w-full mt-8 bg-[#006837] text-white font-bold py-3.5 px-4 rounded-xl hover:bg-[#00522b] transition-colors disabled:opacity-70 disabled:cursor-not-allowed shadow-sm"
                 >

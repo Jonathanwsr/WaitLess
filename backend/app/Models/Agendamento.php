@@ -13,6 +13,7 @@ class Agendamento extends Model
 
     protected $casts = [
         'status_pagamento' => 'string',
+        'ultima_localizacao_em' => 'datetime',
     ];
 
     /**

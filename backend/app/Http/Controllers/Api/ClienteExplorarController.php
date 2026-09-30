@@ -51,6 +51,10 @@ class ClienteExplorarController extends Controller
 
             'raio_km'          => 'nullable|numeric|min:1|max:100',
 
+            'estado'           => 'nullable|string|size:2',
+
+            'cidade'           => 'nullable|string|max:100',
+
         ]);
 
 
@@ -66,6 +70,10 @@ class ClienteExplorarController extends Controller
         $dataDesejada = $validated['data'] ?? null;
 
         $enderecoManual = $validated['endereco_manual'] ?? null;
+
+        $estadoFiltro = $request->filled('estado') ? strtoupper($validated['estado']) : null;
+
+        $cidadeFiltro = $request->filled('cidade') ? strip_tags(trim($validated['cidade'])) : null;
 
 
 
@@ -117,7 +125,15 @@ class ClienteExplorarController extends Controller
 
         if ($tipoBusca === 'estabelecimentos') {
 
-            $queryEstabelecimentos = Estabelecimento::where('ativo', true);
+            $queryEstabelecimentos = Estabelecimento::where('ativo', true)->withMin('servicos as preco_minimo', 'valor');
+
+            if ($estadoFiltro) {
+                $queryEstabelecimentos->whereRaw('UPPER(TRIM(estado)) = ?', [$estadoFiltro]);
+            }
+
+            if ($cidadeFiltro) {
+                $queryEstabelecimentos->where('cidade', 'ilike', "%{$cidadeFiltro}%");
+            }
 
 
 
@@ -127,7 +143,7 @@ class ClienteExplorarController extends Controller
 
                 $queryEstabelecimentos->where(function($q) use ($termo) {
 
-                    $q->where('name', 'ilike', $termo)
+                    $q->where('nome', 'ilike', $termo)
 
                       ->orWhere('cidade', 'ilike', $termo)
 
@@ -153,7 +169,7 @@ class ClienteExplorarController extends Controller
 
                 $queryEstabelecimentos->where(function($q) use ($termoEnd) {
 
-                    $q->where('logradouro', 'ilike', $termoEnd)
+                    $q->where('rua', 'ilike', $termoEnd)
 
                       ->orWhere('bairro', 'ilike', $termoEnd)
 
@@ -213,7 +229,11 @@ class ClienteExplorarController extends Controller
 
         // =====================================================================
 
-        if ($tipoBusca === 'servicos' || $tipoBusca === 'reservas') {
+        if ($tipoBusca === 'servicos') {
+            $itens = $this->buscarServicos($request, $validated, $busca, $categoria, $estadoFiltro, $cidadeFiltro, $enderecoManual, $favServicos);
+        }
+
+        if ($tipoBusca === 'reservas') {
 
            
 
@@ -277,6 +297,8 @@ class ClienteExplorarController extends Controller
 
 
 
+            $this->filtrarItensPorLocal($queryItens, $estadoFiltro, $cidadeFiltro);
+
             if ($request->boolean('apenas_promocoes')) {
 
                 $queryItens->where('tem_promocao', true)
@@ -293,7 +315,7 @@ class ClienteExplorarController extends Controller
 
                 $queryItens->whereHas('estabelecimento', function($q) use ($termoEnd) {
 
-                    $q->where('logradouro', 'ilike', $termoEnd)
+                    $q->where('endereco', 'ilike', $termoEnd)
 
                       ->orWhere('bairro', 'ilike', $termoEnd)
 
@@ -715,7 +737,7 @@ class ClienteExplorarController extends Controller
 
             'filtros'          => $request->only([
 
-                'tipo_busca', 'busca', 'categoria', 'data', 'preco_min',
+                'tipo_busca', 'busca', 'categoria', 'data', 'preco_min', 'estado', 'cidade',
 
                 'preco_max', 'apenas_promocoes', 'ordem', 'endereco_manual',
 
@@ -732,6 +754,134 @@ class ClienteExplorarController extends Controller
     // =========================================================================
     // EXIBIR AVALIAÇÕES DE UM ITEM ESPECÍFICO A PARTIR DA TELA "EXPLORAR"
     // =========================================================================
+    /** UF de um item de reserva: do próprio item, senão do dono (users) ou do estabelecimento com o mesmo id. */
+    private const SQL_UF_ITEM = "COALESCE(NULLIF(TRIM(itens_aluguel.estado), ''), (SELECT NULLIF(TRIM(COALESCE(u.estado, u.state)), '') FROM users u WHERE u.id = itens_aluguel.estabelecimento_id), (SELECT NULLIF(TRIM(e.estado), '') FROM estabelecimentos e WHERE e.id = itens_aluguel.estabelecimento_id))";
+
+    private const SQL_CIDADE_ITEM = "COALESCE(NULLIF(TRIM(itens_aluguel.cidade), ''), (SELECT NULLIF(TRIM(COALESCE(u.cidade, u.city)), '') FROM users u WHERE u.id = itens_aluguel.estabelecimento_id), (SELECT NULLIF(TRIM(e.cidade), '') FROM estabelecimentos e WHERE e.id = itens_aluguel.estabelecimento_id))";
+
+    private const ESTADOS = [
+        'AC' => 'Acre', 'AL' => 'Alagoas', 'AP' => 'Amapá', 'AM' => 'Amazonas', 'BA' => 'Bahia', 'CE' => 'Ceará',
+        'DF' => 'Distrito Federal', 'ES' => 'Espírito Santo', 'GO' => 'Goiás', 'MA' => 'Maranhão', 'MT' => 'Mato Grosso',
+        'MS' => 'Mato Grosso do Sul', 'MG' => 'Minas Gerais', 'PA' => 'Pará', 'PB' => 'Paraíba', 'PR' => 'Paraná',
+        'PE' => 'Pernambuco', 'PI' => 'Piauí', 'RJ' => 'Rio de Janeiro', 'RN' => 'Rio Grande do Norte', 'RS' => 'Rio Grande do Sul',
+        'RO' => 'Rondônia', 'RR' => 'Roraima', 'SC' => 'Santa Catarina', 'SP' => 'São Paulo', 'SE' => 'Sergipe', 'TO' => 'Tocantins',
+    ];
+
+    private function filtrarItensPorLocal($query, ?string $uf, ?string $cidade): void
+    {
+        if ($uf) {
+            $query->whereRaw('UPPER(' . self::SQL_UF_ITEM . ') = ?', [$uf]);
+        }
+        if ($cidade) {
+            $query->whereRaw(self::SQL_CIDADE_ITEM . ' ILIKE ?', ["%{$cidade}%"]);
+        }
+    }
+
+    /** Serviços reais (Servico) dos locais ativos, no mesmo formato de card usado pelas reservas. */
+    private function buscarServicos(Request $request, array $validated, ?string $busca, ?string $categoria, ?string $uf, ?string $cidade, ?string $enderecoManual, array $favServicos)
+    {
+        $query = \App\Models\Servico::query()
+            ->where('ativo', true)
+            ->with('estabelecimento:id,nome,foto_perfil,cidade,estado,ramo_atuacao')
+            ->whereHas('estabelecimento', fn ($q) => $q->where('ativo', true));
+
+        if ($busca) {
+            $termo = "%{$busca}%";
+            $query->where(function ($q) use ($termo) {
+                $q->where('nome', 'ilike', $termo)
+                  ->orWhere('descricao', 'ilike', $termo)
+                  ->orWhereHas('estabelecimento', fn ($e) => $e->where('nome', 'ilike', $termo));
+            });
+        }
+
+        if ($categoria && $categoria !== 'todas') {
+            $query->whereHas('estabelecimento', fn ($e) => $e->where('ramo_atuacao', $categoria));
+        }
+
+        if ($uf) {
+            $query->whereHas('estabelecimento', fn ($e) => $e->whereRaw('UPPER(TRIM(estado)) = ?', [$uf]));
+        }
+        if ($cidade) {
+            $query->whereHas('estabelecimento', fn ($e) => $e->where('cidade', 'ilike', "%{$cidade}%"));
+        }
+        if ($enderecoManual) {
+            $termoEnd = "%{$enderecoManual}%";
+            $query->whereHas('estabelecimento', fn ($e) => $e->where(fn ($w) => $w->where('rua', 'ilike', $termoEnd)->orWhere('bairro', 'ilike', $termoEnd)->orWhere('cidade', 'ilike', $termoEnd)));
+        }
+
+        if ($request->filled('preco_min')) $query->where('valor', '>=', $validated['preco_min']);
+        if ($request->filled('preco_max')) $query->where('valor', '<=', $validated['preco_max']);
+        if ($request->boolean('apenas_promocoes')) $query->where('tem_promocao', true)->where('valor_desconto', '>', 0);
+
+        $ordem = $validated['ordem'] ?? 'relevancia';
+        if ($ordem === 'menor_preco') $query->orderBy('valor');
+        elseif ($ordem === 'maior_preco') $query->orderByDesc('valor');
+        elseif ($ordem === 'maior_desconto') $query->where('tem_promocao', true)->orderByDesc('valor_desconto');
+        else $query->latest();
+
+        $paginado = $query->paginate($validated['per_page'] ?? 12)->withQueryString();
+
+        $usuario = Auth::user();
+        $ehPremium = $usuario && $usuario->isPremium();
+        $vagas = app(\App\Services\Agendamento\VagasServicoService::class);
+
+        $paginado->getCollection()->transform(function ($servico) use ($favServicos, $ehPremium, $vagas) {
+            $valor = (float) $servico->valor;
+            $final = $valor;
+            if ($servico->tem_promocao && (float) $servico->valor_desconto > 0) {
+                $final = $servico->tipo_desconto === 'percentual'
+                    ? $valor - ($valor * ((float) $servico->valor_desconto / 100))
+                    : max(0, $valor - (float) $servico->valor_desconto);
+            }
+
+            $estab = $servico->estabelecimento;
+            if ($estab) {
+                $estab->setAttribute('name', $estab->nome);
+            }
+
+            $resumo = $vagas->resumoHoje($servico);
+
+            $servico->fotos = is_string($servico->fotos) ? (json_decode($servico->fotos, true) ?? []) : ($servico->fotos ?? []);
+            $servico->is_favorito = in_array($servico->id, $favServicos);
+            $servico->direto_dono = false;
+            $servico->bloqueado = (bool) $servico->somente_premium && !$ehPremium;
+            $servico->preco_final_cliente = number_format($final, 2, '.', '');
+            $servico->vagas_status = $resumo['status'];
+            $servico->vagas_restantes = $resumo['restantes'];
+
+            return $servico;
+        });
+
+        return $paginado;
+    }
+
+    /** Contagem real de lojas, serviços e reservas por estado — alimenta os cards de estados. */
+    public function estados()
+    {
+        $lojas = DB::table('estabelecimentos')->where('ativo', true)
+            ->selectRaw('UPPER(TRIM(estado)) as uf, COUNT(*) as total')->whereNotNull('estado')->groupByRaw('1')->pluck('total', 'uf');
+
+        $servicos = DB::table('servicos')
+            ->join('estabelecimentos', 'estabelecimentos.id', '=', 'servicos.estabelecimento_id')
+            ->where('servicos.ativo', true)->whereNull('servicos.deleted_at')->where('estabelecimentos.ativo', true)
+            ->selectRaw('UPPER(TRIM(estabelecimentos.estado)) as uf, COUNT(*) as total')->groupByRaw('1')->pluck('total', 'uf');
+
+        $reservas = DB::table('itens_aluguel')
+            ->whereNull('deleted_at')->whereNull('agendamento_id')->where('ativo', true)
+            ->whereNotIn('categoria', ['produto_extra', 'produto_avulso'])
+            ->selectRaw('UPPER(' . self::SQL_UF_ITEM . ') as uf, COUNT(*) as total')->groupByRaw('1')->pluck('total', 'uf');
+
+        $lista = [];
+        foreach (self::ESTADOS as $uf => $nome) {
+            $l = (int) ($lojas[$uf] ?? 0);
+            $s = (int) ($servicos[$uf] ?? 0);
+            $r = (int) ($reservas[$uf] ?? 0);
+            $lista[] = ['uf' => $uf, 'nome' => $nome, 'lojas' => $l, 'servicos' => $s, 'reservas' => $r, 'total' => $l + $s + $r];
+        }
+
+        return response()->json($lista);
+    }
+
     public function mostrarAvaliacoes(Request $request, $id)
     {
         $tipo = $request->query('tipo', 'estabelecimento');
