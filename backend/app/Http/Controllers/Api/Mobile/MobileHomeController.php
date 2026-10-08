@@ -255,6 +255,15 @@ class MobileHomeController extends Controller
         return response()->json([
             'status' => 'success',
             'pontos_saldo' => $user->pontos_saldo,
+            'valor_em_reais' => \App\Services\PontosService::pontosParaValor((int) $user->pontos_saldo),
+            'pontos_por_real' => \App\Services\PontosService::PONTOS_POR_REAL,
+            'ganhos_no_mes' => (int) DB::table('historico_pontos')->where('usuario_id', $user->id)->where('tipo', 'ganho')
+                ->where('created_at', '>=', now('America/Sao_Paulo')->startOfMonth())->sum('quantidade'),
+            // Premium usa pontos até este % do pedido mesmo onde o local não aceita (PontosService::limiteDePontos).
+            'pontos_premium' => [
+                'ativo' => $user->isPremium(),
+                'percentual' => \App\Services\PontosService::percentualPremiumSemAceite(),
+            ],
             'nivel' => \App\Support\NiveisFidelidade::para($pontosGanhos),
             'saldos' => $saldos,
             'historico' => $historico

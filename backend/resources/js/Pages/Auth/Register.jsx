@@ -13,8 +13,10 @@ export default function Register() {
         papel: '',
         person_type: 'FISICA',
         cpf_cnpj: '',
+        birth_date: '',
         mobile_phone: '',
         phone: '',
+        notification_disabled: false,
         postal_code: '',
         address: '',
         address_number: '',
@@ -41,12 +43,11 @@ export default function Register() {
         "Inglês", "Espanhol", "Francês", "Alemão", "Italiano", "Outro"
     ];
 
-    // Atualiza opções de papel e zera CPF/CNPJ ao mudar o tipo de pessoa
+    // Pessoa Jurídica só pode se cadastrar como Proprietário (sócio); zera CPF/CNPJ ao mudar o tipo de pessoa
     useEffect(() => {
         if (data.person_type === 'JURIDICA') {
             setData('papel', 'socio');
-        } else if (data.person_type === 'FISICA' && data.papel === 'socio') {
-            setData('papel', '');
+            setData('birth_date', '');
         }
         setData('cpf_cnpj', '');
     }, [data.person_type]);
@@ -231,7 +232,7 @@ export default function Register() {
                                             {data.person_type === 'FISICA' && (
                                                 <>
                                                     <option value="user">Cliente</option>
-                                                    <option value="atendente">Funcionário</option>
+                                                    <option value="socio">Proprietário</option>
                                                 </>
                                             )}
                                             {data.person_type === 'JURIDICA' && (
@@ -305,12 +306,14 @@ export default function Register() {
                                 <h4 className="text-sm font-bold text-gray-900 border-b border-gray-100 pb-2 mb-4">2. Dados Cadastrais</h4>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                     <div className="space-y-1 sm:col-span-2">
-                                        <label className="text-[10px] font-bold text-gray-500 uppercase">Nome Completo / Razão Social</label>
+                                        <label className="text-[10px] font-bold text-gray-500 uppercase">
+                                            {data.person_type === 'JURIDICA' ? 'Razão Social' : 'Nome Completo'}
+                                        </label>
                                         <input
                                             type="text"
                                             value={data.name}
                                             className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-1 focus:ring-[#F26522] focus:border-[#F26522] transition-colors"
-                                            placeholder="Nome da empresa"
+                                            placeholder={data.person_type === 'JURIDICA' ? 'Nome da empresa' : 'Seu nome completo'}
                                             onChange={(e) => setData('name', e.target.value)}
                                             required
                                         />
@@ -346,6 +349,21 @@ export default function Register() {
                                         />
                                         <InputError message={errors.mobile_phone} className="text-xs" />
                                     </div>
+
+                                    {data.person_type === 'FISICA' && (
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-bold text-gray-500 uppercase">Data de Nascimento</label>
+                                            <input
+                                                type="date"
+                                                value={data.birth_date}
+                                                max={new Date().toISOString().split('T')[0]}
+                                                className="block w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-1 focus:ring-[#F26522] focus:border-[#F26522] transition-colors"
+                                                onChange={(e) => setData('birth_date', e.target.value)}
+                                                required
+                                            />
+                                            <InputError message={errors.birth_date} className="text-xs" />
+                                        </div>
+                                    )}
 
                                     {/* Novos Campos Adicionados */}
                                     <div className="space-y-1">
@@ -523,6 +541,22 @@ export default function Register() {
                                         <InputError message={errors.state} className="text-xs" />
                                     </div>
                                 </div>
+                            </div>
+
+                            {/* PREFERÊNCIA DE NOTIFICAÇÃO */}
+                            <div className="pt-2">
+                                <label className="flex items-start gap-3 cursor-pointer select-none">
+                                    <input
+                                        type="checkbox"
+                                        checked={data.notification_disabled}
+                                        onChange={(e) => setData('notification_disabled', e.target.checked)}
+                                        className="mt-0.5 w-4 h-4 rounded border-gray-300 text-[#F26522] focus:ring-[#F26522]"
+                                    />
+                                    <span className="text-sm text-gray-600">
+                                        Não desejo receber e-mails/SMS de cobrança do parceiro de pagamentos sobre minhas faturas.
+                                    </span>
+                                </label>
+                                <InputError message={errors.notification_disabled} className="text-xs mt-1" />
                             </div>
 
                             {/* TERMO DE COMPROMISSO */}

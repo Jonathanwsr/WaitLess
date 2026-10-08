@@ -38,7 +38,24 @@ class EstornoController extends Controller
         } elseif (in_array($papel, ['socio', 'proprietario', 'estabelecimento'])) {
             return Inertia::render('Estabelecimentos/Estornos');
         } else {
-            return Inertia::render('Cliente/MeusEstornos');
+            $pedidosProdutos = \App\Models\PedidoEntrega::with('produto:id,nome,fotos')
+                ->where('cliente_id', $user->id)
+                ->whereIn('status', ['concluido', 'estornado'])
+                ->orderByDesc('data_conclusao')
+                ->get();
+
+            $estornosPorPedido = Estorno::whereIn('pedido_entrega_id', $pedidosProdutos->pluck('id'))
+                ->get(['pedido_entrega_id', 'status'])
+                ->keyBy('pedido_entrega_id');
+
+            $pedidosProdutos = $pedidosProdutos->map(function ($pedido) use ($estornosPorPedido) {
+                $dados = $pedido->toArray();
+                $dados['estorno_status'] = $estornosPorPedido->get($pedido->id)?->status;
+
+                return $dados;
+            });
+
+            return Inertia::render('Cliente/MeusEstornos', ['pedidosProdutos' => $pedidosProdutos]);
         }
     }
 
@@ -65,6 +82,20 @@ class EstornoController extends Controller
     // =========================================================================
     // 👤 PARA CLIENTES E PROPRIETÁRIOS
     // =========================================================================
+
+    public function adminReprovar(Request $request, $id)
+    {
+        $request->validate(['motivo' => 'required|string|min:5|max:500']);
+
+        try {
+            $this->estornoService->reprovarEstorno(Estorno::findOrFail($id), Auth::user(), $request->motivo);
+
+            return response()->json(['status' => 'success', 'message' => 'Estorno reprovado.']);
+        } catch (\Exception $e) {
+            Log::error('Erro Admin Reprovar Estorno: ' . $e->getMessage());
+            return response()->json(['error' => $e->getMessage()], 400);
+        }
+    }
 
     public function minhasSolicitacoes(Request $request)
     {

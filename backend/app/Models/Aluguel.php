@@ -63,6 +63,11 @@ class Aluguel extends Model
         return $this->belongsTo(User::class, 'proprietario_id');
     }
 
+    public function funcionario(): BelongsTo
+    {
+        return $this->belongsTo(Funcionario::class, 'funcionario_id');
+    }
+
     public function contratoDocumento(): BelongsTo
     {
         return $this->belongsTo(Contrato::class, 'contrato_id');

@@ -26,6 +26,54 @@ class PontosService
         return round($pontos / self::PONTOS_POR_REAL, 2);
     }
 
+    /** Percentual máximo do pedido que um premium paga com pontos onde o local não aceita pontos. */
+    public static function percentualPremiumSemAceite(): float
+    {
+        return max(0.0, min(100.0, (float) config('pontos.premium_sem_aceite_percentual', 20)));
+    }
+
+    /**
+     * Regra única de uso de pontos num serviço ou reserva.
+     * - Local aceita pontos: vale o limite que ele definiu (ou o pedido inteiro, se não definiu).
+     * - Local não aceita, mas o cliente é premium: pode usar até o percentual de config/pontos.php.
+     * - Senão: não pode usar pontos (devolve null).
+     *
+     * @param object $item Servico ou ItemAluguel (precisa de aceita_pontos e maximo_pontos_permitidos)
+     * @return int|null máximo de pontos permitido para este pedido, ou null se não pode usar
+     */
+    public static function limiteDePontos(User $user, object $item, float $subtotal): ?int
+    {
+        if ($subtotal <= 0) {
+            return null;
+        }
+
+        if ($item->aceita_pontos) {
+            $limiteDoLocal = (int) ($item->maximo_pontos_permitidos ?? 0);
+
+            return $limiteDoLocal > 0 ? $limiteDoLocal : self::valorParaPontos($subtotal);
+        }
+
+        if ($user->isPremium()) {
+            return self::valorParaPontos($subtotal * self::percentualPremiumSemAceite() / 100);
+        }
+
+        return null;
+    }
+
+    /**
+     * Quantos pontos aplicar de fato: respeita a regra do item, o saldo do cliente e o subtotal.
+     * Devolve 0 quando o cliente não pode usar pontos neste pedido.
+     */
+    public static function pontosParaPedido(User $user, object $item, int $pontosSolicitados, float $subtotal): int
+    {
+        $limite = self::limiteDePontos($user, $item, $subtotal);
+        if ($limite === null) {
+            return 0;
+        }
+
+        return self::pontosAplicaveis($user, min($pontosSolicitados, $limite), $subtotal);
+    }
+
     /**
      * Quantos pontos do saldo global do usuário podem de fato ser usados
      * nesse checkout: nunca mais que o saldo dele, nunca mais do que o

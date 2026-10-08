@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { obterEcho } from '../../services/echo';
 
 const COLORS = {
   primary: '#282828',
@@ -47,6 +48,7 @@ export default function CaixaEntrada() {
   const [conversas, setConversas] = useState<Conversa[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [meuId, setMeuId] = useState<number | null>(null);
 
   const carregarConversas = useCallback(async (mostrarLoading = true) => {
     if (mostrarLoading) setLoading(true);
@@ -70,6 +72,41 @@ export default function CaixaEntrada() {
       carregarConversas(conversas.length === 0);
     }, [carregarConversas])
   );
+
+  // Descobre o próprio id pra assinar o canal privado de notificações
+  // (mesmo canal que o sino de mensagens do web já usa).
+  useEffect(() => {
+    (async () => {
+      try {
+        const token = (await AsyncStorage.getItem('@lokyva_token')) || (await AsyncStorage.getItem('@waitless_token'));
+        const res = await fetch(`${API_URL}/me`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+        const json = await res.json();
+        if (json?.user?.id) setMeuId(json.user.id);
+      } catch {
+        // sem tempo real neste caso; a lista ainda atualiza ao focar a tela
+      }
+    })();
+  }, []);
+
+  // Tempo real: nova mensagem em qualquer conversa atualiza a caixa de
+  // entrada na hora — antes só atualizava quando a tela ganhava foco de novo.
+  useEffect(() => {
+    if (!meuId) return;
+    let cancelado = false;
+    const canalNome = `App.Models.User.${meuId}`;
+
+    obterEcho().then((echo) => {
+      if (cancelado) return;
+      echo.private(canalNome).listen('.mensagem.recebida', () => {
+        carregarConversas(false);
+      });
+    });
+
+    return () => {
+      cancelado = true;
+      obterEcho().then((echo) => echo.leave(canalNome));
+    };
+  }, [meuId, carregarConversas]);
 
   const aoAtualizar = () => {
     setRefreshing(true);

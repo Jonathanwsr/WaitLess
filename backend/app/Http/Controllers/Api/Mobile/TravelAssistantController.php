@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Api\Mobile;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
-use App\Models\Estabelecimento;
 use App\Models\ItemAluguel;
 use App\Models\Agendamento;
 use App\Models\Viagem;
@@ -46,7 +45,7 @@ class TravelAssistantController extends Controller
         if ($lat && $lng) {
             $servicosLocais = $this->buscarServicosPorCoordenadas($lat, $lng, $raio);
             if ($servicosLocais->isNotEmpty()) {
-                $destinoNome = $servicosLocais->first()->estabelecimento->cidade;
+                $destinoNome = $servicosLocais->first()->cidade ?: $destinoNome;
             }
         } else {
             $servicosLocais = $this->buscarServicosPorTermo($busca);
@@ -182,7 +181,9 @@ class TravelAssistantController extends Controller
                 'score' => $item->score_waitless,
                 'avaliacao_media' => $item->media_avaliacao,
                 'total_avaliacoes' => $item->total_avaliacoes,
-                'estabelecimento' => optional($item->estabelecimento)->nome,
+                // ItemAluguel::estabelecimento() aponta pra users.id (o sócio dono),
+                // não pra estabelecimentos.id — a coluna de nome lá é "name", não "nome".
+                'estabelecimento' => optional($item->estabelecimento)->name,
                 'cidade' => $item->cidade,
                 'estado' => $item->estado,
                 'endereco' => $item->endereco,
@@ -219,22 +220,20 @@ class TravelAssistantController extends Controller
      */
     private function buscarServicosPorCoordenadas($lat, $lng, $raio)
     {
-        $estabelecimentosProximos = Estabelecimento::select('id', 'nome', 'cidade', 'estado', 'latitude', 'longitude')
-            ->selectRaw(
-                '(6371 * acos(cos(radians(?)) * cos(radians(latitude)) * cos(radians(longitude) - radians(?)) + sin(radians(?)) * sin(radians(latitude)))) AS distancia',
-                [$lat, $lng, $lat]
-            )
-            ->having('distancia', '<=', $raio)
-            ->orderBy('distancia')
-            ->pluck('id');
+        // itens_aluguel.estabelecimento_id referencia users.id (o sócio dono do
+        // item), não estabelecimentos.id — então nunca dá pra achar itens
+        // próximos filtrando por Estabelecimento::withinDistance() e comparando
+        // os ids. O item de aluguel já tem sua própria latitude/longitude, que é
+        // a localização real do que está sendo alugado.
+        $haversine = "(6371 * acos(cos(radians(?)) * cos(radians(latitude)) * cos(radians(longitude) - radians(?)) + sin(radians(?)) * sin(radians(latitude))))";
 
-        if ($estabelecimentosProximos->isEmpty()) {
-            return collect();
-        }
-
-        return ItemAluguel::with('estabelecimento:id,nome,endereco,cidade,estado,latitude,longitude,foto_perfil')
-            ->whereIn('estabelecimento_id', $estabelecimentosProximos)
+        return ItemAluguel::with('estabelecimento:id,name,endereco,cidade,estado,latitude,longitude,foto_perfil')
+            ->whereNotNull('latitude')
+            ->whereNotNull('longitude')
             ->where('ativo', true)
+            ->selectRaw("itens_aluguel.*, {$haversine} AS distancia", [$lat, $lng, $lat])
+            ->whereRaw("{$haversine} <= ?", [$lat, $lng, $lat, $raio])
+            ->orderBy('distancia')
             ->get();
     }
 
@@ -247,7 +246,7 @@ class TravelAssistantController extends Controller
 
         $likeTermo = '%' . $termo . '%';
 
-        return ItemAluguel::with('estabelecimento:id,nome,endereco,cidade,estado,latitude,longitude,foto_perfil')
+        return ItemAluguel::with('estabelecimento:id,name,endereco,cidade,estado,latitude,longitude,foto_perfil')
             ->where('ativo', true)
             ->where(function ($query) use ($likeTermo) {
                 $query->where('nome', 'like', $likeTermo)
@@ -255,7 +254,7 @@ class TravelAssistantController extends Controller
                       ->orWhereHas('estabelecimento', function ($q) use ($likeTermo) {
                           $q->where('cidade', 'like', $likeTermo)
                             ->orWhere('estado', 'like', $likeTermo)
-                            ->orWhere('nome', 'like', $likeTermo)
+                            ->orWhere('name', 'like', $likeTermo)
                             ->orWhere('bairro', 'like', $likeTermo);
                       });
             })
@@ -628,13 +627,13 @@ class TravelAssistantController extends Controller
         $wiki = $this->buscarInfoWikipedia($nomeLocal);
         $imagens = $this->buscarImagensUnsplash($nomeLocal);
 
-        $servicosNoApp = ItemAluguel::with('estabelecimento:id,nome,endereco,cidade,estado,latitude,longitude,foto_perfil')
+        $servicosNoApp = ItemAluguel::with('estabelecimento:id,name,endereco,cidade,estado,latitude,longitude,foto_perfil')
             ->where('ativo', true)
             ->where(function ($query) use ($nomeLocal, $cidade) {
                 $query->where('nome', 'like', "%{$nomeLocal}%")
                       ->orWhere('categoria', 'like', "%{$nomeLocal}%")
                       ->orWhereHas('estabelecimento', function ($q) use ($nomeLocal, $cidade) {
-                          $q->where('nome', 'like', "%{$nomeLocal}%")
+                          $q->where('name', 'like', "%{$nomeLocal}%")
                             ->orWhere('cidade', 'like', "%{$nomeLocal}%")
                             ->orWhere('bairro', 'like', "%{$nomeLocal}%");
                       });

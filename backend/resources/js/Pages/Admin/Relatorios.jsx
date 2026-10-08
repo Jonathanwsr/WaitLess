@@ -119,7 +119,7 @@ function ModalCusto({ custo, categorias, onClose }) {
     );
 }
 
-export default function Relatorios({ mes, resumo, evolucaoMensal, repasses, estornos, clientes, custos, custosPorCategoria, categoriasCusto }) {
+export default function Relatorios({ mes, resumo, vendasEntregas, evolucaoMensal, repasses, estornos, clientes, custos, custosPorCategoria, categoriasCusto }) {
     const { flash = {} } = usePage().props;
     const [aba, setAba] = useState('geral');
     const [mesFiltro, setMesFiltro] = useState(mes || '');
@@ -194,9 +194,30 @@ export default function Relatorios({ mes, resumo, evolucaoMensal, repasses, esto
                                 <CardMetrica titulo="Lucro líquido real" valor={fmt(resumo.lucro_liquido_real)} cor={resumo.lucro_liquido_real >= 0 ? 'text-emerald-600' : 'text-red-600'} destaque />
                             </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <CardMetrica titulo="Volume em serviços" valor={fmt(resumo.volume_servicos)} />
                                 <CardMetrica titulo="Volume em aluguéis" valor={fmt(resumo.volume_alugueis)} />
+                                <CardMetrica titulo="Volume em produtos" valor={fmt(resumo.volume_produtos)} />
+                            </div>
+
+                            <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-5">
+                                <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+                                    <div>
+                                        <p className="font-bold text-gray-900">Vendas de produtos para entrega</p>
+                                        <p className="text-xs text-gray-500">{vendasEntregas.competencia ? `Pedidos feitos em ${vendasEntregas.competencia}` : 'Todo o período'}</p>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                                    <CardMetrica titulo="Vendidos (concluídos)" valor={`${vendasEntregas.vendidos.total} · ${fmt(vendasEntregas.vendidos.valor)}`} cor="text-emerald-600" />
+                                    <CardMetrica titulo="Em andamento" valor={`${vendasEntregas.em_andamento.total} · ${fmt(vendasEntregas.em_andamento.valor)}`} />
+                                    <CardMetrica titulo="Cancelados" valor={`${vendasEntregas.cancelados.total} · ${fmt(vendasEntregas.cancelados.valor)}`} cor="text-red-600" />
+                                    <CardMetrica titulo="Cancelados pelo cliente" valor={vendasEntregas.cancelados.pelo_cliente} />
+                                    <CardMetrica titulo="Cancelados pelo vendedor/admin" valor={vendasEntregas.cancelados.pelo_vendedor_ou_admin} />
+                                    <CardMetrica titulo="Estornados" valor={`${vendasEntregas.estornados.total} · ${fmt(vendasEntregas.estornados.valor)}`} cor="text-red-600" />
+                                    <CardMetrica titulo="Produtos apagados" valor={vendasEntregas.produtos_apagados} />
+                                    <CardMetrica titulo="Produtos ativos" valor={vendasEntregas.produtos_ativos} />
+                                    <CardMetrica titulo="Receita de produtos" valor={fmt(vendasEntregas.receita_plataforma)} cor="text-emerald-600" />
+                                </div>
                             </div>
 
                             <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">

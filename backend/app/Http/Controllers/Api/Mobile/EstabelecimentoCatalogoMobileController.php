@@ -37,6 +37,7 @@ class EstabelecimentoCatalogoMobileController extends Controller
                 'estabelecimento' => [
                     'id'               => $estabelecimento->id,
                     'nome'             => $estabelecimento->nome,
+                    'produtos_vendidos' => $estabelecimento->produtosVendidos(),
                     'ramo_atuacao'     => $estabelecimento->ramo_atuacao,
                     'foto_perfil'      => $estabelecimento->foto_perfil,
                     'avaliacao_media'  => $estabelecimento->avaliacao_media ?? 5.0,

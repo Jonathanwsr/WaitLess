@@ -85,6 +85,23 @@ class MobileAuthController extends Controller
         ], 200);
     }
 
+    /** Produtos vendidos do sócio logado e de cada local em que ele atua (perfil do app). */
+    public function produtosVendidos(Request $request)
+    {
+        $user = $request->user();
+
+        return response()->json([
+            'produtos_vendidos' => (int) $user->produtos_vendidos,
+            'estabelecimentos' => $user->estabelecimentos()
+                ->get(['estabelecimentos.id', 'estabelecimentos.nome'])
+                ->map(fn ($est) => [
+                    'id' => $est->id,
+                    'nome' => $est->nome,
+                    'produtos_vendidos' => $est->produtosVendidos(),
+                ]),
+        ]);
+    }
+
     /**
      * Cadastro completo com Asaas, sanitização de segurança e E-mail via Brevo
      */
@@ -451,15 +468,11 @@ class MobileAuthController extends Controller
     }
 
     /**
-     * Planos do sócio/proprietário que liberam o app mobile para TODOS os
-     * funcionários do estabelecimento (ver App\Services\PlanoService).
-     */
-    private const PLANOS_EQUIPE_COMPLETA = ['premium-socio', 'premium-socio-anual'];
-
-    /**
      * Decide se este funcionário deve ser barrado do login mobile por causa
-     * do plano do estabelecimento: no plano básico, só o funcionário mais
-     * antigo (primeiro cadastrado) do local pode acessar o app.
+     * do plano do estabelecimento: no plano básico (gratuito), só o
+     * funcionário mais antigo (primeiro cadastrado) do local pode acessar o
+     * app. Qualquer plano Premium do sócio — não só o nível mais caro —
+     * libera o app para toda a equipe (ver App\Services\PlanoService::PLANOS_PREMIUM['socio']).
      */
     private function funcionarioBloqueadoPeloPlano(Funcionario $funcionario): bool
     {
@@ -468,12 +481,15 @@ class MobileAuthController extends Controller
             ->whereIn('tipo', ['proprietario', 'socio', 'admin'])
             ->value('usuario_id');
 
-        $planoDono = $donoId
-            ? strtolower(User::where('id', $donoId)->value('plano_assinatura') ?? '')
-            : '';
+        $dono = $donoId ? User::find($donoId) : null;
+        $planoDono = $dono ? strtolower($dono->plano_assinatura ?? '') : '';
+        $planosPremiumSocio = array_keys(\App\Services\PlanoService::PLANOS_PREMIUM['socio'] ?? []);
 
-        if (in_array($planoDono, self::PLANOS_EQUIPE_COMPLETA)) {
-            return false; // Plano superior: todos os funcionários têm acesso
+        // User::isPremium() também confere a expiração do plano — sem isso,
+        // um sócio com Premium vencido continuaria liberando o app mobile
+        // pra equipe inteira pra sempre, mesmo sem pagar mais.
+        if ($dono && $dono->isPremium() && in_array($planoDono, $planosPremiumSocio, true)) {
+            return false; // Qualquer plano Premium de sócio ainda válido: todos os funcionários têm acesso
         }
 
         $primeiroFuncionarioId = Funcionario::where('estabelecimento_id', $funcionario->estabelecimento_id)

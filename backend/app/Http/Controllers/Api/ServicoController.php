@@ -251,6 +251,15 @@ class ServicoController extends Controller
         // 3. Atualiza o banco com a junção das que ficaram + as novas
         if ($request->has('fotos_existentes') || $request->hasFile('fotos')) {
             $dadosParaAtualizar['fotos'] = json_encode(array_values($urlsFotos));
+
+            // Fotos que existiam antes e não estão mais na lista final (o usuário
+            // removeu) precisam sair do ImageKit também, senão ficam órfãs lá
+            // pra sempre, ocupando espaço sem nunca mais aparecer no app.
+            $fotosAntigas = json_decode($servico->fotos, true) ?? [];
+            $fotosRemovidas = array_diff($fotosAntigas, $urlsFotos);
+            if (!empty($fotosRemovidas)) {
+                ImageKitService::deleteMany(array_values($fotosRemovidas));
+            }
         }
 
         $servico->update($dadosParaAtualizar);
@@ -284,21 +293,21 @@ class ServicoController extends Controller
             foreach ($agendamentosAfetados as $agendamento) {
                 $pagamento = Pagamento::where('agendamento_id', $agendamento->id)->first();
 
-                if ($agendamento->status_pagamento === 'pago' && $pagamento && $pagamento->id_transacao_gateway) {
+                if (in_array($agendamento->status_pagamento, ['pago', 'pago_online']) && $pagamento && $pagamento->id_transacao_gateway) {
                     try {
-                        $tokenSalao = $estabelecimento->token_mercadopago ?? null;
-                         
-                        $mpService->estornarPagamento($pagamento->id_transacao_gateway, $tokenSalao);
-                        
-                        $pagamento->update(['status' => 'estornado']);
-                        $agendamento->update(['status' => 'cancelado', 'status_pagamento' => 'estornado']);
-                        
+                        // Antes chamava estornarPagamento($transacaoId, $tokenMercadoPago) —
+                        // o 2º parâmetro é o VALOR a estornar, não um token (e nem é mais
+                        // Mercado Pago, é Asaas). Isso quebrava sempre que um serviço com
+                        // agendamento pago era removido. Agora usa o mesmo fluxo central
+                        // de cancelamento (cria o registro em "estornos", visível pro
+                        // admin, e processa a devolução de verdade no Asaas).
+                        $mpService->processarCancelamentoAgendamento($agendamento);
                         $estornosComSucesso++;
 
                     } catch (Exception $e) {
                         \Log::error("Falha ao estornar agendamento {$agendamento->id}: " . $e->getMessage());
                     }
-                } 
+                }
                 else {
                     $agendamento->update(['status' => 'cancelado', 'status_pagamento' => 'cancelado']);
                     if ($pagamento && $pagamento->status !== 'pago') {
@@ -308,7 +317,11 @@ class ServicoController extends Controller
                 }
             }
 
-            $servico->delete(); 
+            // Limpa as fotos do serviço no ImageKit antes de apagar o registro —
+            // senão ficam órfãs lá pra sempre.
+            ImageKitService::deleteMany(json_decode($servico->fotos, true) ?? []);
+
+            $servico->delete();
 
             return back()->with('success', "Serviço removido com sucesso! $estornosComSucesso clientes foram reembolsados e $cancelamentosSimples vagas foram canceladas.");
 
@@ -542,6 +555,13 @@ class ServicoController extends Controller
 
         if ($request->has('fotos_existentes') || $request->hasFile('fotos')) {
             $dadosParaAtualizar['fotos'] = json_encode(array_values($urlsFotos));
+
+            // Mesma limpeza do serviço: foto que saiu da lista final sai do ImageKit também.
+            $fotosAntigas = json_decode($item->fotos, true) ?? [];
+            $fotosRemovidas = array_diff($fotosAntigas, $urlsFotos);
+            if (!empty($fotosRemovidas)) {
+                ImageKitService::deleteMany(array_values($fotosRemovidas));
+            }
         }
 
         $item->update($dadosParaAtualizar);
@@ -554,11 +574,17 @@ class ServicoController extends Controller
         $this->verificarPermissao();
         $item = ItemAluguel::findOrFail($id);
 
-        if (!Auth::user()->estabelecimentos->contains($item->estabelecimento_id)) {
+        // itens_aluguel.estabelecimento_id referencia USERS (o sócio dono do
+        // item), não a tabela "estabelecimentos" — comparar contra
+        // Auth::user()->estabelecimentos (ids da tabela estabelecimentos)
+        // nunca batia de verdade com o dono real do item.
+        if ((int) Auth::id() !== (int) $item->estabelecimento_id) {
             abort(403, 'Acesso Restrito.');
         }
 
-        $item->delete(); 
+        ImageKitService::deleteMany(json_decode($item->fotos, true) ?? []);
+
+        $item->delete();
         return response()->json(['success' => 'Item removido do catálogo com sucesso!']);
     }
 }

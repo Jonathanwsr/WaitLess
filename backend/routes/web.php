@@ -11,6 +11,8 @@ use App\Http\Controllers\Api\ServicoController;
 use App\Http\Controllers\Api\FinanceiroController;
 use App\Http\Controllers\Api\ClienteController;
 use App\Http\Controllers\Api\ProdutoController;
+use App\Http\Controllers\Api\ProdutoEntregaController;
+use App\Http\Controllers\Api\PedidoEntregaController;
 use App\Http\Controllers\Api\OfertaPremiumController;
 use App\Http\Controllers\Api\FuncionarioCatalogoController;
 use App\Http\Controllers\Api\FuncionarioCarteiraController;
@@ -124,6 +126,7 @@ Route::get('/api/provider', [ProviderController::class, 'show'])->name('provider
 
     // Dashboard
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+    Route::get('/relatorios/avancado', [App\Http\Controllers\Api\RelatorioAvancadoController::class, 'index'])->name('relatorios.avancado');
 
     //avaliaçoes
 
@@ -165,8 +168,15 @@ Route::post('/anfitriao/avaliacoes/{id}/responder', [App\Http\Controllers\Api\Av
         Route::post('/robos/{comando}/rodar', [AdminFinanceiroController::class, 'rodarRoboAgora'])->name('admin.financeiro.robos.rodar');
     });
 
+    Route::prefix('admin/produtos-entrega')->middleware(['auth', CheckAdmin::class])->group(function () {
+        Route::get('/', [\App\Http\Controllers\Api\AdminProdutoEntregaController::class, 'index'])->name('admin.produtos-entrega.index');
+        Route::delete('/{produto}', [\App\Http\Controllers\Api\AdminProdutoEntregaController::class, 'destroy'])->name('admin.produtos-entrega.destroy');
+        Route::post('/pedidos/{pedido}/disputa', [\App\Http\Controllers\Api\AdminProdutoEntregaController::class, 'decidirDisputa'])->name('admin.produtos-entrega.disputa');
+    });
+
     Route::prefix('admin/promocoes')->middleware(['auth', CheckAdmin::class])->group(function () {
         Route::get('/', [AdminPromocaoController::class, 'index'])->name('admin.promocoes.index');
+        Route::get('/buscar-itens', [AdminPromocaoController::class, 'buscarItens'])->name('admin.promocoes.buscar-itens');
         Route::post('/', [AdminPromocaoController::class, 'store'])->name('admin.promocoes.store');
         Route::post('/{promocao}', [AdminPromocaoController::class, 'update'])->name('admin.promocoes.update');
         Route::patch('/{promocao}/toggle-ativo', [AdminPromocaoController::class, 'toggleAtivo'])->name('admin.promocoes.toggle-ativo');
@@ -176,6 +186,7 @@ Route::post('/anfitriao/avaliacoes/{id}/responder', [App\Http\Controllers\Api\Av
 
     Route::prefix('admin/usuarios')->middleware(['auth', CheckAdmin::class])->group(function () {
         Route::get('/', [AdminUsuarioController::class, 'index'])->name('admin.usuarios.index');
+        Route::get('/{usuario}', [AdminUsuarioController::class, 'show'])->name('admin.usuarios.show');
         Route::post('/{usuario}/liberar-plano', [AdminUsuarioController::class, 'liberarPlano'])->name('admin.usuarios.liberar-plano');
         Route::post('/{usuario}/revogar-plano', [AdminUsuarioController::class, 'revogarPlano'])->name('admin.usuarios.revogar-plano');
         Route::put('/{usuario}', [AdminUsuarioController::class, 'update'])->name('admin.usuarios.update');
@@ -211,6 +222,8 @@ Route::post('/anfitriao/avaliacoes/{id}/responder', [App\Http\Controllers\Api\Av
     Route::post('/estabelecimentos', [EstabelecimentoController::class, 'store'])->name('estabelecimentos.store');
     Route::put('/estabelecimentos/{estabelecimento}', [EstabelecimentoController::class, 'update'])->name('estabelecimentos.update');
     Route::patch('/estabelecimentos/{estabelecimento}/toggle-status', [EstabelecimentoController::class, 'toggleStatus'])->name('estabelecimentos.toggle-status');
+    Route::post('/estabelecimentos/{estabelecimento}/horarios', [App\Http\Controllers\Api\HorarioFuncionamentoController::class, 'store'])->name('estabelecimentos.horarios.store');
+    Route::delete('/estabelecimentos/{estabelecimento}/horarios/{horario}', [App\Http\Controllers\Api\HorarioFuncionamentoController::class, 'destroy'])->name('estabelecimentos.horarios.destroy');
     Route::get('/meus-estabelecimentos', [EstabelecimentoController::class, 'index'])
         ->name('estabelecimentos.index');
 
@@ -255,6 +268,7 @@ Route::middleware(['auth'])->group(function () {
     // Carteira do proprietário (saldo Asaas, contas de destino validadas, repasse antecipado)
     Route::get('/financeiro/carteira', [App\Http\Controllers\Api\CarteiraProprietarioController::class, 'index'])->name('carteira.asaas');
     Route::get('/api/carteira-asaas', [App\Http\Controllers\Api\CarteiraProprietarioController::class, 'painel'])->name('carteira.asaas.painel');
+    Route::get('/api/carteira-asaas/historico', [App\Http\Controllers\Api\CarteiraProprietarioController::class, 'historico'])->name('carteira.asaas.historico');
     Route::post('/api/carteira-asaas/contas', [App\Http\Controllers\Api\CarteiraProprietarioController::class, 'storeConta'])->name('carteira.asaas.contas.store');
     Route::post('/api/carteira-asaas/contas/{conta}/validar', [App\Http\Controllers\Api\CarteiraProprietarioController::class, 'revalidarConta'])->name('carteira.asaas.contas.validar');
     Route::post('/api/carteira-asaas/contas/{conta}/padrao', [App\Http\Controllers\Api\CarteiraProprietarioController::class, 'definirPadrao'])->name('carteira.asaas.contas.padrao');
@@ -266,6 +280,66 @@ Route::middleware(['auth'])->group(function () {
 
     // Rota para disparar downloads de relatórios por período em planilhas Excel (CSV)
     Route::get('/financeiro/extrato/exportar', [ExtratoProviderController::class, 'exportar'])->name('provider.financeiro.export');
+});
+
+// ========================================================
+// ENTREGAS — Produtos para entrega/retirada (módulo novo, separado dos
+// Produtos existentes). CRUD do sócio + pedido/pagamento/cancelamento/
+// estorno/comprovante do cliente, tudo atrás de login.
+// ========================================================
+Route::middleware(['auth'])->group(function () {
+    Route::get('/produtos-entrega', [ProdutoEntregaController::class, 'index'])->name('produtos-entrega.index');
+    Route::post('/produtos-entrega', [ProdutoEntregaController::class, 'store'])->name('produtos-entrega.store');
+    Route::post('/produtos-entrega/{produtoEntrega}', [ProdutoEntregaController::class, 'update'])->name('produtos-entrega.update');
+    Route::patch('/produtos-entrega/{produtoEntrega}/toggle-ativo', [ProdutoEntregaController::class, 'toggleAtivo'])->name('produtos-entrega.toggle-ativo');
+    Route::patch('/produtos-entrega/{produtoEntrega}/vincular-local', [ProdutoEntregaController::class, 'vincularLocal'])->name('produtos-entrega.vincular-local');
+    Route::delete('/produtos-entrega/{produtoEntrega}', [ProdutoEntregaController::class, 'destroy'])->name('produtos-entrega.destroy');
+
+    Route::get('/entregas', [PedidoEntregaController::class, 'index'])->name('entregas.index');
+    Route::get('/entregas/catalogo', [PedidoEntregaController::class, 'catalogo'])->name('entregas.catalogo');
+    Route::get('/entregas/produtos/{produtoEntrega}', [PedidoEntregaController::class, 'produto'])->name('entregas.produto');
+    Route::post('/entregas/pedidos', [PedidoEntregaController::class, 'store'])->name('entregas.pedidos.store');
+    Route::get('/entregas/meus-pedidos', [PedidoEntregaController::class, 'meusPedidos'])->name('entregas.pedidos.meus');
+    Route::get('/entregas/pedidos-recebidos', [PedidoEntregaController::class, 'pedidosRecebidos'])->name('entregas.pedidos.recebidos');
+    Route::get('/entregas/recompras', [\App\Http\Controllers\Api\EntregasRecursosController::class, 'recompras'])->name('entregas.recompras');
+    Route::get('/entregas/gestao', [\App\Http\Controllers\Api\EntregasGestaoController::class, 'index'])->name('entregas.gestao');
+    Route::get('/entregas/painel-vendas', [\App\Http\Controllers\Api\EntregasRecursosController::class, 'painelDeVendas'])->name('entregas.painel-vendas');
+    Route::post('/entregas/pedidos/{pedido}/avaliar', [\App\Http\Controllers\Api\EntregasRecursosController::class, 'avaliar'])->name('entregas.pedidos.avaliar');
+    Route::post('/entregas/pedidos/{pedido}/posicao', [\App\Http\Controllers\Api\EntregasRecursosController::class, 'registrarPosicao'])->name('entregas.pedidos.posicao.store');
+    Route::get('/entregas/pedidos/{pedido}/posicao', [\App\Http\Controllers\Api\EntregasRecursosController::class, 'posicao'])->name('entregas.pedidos.posicao');
+    Route::get('/entregas/assinaturas', [\App\Http\Controllers\Api\EntregasRecursosController::class, 'listarAssinaturas'])->name('entregas.assinaturas.index');
+    Route::post('/entregas/assinaturas', [\App\Http\Controllers\Api\EntregasRecursosController::class, 'criarAssinatura'])->name('entregas.assinaturas.store');
+    Route::post('/entregas/assinaturas/{assinatura}/alterar', [\App\Http\Controllers\Api\EntregasRecursosController::class, 'alterarAssinatura'])->name('entregas.assinaturas.alterar');
+    Route::post('/entregas/pedidos/{pedidoEntrega}/funcionario', [PedidoEntregaController::class, 'atribuirFuncionario'])->name('entregas.pedidos.funcionario');
+    Route::get('/entregas/pedidos/{pedidoEntrega}', [PedidoEntregaController::class, 'show'])->name('entregas.pedidos.show');
+    Route::post('/entregas/pedidos/{pedidoEntrega}/liberar', [PedidoEntregaController::class, 'liberarPagamento'])
+        ->middleware('throttle:10,1')
+        ->name('entregas.pedidos.liberar');
+    Route::post('/avisos/{notificacao}/lido', [\App\Http\Controllers\Api\NotificacaoUsuarioController::class, 'marcarLido'])->name('avisos.lido');
+    Route::post('/entregas/pedidos/{pedidoEntrega}/cancelar', [PedidoEntregaController::class, 'cancelar'])->name('entregas.pedidos.cancelar');
+    Route::post('/entregas/pedidos/{pedidoEntrega}/cancelar-vendedor', [PedidoEntregaController::class, 'cancelarPeloVendedor'])->name('entregas.pedidos.cancelar-vendedor');
+    Route::post('/entregas/pedidos/{pedidoEntrega}/estorno', [PedidoEntregaController::class, 'solicitarEstorno'])->name('entregas.pedidos.estorno');
+    Route::get('/entregas/pedidos/{pedidoEntrega}/comprovante-pdf', [PedidoEntregaController::class, 'comprovantePDF'])->name('entregas.pedidos.comprovante');
+    Route::post('/entregas/carrinho', [\App\Http\Controllers\Api\CarrinhoEntregaController::class, 'store'])->name('entregas.carrinho.store');
+    Route::patch('/entregas/carrinho/{item}', [\App\Http\Controllers\Api\CarrinhoEntregaController::class, 'update'])->name('entregas.carrinho.update');
+    Route::delete('/entregas/carrinho/{item}', [\App\Http\Controllers\Api\CarrinhoEntregaController::class, 'destroy'])->name('entregas.carrinho.destroy');
+
+    // Painel de pedidos da gestão: sócio e gerente acompanham cada pedido e quem está atendendo.
+    Route::get('/gestao/pedidos', [\App\Http\Controllers\Api\GestaoPedidosController::class, 'index'])->name('gestao.pedidos.index');
+
+    // Cobranças parceladas: sócio monta e acompanha; cliente aceita ou recusa.
+    Route::get('/cobrancas', [\App\Http\Controllers\Api\CobrancaController::class, 'index'])->name('cobrancas.index');
+    Route::get('/cobrancas/opcoes', [\App\Http\Controllers\Api\CobrancaController::class, 'opcoes'])->name('cobrancas.opcoes');
+    Route::get('/cobrancas/buscar-clientes', [\App\Http\Controllers\Api\CobrancaController::class, 'buscarClientes'])->name('cobrancas.buscar-clientes');
+    Route::post('/cobrancas', [\App\Http\Controllers\Api\CobrancaController::class, 'store'])->name('cobrancas.store');
+    Route::post('/cobrancas/{cobranca}/cancelar', [\App\Http\Controllers\Api\CobrancaController::class, 'cancelar'])->name('cobrancas.cancelar');
+    Route::get('/cobrancas/{cobranca}/comprovante-pdf', [\App\Http\Controllers\Api\CobrancaController::class, 'comprovante'])->name('cobrancas.comprovante');
+    Route::post('/cobrancas/parcelas/{parcela}/baixa', [\App\Http\Controllers\Api\CobrancaController::class, 'baixa'])->name('cobrancas.parcelas.baixa');
+    Route::post('/cobrancas/parcelas/{parcela}/sincronizar', [\App\Http\Controllers\Api\CobrancaController::class, 'sincronizar'])->name('cobrancas.parcelas.sincronizar');
+    Route::get('/minhas-cobrancas', [\App\Http\Controllers\Api\CobrancaClienteController::class, 'index'])->name('cobrancas.minhas');
+    Route::post('/minhas-cobrancas/{cobranca}/aceitar', [\App\Http\Controllers\Api\CobrancaClienteController::class, 'aceitar'])->name('cobrancas.aceitar');
+    Route::post('/minhas-cobrancas/{cobranca}/recusar', [\App\Http\Controllers\Api\CobrancaClienteController::class, 'recusar'])->name('cobrancas.recusar');
+    Route::get('/minhas-cobrancas/{cobranca}/comprovante-pdf', [\App\Http\Controllers\Api\CobrancaClienteController::class, 'comprovante'])->name('cobrancas.minhas.comprovante');
 });
 
 
@@ -411,10 +485,22 @@ Route::get('/meus-estornos', [EstornoController::class, 'index'])->name('cliente
 
 
     // Fila e Configurações (Aninhadas em Estabelecimentos)
-   // Ambas as rotas agora chamam o método index do AgendamentoController
+   // /fila (sem id) monta a visão agregada de todos os locais do usuário e
+   // redireciona pra fila do local específico quando só existe um. A rota
+   // COM id tem que apontar pro show() — antes as duas apontavam pro mesmo
+   // index(), que ignora silenciosamente o {estabelecimento} da URL e
+   // redireciona de volta pra si mesma sempre que o usuário tem só 1 local:
+   // loop infinito de redirecionamento, a Fila de Espera nunca abria pra
+   // ninguém com um único estabelecimento (o caso mais comum).
 Route::get('/fila', [App\Http\Controllers\Api\FilaController::class, 'index'])->name('fila.index');
-Route::get('/estabelecimentos/{estabelecimento}/fila', [App\Http\Controllers\Api\FilaController::class, 'index'])->name('estabelecimentos.fila');
+Route::get('/estabelecimentos/{estabelecimento}/fila', [App\Http\Controllers\Api\FilaController::class, 'show'])->name('estabelecimentos.fila');
+Route::get('/estabelecimentos/{estabelecimento}/fila/painel', [App\Http\Controllers\Api\FilaController::class, 'painel'])->name('estabelecimentos.fila.painel');
+Route::get('/estabelecimentos/{estabelecimento}/fila/painel/dados', [App\Http\Controllers\Api\FilaController::class, 'painelDados'])->name('estabelecimentos.fila.painel.dados');
     Route::get('/estabelecimentos/{estabelecimento}/configuracoes', [EstabelecimentoController::class, 'configuracoes'])->name('estabelecimentos.configuracoes');
+
+    // Notas fiscais (benefício Sócio Premium)
+    Route::get('/notas-fiscais', [App\Http\Controllers\Api\NotaFiscalWebController::class, 'index'])->name('notas-fiscais.index');
+    Route::post('/notas-fiscais/{notaFiscal}/tentar-novamente', [App\Http\Controllers\Api\NotaFiscalWebController::class, 'tentarNovamente'])->name('notas-fiscais.tentar-novamente');
 
     // Agendamentos
     Route::put('/agendamentos/{agendamento}/status', [AgendamentoController::class, 'updateStatus'])->name('agendamentos.status.update');
@@ -724,8 +810,12 @@ Route::get('/estabelecimentos/{estabelecimento}/agenda-equipe', [App\Http\Contro
 
      Route::get('/admin/dashboard-geral', [AdminFinanceiroController::class, 'obterDadosGeraisAdmin']);
 
-     // Fila e Configurações (Aninhadas em Estabelecimentos)
-    Route::get('/estabelecimentos/{estabelecimento}/fila', [EstabelecimentoController::class, 'fila'])->name('estabelecimentos.fila');
+     // Configurações (Aninhadas em Estabelecimentos)
+     // Obs: a rota de fila nested aqui foi removida por duplicar o nome
+     // 'estabelecimentos.fila' já registrado em FilaController::index (linha ~450) —
+     // as duas tinham a mesma URI e o mesmo nome apontando pra controllers
+     // diferentes; a daqui nunca era alcançada (Laravel casa a primeira rota
+     // registrada), então EstabelecimentoController::fila() ficava morto.
     Route::get('/estabelecimentos/{estabelecimento}/configuracoes', [EstabelecimentoController::class, 'configuracoes'])->name('estabelecimentos.configuracoes');
 
     //  Página da Loja (Visão do Dono/Gerente)
@@ -750,6 +840,7 @@ Route::get('/estabelecimentos/{estabelecimento}/agenda-equipe', [App\Http\Contro
 
     // ROTAS DA CARTEIRA E GAMIFICAÇÃO DO CLIENTE
     Route::get('/minha-carteira', [CarteiraController::class, 'index'])->name('cliente.carteira');
+    Route::get('/meus-pontos', [\App\Http\Controllers\Api\MeusPontosController::class, 'index'])->name('cliente.pontos');
     Route::post('/minha-carteira/assinar-plus', [CarteiraController::class, 'assinarPlus'])->name('cliente.assinatura.plus');
      Route::post('/minha-carteira/resgatar/{cupom}', [App\Http\Controllers\Api\CarteiraController::class, 'resgatarCupom'])->name('cliente.resgatar.cupom');
 
@@ -794,3 +885,7 @@ Route::post('/cupons/validar', [ClienteCupomController::class, 'validar'])->name
 
 
 require __DIR__.'/auth.php';
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('/entregas/painel-de-vendas', fn () => \Inertia\Inertia::render('Estabelecimentos/PainelVendasEntregas'))->name('entregas.painel-vendas.page');
+    Route::get('/entregas/minhas-assinaturas', fn () => \Inertia\Inertia::render('Entregas/Assinaturas'))->name('entregas.assinaturas.page');
+});

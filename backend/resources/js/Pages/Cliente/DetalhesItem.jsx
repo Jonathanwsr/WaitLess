@@ -1,5 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { Head, Link, useForm, router } from '@inertiajs/react';
+import { Head, Link, useForm, router, usePage } from '@inertiajs/react';
 import { useState, useMemo, useEffect } from 'react';
 import axios from 'axios';
 import {
@@ -33,7 +33,16 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
         pontos_utilizados: 0,
         cupom_codigo: '',
         parcelas: 1,
+        viagem_id: '',
     });
+
+    // Veio do "Reservar" da agenda de uma viagem colaborativa — se outro
+    // membro do grupo já reservou este mesmo item, sai com desconto de grupo.
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const urlViagemId = params.get('viagem_id');
+        if (urlViagemId) setData('viagem_id', urlViagemId);
+    }, []);
 
     // --- CUPOM DE DESCONTO ---
     const [cupomAtivo, setCupomAtivo] = useState(null);
@@ -111,9 +120,14 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
 
     // Lógica para mostrar desconto com pontos (Exemplo: Sugere abater 10% se tiver saldo)
     const desconto10Porcento = precoSubtotal * 0.10;
-    const pontosNecessarios10Porcento = Math.floor(desconto10Porcento * 100); 
+    // 1000 pontos = R$ 1,00 (mesma taxa do servidor, PontosService::PONTOS_POR_REAL).
+    const pontosNecessarios10Porcento = Math.floor(desconto10Porcento * 1000);
     const pontosUsuario = auth.user?.pontos_saldo || 0;
-    const podeUsarPontos = pontosUsuario >= pontosNecessarios10Porcento && item.aceita_pontos;
+    // Pontos liberados quando o item aceita, ou para cliente premium (os 10% cabem no limite do benefício).
+    const { pontosPremium = {} } = usePage().props;
+    const pontosPeloPremium = !item.aceita_pontos && !!pontosPremium.ativo;
+    const itemAceitaPontos = !!item.aceita_pontos || pontosPeloPremium;
+    const podeUsarPontos = pontosUsuario >= pontosNecessarios10Porcento && itemAceitaPontos;
 
     // Prévia do desconto do cupom — o valor final e autoritativo é sempre
     // recalculado no servidor em AgendamentoController::storeAluguel.
@@ -128,16 +142,16 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
     const descontoCupomFormatado = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(descontoCupomPreview);
     const precoComCupomFormatado = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(precoComCupom);
     const enderecoCompleto = `${item.endereco}, ${item.numero} ${item.complemento ? '- ' + item.complemento : ''}, ${item.bairro} - ${item.cidade}, ${item.estado} - CEP: ${item.cep}`;
-    
+
     // --- LÓGICA DO MAPA ---
-    const googleMapsUrl = item.latitude && item.longitude 
+    const googleMapsUrl = item.latitude && item.longitude
         ? `https://www.google.com/maps/dir/?api=1&destination=${item.latitude},${item.longitude}`
         : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${item.endereco}, ${item.numero}, ${item.cidade} - ${item.estado}`)}`;
 
     // --- LÓGICA DE FOTOS (FALLBACK PARA SEM IMAGEM) ---
     const fotos = item.fotos && item.fotos.length > 0 ? item.fotos : [];
     const imagensExibicao = Array.from({ length: 6 }).map((_, index) => {
-        return fotos[index] || null; 
+        return fotos[index] || null;
     });
 
     // --- FUNÇÕES DE SUBMIT DA RESERVA ---
@@ -221,7 +235,7 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
             <Head title={`${item.nome} em ${item.cidade} - WaitLess`} />
 
             <div className="bg-white min-h-screen pb-24 font-sans text-gray-900">
-                
+
                 {/* --- BREADCRUMBS --- */}
                 <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8 pt-6 pb-4">
                     <div className="flex items-center text-sm text-gray-500 font-medium">
@@ -236,7 +250,7 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
                 </div>
 
                 <div className="max-w-[1200px] mx-auto px-4 sm:px-6 lg:px-8">
-                    
+
                     {/* --- GALERIA DE FOTOS --- */}
                     <div className="relative mb-8">
                         {/* Imagem Principal (Topo) */}
@@ -267,7 +281,7 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
                                 )}
                             </div>
 
-                            <button 
+                            <button
                                 onClick={() => setIsSaved(!isSaved)}
                                 className="absolute top-4 right-4 w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-md hover:scale-105 transition-transform"
                             >
@@ -301,10 +315,10 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
 
                     {/* --- CONTEÚDO PRINCIPAL (SPLIT LAYOUT) --- */}
                     <div className="flex flex-col lg:flex-row gap-12">
-                        
+
                         {/* LADO ESQUERDO (Detalhes do Local) - 65% */}
                         <div className="lg:w-[65%]">
-                            
+
                             {/* Título e Botões de Ação */}
                             <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-6">
                                 <div>
@@ -319,7 +333,7 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
                                     <button className="flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-300 font-semibold text-sm hover:bg-gray-50 transition-colors">
                                         <Share className="w-4 h-4" /> Compartilhar
                                     </button>
-                                    <button 
+                                    <button
                                         onClick={() => setIsSaved(!isSaved)}
                                         className="flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-300 font-semibold text-sm hover:bg-gray-50 transition-colors"
                                     >
@@ -389,7 +403,7 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
                                     <div className="flex-1">
                                         <p className="text-gray-800 font-medium">{item.endereco}, {item.numero}</p>
                                         <p className="text-gray-500 text-sm mb-4">{item.cidade} - {item.estado}, {item.cep}</p>
-                                        
+
                                         {/* Redirecionamento Dinâmico para Maps/Waze */}
                                         <a href={googleMapsUrl} target="_blank" rel="noreferrer" className="block relative w-full h-48 bg-blue-50 rounded-2xl overflow-hidden border border-gray-200 group">
                                             <div className="absolute inset-0 opacity-40" style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'20\' height=\'20\' viewBox=\'0 0 20 20\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%239C92AC\' fill-opacity=\'0.4\' fill-rule=\'evenodd\'%3E%3Ccircle cx=\'3\' cy=\'3\' r=\'3\'/%3E%3Ccircle cx=\'13\' cy=\'13\' r=\'3\'/%3E%3C/g%3E%3C/svg%3E")' }}></div>
@@ -403,7 +417,7 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
                                             </div>
                                         </a>
                                     </div>
-                                    
+
                                 </div>
                             </div>
 
@@ -496,7 +510,7 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
                         {/* ============================================================== */}
                         <div className="lg:w-[35%]">
                             <div className="sticky top-8 space-y-6">
-                                
+
                                 {/* CAIXA DE RESERVA PRINCIPAL (O FORMULÁRIO) */}
                                 <div className="bg-white border border-gray-200 shadow-[0_8px_30px_rgb(0,0,0,0.08)] rounded-3xl p-6">
                                     <div className="mb-6">
@@ -505,13 +519,13 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
                                     </div>
 
                                     {/* Banner de Desconto com Pontos dinâmico */}
-                                    {item.aceita_pontos && (
+                                    {itemAceitaPontos && (
                                         <div className="bg-[#FFF5F0] border border-[#FFE4D6] rounded-xl p-4 flex items-start gap-3 mb-6">
                                             <div className="bg-emerald-100 p-1.5 rounded-lg shrink-0 mt-0.5">
                                                 <Award className="w-4 h-4 text-emerald-600" />
                                             </div>
                                             <div>
-                                                <h4 className="text-sm font-bold text-[#D04A02]">10% de desconto com pontos</h4>
+                                                <h4 className="text-sm font-bold text-[#D04A02]">10% de desconto com pontos{pontosPeloPremium ? ' · benefício premium' : ''}</h4>
                                                 <p className="text-xs text-gray-600 mt-0.5">
                                                     Use {pontosNecessarios10Porcento} pts e economize R$ {desconto10Porcento.toFixed(2).replace('.', ',')}
                                                 </p>
@@ -524,8 +538,8 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
                                         <div className="flex border-b border-gray-300">
                                             <div className="flex-1 p-3 border-r border-gray-300 bg-white hover:bg-gray-50 transition-colors relative">
                                                 <label className="block text-[10px] font-bold text-gray-800 uppercase mb-0.5">Check-in</label>
-                                                <input 
-                                                    type="date" 
+                                                <input
+                                                    type="date"
                                                     value={data.data_inicio}
                                                     min={today}
                                                     onChange={e => setData('data_inicio', e.target.value)}
@@ -535,8 +549,8 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
                                             </div>
                                             <div className="flex-1 p-3 bg-white hover:bg-gray-50 transition-colors relative">
                                                 <label className="block text-[10px] font-bold text-gray-800 uppercase mb-0.5">Check-out</label>
-                                                <input 
-                                                    type="date" 
+                                                <input
+                                                    type="date"
                                                     value={data.data_fim}
                                                     min={data.data_inicio}
                                                     onChange={e => setData('data_fim', e.target.value)}
@@ -545,11 +559,11 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
                                                 {errors.data_fim && <span className="text-red-500 text-xs">{errors.data_fim}</span>}
                                             </div>
                                         </div>
-                                        
+
                                         <div className="p-3 bg-white hover:bg-gray-50 transition-colors relative">
                                             <label className="block text-[10px] font-bold text-gray-800 uppercase mb-0.5">Hóspedes</label>
                                             <div className="flex justify-between items-center text-sm text-gray-900 font-medium">
-                                                <select 
+                                                <select
                                                     value={data.pessoas}
                                                     onChange={e => setData('pessoas', Number(e.target.value))}
                                                     className="w-full border-0 p-0 focus:ring-0 cursor-pointer bg-transparent appearance-none"
@@ -563,6 +577,12 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
                                             {errors.pessoas && <span className="text-red-500 text-xs">{errors.pessoas}</span>}
                                         </div>
                                     </div>
+
+                                    {!!data.viagem_id && (
+                                        <div className="bg-orange-50 border border-orange-100 rounded-2xl px-4 py-3 mb-4 text-sm text-gray-700">
+                                            Reservando com o grupo da sua viagem. Se outra pessoa do grupo já reservou este item, vocês ganham desconto e pontos de bônus.
+                                        </div>
+                                    )}
 
                                     {/* --- FORMA DE PAGAMENTO --- */}
                                     {(aceitaOnline || aceitaPresencial) && (
@@ -786,7 +806,7 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
                                             {processing ? 'Processando...' : periodoEsgotado ? 'Esgotado nessas datas' : 'Fazer reserva'}
                                         </button>
 
-                                        {item.aceita_pontos && (
+                                        {itemAceitaPontos && (
                                             <button
                                                 disabled={processing || periodoEsgotado || !podeUsarPontos}
                                                 onClick={() => realizarReserva(true)}
@@ -797,7 +817,7 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
                                             </button>
                                         )}
                                     </div>
-                                    
+
                                     <p className="text-center text-xs text-gray-500 font-medium mt-4">
                                         Você tem <span className="text-[#FF5A00] font-bold">{pontosUsuario} pts</span> disponíveis
                                     </p>

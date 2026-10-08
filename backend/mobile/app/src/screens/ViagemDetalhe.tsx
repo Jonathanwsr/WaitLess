@@ -206,7 +206,7 @@ export default function ViagemDetalhe() {
               <Text style={s.cardSub}>{semReserva.length} itens do roteiro ainda não foram reservados.</Text>
               {semReserva.map((i) => (
                 <TouchableOpacity key={i.id} style={s.linhaReserva} activeOpacity={0.8}
-                  onPress={() => (i.item_aluguel_id ? router.push(`/src/screens/ExplorarDetalhes?id=${i.item_aluguel_id}&tipo=reservas` as never) : i.servico_id ? router.push(`/src/screens/ExplorarDetalhes?id=${i.servico_id}` as never) : undefined)}>
+                  onPress={() => (i.item_aluguel_id ? router.push(`/src/screens/ExplorarDetalhes?id=${i.item_aluguel_id}&tipo=reservas&viagemId=${id}` as never) : i.servico_id ? router.push(`/src/screens/ExplorarDetalhes?id=${i.servico_id}&viagemId=${id}` as never) : undefined)}>
                   <View style={{ flex: 1 }}><Text style={s.reservaNome}>{i.titulo}</Text><Text style={s.reservaMeta}>{i.dia ? dia(i.dia) : ''} {i.hora_inicio?.slice(0, 5) || ''} · {brl(i.custo_estimado)}</Text></View>
                   <Text style={s.link}>Reservar</Text>
                 </TouchableOpacity>

@@ -105,6 +105,11 @@ class FilaController extends Controller
 
     public function show(Request $request, Estabelecimento $estabelecimento)
     {
+        // Nunca tinha checagem de acesso aqui — como esta rota nunca tinha
+        // sido alcançável de verdade (ver nota na rota), ninguém tinha
+        // percebido que faltava.
+        $this->garantirAcessoAoLocal($request->user(), $estabelecimento);
+
         $funcionarios = $estabelecimento->funcionarios()->where('ativo', true)->get(['id', 'nome', 'cargo']);
 
         $query = Agendamento::with(['usuario', 'servico', 'pagamento'])
@@ -147,6 +152,60 @@ class FilaController extends Controller
             'funcionarios' => $funcionarios,
             'filtros' => $request->all(),
         ]);
+    }
+
+    /**
+     * Painel de TV da fila — tela cheia, sem menu, feita pra ficar aberta
+     * numa televisão na recepção mostrando quem está sendo atendido agora e
+     * quem vem a seguir. A tela em si só busca os dados (ver atualizarDados);
+     * aqui só renderiza o layout inicial.
+     */
+    public function painel(Request $request, Estabelecimento $estabelecimento)
+    {
+        $this->garantirAcessoAoLocal($request->user(), $estabelecimento);
+
+        return Inertia::render('Estabelecimentos/FilaPainel', [
+            'estabelecimento' => $estabelecimento->only('id', 'nome', 'foto_perfil'),
+        ]);
+    }
+
+    /** JSON consumido pelo painel de TV — chamado em polling (ver FilaPainel.jsx). */
+    public function painelDados(Request $request, Estabelecimento $estabelecimento)
+    {
+        $this->garantirAcessoAoLocal($request->user(), $estabelecimento);
+
+        $hoje = Carbon::today()->toDateString();
+
+        $atual = Agendamento::with(['usuario:id,name', 'servico:id,nome', 'funcionario:id,nome'])
+            ->where('estabelecimento_id', $estabelecimento->id)
+            ->whereDate('data_agendamento', $hoje)
+            ->where('status', 'em_atendimento')
+            ->orderBy('hora_agendamento')
+            ->first();
+
+        $proximos = Agendamento::with(['usuario:id,name', 'servico:id,nome'])
+            ->where('estabelecimento_id', $estabelecimento->id)
+            ->whereDate('data_agendamento', $hoje)
+            ->whereIn('status', ['pendente', 'confirmado', 'aguardando_pagamento'])
+            ->orderBy('hora_agendamento')
+            ->limit(6)
+            ->get();
+
+        return response()->json(['atual' => $atual, 'proximos' => $proximos]);
+    }
+
+    /** Mesma checagem de acesso usada em index()/agendaFuncionarios() — gerência do local ou funcionário vinculado. */
+    private function garantirAcessoAoLocal($user, Estabelecimento $estabelecimento): void
+    {
+        if ($user->papel === 'admin') {
+            return;
+        }
+
+        $temAcesso = in_array($user->papel, ['atendente', 'funcionario'], true)
+            ? \App\Models\Funcionario::where('usuario_id', $user->id)->where('estabelecimento_id', $estabelecimento->id)->exists()
+            : $user->estabelecimentos()->where('estabelecimentos.id', $estabelecimento->id)->exists();
+
+        abort_unless($temAcesso, 403, 'Você não tem acesso à fila deste estabelecimento.');
     }
 
     public function agendaFuncionarios(Request $request, Estabelecimento $estabelecimento)

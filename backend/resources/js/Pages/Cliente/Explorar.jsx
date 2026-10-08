@@ -19,7 +19,7 @@ const ESTADOS_BR = [
     ['RO', 'Rondônia'], ['RR', 'Roraima'], ['SC', 'Santa Catarina'], ['SP', 'São Paulo'], ['SE', 'Sergipe'], ['TO', 'Tocantins'],
 ];
 
-export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtros = {} }) {
+export default function Explorar({ auth, estabelecimentos, itens_aluguel, promocoesDestaque = [], filtros = {} }) {
     // 💡 IMPORTANTE: Pegamos o ID do usuário logado para saber de quem são os favoritos
     const user = usePage().props.auth.user;
     const userId = user?.id;
@@ -450,6 +450,44 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                         </div>
                     )}
 
+                    {/* Promoções soltas pelo admin para serviços/itens em destaque — mesmo destino de um card normal */}
+                    {promocoesDestaque.length > 0 && (
+                        <div className="mb-8">
+                            <h3 className="text-sm font-black text-zinc-900 dark:text-white mb-3 flex items-center gap-2">
+                                <Tag className="w-4 h-4 text-[#FF5A00]" /> Promoções em destaque
+                            </h3>
+                            <div className="flex gap-4 overflow-x-auto pb-2 -mx-1 px-1">
+                                {promocoesDestaque.map((promo) => {
+                                    const href = promo.vinculo.tipo === 'servico'
+                                        ? route('cliente.agendar', { estabelecimento: promo.vinculo.estabelecimento_id, servico_id: promo.vinculo.id })
+                                        : route('itens.detalhes', promo.vinculo.id);
+                                    return (
+                                        <Link
+                                            key={promo.id}
+                                            href={href}
+                                            className="flex-shrink-0 w-64 bg-white dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800 rounded-3xl overflow-hidden shadow-sm hover:shadow-md hover:border-[#FF5A00] transition group"
+                                        >
+                                            {promo.vinculo.foto ? (
+                                                <img src={promo.vinculo.foto} alt={promo.vinculo.nome} className="w-full h-32 object-cover" />
+                                            ) : (
+                                                <div className="w-full h-32 bg-[#FFF3EC] flex items-center justify-center">
+                                                    <Tag className="w-8 h-8 text-[#FF5A00]" />
+                                                </div>
+                                            )}
+                                            <div className="p-4">
+                                                <p className="font-black text-sm text-zinc-900 dark:text-white truncate">{promo.nome}</p>
+                                                <p className="text-xs text-zinc-500 truncate">{promo.vinculo.nome}</p>
+                                                <div className="flex items-center gap-1.5 mt-2 text-[#FF5A00] text-xs font-bold group-hover:gap-2.5 transition-all">
+                                                    Ver oferta <ArrowRight className="w-3.5 h-3.5" />
+                                                </div>
+                                            </div>
+                                        </Link>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
                     {/* Resultados com Animação de Stagger */}
                     <AnimatePresence mode="wait">
                         {carregando ? (
@@ -608,6 +646,19 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, filtro
                                                         <h3 className="font-semibold text-lg text-zinc-900 dark:text-white leading-tight mb-3 line-clamp-2 group-hover:text-[#FF5A00] transition-colors">
                                                             {item.nome}
                                                         </h3>
+
+                                                        {isEstabelecimentos && item.status_funcionamento && (
+                                                            <span className={`inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full mb-3 ${
+                                                                item.status_funcionamento.aberto
+                                                                    ? 'bg-emerald-50 text-emerald-700'
+                                                                    : item.status_funcionamento.aberto === false
+                                                                        ? 'bg-red-50 text-red-600'
+                                                                        : 'bg-zinc-100 text-zinc-500'
+                                                            }`}>
+                                                                <span className={`w-1.5 h-1.5 rounded-full ${item.status_funcionamento.aberto ? 'bg-emerald-500' : 'bg-zinc-400'}`} />
+                                                                {item.status_funcionamento.texto}
+                                                            </span>
+                                                        )}
 
                                                         <div className="flex items-center gap-1.5 text-sm text-zinc-500 mb-6">
                                                             <MapPin className="w-4 h-4" />

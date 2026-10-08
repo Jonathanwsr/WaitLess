@@ -15,6 +15,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { obterEcho } from '../../services/echo';
 
 const COLORS = {
   primary: '#282828',
@@ -55,6 +57,7 @@ export default function ConversaScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const listRef = useRef<FlatList>(null);
+  const insets = useSafeAreaInsets();
 
   const [conversa, setConversa] = useState<ConversaAtiva | null>(null);
   const [mensagens, setMensagens] = useState<Mensagem[]>([]);
@@ -85,6 +88,28 @@ export default function ConversaScreen() {
     const intervalo = setInterval(() => carregar(false), INTERVALO_POLLING_MS);
     return () => clearInterval(intervalo);
   }, [carregar]);
+
+  // Tempo real: mesmo canal privado que o web já usa (conversa.{id} +
+  // evento "mensagem.recebida") — sem isso, o mobile só recebia mensagens
+  // novas no próximo ciclo de polling, enquanto o web já atualizava na hora.
+  // O polling acima continua ativo como rede de segurança caso o WebSocket caia.
+  useEffect(() => {
+    if (!id) return;
+    let cancelado = false;
+    const canalNome = `conversa.${id}`;
+
+    obterEcho().then((echo) => {
+      if (cancelado) return;
+      echo.private(canalNome).listen('.mensagem.recebida', () => {
+        carregar(false);
+      });
+    });
+
+    return () => {
+      cancelado = true;
+      obterEcho().then((echo) => echo.leave(canalNome));
+    };
+  }, [id, carregar]);
 
   useEffect(() => {
     if (mensagens.length > 0) {
@@ -180,8 +205,14 @@ export default function ConversaScreen() {
         />
       )}
 
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} keyboardVerticalOffset={90}>
-        <View style={styles.inputBar}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+      >
+        {/* Padding extra no Android: sem isso a caixa de texto ficava atrás dos
+            botões de navegação do celular (barra de gestos/botão home), que
+            o SafeAreaView sozinho não cobre direito quando o teclado some. */}
+        <View style={[styles.inputBar, { paddingBottom: 10 + (Platform.OS === 'android' ? insets.bottom : 0) }]}>
           <TextInput
             style={styles.input}
             placeholder="Escreva uma mensagem..."

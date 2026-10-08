@@ -6,7 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Models\Estabelecimento;
 use App\Models\Avaliacao;
 use App\Models\ItemAluguel;
+use App\Models\Promocao;
+use App\Services\DestaquePremiumService;
 use App\Services\PlanoService;
+use Illuminate\Support\Collection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth; // Adicionado para pegar o ID do usuário logado
@@ -181,6 +184,11 @@ class ClienteExplorarController extends Controller
 
 
 
+            $queryEstabelecimentos = $this->comDestaque(
+                $queryEstabelecimentos,
+                'estabelecimentos.id'
+            );
+
             if (!empty($validated['latitude']) && !empty($validated['longitude'])) {
 
                 $raio = $validated['raio_km'] ?? 10;
@@ -191,9 +199,14 @@ class ClienteExplorarController extends Controller
 
 
 
-                $queryEstabelecimentos->selectRaw("*, (6371 * acos(cos(radians(?)) * cos(radians(latitude)) * cos(radians(longitude) - radians(?)) + sin(radians(?)) * sin(radians(latitude)))) AS distancia", [$lat, $lng, $lat])
+                // O PostgreSQL não aceita referenciar um alias do SELECT dentro de
+                // HAVING sem GROUP BY (ao contrário do MySQL) — por isso o filtro
+                // de raio vai num whereRaw com a fórmula repetida, não num having.
+                $haversine = "(6371 * acos(cos(radians(?)) * cos(radians(latitude)) * cos(radians(longitude) - radians(?)) + sin(radians(?)) * sin(radians(latitude))))";
 
-                                      ->havingRaw("distancia <= ?", [$raio])
+                $queryEstabelecimentos->selectRaw("*, {$haversine} AS distancia", [$lat, $lng, $lat])
+
+                                      ->whereRaw("{$haversine} <= ?", [$lat, $lng, $lat, $raio])
 
                                       ->orderBy('distancia', 'asc');
 
@@ -205,7 +218,7 @@ class ClienteExplorarController extends Controller
 
 
 
-            $estabelecimentos = $queryEstabelecimentos->paginate($perPage)->withQueryString();
+            $estabelecimentos = $queryEstabelecimentos->with('horariosFuncionamento')->paginate($perPage)->withQueryString();
 
 
 
@@ -214,6 +227,7 @@ class ClienteExplorarController extends Controller
             $estabelecimentos->getCollection()->transform(function ($est) use ($favEstabelecimentos) {
 
                 $est->is_favorito = in_array($est->id, $favEstabelecimentos);
+                $est->status_funcionamento = \App\Support\StatusFuncionamento::de($est->horariosFuncionamento);
 
                 return $est;
 
@@ -339,9 +353,11 @@ class ClienteExplorarController extends Controller
 
                 $queryItens->whereHas('estabelecimento', function($q) use ($lat, $lng, $raio) {
 
-                    $q->selectRaw("(6371 * acos(cos(radians(?)) * cos(radians(latitude)) * cos(radians(longitude) - radians(?)) + sin(radians(?)) * sin(radians(latitude)))) AS distancia", [$lat, $lng, $lat])
+                    // Dentro de um whereHas (subquery EXISTS) o SELECT não importa —
+                    // só o whereRaw com a fórmula completa, sem depender de alias.
+                    $haversine = "(6371 * acos(cos(radians(?)) * cos(radians(latitude)) * cos(radians(longitude) - radians(?)) + sin(radians(?)) * sin(radians(latitude))))";
 
-                      ->havingRaw("distancia <= ?", [$raio]);
+                    $q->whereRaw("{$haversine} <= ?", [$lat, $lng, $lat, $raio]);
 
                 });
 
@@ -450,6 +466,14 @@ class ClienteExplorarController extends Controller
             }
 
 
+
+            // itens_aluguel.estabelecimento_id guarda o users.id do dono (não um
+            // estabelecimentos.id de verdade — ver nota em outras partes deste
+            // arquivo), então o boost aqui compara contra usuários premium.
+            $queryItens = $this->comDestaque(
+                $queryItens,
+                'itens_aluguel.estabelecimento_id'
+            );
 
             $ordem = $validated['ordem'] ?? 'relevancia';
 
@@ -735,6 +759,8 @@ class ClienteExplorarController extends Controller
 
             'itens_aluguel'    => $itens,
 
+            'promocoesDestaque' => $this->promocoesDestaque($request, $tipoBusca),
+
             'filtros'          => $request->only([
 
                 'tipo_busca', 'busca', 'categoria', 'data', 'preco_min', 'estado', 'cidade',
@@ -747,6 +773,68 @@ class ClienteExplorarController extends Controller
 
         ]);
 
+    }
+
+    /**
+     * Promoções soltas pelo admin e vinculadas a um serviço/item de aluguel,
+     * pra aparecer como cards em destaque no Explorar (web e mobile) — só as
+     * compatíveis com a aba ativa (serviços x reservas), vigentes e
+     * elegíveis para o visitante (anônimo só vê as de público "todos").
+     */
+    /**
+     * Destaque nos resultados do Explorar e da busca: 1º donos premium, 2º quem aceita pontos em
+     * serviços/reservas (mais itens com pontos antes), 3º os demais. Mesma regra do app.
+     * itens_aluguel.estabelecimento_id guarda o users.id do dono, por isso o tipo "usuario" ali.
+     */
+    private function comDestaque($query, string $coluna)
+    {
+        $tipo = str_starts_with($coluna, 'itens_aluguel.') ? 'usuario' : 'estabelecimento';
+
+        return app(DestaquePremiumService::class)->ordenarPorDestaque($query, $coluna, $tipo);
+    }
+
+    private function promocoesDestaque(Request $request, string $tipoBusca)
+    {
+        $user = $request->user();
+        $papel = strtolower((string) ($user->papel ?? ''));
+        $ehProprietario = in_array($papel, ['socio', 'proprietario', 'gerente']);
+
+        $query = Promocao::vigentes()
+            ->where(function ($q) use ($ehProprietario, $user) {
+                $q->where('publico_alvo', 'todos');
+                if ($user) {
+                    $q->orWhere('publico_alvo', $ehProprietario ? 'proprietarios' : 'clientes');
+                }
+            });
+
+        if ($tipoBusca === 'servicos') {
+            $query->whereNotNull('servico_id')->with('servico:id,nome,estabelecimento_id,fotos,ativo');
+        } elseif ($tipoBusca === 'reservas') {
+            $query->whereNotNull('item_aluguel_id')->with('itemAluguel:id,nome,fotos,ativo');
+        } else {
+            $query->where(fn ($q) => $q->whereNotNull('servico_id')->orWhereNotNull('item_aluguel_id'))
+                ->with(['servico:id,nome,estabelecimento_id,fotos,ativo', 'itemAluguel:id,nome,fotos,ativo']);
+        }
+
+        return $query->orderByDesc('created_at')->limit(6)->get()
+            ->filter(fn ($promo) => !$promo->plano_necessario || ($user && $promo->plano_necessario === $user->plano_assinatura))
+            ->map(function ($promo) {
+                $vinculo = $promo->vinculoCard();
+                if (!$vinculo) {
+                    return null;
+                }
+                return [
+                    'id' => $promo->id,
+                    'nome' => $promo->nome,
+                    'descricao' => $promo->descricao,
+                    'imagem' => $promo->imagem,
+                    'desconto_percentual' => $promo->desconto_percentual,
+                    'desconto_valor' => $promo->desconto_valor,
+                    'vinculo' => $vinculo,
+                ];
+            })
+            ->filter()
+            ->values();
     }
 
 
@@ -812,6 +900,11 @@ class ClienteExplorarController extends Controller
         if ($request->filled('preco_min')) $query->where('valor', '>=', $validated['preco_min']);
         if ($request->filled('preco_max')) $query->where('valor', '<=', $validated['preco_max']);
         if ($request->boolean('apenas_promocoes')) $query->where('tem_promocao', true)->where('valor_desconto', '>', 0);
+
+        $query = $this->comDestaque(
+            $query,
+            'servicos.estabelecimento_id'
+        );
 
         $ordem = $validated['ordem'] ?? 'relevancia';
         if ($ordem === 'menor_preco') $query->orderBy('valor');

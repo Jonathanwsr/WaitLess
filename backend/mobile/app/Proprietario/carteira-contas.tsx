@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, Modal, ScrollView, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { O } from '../../constants/OwnerTheme';
@@ -84,6 +85,7 @@ export default function CarteiraContas() {
   const [contaId, setContaId] = useState<number | null>(null);
   const [sacando, setSacando] = useState(false);
   const [modal, setModal] = useState(false);
+  const [modalHistorico, setModalHistorico] = useState(false);
 
   const contasValidadas = useMemo(() => (dados?.contas || []).filter((c) => c.status_validacao === 'validada'), [dados]);
 
@@ -288,7 +290,13 @@ export default function CarteiraContas() {
       })}
 
       {/* HISTÓRICO */}
-      <Rotulo>Repasses</Rotulo>
+      <Rotulo direita={
+        <TouchableOpacity onPress={() => setModalHistorico(true)} activeOpacity={0.8}>
+          <Text style={s.novaTxt}>Ver tudo</Text>
+        </TouchableOpacity>
+      }>
+        Repasses
+      </Rotulo>
       {dados.historico.length === 0 ? (
         <Card><Vazio icone="cash-outline" titulo="Nenhum repasse ainda" texto="Seus repasses semanais e antecipados aparecem aqui." /></Card>
       ) : (
@@ -319,6 +327,8 @@ export default function CarteiraContas() {
         aoSalvar={(msg) => { setModal(false); mostrarSucesso('Conta cadastrada', msg); recarregar(); }}
         aoErro={(e) => mostrarErro(e, 'Não foi possível cadastrar')}
       />
+
+      {modalHistorico && <ModalHistoricoCompleto aoFechar={() => setModalHistorico(false)} />}
     </OwnerScreen>
   );
 }
@@ -339,6 +349,7 @@ function Chips({ opcoes, valor, aoEscolher }: { opcoes: [string, string][]; valo
 function ModalConta({ visivel, aoFechar, aoSalvar, aoErro }: {
   visivel: boolean; aoFechar: () => void; aoSalvar: (mensagem?: string) => void; aoErro: (e: any) => void;
 }) {
+  const insets = useSafeAreaInsets();
   const [f, setF] = useState(FORM_CONTA);
   const [enviando, setEnviando] = useState(false);
   const set = (k: keyof typeof FORM_CONTA) => (v: string) => setF((atual) => ({ ...atual, [k]: v }));
@@ -362,8 +373,10 @@ function ModalConta({ visivel, aoFechar, aoSalvar, aoErro }: {
 
   return (
     <Modal visible={visivel} animationType="slide" transparent onRequestClose={aoFechar}>
-      <KeyboardAvoidingView style={s.modalFundo} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={s.modalCard}>
+      <KeyboardAvoidingView style={s.modalFundo} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        {/* Padding extra no Android: a barra de gestos cobria o botão
+            "Cadastrar e validar" sem esse ajuste. */}
+        <View style={[s.modalCard, { paddingBottom: 30 + (Platform.OS === 'android' ? insets.bottom : 0) }]}>
           <View style={s.modalTopo}>
             <Text style={s.modalTitulo}>Nova conta de destino</Text>
             <TouchableOpacity onPress={aoFechar}><Ionicons name="close" size={24} color={O.ink} /></TouchableOpacity>
@@ -406,6 +419,92 @@ function ModalConta({ visivel, aoFechar, aoSalvar, aoErro }: {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+const TIPOS_HISTORICO: [string, string][] = [['', 'Todos'], ['repasse', 'Semanal'], ['antecipacao', 'Antecipado']];
+const STATUS_FILTRO: [string, string][] = [['', 'Todos'], ['concluida', 'Concluído'], ['processando', 'Processando'], ['pendente', 'Enviando'], ['falhou', 'Não concluído']];
+
+interface PaginaHistorico { data: Repasse[]; current_page: number; last_page: number; total: number }
+
+/** Histórico completo e paginado de repasses — o painel só traz os 30 mais recentes. */
+function ModalHistoricoCompleto({ aoFechar }: { aoFechar: () => void }) {
+  const insets = useSafeAreaInsets();
+  const [pagina, setPagina] = useState<PaginaHistorico>({ data: [], current_page: 1, last_page: 1, total: 0 });
+  const [carregando, setCarregando] = useState(true);
+  const [tipo, setTipo] = useState('');
+  const [status, setStatus] = useState('');
+
+  const buscar = useCallback(async (page = 1) => {
+    setCarregando(true);
+    try {
+      const params = new URLSearchParams({ page: String(page), ...(tipo ? { tipo } : {}), ...(status ? { status } : {}) });
+      const r: PaginaHistorico = await api(`/carteira/historico?${params.toString()}`);
+      setPagina(r);
+    } catch {
+      setPagina({ data: [], current_page: 1, last_page: 1, total: 0 });
+    } finally {
+      setCarregando(false);
+    }
+  }, [tipo, status]);
+
+  useEffect(() => { buscar(1); }, [buscar]);
+
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={aoFechar}>
+      <View style={s.modalFundo}>
+        <View style={[s.modalCard, { maxHeight: '88%', paddingBottom: 24 + (Platform.OS === 'android' ? insets.bottom : 0) }]}>
+          <View style={s.modalTopo}>
+            <Text style={s.modalTitulo}>Histórico completo</Text>
+            <TouchableOpacity onPress={aoFechar}><Ionicons name="close" size={24} color={O.ink} /></TouchableOpacity>
+          </View>
+          <Text style={s.itemSub}>Puxe qualquer período de repasses, com status de cada um.</Text>
+
+          <View style={{ marginTop: 12 }}>
+            <Chips opcoes={TIPOS_HISTORICO} valor={tipo} aoEscolher={setTipo} />
+            <Chips opcoes={STATUS_FILTRO} valor={status} aoEscolher={setStatus} />
+          </View>
+
+          <ScrollView style={{ marginTop: 4 }} showsVerticalScrollIndicator={false}>
+            {carregando ? (
+              <ActivityIndicator color={O.accent} style={{ marginVertical: 24 }} />
+            ) : pagina.data.length === 0 ? (
+              <Text style={[s.itemSub, { textAlign: 'center', marginVertical: 24 }]}>Nenhum repasse encontrado para esse filtro.</Text>
+            ) : (
+              pagina.data.map((h, i) => {
+                const st = STATUS_REPASSE[h.status] || STATUS_REPASSE.pendente;
+                return (
+                  <View key={h.id} style={[s.hist, i < pagina.data.length - 1 && s.histBorda]}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.itemTitulo} numberOfLines={1}>{h.nome} <Text style={s.itemSub}>#{h.id}</Text></Text>
+                      <Text style={s.itemSub} numberOfLines={1}>{h.criado_em ? new Date(h.criado_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''}{h.destino ? ` · ${h.destino}` : ''}</Text>
+                      {!!h.erro && <Text style={s.erro}>{h.erro}</Text>}
+                    </View>
+                    <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                      <Text style={s.itemTitulo}>{brl(h.valor_liquido)}</Text>
+                      {h.taxa_plataforma > 0 && <Text style={s.itemSub}>taxa {brl(h.taxa_plataforma)}</Text>}
+                      <Pilula texto={st.texto} tom={st.tom} />
+                    </View>
+                  </View>
+                );
+              })
+            )}
+
+            {pagina.last_page > 1 && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 14, marginTop: 10, marginBottom: 4 }}>
+                <TouchableOpacity disabled={pagina.current_page <= 1} onPress={() => buscar(pagina.current_page - 1)} style={{ opacity: pagina.current_page <= 1 ? 0.4 : 1 }}>
+                  <Text style={s.acao}>Anterior</Text>
+                </TouchableOpacity>
+                <Text style={s.itemSub}>Página {pagina.current_page} de {pagina.last_page} · {pagina.total}</Text>
+                <TouchableOpacity disabled={pagina.current_page >= pagina.last_page} onPress={() => buscar(pagina.current_page + 1)} style={{ opacity: pagina.current_page >= pagina.last_page ? 0.4 : 1 }}>
+                  <Text style={s.acao}>Próxima</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </ScrollView>
+        </View>
+      </View>
     </Modal>
   );
 }

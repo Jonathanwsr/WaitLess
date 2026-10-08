@@ -32,6 +32,8 @@ interface HistoricoItem {
   estabelecimento_nome?: string | null;
 }
 
+const brl = (v: number) => `R$ ${Number(v || 0).toFixed(2).replace('.', ',')}`;
+
 async function pegarToken() {
   return (await AsyncStorage.getItem('@waitless_token')) || (await AsyncStorage.getItem('@lokyva_token'));
 }
@@ -43,6 +45,13 @@ export default function MeusPontos() {
   const [saldo, setSaldo] = useState(0);
   const [nivel, setNivel] = useState<{ nome: string; proximo_nome: string | null; faltam: number; progresso: number } | null>(null);
   const [historico, setHistorico] = useState<HistoricoItem[]>([]);
+  const [valorEmReais, setValorEmReais] = useState(0);
+  const [ganhosNoMes, setGanhosNoMes] = useState(0);
+  const [premium, setPremium] = useState<{ ativo: boolean; percentual: number }>({ ativo: false, percentual: 20 });
+  const [porLocal, setPorLocal] = useState<{ estabelecimento_id: number; estabelecimento_nome: string; total_pontos: number; nivel?: string | null }[]>([]);
+  const [filtro, setFiltro] = useState<'todos' | 'ganhos' | 'usados'>('todos');
+
+  const historicoFiltrado = historico.filter((h) => filtro === 'todos' || (filtro === 'ganhos' ? h.tipo === 'ganho' : h.tipo !== 'ganho'));
 
   const carregar = useCallback(async (isRefresh = false) => {
     isRefresh ? setAtualizando(true) : setCarregando(true);
@@ -55,6 +64,10 @@ export default function MeusPontos() {
       setSaldo(data.pontos_saldo ?? 0);
       setNivel(data.nivel || null);
       setHistorico(data.historico || []);
+      setValorEmReais(Number(data.valor_em_reais) || 0);
+      setGanhosNoMes(Number(data.ganhos_no_mes) || 0);
+      if (data.pontos_premium) setPremium({ ativo: !!data.pontos_premium.ativo, percentual: Number(data.pontos_premium.percentual) || 0 });
+      setPorLocal((data.saldos || []).filter((l: any) => Number(l.total_pontos) > 0));
     } catch (e) {
       // segue com lista vazia; não é crítico
     } finally {
@@ -93,9 +106,52 @@ export default function MeusPontos() {
               <Ionicons name="sparkles" size={20} color={COLORS.white} />
             </View>
             <Text style={styles.saldoLabel}>Seus pontos Lokyva</Text>
-            <Text style={styles.saldoValor}>{saldo}</Text>
-            <Text style={styles.saldoHint}>pontos disponíveis para trocar por recompensas</Text>
+            <Text style={styles.saldoValor}>{saldo.toLocaleString('pt-BR')}</Text>
+            <Text style={styles.saldoHint}>valem {brl(valorEmReais)} de desconto · 1.000 pontos = R$ 1,00</Text>
+            <View style={styles.saldoLinha}>
+              <View style={styles.saldoChip}>
+                <Text style={styles.saldoChipRotulo}>Ganhos no mês</Text>
+                <Text style={styles.saldoChipValor}>+{ganhosNoMes.toLocaleString('pt-BR')}</Text>
+              </View>
+              <View style={styles.saldoChip}>
+                <Text style={styles.saldoChipRotulo}>Plano</Text>
+                <Text style={styles.saldoChipValor}>{premium.ativo ? 'Premium' : 'Gratuito'}</Text>
+              </View>
+            </View>
           </View>
+
+          <View style={styles.usarCard}>
+            <Text style={styles.usarTitulo}>Onde usar seus pontos</Text>
+            <View style={styles.usarLinha}><Ionicons name="checkmark-circle" size={18} color={COLORS.success} /><Text style={styles.usarTxt}>Em serviços e reservas com o selo “Aceita pontos”, na hora de pagar.</Text></View>
+            <View style={styles.usarLinha}><Ionicons name="checkmark-circle" size={18} color={COLORS.success} /><Text style={styles.usarTxt}>Para trocar por cupons e recompensas.</Text></View>
+            <View style={styles.usarLinha}>
+              <Ionicons name={premium.ativo ? 'checkmark-circle' : 'lock-closed'} size={18} color={premium.ativo ? COLORS.success : COLORS.gray} />
+              <Text style={[styles.usarTxt, !premium.ativo && { color: COLORS.gray }]}>
+                <Text style={{ fontWeight: '800' }}>Premium:</Text> em qualquer serviço ou reserva, mesmo onde o local não aceita pontos, pagando até {String(premium.percentual).replace('.', ',')}% do valor.
+              </Text>
+            </View>
+            {!premium.ativo && (
+              <TouchableOpacity onPress={() => router.push('/assinatura' as never)} style={styles.usarBotao} activeOpacity={0.85}>
+                <Text style={styles.usarBotaoTxt}>Conhecer o premium</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {porLocal.length > 0 && (
+            <>
+              <Text style={styles.secaoTitulo}>Pontos por local</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingRight: 4 }}>
+                {porLocal.map((l) => (
+                  <View key={l.estabelecimento_id} style={styles.localCard}>
+                    <View style={styles.localIcone}><Ionicons name="storefront-outline" size={18} color={COLORS.primary} /></View>
+                    <Text style={styles.localNome} numberOfLines={1}>{l.estabelecimento_nome}</Text>
+                    <Text style={styles.localPontos}>{Number(l.total_pontos).toLocaleString('pt-BR')} pts</Text>
+                    {!!l.nivel && <Text style={styles.localNivel}>Nível {l.nivel}</Text>}
+                  </View>
+                ))}
+              </ScrollView>
+            </>
+          )}
 
           {!!nivel && (
             <View style={styles.nivelCard}>
@@ -144,6 +200,15 @@ export default function MeusPontos() {
             <Ionicons name="chevron-forward" size={18} color={COLORS.gray} />
           </TouchableOpacity>
 
+          <TouchableOpacity style={styles.convite} onPress={() => router.push('/src/screens/RelatorioPremium' as never)} activeOpacity={0.85}>
+            <View style={styles.conviteIcone}><Ionicons name="bar-chart-outline" size={22} color={COLORS.primary} /></View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.conviteTitulo}>Relatório Premium</Text>
+              <Text style={styles.conviteTexto}>Veja gastos, economia e seus lugares favoritos em gráficos.</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={COLORS.gray} />
+          </TouchableOpacity>
+
           <Text style={styles.secaoTitulo}>Planos e benefícios</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingRight: 4 }}>
             <View style={styles.planoCard}>
@@ -175,14 +240,21 @@ export default function MeusPontos() {
           </ScrollView>
 
           <Text style={styles.sectionTitle}>Histórico</Text>
+          <View style={styles.filtros}>
+            {([['todos', 'Tudo'], ['ganhos', 'Ganhos'], ['usados', 'Usados']] as const).map(([id, rotulo]) => (
+              <TouchableOpacity key={id} onPress={() => setFiltro(id)} style={[styles.filtro, filtro === id && styles.filtroAtivo]}>
+                <Text style={[styles.filtroTxt, filtro === id && styles.filtroTxtAtivo]}>{rotulo}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
 
-          {historico.length === 0 ? (
+          {historicoFiltrado.length === 0 ? (
             <View style={styles.centerBox}>
               <Ionicons name="time-outline" size={40} color={COLORS.gray} />
               <Text style={styles.emptyText}>Você ainda não tem pontos registrados.</Text>
             </View>
           ) : (
-            historico.map((item) => {
+            historicoFiltrado.map((item) => {
               const ganho = item.tipo === 'ganho';
               return (
                 <View key={item.id} style={styles.itemRow}>
@@ -254,6 +326,26 @@ const styles = StyleSheet.create({
   saldoLabel: { color: 'rgba(255,255,255,0.85)', fontSize: 12, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 1 },
   saldoValor: { color: COLORS.white, fontSize: 48, fontWeight: '800', marginTop: 6, letterSpacing: -1 },
   saldoHint: { color: 'rgba(255,255,255,0.85)', fontSize: 13, fontWeight: '500', marginTop: 4 },
+  saldoLinha: { flexDirection: 'row', gap: 10, marginTop: 14 },
+  saldoChip: { backgroundColor: 'rgba(255,255,255,0.16)', borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8 },
+  saldoChipRotulo: { color: 'rgba(255,255,255,0.75)', fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
+  saldoChipValor: { color: '#fff', fontSize: 16, fontWeight: '900', marginTop: 2 },
+  usarCard: { backgroundColor: COLORS.white, borderRadius: 20, padding: 16, marginTop: 14, borderWidth: 1, borderColor: COLORS.border, gap: 10 },
+  usarTitulo: { fontSize: 16, fontWeight: '900', color: COLORS.dark },
+  usarLinha: { flexDirection: 'row', gap: 8, alignItems: 'flex-start' },
+  usarTxt: { flex: 1, fontSize: 13, color: COLORS.dark, lineHeight: 19 },
+  usarBotao: { alignSelf: 'flex-start', backgroundColor: COLORS.primaryLight, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 9, marginTop: 2 },
+  usarBotaoTxt: { color: COLORS.primary, fontWeight: '800', fontSize: 13 },
+  localCard: { width: 150, backgroundColor: COLORS.white, borderRadius: 18, padding: 14, borderWidth: 1, borderColor: COLORS.border },
+  localIcone: { width: 34, height: 34, borderRadius: 10, backgroundColor: COLORS.primaryLight, alignItems: 'center', justifyContent: 'center' },
+  localNome: { fontSize: 13, fontWeight: '700', color: COLORS.dark, marginTop: 10 },
+  localPontos: { fontSize: 17, fontWeight: '900', color: COLORS.primary, marginTop: 2 },
+  localNivel: { fontSize: 10, fontWeight: '800', color: COLORS.gray, textTransform: 'uppercase', marginTop: 2 },
+  filtros: { flexDirection: 'row', backgroundColor: COLORS.lightGray, borderRadius: 12, padding: 3, marginBottom: 10 },
+  filtro: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 10 },
+  filtroAtivo: { backgroundColor: COLORS.white },
+  filtroTxt: { fontSize: 12, fontWeight: '700', color: COLORS.gray },
+  filtroTxtAtivo: { color: COLORS.dark },
 
   sectionTitle: { fontSize: 13, fontWeight: '800', color: COLORS.dark, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 12 },
 

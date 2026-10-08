@@ -27,7 +27,19 @@ class Conversa extends Model
         return $this->belongsTo(User::class, 'estabelecimento_id');
     }
 
+    public function produtoEntrega() {
+        return $this->belongsTo(ProdutoEntrega::class, 'produto_entrega_id');
+    }
+
+    public function vendedor() {
+        return $this->belongsTo(User::class, 'vendedor_id');
+    }
+
     public function nomeContraparte(): ?string {
+        if ($this->produto_entrega_id) {
+            return $this->vendedor?->name;
+        }
+
         return $this->aluguel_id ? $this->donoDireto?->name : $this->estabelecimento?->nome;
     }
 
@@ -86,6 +98,16 @@ class Conversa extends Model
     public function usuariosParaNotificar(int $remetenteId): array
     {
         if ((int) $remetenteId === (int) $this->usuario_id) {
+            if ($this->produto_entrega_id) {
+                return array_values(array_unique(array_filter([
+                    (int) $this->vendedor_id,
+                    ...($this->estabelecimento_id ? DB::table('estabelecimento_usuario')
+                        ->where('estabelecimento_id', $this->estabelecimento_id)
+                        ->pluck('usuario_id')
+                        ->all() : []),
+                ])));
+            }
+
             if ($this->funcionario_id && $this->funcionario?->usuario_id) {
                 return array_unique(array_filter([
                     (int) $this->funcionario->usuario_id,

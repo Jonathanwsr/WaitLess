@@ -12,6 +12,8 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { apiMobile, mensagemDeErro } from '../../../services/entregasApi';
+import { mostrarToast } from '../../../services/toast';
 import { useRouter } from 'expo-router';
 import { useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -65,6 +67,19 @@ export default function TelaCarrinho() {
   const [processandoCheckout, setProcessandoCheckout] = useState(false);
   const [itemParaRemover, setItemParaRemover] = useState<ItemCarrinho | null>(null);
   const [fotoIndices, setFotoIndices] = useState<Record<number, number>>({});
+  const [produtos, setProdutos] = useState<any[]>([]);
+
+  const alterarQuantidadeProduto = async (item: any, quantidade: number) => {
+    setProdutos((lista) => lista.map((p) => (p.id === item.id ? { ...p, quantidade } : p)));
+    const { ok, data } = await apiMobile(`/entregas/carrinho/${item.id}`, { method: 'PATCH', json: { quantidade } });
+    if (!ok) mostrarToast(mensagemDeErro(data, 'Não foi possível atualizar a quantidade.'), 'erro');
+  };
+
+  const removerProduto = async (item: any) => {
+    const { ok, data } = await apiMobile(`/entregas/carrinho/${item.id}`, { method: 'DELETE' });
+    if (ok) setProdutos((lista) => lista.filter((p) => p.id !== item.id));
+    else mostrarToast(mensagemDeErro(data, 'Não foi possível remover o produto.'), 'erro');
+  };
 
   const carregar = useCallback(async () => {
     setLoading(true);
@@ -76,6 +91,7 @@ export default function TelaCarrinho() {
       const json = await res.json();
 
       setItens(json.data || []);
+      setProdutos(json.produtos_entrega || []);
       setTotal(json.resumo?.total_carrinho || 0);
       setItensRemovidos(json.resumo?.itens_removidos || 0);
     } catch (e) {
@@ -183,7 +199,7 @@ export default function TelaCarrinho() {
         <View style={styles.loadingBox}>
           <ActivityIndicator size="large" color={COLORS.primary} />
         </View>
-      ) : itens.length === 0 ? (
+      ) : itens.length === 0 && produtos.length === 0 ? (
         <View style={styles.emptyStateContainer}>
           <View style={styles.emptyIconCircle}>
             <Ionicons name="bag-outline" size={48} color={COLORS.gray} />
@@ -204,6 +220,39 @@ export default function TelaCarrinho() {
                 <Ionicons name="warning-outline" size={18} color={COLORS.yellow} />
                 <Text style={styles.avisoTexto}>
                   {itensRemovidos} serviço(s) do seu carrinho foram removidos pelo estabelecimento e não estão mais disponíveis.
+                </Text>
+              </View>
+            )}
+
+            {produtos.length > 0 && (
+              <View style={{ gap: 10, marginBottom: 16 }}>
+                <Text style={styles.emptyStateTitle}>Produtos para entrega</Text>
+                {produtos.map((item) => (
+                  <View key={`produto-${item.id}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#fff', borderRadius: 16, padding: 12, borderWidth: 1, borderColor: '#E6E7E9' }}>
+                    <Image source={{ uri: item.fotos?.[0] || 'https://placehold.co/160x160/f4f4f5/a1a1aa?text=Produto' }} style={{ width: 64, height: 64, borderRadius: 12 }} resizeMode="cover" />
+                    <TouchableOpacity style={{ flex: 1 }} onPress={() => router.push({ pathname: '/src/screens/EntregaDetalhes' as never, params: { id: String(item.produto_entrega_id) } })}>
+                      <Text style={{ fontWeight: '800', color: COLORS.black }} numberOfLines={2}>{item.nome}</Text>
+                      <Text style={{ color: COLORS.gray, fontSize: 11, marginTop: 2 }} numberOfLines={1}>{item.estabelecimento_nome}</Text>
+                      <Text style={{ color: COLORS.primary, fontWeight: '900', marginTop: 4 }}>R$ {Number(item.preco_unitario || 0).toFixed(2).replace('.', ',')}</Text>
+                    </TouchableOpacity>
+                    <View style={{ alignItems: 'center', gap: 6 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                        <TouchableOpacity onPress={() => alterarQuantidadeProduto(item, Math.max(1, item.quantidade - 1))} style={{ width: 30, height: 30, borderRadius: 15, borderWidth: 1, borderColor: '#E6E7E9', alignItems: 'center', justifyContent: 'center' }}>
+                          <Ionicons name="remove" size={16} color={COLORS.black} />
+                        </TouchableOpacity>
+                        <Text style={{ fontWeight: '800', minWidth: 18, textAlign: 'center' }}>{item.quantidade}</Text>
+                        <TouchableOpacity onPress={() => alterarQuantidadeProduto(item, Math.min(item.estoque_disponivel, item.quantidade + 1))} style={{ width: 30, height: 30, borderRadius: 15, borderWidth: 1, borderColor: '#E6E7E9', alignItems: 'center', justifyContent: 'center' }}>
+                          <Ionicons name="add" size={16} color={COLORS.black} />
+                        </TouchableOpacity>
+                      </View>
+                      <TouchableOpacity onPress={() => removerProduto(item)}>
+                        <Text style={{ color: '#DC2626', fontSize: 11, fontWeight: '700' }}>Remover</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ))}
+                <Text style={{ color: COLORS.gray, fontSize: 12, lineHeight: 17 }}>
+                  Cada produto é pago na finalização da compra dele. Toque para ver e finalizar.
                 </Text>
               </View>
             )}
@@ -288,6 +337,7 @@ export default function TelaCarrinho() {
             })}
           </ScrollView>
 
+          {itens.length > 0 && (
           <View style={styles.resumoContainer}>
             <View style={styles.resumoRow}>
               <Text style={styles.resumoLabel}>Serviços ({quantidadeTotal})</Text>
@@ -311,6 +361,7 @@ export default function TelaCarrinho() {
               )}
             </TouchableOpacity>
           </View>
+          )}
         </>
       )}
 

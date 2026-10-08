@@ -16,7 +16,7 @@ class FavoritoMobileController extends Controller
     public function toggleFavorito(Request $request)
     {
         $request->validate([
-            'tipo' => 'required|in:estabelecimento,servico,item_aluguel',
+            'tipo' => 'required|in:estabelecimento,servico,item_aluguel,produto_entrega',
             'id'   => 'required|integer'
         ]);
 
@@ -26,6 +26,8 @@ class FavoritoMobileController extends Controller
             $coluna = 'estabelecimento_id';
         } elseif ($request->tipo === 'item_aluguel') {
             $coluna = 'item_aluguel_id';
+        } elseif ($request->tipo === 'produto_entrega') {
+            $coluna = 'produto_entrega_id';
         } else {
             $coluna = 'servico_id';
         }
@@ -91,10 +93,19 @@ class FavoritoMobileController extends Controller
             'canceladas'   => $agendamentos->whereIn('status', ['cancelado', 'estornado'])->values(),
         ];
 
+        $produtosEntrega = Favorito::with('produtoEntrega.estabelecimento:id,nome')
+            ->where('usuario_id', $userId)
+            ->whereNotNull('produto_entrega_id')
+            ->get()
+            ->map(fn ($fav) => $fav->produtoEntrega)
+            ->filter()
+            ->values();
+
         return response()->json([
             'estabelecimentos' => $estabelecimentos,
             'servicos'         => $servicos,
             'itens_aluguel'    => $itensAluguel,
+            'produtos_entrega' => $produtosEntrega,
             'reservas'         => $reservas
         ], 200);
     }

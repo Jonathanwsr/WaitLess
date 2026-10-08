@@ -44,6 +44,11 @@ export default function MenuSocio() {
         { icone: 'megaphone-outline', titulo: 'Divulgar meu local', descricao: 'Link e QR Code para trazer clientes', rota: '/Proprietario/divulgar' },
         { icone: 'storefront-outline', titulo: 'Minha vitrine', descricao: 'Veja seu local como os clientes veem', rota: '/Proprietario/vitrine' },
         { icone: 'key-outline', titulo: 'Locações avulsas', descricao: 'Itens que você aluga diretamente', rota: '/Proprietario/LocacoesAvulsas' },
+        { icone: 'cube-outline', titulo: 'Produtos', descricao: 'Com serviço ou reserva, e para entrega ou retirada', rota: '/Proprietario/Produtos' },
+        { icone: 'bicycle-outline', titulo: 'Entregas', descricao: 'Quem entrega, rastreio e finalização', rota: '/Proprietario/EntregasGestao' },
+        { icone: 'clipboard-outline', titulo: 'Pedidos', descricao: 'Produtos e reservas, situação e quem atende', rota: '/Proprietario/PedidosGestao' },
+        { icone: 'cash-outline', titulo: 'Cobranças parceladas', descricao: 'Cobre serviços ou reservas em parcelas', rota: '/Proprietario/Cobrancas' },
+        { icone: 'stats-chart-outline', titulo: 'Painel de vendas', descricao: 'Faturamento, mais vendidos e horários', rota: '/Proprietario/PainelVendas' },
       ],
     },
     {
@@ -53,6 +58,7 @@ export default function MenuSocio() {
         { icone: 'people-outline', titulo: 'Equipe', descricao: 'Funcionários e permissões', rota: 'local:/Proprietario/FuncionariosScreen?id=' },
         { icone: 'options-outline', titulo: 'Serviços e catálogo', descricao: 'Serviços, itens e preços', rota: 'local:/Proprietario/ConfiguracoesMobile?id=' },
         { icone: 'document-text-outline', titulo: 'Contratos', descricao: 'Modelos e contratos das reservas', rota: '/Proprietario/contratos', premium: true },
+        { icone: 'bar-chart-outline', titulo: 'Relatório Avançado', descricao: 'Faturamento, equipe e clientes', rota: '/Proprietario/RelatorioAvancado', premium: true },
         { icone: 'add-circle-outline', titulo: 'Novo estabelecimento', descricao: 'Cadastrar outro local', rota: '/Proprietario/CriarEstabelecimento' },
       ],
     },
@@ -78,7 +84,7 @@ export default function MenuSocio() {
       itens: [
         { icone: 'ribbon-outline', titulo: 'Minha assinatura', descricao: 'Plano e cobrança', rota: '/assinatura' },
         { icone: 'person-circle-outline', titulo: 'Meu perfil', descricao: 'Dados pessoais e senha', rota: '/Proprietario/perfil' },
-        { icone: 'school-outline', titulo: 'Tutoriais', descricao: 'Como criar local, serviço e reserva', rota: '/Proprietario/tutorial' },
+        { icone: 'school-outline', titulo: 'Tutoriais', descricao: 'Como criar local, serviço, reserva e produto', rota: '/Proprietario/tutorial' },
         { icone: 'help-buoy-outline', titulo: 'Suporte', descricao: 'Fale com a equipe Lokyva', rota: '/src/screens/TelaSuporte' },
       ],
     },

@@ -96,9 +96,10 @@ class CotacaoAluguelService
 
         $descontoPontos = 0;
         $pontosParaAbater = 0;
-        if ($item->aceita_pontos && !empty($validated['pontos_utilizados'])) {
-            $maximoPermitidoItem = $item->maximo_pontos_permitidos ?? 0;
-            $pontosParaAbater = min(intval($validated['pontos_utilizados']), $maximoPermitidoItem);
+        if (!empty($validated['pontos_utilizados'])) {
+            // Aceita pontos ou cliente premium (com limite): regra única em PontosService::limiteDePontos.
+            $limite = PontosService::limiteDePontos($user, $item, max(0, $precoSubtotal - $descontoPromocao));
+            $pontosParaAbater = $limite === null ? 0 : min((int) $validated['pontos_utilizados'], $limite);
 
             if ($user->pontos_saldo < $pontosParaAbater) {
                 abort(422, 'Saldo de pontos insuficiente.');

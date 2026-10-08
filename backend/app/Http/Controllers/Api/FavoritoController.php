@@ -18,17 +18,19 @@ class FavoritoController extends Controller
     {
         // 1. Atualizamos a validação para aceitar o item_aluguel
         $request->validate([
-            'tipo' => 'required|in:estabelecimento,servico,item_aluguel',
+            'tipo' => 'required|in:estabelecimento,servico,item_aluguel,produto_entrega',
             'id'   => 'required|integer'
         ]);
 
         $userId = Auth::id();
-        
+
         // 2. Descobrimos qual coluna usar baseada no tipo
         if ($request->tipo === 'estabelecimento') {
             $coluna = 'estabelecimento_id';
         } elseif ($request->tipo === 'item_aluguel') {
             $coluna = 'item_aluguel_id';
+        } elseif ($request->tipo === 'produto_entrega') {
+            $coluna = 'produto_entrega_id';
         } else {
             $coluna = 'servico_id';
         }
@@ -81,6 +83,15 @@ class FavoritoController extends Controller
             ->filter()
             ->values();
 
+        // 3b. Produtos para entrega favoritos (ignora os que foram removidos)
+        $produtosEntrega = Favorito::with('produtoEntrega.estabelecimento:id,nome')
+            ->where('usuario_id', $userId)
+            ->whereNotNull('produto_entrega_id')
+            ->get()
+            ->map(fn ($fav) => $fav->produtoEntrega)
+            ->filter()
+            ->values();
+
         // 4. Agendamentos (Separados por status)
         $agendamentos = Agendamento::with(['servico', 'estabelecimento'])
             ->where('usuario_id', $userId)
@@ -99,6 +110,7 @@ class FavoritoController extends Controller
             'estabelecimentos' => $estabelecimentos,
             'servicos'         => $servicos,
             'itensAluguel'     => $itensAluguel,
+            'produtosEntrega'  => $produtosEntrega,
             'reservas'         => $reservas
         ]);
     }

@@ -47,6 +47,11 @@ class Agendamento extends Model
         return $this->belongsTo(User::class, 'finalizado_por');
     }
 
+    public function atribuidoPor()
+    {
+        return $this->belongsTo(User::class, 'atribuido_por');
+    }
+
     public function historico()
     {
         return $this->hasMany(HistoricoAgendamento::class)->orderByDesc('created_at');

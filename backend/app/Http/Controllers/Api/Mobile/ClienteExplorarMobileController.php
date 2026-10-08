@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Mobile;
 use App\Http\Controllers\Controller;
 use App\Models\Estabelecimento;
 use App\Models\ItemAluguel;
+use App\Models\Promocao;
 use App\Models\Servico;
 use App\Models\Produto;
 use App\Services\PlanoService;
@@ -211,10 +212,18 @@ class ClienteExplorarMobileController extends Controller
             'avaliacao' => $lista->sortByDesc(fn ($i) => (float) $i['avaliacao_media']),
             'distancia' => $lista->sortBy(fn ($i) => $i['distancia'] ?? PHP_INT_MAX),
             'recentes' => $lista->sortByDesc(fn ($i) => $i['created_at'] ?? ''),
-            // Relevância: donos premium primeiro (mais visibilidade), depois nota e volume de avaliações.
+            // Relevância: donos premium primeiro, depois quem aceita pontos (mais itens com pontos antes),
+            // depois nota e volume de avaliações. Mesma regra do Explorar da web.
             default => $lista->sort(function ($a, $b) {
-                return [(int) !empty($b['destaque_premium']), (float) $b['avaliacao_media'], (int) ($b['total_avaliacoes'] ?? 0)]
-                    <=> [(int) !empty($a['destaque_premium']), (float) $a['avaliacao_media'], (int) ($a['total_avaliacoes'] ?? 0)];
+                $chave = fn ($i) => [
+                    (int) !empty($i['destaque_premium']),
+                    (int) (($i['destaque_pontos'] ?? 0) > 0),
+                    (int) ($i['destaque_pontos'] ?? 0),
+                    (float) $i['avaliacao_media'],
+                    (int) ($i['total_avaliacoes'] ?? 0),
+                ];
+
+                return $chave($b) <=> $chave($a);
             }),
         };
 
@@ -233,7 +242,57 @@ class ClienteExplorarMobileController extends Controller
                 'sem_resultados_na_cidade' => $cidade && $escopo === 'geral',
                 'area' => $area,
             ],
+            'promocoes_destaque' => $this->promocoesDestaque($request, $tipoBusca),
         ]));
+    }
+
+    /**
+     * Espelha ClienteExplorarController::promocoesDestaque (web) — promoções
+     * soltas pelo admin e vinculadas a um serviço/item de aluguel, filtradas
+     * pela aba ativa, vigência e elegibilidade do usuário.
+     */
+    private function promocoesDestaque(Request $request, string $tipoBusca)
+    {
+        $user = $request->user();
+        $papel = strtolower((string) ($user->papel ?? ''));
+        $ehProprietario = in_array($papel, ['socio', 'proprietario', 'gerente']);
+
+        $query = Promocao::vigentes()
+            ->where(function ($q) use ($ehProprietario, $user) {
+                $q->where('publico_alvo', 'todos');
+                if ($user) {
+                    $q->orWhere('publico_alvo', $ehProprietario ? 'proprietarios' : 'clientes');
+                }
+            });
+
+        if ($tipoBusca === 'servicos') {
+            $query->whereNotNull('servico_id')->with('servico:id,nome,estabelecimento_id,fotos,ativo');
+        } elseif ($tipoBusca === 'reservas') {
+            $query->whereNotNull('item_aluguel_id')->with('itemAluguel:id,nome,fotos,ativo');
+        } else {
+            $query->where(fn ($q) => $q->whereNotNull('servico_id')->orWhereNotNull('item_aluguel_id'))
+                ->with(['servico:id,nome,estabelecimento_id,fotos,ativo', 'itemAluguel:id,nome,fotos,ativo']);
+        }
+
+        return $query->orderByDesc('created_at')->limit(6)->get()
+            ->filter(fn ($promo) => !$promo->plano_necessario || ($user && $promo->plano_necessario === $user->plano_assinatura))
+            ->map(function ($promo) {
+                $vinculo = $promo->vinculoCard();
+                if (!$vinculo) {
+                    return null;
+                }
+                return [
+                    'id' => $promo->id,
+                    'nome' => $promo->nome,
+                    'descricao' => $promo->descricao,
+                    'imagem' => $promo->imagem,
+                    'desconto_percentual' => $promo->desconto_percentual,
+                    'desconto_valor' => $promo->desconto_valor,
+                    'vinculo' => $vinculo,
+                ];
+            })
+            ->filter()
+            ->values();
     }
 
     private function decodificarFotos($fotos): array
@@ -269,6 +328,7 @@ class ClienteExplorarMobileController extends Controller
         if ($categoria) $query->where('ramo_atuacao', 'ilike', "%{$categoria}%");
 
         $premiumIds = $premium->idsEstabelecimentosPremium();
+        $pontosPorLocal = $premium->pontosPorEstabelecimento();
 
         $servicos = \Illuminate\Support\Facades\DB::table('servicos')
             ->where('ativo', true)->whereNull('deleted_at')
@@ -281,7 +341,7 @@ class ClienteExplorarMobileController extends Controller
             ->selectRaw('estabelecimento_id, COUNT(*) as c')
             ->groupBy('estabelecimento_id')->pluck('c', 'estabelecimento_id');
 
-        return $query->get()->map(function ($est) use ($premiumIds, $servicos, $filas, $lat, $lng) {
+        return $query->with('horariosFuncionamento')->get()->map(function ($est) use ($premiumIds, $pontosPorLocal, $servicos, $filas, $lat, $lng) {
             $resumo = $servicos->get($est->id);
 
             return [
@@ -297,8 +357,11 @@ class ClienteExplorarMobileController extends Controller
                 'total_servicos' => $resumo ? (int) $resumo->total : 0,
                 'tem_promocao' => $resumo ? (bool) $resumo->promo : false,
                 'fila_atual' => (int) ($filas[$est->id] ?? 0),
+                'status_funcionamento' => \App\Support\StatusFuncionamento::de($est->horariosFuncionamento),
                 'distancia' => $this->distanciaKm($lat, $lng, $est->latitude, $est->longitude),
                 'destaque_premium' => $premiumIds->contains($est->id),
+                // Quantos serviços/reservas do dono aceitam pontos: sobe na lista logo depois dos premium.
+                'destaque_pontos' => (int) ($pontosPorLocal[$est->id] ?? 0),
                 'created_at' => optional($est->created_at)->toIso8601String(),
             ];
         })->values();
@@ -323,9 +386,10 @@ class ClienteExplorarMobileController extends Controller
         }
 
         $premiumIds = $premium->idsEstabelecimentosPremium();
+        $pontosPorLocal = $premium->pontosPorEstabelecimento();
         $vagasServico = app(\App\Services\Agendamento\VagasServicoService::class);
 
-        return $query->get()->map(function ($s) use ($premiumIds, $lat, $lng, $clienteEhPremium, $vagasServico) {
+        return $query->get()->map(function ($s) use ($premiumIds, $pontosPorLocal, $lat, $lng, $clienteEhPremium, $vagasServico) {
             $est = $s->estabelecimento;
             $fotos = $this->decodificarFotos($s->fotos);
             $base = (float) $s->valor;
@@ -357,6 +421,8 @@ class ClienteExplorarMobileController extends Controller
                 'somente_premium' => (bool) $s->somente_premium,
                 'distancia' => $this->distanciaKm($lat, $lng, $est->latitude, $est->longitude),
                 'destaque_premium' => $premiumIds->contains($est->id),
+                // Quantos serviços/reservas do dono aceitam pontos: sobe na lista logo depois dos premium.
+                'destaque_pontos' => (int) ($pontosPorLocal[$est->id] ?? 0),
                 'vagas_status' => $vagas['status'],
                 'vagas_restantes' => $vagas['restantes'],
                 'created_at' => optional($s->created_at)->toIso8601String(),
@@ -380,12 +446,13 @@ class ClienteExplorarMobileController extends Controller
         if ($categoria) $query->where('categoria', 'ilike', "%{$categoria}%");
 
         $premiumUsuarios = $premium->idsUsuariosPremium();
+        $pontosPorDono = $premium->pontosPorUsuario();
         // Locação avulsa: o dono aluga direto, sem um Estabelecimento cadastrado.
         $donosComEstabelecimento = \Illuminate\Support\Facades\DB::table('estabelecimento_usuario')->pluck('usuario_id')->unique();
 
         $disponibilidade = app(\App\Services\Locacao\DisponibilidadeService::class);
 
-        return $query->get()->map(function ($item) use ($premiumUsuarios, $donosComEstabelecimento, $clienteEhPremium, $disponibilidade) {
+        return $query->get()->map(function ($item) use ($premiumUsuarios, $pontosPorDono, $donosComEstabelecimento, $clienteEhPremium, $disponibilidade) {
             $fotos = $this->decodificarFotos($item->fotos);
             $base = (float) $item->valor_diaria;
             $comDesconto = $this->calcularValorComDesconto($base, (bool) $item->tem_promocao, $item->tipo_desconto, $item->valor_desconto);
@@ -414,6 +481,7 @@ class ClienteExplorarMobileController extends Controller
                 'somente_premium' => (bool) $item->somente_premium,
                 'distancia' => null,
                 'destaque_premium' => $premiumUsuarios->contains($item->estabelecimento_id),
+                'destaque_pontos' => (int) ($pontosPorDono[$item->estabelecimento_id] ?? 0),
                 'vagas_status' => $vagas['status'],
                 'vagas_restantes' => $vagas['restantes'],
                 'created_at' => optional($item->created_at)->toIso8601String(),

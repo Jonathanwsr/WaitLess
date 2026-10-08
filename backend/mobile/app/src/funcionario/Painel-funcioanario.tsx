@@ -7,8 +7,10 @@ import {
   ActivityIndicator,
   Modal,
   TextInput,
+  Pressable,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -31,6 +33,7 @@ interface Agendamento {
   status_pagamento?: string;
   valor_final?: number;
   finalizado_por?: { id: number; name: string } | null;
+  atribuido_por?: { id: number; name: string } | null;
 }
 
 async function pegarToken() {
@@ -174,15 +177,22 @@ export default function PainelFuncionario() {
 
   const abrirCliente = (item: Agendamento) => item.usuario?.id && router.push({ pathname: '/src/funcionario/DetalheCliente', params: { id: item.usuario.id } } as never);
 
-  /** Cabeçalho do cartão: quem é o cliente, o serviço e o horário. Tocar abre o histórico dele. */
+  /** Cabeçalho do cartão: quem é o cliente (com foto, quando tem), o serviço e o horário. Tocar abre o histórico dele. */
   const Topo = ({ item }: { item: Agendamento }) => (
     <TouchableOpacity style={styles.topo} activeOpacity={item.usuario?.id ? 0.7 : 1} onPress={() => abrirCliente(item)}>
       <View style={styles.avatar}>
-        <Text style={styles.avatarTxt}>{item.usuario?.name?.charAt(0)?.toUpperCase() || '?'}</Text>
+        {item.usuario?.foto_perfil ? (
+          <Image source={{ uri: item.usuario.foto_perfil }} style={styles.avatarImg} contentFit="cover" />
+        ) : (
+          <Text style={styles.avatarTxt}>{item.usuario?.name?.charAt(0)?.toUpperCase() || '?'}</Text>
+        )}
       </View>
       <View style={{ flex: 1 }}>
         <Text style={styles.cliente} numberOfLines={1}>{item.usuario?.name || 'Cliente'}</Text>
         <Text style={styles.servico} numberOfLines={1}>{item.servico?.nome || 'Serviço'}</Text>
+        {!!item.atribuido_por?.name && (
+          <Text style={styles.atribuido} numberOfLines={1}>Atribuído por {item.atribuido_por.name}</Text>
+        )}
       </View>
       <View style={styles.hora}>
         <Ionicons name="time-outline" size={14} color={O.accent} />
@@ -223,6 +233,19 @@ export default function PainelFuncionario() {
             </View>
           </View>
         </View>
+
+        <Pressable
+          onPress={() => router.push('/Proprietario/EntregasGestao' as never)}
+          style={({ pressed }) => [styles.atalhoEntregas, pressed && { opacity: 0.85 }]}
+          accessibilityRole="button"
+        >
+          <Ionicons name="bicycle-outline" size={22} color={O.accent} />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.atalhoTitulo}>Minhas entregas</Text>
+            <Text style={styles.atalhoTexto}>Pedidos atribuídos a você, com cliente e comprovante</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={O.muted} />
+        </Pressable>
 
         {agendamentos.length === 0 ? (
           <Card><Vazio icone="calendar-outline" titulo="Nenhum agendamento hoje" texto="Assim que houver novos clientes na fila, eles aparecem aqui. Puxe a tela para baixo para atualizar." /></Card>
@@ -356,6 +379,9 @@ export default function PainelFuncionario() {
 const sombra = { shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 } as const;
 
 const styles = StyleSheet.create({
+  atalhoEntregas: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: O.card, borderRadius: 18, borderWidth: 1, borderColor: O.line, padding: 14, marginBottom: 12 },
+  atalhoTitulo: { fontSize: 15, fontWeight: '800', color: O.ink },
+  atalhoTexto: { fontSize: 12, color: O.muted, marginTop: 2 },
   hero: { backgroundColor: O.accent, borderRadius: 26, padding: 20, marginBottom: 8 },
   heroData: { color: 'rgba(255,255,255,0.9)', fontSize: 13, fontWeight: '600' },
   heroLinha: { flexDirection: 'row', marginTop: 14, backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 18, paddingVertical: 14 },
@@ -374,10 +400,12 @@ const styles = StyleSheet.create({
   posicaoRotulo: { fontSize: 12, fontWeight: '700', color: O.muted },
 
   topo: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  avatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#FFF1E4', alignItems: 'center', justifyContent: 'center' },
+  avatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#FFF1E4', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+  avatarImg: { width: '100%', height: '100%' },
   avatarTxt: { fontSize: 20, fontWeight: '800', color: O.accent },
   cliente: { fontSize: 17, fontWeight: '800', color: O.ink, letterSpacing: -0.2 },
   servico: { fontSize: 14, color: O.muted, marginTop: 2 },
+  atribuido: { fontSize: 11, color: O.faint, marginTop: 2 },
   hora: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#FFF1E4', paddingHorizontal: 11, paddingVertical: 8, borderRadius: 14 },
   horaTxt: { fontSize: 14, fontWeight: '800', color: O.accent },
 

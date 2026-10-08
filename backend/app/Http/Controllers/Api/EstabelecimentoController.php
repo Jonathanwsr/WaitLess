@@ -119,13 +119,23 @@ class EstabelecimentoController extends Controller
         ]);
 
         if ($request->hasFile('foto_perfil')) {
+            // A foto antiga nunca era removida do ImageKit ao trocar — ficava
+            // órfã lá pra sempre toda vez que o sócio atualizava o logo.
+            $fotoPerfilAntiga = $estabelecimento->foto_perfil;
             $validated['foto_perfil'] = ImageKitService::upload($request->file('foto_perfil'), '/waitless/estabelecimentos');
+            if ($fotoPerfilAntiga) {
+                ImageKitService::delete($fotoPerfilAntiga);
+            }
         } else {
             unset($validated['foto_perfil']);
         }
 
         if ($request->hasFile('foto_banner')) {
+            $fotoBannerAntiga = $estabelecimento->foto_banner;
             $validated['foto_banner'] = ImageKitService::upload($request->file('foto_banner'), '/waitless/estabelecimentos/banners');
+            if ($fotoBannerAntiga) {
+                ImageKitService::delete($fotoBannerAntiga);
+            }
         } else {
             unset($validated['foto_banner']);
         }
@@ -251,11 +261,13 @@ class EstabelecimentoController extends Controller
             ->select('id', 'nome', 'servico_id', 'aluguel_id', 'somente_premium', 'is_promocao', 'valor_final')
             ->orderBy('nome')
             ->get();
+        $horariosFuncionamento = $estabelecimento->horariosFuncionamento()->get();
 
         return Inertia::render('Estabelecimentos/Configuracoes', [
             'estabelecimento'      => $estabelecimento,
             'meusEstabelecimentos' => $meusEstabelecimentos,
             'funcionarios'         => $funcionarios,
+            'horariosFuncionamento' => $horariosFuncionamento,
             'servicos'             => $servicos,
             'produtos'             => $produtos,
             'categoriasServicos'   => \App\Support\Categorias::servicos(),
@@ -275,7 +287,9 @@ class EstabelecimentoController extends Controller
 
         return Inertia::render('Estabelecimentos/Loja', [
             'estabelecimento' => $estabelecimento,
-            'servicosPaginados' => $servicos
+            'servicosPaginados' => $servicos,
+            'statusFuncionamento' => \App\Support\StatusFuncionamento::de($estabelecimento->horariosFuncionamento()->get()),
+            'produtosVendidos' => $estabelecimento->produtosVendidos(),
         ]);
     }
 
@@ -383,8 +397,9 @@ class EstabelecimentoController extends Controller
                 'local' => $locais->count() > 0,
                 'servico' => \App\Models\Servico::whereIn('estabelecimento_id', $locais->pluck('id'))->exists(),
                 'reserva' => \App\Models\ItemAluguel::catalogo()->where('estabelecimento_id', $user->id)->exists(),
+                'produto' => \App\Models\ProdutoEntrega::where('usuario_id', $user->id)->exists(),
             ],
-            'fluxoInicial' => in_array($request->query('fluxo'), ['local', 'servico', 'reserva'], true) ? $request->query('fluxo') : 'local',
+            'fluxoInicial' => in_array($request->query('fluxo'), ['local', 'servico', 'reserva', 'produto'], true) ? $request->query('fluxo') : 'local',
         ]);
     }
 
@@ -393,7 +408,12 @@ class EstabelecimentoController extends Controller
         $user = \Illuminate\Support\Facades\Auth::user();
         abort_unless(in_array($user->papel, ['admin', 'socio', 'proprietario', 'gerente'], true), 403);
 
+        $estabelecimentoAtual = $request->integer('estabelecimento_id')
+            ? Estabelecimento::find($request->integer('estabelecimento_id'))
+            : $user->estabelecimentos()->first();
+
         return Inertia::render('Estabelecimentos/Vitrine', [
+            'produtosVendidos' => $estabelecimentoAtual?->produtosVendidos() ?? 0,
             'vitrine' => app(\App\Services\VitrineService::class)->montar($user, $request->integer('estabelecimento_id') ?: null),
             'divulgacao' => collect(\App\Http\Controllers\DivulgacaoController::dadosDoProprietario($user))
                 ->firstWhere('id', $request->integer('estabelecimento_id') ?: null)

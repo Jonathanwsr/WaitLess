@@ -145,10 +145,94 @@ function ModalConta({ onClose, onSalvo }) {
     );
 }
 
+const TIPOS_HISTORICO = [['', 'Todos'], ['repasse', 'Repasse semanal'], ['antecipacao', 'Repasse antecipado']];
+const STATUS_HISTORICO = [['', 'Todos'], ['concluida', 'Concluído'], ['processando', 'Processando'], ['pendente', 'Enviando'], ['falhou', 'Não concluído'], ['cancelada', 'Cancelado']];
+
+/** Histórico completo e paginado de repasses — o painel só mostra os 30 mais recentes. */
+function ModalHistoricoCompleto({ onClose }) {
+    const [pagina, setPagina] = useState({ data: [], current_page: 1, last_page: 1, total: 0 });
+    const [carregando, setCarregando] = useState(true);
+    const [filtros, setFiltros] = useState({ tipo: '', status: '', data_inicio: '', data_fim: '' });
+
+    const buscar = useCallback(async (page = 1, f = filtros) => {
+        setCarregando(true);
+        try {
+            const { data } = await axios.get(route('carteira.asaas.historico'), { params: { ...f, page } });
+            setPagina(data);
+        } catch {
+            setPagina({ data: [], current_page: 1, last_page: 1, total: 0 });
+        } finally {
+            setCarregando(false);
+        }
+    }, [filtros]);
+
+    useEffect(() => { buscar(1, filtros); }, [filtros]);
+
+    const campo = 'rounded-xl border-gray-200 focus:border-[#FF5A00] focus:ring-[#FF5A00] text-sm';
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/50 backdrop-blur-sm p-4" onClick={onClose}>
+            <div className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl p-6 relative max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                <button type="button" onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-700"><XMarkIcon className="w-5 h-5" /></button>
+                <h3 className="text-lg font-black text-gray-900 mb-1">Histórico completo de repasses</h3>
+                <p className="text-sm text-gray-500 mb-4">Puxe qualquer período — repasses semanais, antecipados e o status de cada um.</p>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+                    <select className={campo} value={filtros.tipo} onChange={(e) => setFiltros({ ...filtros, tipo: e.target.value })}>
+                        {TIPOS_HISTORICO.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    </select>
+                    <select className={campo} value={filtros.status} onChange={(e) => setFiltros({ ...filtros, status: e.target.value })}>
+                        {STATUS_HISTORICO.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    </select>
+                    <input type="date" className={campo} value={filtros.data_inicio} onChange={(e) => setFiltros({ ...filtros, data_inicio: e.target.value })} />
+                    <input type="date" className={campo} value={filtros.data_fim} onChange={(e) => setFiltros({ ...filtros, data_fim: e.target.value })} />
+                </div>
+
+                {carregando ? (
+                    <p className="text-sm text-gray-400 py-8 text-center">Carregando…</p>
+                ) : pagina.data.length === 0 ? (
+                    <p className="text-sm text-gray-500 py-8 text-center">Nenhum repasse encontrado para esse filtro.</p>
+                ) : (
+                    <ul className="divide-y divide-gray-100">
+                        {pagina.data.map((h) => {
+                            const st = STATUS_TRANSFERENCIA[h.status] || STATUS_TRANSFERENCIA.pendente;
+                            return (
+                                <li key={h.id} className="py-3 flex flex-wrap items-center justify-between gap-2">
+                                    <div>
+                                        <p className="font-bold text-gray-900">{h.nome} <span className="text-xs font-normal text-gray-400">#{h.id}</span></p>
+                                        <p className="text-xs text-gray-500">{fmtDataHora(h.criado_em)}{h.destino ? ` · ${h.destino}` : ''}</p>
+                                        {h.erro && <p className="text-xs text-red-600 mt-1 max-w-xl">{h.erro}</p>}
+                                    </div>
+                                    <div className="text-right">
+                                        <p className="font-black text-gray-900">{fmt(h.valor_liquido)}</p>
+                                        {h.taxa_plataforma > 0 && <p className="text-xs text-gray-400">taxa {fmt(h.taxa_plataforma)}</p>}
+                                        <span className={`inline-block mt-1 text-xs font-bold px-2 py-0.5 rounded-full border ${st.classe}`}>{st.texto}</span>
+                                    </div>
+                                </li>
+                            );
+                        })}
+                    </ul>
+                )}
+
+                {pagina.last_page > 1 && (
+                    <div className="flex items-center justify-center gap-3 mt-5">
+                        <button type="button" disabled={pagina.current_page <= 1} onClick={() => buscar(pagina.current_page - 1)}
+                            className="px-3 py-1.5 rounded-lg text-xs font-bold bg-gray-100 text-gray-700 disabled:opacity-40">Anterior</button>
+                        <span className="text-xs font-semibold text-gray-500">Página {pagina.current_page} de {pagina.last_page} · {pagina.total} repasses</span>
+                        <button type="button" disabled={pagina.current_page >= pagina.last_page} onClick={() => buscar(pagina.current_page + 1)}
+                            className="px-3 py-1.5 rounded-lg text-xs font-bold bg-gray-100 text-gray-700 disabled:opacity-40">Próxima</button>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
 export default function Carteira({ painelInicial }) {
     const [painel, setPainel] = useState(painelInicial);
     const [aviso, setAviso] = useState(null); // { tipo: 'ok' | 'erro', texto }
     const [modalConta, setModalConta] = useState(false);
+    const [modalHistorico, setModalHistorico] = useState(false);
     const [valor, setValor] = useState('');
     const [contaId, setContaId] = useState(() => (painelInicial.contas.find((c) => c.padrao && c.status_validacao === 'validada') || painelInicial.contas.find((c) => c.status_validacao === 'validada'))?.id || '');
     const [sacando, setSacando] = useState(false);
@@ -478,7 +562,12 @@ export default function Carteira({ painelInicial }) {
 
                 {/* HISTÓRICO */}
                 <section className="bg-white rounded-3xl border border-gray-100 p-6 shadow-sm">
-                    <h3 className="font-black text-gray-900 mb-4 flex items-center gap-2"><BanknotesIcon className="w-5 h-5 text-[#FF5A00]" /> Repasses</h3>
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="font-black text-gray-900 flex items-center gap-2"><BanknotesIcon className="w-5 h-5 text-[#FF5A00]" /> Repasses</h3>
+                        <button type="button" onClick={() => setModalHistorico(true)} className="text-xs font-bold text-[#FF5A00] hover:underline">
+                            Ver histórico completo
+                        </button>
+                    </div>
                     {painel.historico.length === 0 ? <p className="text-sm text-gray-500">Seus repasses semanais e antecipados aparecem aqui.</p> : (
                         <ul className="divide-y divide-gray-100">
                             {painel.historico.map((h) => {
@@ -530,6 +619,8 @@ export default function Carteira({ painelInicial }) {
                     onSalvo={(msg) => { setModalConta(false); setAviso({ tipo: 'ok', texto: msg }); recarregar(); }}
                 />
             )}
+
+            {modalHistorico && <ModalHistoricoCompleto onClose={() => setModalHistorico(false)} />}
         </AuthenticatedLayout>
     );
 }

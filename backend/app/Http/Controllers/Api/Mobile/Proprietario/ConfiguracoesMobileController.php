@@ -3,12 +3,14 @@
 namespace App\Http\Controllers\Api\Mobile\Proprietario;
 
 use App\Http\Controllers\Controller;
+use App\Models\Agendamento;
 use App\Models\Estabelecimento;
 use App\Models\Funcionario;
 use App\Models\Servico;
 use App\Models\ItemAluguel;
 use App\Models\Aluguel;
 use App\Services\ImageKitService;
+use App\Services\PagamentoService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
@@ -228,6 +230,17 @@ class ConfiguracoesMobileController extends Controller
 
         if ($papel === 'gerente' && $user->papel !== 'admin' && !$user->podeGerenciarEquipeAvancada()) {
             return response()->json(['message' => 'Criar gerentes é um recurso exclusivo do plano Sócio Premium.'], 403);
+        }
+
+        // Funcionários ilimitados é um benefício do plano Sócio Premium — sem
+        // isso, qualquer plano (até o grátis) podia criar quantos quisesse.
+        if ($user->papel !== 'admin' && !$user->podeGerenciarEquipeAvancada()) {
+            $totalAtual = $estabelecimento->funcionarios()->count();
+            if ($totalAtual >= \App\Services\PlanoService::LIMITE_FUNCIONARIOS_PLANO_GRATUITO) {
+                return response()->json([
+                    'message' => 'Você atingiu o limite de ' . \App\Services\PlanoService::LIMITE_FUNCIONARIOS_PLANO_GRATUITO . ' funcionários do plano gratuito. Assine o plano Sócio Premium para criar funcionários ilimitados.',
+                ], 403);
+            }
         }
 
         // A tabela `funcionarios` guarda só o perfil (nome/cargo); login e
@@ -456,10 +469,36 @@ class ConfiguracoesMobileController extends Controller
         }
     }
 
-    public function destroyServico(Servico $servico)
+    public function destroyServico(Servico $servico, PagamentoService $pagamentoService)
     {
+        // Antes disso: nenhum agendamento pendente/pago era avisado nem
+        // reembolsado ao apagar o serviço (o cliente simplesmente perdia o
+        // horário sem devolução), e as fotos locais nunca eram removidas.
+        $agendamentosAfetados = Agendamento::where('servico_id', $servico->id)
+            ->whereIn('status', ['pendente', 'aguardando_pagamento', 'confirmado', 'em_atendimento'])
+            ->whereDate('data_agendamento', '>=', now()->toDateString())
+            ->get();
+
+        foreach ($agendamentosAfetados as $agendamento) {
+            try {
+                $pagamentoService->processarCancelamentoAgendamento($agendamento);
+            } catch (Exception $e) {
+                Log::error("Falha ao cancelar/estornar agendamento {$agendamento->id} ao apagar serviço {$servico->id}: " . $e->getMessage());
+            }
+        }
+
+        $fotos = is_array($servico->fotos) ? $servico->fotos : (json_decode($servico->fotos, true) ?? []);
+        foreach ($fotos as $foto) {
+            Storage::disk('public')->delete($foto);
+        }
+
         $servico->delete();
-        return response()->json(['message' => 'Serviço apagado com sucesso!']);
+
+        return response()->json([
+            'message' => count($agendamentosAfetados) > 0
+                ? "Serviço apagado com sucesso! {$agendamentosAfetados->count()} cliente(s) com reserva pendente foram avisados e reembolsados."
+                : 'Serviço apagado com sucesso!',
+        ]);
     }
 
     // ==========================================
@@ -654,9 +693,27 @@ class ConfiguracoesMobileController extends Controller
         return response()->json($aluguel->load(['item', 'locatario', 'proprietario', 'contratoDocumento']));
     }
 
+    /**
+     * alugueis.estabelecimento_id/proprietario_id guardam o id do DONO
+     * (users.id), nunca o id de um registro em "estabelecimentos" — comparar
+     * contra estabelecimentos.id (como esse método fazia antes) nunca batia
+     * pro dono de verdade. Também libera um funcionário que atende por um
+     * estabelecimento real vinculado a esse dono.
+     */
+    private function podeGerenciarAluguel($user, Aluguel $aluguel): bool
+    {
+        if ((int) $user->id === (int) $aluguel->proprietario_id) {
+            return true;
+        }
+
+        return Funcionario::where('usuario_id', $user->id)
+            ->whereHas('estabelecimento.proprietarios', fn ($q) => $q->where('users.id', $aluguel->proprietario_id))
+            ->exists();
+    }
+
     public function updateAluguel(Request $request, Aluguel $aluguel)
     {
-        if (!$request->user()->estabelecimentos()->where('estabelecimentos.id', $aluguel->estabelecimento_id)->exists()) {
+        if (!$this->podeGerenciarAluguel($request->user(), $aluguel)) {
             return response()->json(['status' => 'error', 'message' => 'Você não tem permissão para editar este aluguel.'], 403);
         }
 
@@ -680,6 +737,48 @@ class ConfiguracoesMobileController extends Controller
         } catch (Exception $e) {
             return $this->respostaErro($e, 'updateAluguel');
         }
+    }
+
+    /**
+     * Atribui/libera o funcionário responsável por uma locação (equivalente,
+     * pra aluguéis, do AgendamentoController::updateFuncionario de serviços).
+     */
+    public function updateFuncionarioAluguel(Request $request, Aluguel $aluguel)
+    {
+        $validated = $request->validate([
+            'funcionario_id' => 'nullable|exists:funcionarios,id',
+        ]);
+
+        $user = $request->user();
+        $gerencia = (int) $user->id === (int) $aluguel->proprietario_id;
+        $meuFuncionarioId = $gerencia ? null : Funcionario::where('usuario_id', $user->id)
+            ->whereHas('estabelecimento.proprietarios', fn ($q) => $q->where('users.id', $aluguel->proprietario_id))
+            ->value('id');
+
+        $autoAtribuicao = false;
+        if (!$gerencia && $meuFuncionarioId) {
+            $novoId = $validated['funcionario_id'] ?? null;
+            $estavaLivreOuEraMeu = is_null($aluguel->funcionario_id) || (int) $aluguel->funcionario_id === (int) $meuFuncionarioId;
+            $novoEhMeuOuNulo = is_null($novoId) || (int) $novoId === (int) $meuFuncionarioId;
+            $autoAtribuicao = $estavaLivreOuEraMeu && $novoEhMeuOuNulo;
+        }
+
+        if (!$gerencia && !$autoAtribuicao) {
+            return response()->json(['error' => 'Você não tem permissão para atribuir funcionários nesta locação.'], 403);
+        }
+
+        if (!empty($validated['funcionario_id'])) {
+            $pertence = Funcionario::where('id', $validated['funcionario_id'])
+                ->whereHas('estabelecimento.proprietarios', fn ($q) => $q->where('users.id', $aluguel->proprietario_id))
+                ->exists();
+            if (!$pertence) {
+                return response()->json(['error' => 'Esse funcionário não atende por este dono.'], 422);
+            }
+        }
+
+        $aluguel->update(['funcionario_id' => $validated['funcionario_id'], 'atribuido_por' => $user->id]);
+
+        return response()->json(['message' => 'Funcionário atualizado com sucesso.', 'aluguel' => $aluguel]);
     }
 
     public function destroyAluguel(Aluguel $aluguel)

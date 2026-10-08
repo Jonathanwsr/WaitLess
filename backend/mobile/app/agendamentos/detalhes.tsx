@@ -19,6 +19,7 @@ interface Reserva {
   id: string | number;
   status: string;
   status_pagamento?: string;
+  forma_pagamento?: string | null;
   codigo_verificacao?: string | null;
   data_agendamento?: string;
   hora_agendamento?: string;
@@ -28,18 +29,37 @@ interface Reserva {
   horario_fim?: string | null;
   quantidade?: number | string | null;
   valor_final?: number | string | null;
+  valor_caucao?: number | string | null;
+  pontos_utilizados?: number | string | null;
+  valor_desconto_pontos?: number | string | null;
+  valor_desconto_cupom?: number | string | null;
   posicao_fila?: number | null;
+  funcionario?: { nome?: string } | null;
   servico?: { nome?: string; descricao?: string; duracao_minutos?: number | string; fotos?: string | string[] } | null;
   item?: {
     nome?: string; descricao?: string; fotos?: string | string[]; categoria?: string; marca?: string; modelo?: string;
     capacidade_pessoas?: number | string | null; ano?: number | string | null;
+    recursos_oferecidos?: string[] | null; acessorios?: string[] | null;
   } | null;
   estabelecimento?: {
     nome?: string; telefone?: string; rua?: string | null; numero?: string | null; bairro?: string | null;
     cidade?: string | null; estado?: string | null; foto_perfil?: string | null;
   } | null;
   estabelecimento_id?: number;
+  cobranca?: {
+    codigo: string; status: string; total: number; parcelas: number; pagas: number;
+    proxima: { numero: number; valor: number; vencimento: string } | null;
+  } | null;
 }
+
+const PAGAMENTO_LABEL: Record<string, string> = {
+  pago: 'Pago online',
+  pago_online: 'Pago online',
+  presencial: 'Pagar no local',
+  pendente: 'Aguardando pagamento',
+  aguardando: 'Aguardando pagamento',
+  online: 'Pago online',
+};
 
 /** A API devolve valores como texto ("50.00"): converte com segurança. */
 const num = (v: unknown, padrao = 0) => {
@@ -231,7 +251,17 @@ export default function DetalhesAgendamento() {
     if (reserva.item?.marca) specs.push({ icone: 'pricetag-outline', texto: `${reserva.item.marca} ${reserva.item.modelo || ''}`.trim() });
     if (num(reserva.item?.ano)) specs.push({ icone: 'calendar-outline', texto: `Ano ${num(reserva.item?.ano)}` });
     if (reserva.item?.categoria) specs.push({ icone: 'apps-outline', texto: String(reserva.item.categoria) });
+    (reserva.item?.recursos_oferecidos || []).forEach((r) => specs.push({ icone: 'checkmark-circle-outline', texto: r }));
+    (reserva.item?.acessorios || []).forEach((a) => specs.push({ icone: 'add-circle-outline', texto: a }));
   }
+
+  const pagamentoTxt = isAluguel
+    ? PAGAMENTO_LABEL[reserva.forma_pagamento || ''] || reserva.forma_pagamento || null
+    : PAGAMENTO_LABEL[reserva.status_pagamento || ''] || reserva.status_pagamento || null;
+  const pontosUsados = num(reserva.pontos_utilizados);
+  const descontoPontos = num(reserva.valor_desconto_pontos);
+  const descontoCupom = num(reserva.valor_desconto_cupom);
+  const caucao = num(reserva.valor_caucao);
 
   return (
     <View style={s.tela}>
@@ -304,21 +334,81 @@ export default function DetalhesAgendamento() {
                 <Text style={s.linhaValor}>{num(reserva.servico?.duracao_minutos)} minutos</Text>
               </View>
             )}
+            {!isAluguel && !!reserva.funcionario?.nome && (
+              <View style={s.linha}>
+                <Text style={s.linhaRotulo}>Profissional</Text>
+                <Text style={s.linhaValor}>{reserva.funcionario.nome}</Text>
+              </View>
+            )}
+            {!!pagamentoTxt && (
+              <View style={s.linha}>
+                <Text style={s.linhaRotulo}>Pagamento</Text>
+                <Text style={s.linhaValor}>{pagamentoTxt}</Text>
+              </View>
+            )}
+            {pontosUsados > 0 && (
+              <View style={s.linha}>
+                <Text style={s.linhaRotulo}>Pontos usados</Text>
+                <Text style={s.linhaValor}>{pontosUsados} pts (-{brl(descontoPontos)})</Text>
+              </View>
+            )}
+            {descontoCupom > 0 && (
+              <View style={s.linha}>
+                <Text style={s.linhaRotulo}>Cupom aplicado</Text>
+                <Text style={s.linhaValor}>-{brl(descontoCupom)}</Text>
+              </View>
+            )}
+            {isAluguel && caucao > 0 && (
+              <View style={s.linha}>
+                <Text style={s.linhaRotulo}>Caução</Text>
+                <Text style={s.linhaValor}>{brl(caucao)}</Text>
+              </View>
+            )}
             <View style={[s.linha, { borderBottomWidth: 0 }]}>
               <Text style={s.linhaRotulo}>Valor</Text>
               <Text style={[s.linhaValor, { color: T.primary, fontSize: 17 }]}>{brl(reserva.valor_final)}</Text>
             </View>
           </View>
 
+          {/* PAGAMENTO PARCELADO (cobrança enviada pelo local) */}
+          {!!reserva.cobranca && (
+            <TouchableOpacity style={s.cartao} activeOpacity={0.85} onPress={() => router.push('/src/screens/MinhasCobrancas' as never)}>
+              <Text style={s.secao}>Pagamento parcelado</Text>
+              <Text style={s.titulo}>{brl(reserva.cobranca.total)} em {reserva.cobranca.parcelas}x</Text>
+              <Text style={s.linhaRotulo}>{reserva.cobranca.pagas} de {reserva.cobranca.parcelas} parcela(s) paga(s) · {reserva.cobranca.codigo}</Text>
+              <View style={s.barraParcelas}>
+                <View style={[s.barraParcelasOn, { width: `${reserva.cobranca.parcelas ? (reserva.cobranca.pagas / reserva.cobranca.parcelas) * 100 : 0}%` }]} />
+              </View>
+              {!!reserva.cobranca.proxima && (
+                <Text style={[s.linhaValor, { marginTop: 8 }]}>
+                  Próxima: {brl(reserva.cobranca.proxima.valor)} em {dataBR(reserva.cobranca.proxima.vencimento)}
+                </Text>
+              )}
+              <Text style={[s.linhaRotulo, { color: T.primary, marginTop: 8, fontWeight: '800' }]}>Ver parcelas e pagar ›</Text>
+            </TouchableOpacity>
+          )}
+
           {/* ONDE FICA */}
           <View style={s.cartao}>
             <Text style={s.secao}>Onde fica</Text>
             <Text style={s.titulo}>{e?.nome || 'Local'}</Text>
             {enderecoTxt.map((linha) => <Text key={linha} style={s.descricao}>{linha}</Text>)}
-            <TouchableOpacity style={s.btnClaro} onPress={abrirMapa} activeOpacity={0.8}>
-              <Ionicons name="map-outline" size={18} color={T.ink} />
-              <Text style={s.btnClaroTxt}>Abrir no mapa</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 6 }}>
+              <TouchableOpacity style={[s.btnClaro, { flex: 1, marginTop: 0 }]} onPress={abrirMapa} activeOpacity={0.8}>
+                <Ionicons name="map-outline" size={18} color={T.ink} />
+                <Text style={s.btnClaroTxt}>Abrir no mapa</Text>
+              </TouchableOpacity>
+              {!!e?.telefone && (
+                <TouchableOpacity
+                  style={[s.btnClaro, { flex: 1, marginTop: 0 }]}
+                  onPress={() => Linking.openURL(`tel:${String(e.telefone).replace(/\D/g, '')}`)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="call-outline" size={18} color={T.ink} />
+                  <Text style={s.btnClaroTxt}>Ligar</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           </View>
 
           {/* AÇÕES */}
@@ -393,4 +483,6 @@ const s = StyleSheet.create({
   btnPrimTxt: { color: '#fff', fontWeight: '800', fontSize: 15 },
   btnCancelar: { alignItems: 'center', justifyContent: 'center', height: 50, borderRadius: 25, backgroundColor: '#FEF2F2' },
   btnCancelarTxt: { color: T.danger, fontWeight: '800', fontSize: 14 },
+  barraParcelas: { height: 6, borderRadius: 3, backgroundColor: '#EEF2FF', overflow: 'hidden', marginTop: 10 },
+  barraParcelasOn: { height: 6, borderRadius: 3, backgroundColor: '#4F46E5' },
 });

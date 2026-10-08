@@ -36,6 +36,14 @@ class MensagemController extends Controller
             return true;
         }
 
+        if ($conversa->vendedor_id && (int) $conversa->vendedor_id === (int) $user->id) {
+            return true;
+        }
+
+        if (!$conversa->estabelecimento_id) {
+            return false;
+        }
+
         return DB::table('estabelecimento_usuario')
             ->where('usuario_id', $user->id)
             ->where('estabelecimento_id', $conversa->estabelecimento_id)
@@ -59,10 +67,11 @@ class MensagemController extends Controller
             ->where('usuario_id', $user->id)
             ->pluck('conversa_id');
 
-        return Conversa::with(['usuario', 'estabelecimento', 'donoDireto', 'funcionario', 'agendamento.servico', 'aluguel.item', 'ultimaMensagem'])
+        return Conversa::with(['usuario', 'estabelecimento', 'donoDireto', 'funcionario', 'agendamento.servico', 'aluguel.item', 'produtoEntrega', 'vendedor', 'ultimaMensagem'])
             ->where('usuario_id', $user->id)
             ->orWhereIn('estabelecimento_id', $meusEstabelecimentosIds)
             ->orWhereIn('funcionario_id', $meusFuncionarioIds)
+            ->orWhere('vendedor_id', $user->id)
             ->orWhere(function ($q) use ($user) {
                 $q->whereNotNull('aluguel_id')->where('estabelecimento_id', $user->id);
             })
@@ -71,7 +80,7 @@ class MensagemController extends Controller
             ->map(function ($c) use ($user, $favoritadasIds) {
                 $isEst = $this->ehEquipe($user, $c);
                 $nome = ($isEst ? $c->usuario->name : $c->nomeContraparte()) ?? 'Usuário';
-                $contexto = $c->agendamento?->servico?->nome ?? $c->aluguel?->item?->nome ?? null;
+                $contexto = $c->agendamento?->servico?->nome ?? $c->aluguel?->item?->nome ?? $c->produtoEntrega?->nome ?? null;
 
                 return [
                     'id' => $c->id,
@@ -121,7 +130,7 @@ class MensagemController extends Controller
         $conversaAtiva = [
             'id' => $conversa->id,
             'nome' => $nomeAtivo,
-            'contexto' => $conversa->agendamento?->servico?->nome ?? $conversa->aluguel?->item?->nome ?? null,
+            'contexto' => $conversa->agendamento?->servico?->nome ?? $conversa->aluguel?->item?->nome ?? $conversa->produtoEntrega?->nome ?? null,
             'funcionario_nome' => $conversa->funcionario?->nome,
             'favorito' => $conversa->favoritoPara($user->id),
             'avatar' => $isEst && $conversa->usuario->foto_perfil ? asset('storage/' . $conversa->usuario->foto_perfil) : null,
@@ -155,25 +164,40 @@ class MensagemController extends Controller
     public function iniciarConversa(Request $request)
     {
         $validated = $request->validate([
-            'usuario_id'         => 'required|exists:users,id',
+            'usuario_id'         => 'required_without:produto_entrega_id|exists:users,id',
             'estabelecimento_id' => 'nullable|exists:estabelecimentos,id',
             'funcionario_id'     => 'nullable|exists:funcionarios,id',
             'agendamento_id'     => 'nullable|exists:agendamentos,id',
             'aluguel_id'         => 'nullable|exists:alugueis,id',
+            'produto_entrega_id' => 'nullable|exists:produtos_entrega,id',
         ]);
 
-        // Conversa sobre uma locação/aluguel: não passa por um Estabelecimento
-        // de verdade (ver Conversa::donoDireto) — o dono vem direto do
-        // aluguel, ignorando qualquer estabelecimento_id que tenha vindo do front.
-        if (!empty($validated['aluguel_id'])) {
-            $aluguel = \App\Models\Aluguel::findOrFail($validated['aluguel_id']);
-            if ((int) $validated['usuario_id'] !== (int) $aluguel->locatario_id) {
-                abort(403, 'Você não tem acesso a esta locação.');
+        // Conversa sobre um produto para entrega: o cliente é quem está logado e o
+        // vendedor é o dono do produto (pode não ter estabelecimento cadastrado).
+        if (!empty($validated['produto_entrega_id'])) {
+            $produto = \App\Models\ProdutoEntrega::findOrFail($validated['produto_entrega_id']);
+
+            if ((int) $produto->usuario_id === (int) Auth::id()) {
+                abort(422, 'Este é o seu produto.');
             }
-            $validated['estabelecimento_id'] = $aluguel->estabelecimento_id;
-        } elseif (empty($validated['estabelecimento_id'])) {
-            abort(422, 'estabelecimento_id é obrigatório fora do contexto de uma locação.');
+
+            $conversa = Conversa::firstOrCreate([
+                'usuario_id'         => Auth::id(),
+                'produto_entrega_id' => $produto->id,
+                'vendedor_id'        => $produto->usuario_id,
+                'estabelecimento_id' => $produto->estabelecimento_id,
+                'funcionario_id'     => null,
+                'agendamento_id'     => null,
+                'aluguel_id'         => null,
+            ]);
+
+            return redirect()->route('mensagens.show', ['id' => $conversa->id]);
         }
+
+        // Quem pode abrir e sobre o quê: o cliente é quem está logado (ou a equipe do local abre com
+        // um cliente); agendamento e profissional precisam ser daquele cliente/local; locação só
+        // pelo locatário ou pelo dono (o dono vem do aluguel, ver Conversa::donoDireto).
+        $validated = app(\App\Services\ContextoConversaService::class)->validar(Auth::user(), $validated);
 
         // Sem contexto específico: reaproveita (no máximo) a conversa "geral" já existente.
         if (empty($validated['funcionario_id']) && empty($validated['agendamento_id']) && empty($validated['aluguel_id'])) {

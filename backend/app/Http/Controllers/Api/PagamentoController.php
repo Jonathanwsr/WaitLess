@@ -7,10 +7,14 @@ use Illuminate\Http\Request;
 use App\Models\Agendamento;
 use App\Models\Pagamento;
 use App\Models\Aluguel;
-use App\Services\PagamentoService; 
+use App\Models\Assinatura;
+use App\Models\PedidoEntrega;
+use App\Services\PagamentoService;
+use App\Services\PlanoService;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Mail;
 use App\Events\FilaAtualizada;
 
 class PagamentoController extends Controller
@@ -82,7 +86,7 @@ class PagamentoController extends Controller
 
         } catch (\Exception $e) {
             Log::error("Erro no método processar do PagamentoController: " . $e->getMessage());
-            return response()->json(['error' => 'Erro interno ao processar a cobrança: ' . $e->getMessage()], 500);
+            return response()->json(['error' => 'Não foi possível gerar a cobrança agora. Tente novamente em instantes.'], 500);
         }
     }
 
@@ -113,7 +117,23 @@ class PagamentoController extends Controller
         // 4xx/5xx aqui faz o Asaas ficar reenviando e penalizando o endpoint
         // até desativar o webhook — então só logamos e confirmamos o recebimento.
         if (!$pagamento) {
-            Log::warning("Webhook Asaas: pagamento local não encontrado para id_transacao_gateway={$paymentData['id']}");
+            // Cobranças de ASSINATURA (recorrente) nunca criam uma linha em
+            // "pagamentos" — esse pagamento é gerado pelo próprio Asaas a
+            // partir da subscription, não por criarCobrancaAsaas(). Sem este
+            // bloco, nenhuma assinatura era ativada/renovada sozinha: o plano
+            // premium só virava realidade se um admin clicasse manualmente em
+            // "Marcar como pago" no painel — então nenhum assinante pagante de
+            // verdade recebia o plano, os pontos ou qualquer benefício.
+            // Parcela de cobrança parcelada (criada por sócio): não tem linha em "pagamentos".
+            if (app(\App\Services\CobrancaParceladaService::class)->aplicarEventoAsaas($event, (string) $paymentData['id'], $paymentData['paymentDate'] ?? null)) {
+                return response()->json(['message' => 'Parcela de cobrança atualizada.'], 200);
+            }
+
+            if (!empty($paymentData['subscription'])) {
+                $this->processarPagamentoAssinatura($event, $paymentData);
+            } else {
+                Log::warning("Webhook Asaas: pagamento local não encontrado para id_transacao_gateway={$paymentData['id']}");
+            }
             return response()->json(['message' => 'Pagamento local não encontrado, evento ignorado.'], 200);
         }
 
@@ -127,8 +147,10 @@ class PagamentoController extends Controller
                     default  => 'outro'
                 };
 
-                $origemType = $pagamento->agendamento_id ? 'App\Models\Agendamento' : ($pagamento->aluguel_id ? 'App\Models\Aluguel' : null);
-                $origemId = $pagamento->agendamento_id ?? $pagamento->aluguel_id;
+                $origemType = $pagamento->agendamento_id
+                    ? 'App\Models\Agendamento'
+                    : ($pagamento->aluguel_id ? 'App\Models\Aluguel' : ($pagamento->pedido_entrega_id ? 'App\Models\PedidoEntrega' : null));
+                $origemId = $pagamento->agendamento_id ?? $pagamento->aluguel_id ?? $pagamento->pedido_entrega_id;
 
                 switch ($event) {
                     
@@ -155,6 +177,10 @@ class PagamentoController extends Controller
                                 if ($entidadeRelacionada) {
                                     $entidadeRelacionada->update(['status' => 'confirmado']);
                                 }
+                            } elseif ($pagamento->pedido_entrega_id) {
+                                // PIX/boleto de um pedido de entrega só confirma aqui — o
+                                // pagamento com cartão já marca "pago" na hora, sem depender do webhook.
+                                PedidoEntrega::where('id', $pagamento->pedido_entrega_id)->update(['status' => 'pago']);
                             }
 
                             // 1. Incrementa o saldo do Provedor (Fica pendente/bloqueado no extrato)
@@ -185,8 +211,11 @@ class PagamentoController extends Controller
                                 ]);
                             }
 
-                            // 2. Acumula pontos de fidelidade para o cliente
-                            $pontosGanhos = floor($pagamento->valor); 
+                            // 2. Acumula pontos de fidelidade para o cliente — só quando o
+                            // pagamento está ligado a um Estabelecimento de verdade (locação/produto
+                            // avulso não tem um "estabelecimento_id" pra acumular pontos contra, e
+                            // pontos_usuario_estabelecimento.estabelecimento_id é NOT NULL).
+                            $pontosGanhos = $pagamento->estabelecimento_id ? floor($pagamento->valor) : 0;
                             if ($pontosGanhos > 0) {
                                 DB::table('historico_pontos')->insert([
                                     'usuario_id' => $pagamento->usuario_id,
@@ -220,11 +249,20 @@ class PagamentoController extends Controller
                             // 3. Dispara Notificação de Confirmação
                             if ($entidadeRelacionada) {
                                 $pagamentoService->enviarEmailNotificacao(
-                                    $entidadeRelacionada, 
-                                    'pago', 
-                                    null, 
+                                    $entidadeRelacionada,
+                                    'pago',
+                                    null,
                                     $entidadeRelacionada->codigo_verificacao ?? null
                                 );
+                            }
+
+                            // 4. Nota fiscal automática — benefício exclusivo do Sócio Premium.
+                            // Nunca deve derrubar a confirmação de pagamento: qualquer falha fica
+                            // registrada na própria nota fiscal, não propaga exceção pro webhook.
+                            try {
+                                app(\App\Services\NotaFiscalService::class)->emitirParaPagamento($pagamento);
+                            } catch (\Throwable $e) {
+                                Log::error('Falha ao acionar emissão de nota fiscal: ' . $e->getMessage());
                             }
                         }
                         break;
@@ -251,6 +289,13 @@ class PagamentoController extends Controller
 
                         } elseif ($pagamento->aluguel_id) {
                             Aluguel::where('id', $pagamento->aluguel_id)->update(['status' => 'cancelado']);
+                        } elseif ($pagamento->pedido_entrega_id) {
+                            $pedidoVencido = PedidoEntrega::find($pagamento->pedido_entrega_id);
+                            if ($pedidoVencido) {
+                                $pedidoVencido->update(['status' => 'cancelado', 'data_cancelamento' => now()]);
+                                DB::table('produtos_entrega')->where('id', $pedidoVencido->produto_entrega_id)
+                                    ->increment('estoque_disponivel', $pedidoVencido->quantidade);
+                            }
                         }
                         break;
 
@@ -275,6 +320,13 @@ class PagamentoController extends Controller
 
                             } elseif ($pagamento->aluguel_id) {
                                 Aluguel::where('id', $pagamento->aluguel_id)->update(['status' => 'cancelado']);
+                            } elseif ($pagamento->pedido_entrega_id) {
+                                $pedidoEstornado = PedidoEntrega::find($pagamento->pedido_entrega_id);
+                                if ($pedidoEstornado) {
+                                    $pedidoEstornado->update(['status' => 'estornado']);
+                                    DB::table('produtos_entrega')->where('id', $pedidoEstornado->produto_entrega_id)
+                                        ->increment('estoque_disponivel', $pedidoEstornado->quantidade);
+                                }
                             }
 
                             // 👉 Retira os pontos ganhos nesta transação
@@ -329,6 +381,87 @@ class PagamentoController extends Controller
         } catch (\Exception $e) {
             Log::error("Erro ao sincronizar webhook de pagamento: " . $e->getMessage());
             return response()->json(['error' => 'Internal Error'], 500);
+        }
+    }
+
+    /**
+     * 👉 ATIVAÇÃO/RENOVAÇÃO AUTOMÁTICA DE ASSINATURA (plano premium)
+     *
+     * O Asaas gera esse "payment" sozinho a partir da subscription (trial de
+     * 7 dias vencendo, ou renovação mensal/anual) — não existe uma linha em
+     * "pagamentos" pra ele, então o fluxo normal do webhook nunca encontrava
+     * nada e o assinante ficava parado no plano "pendente" pra sempre, a
+     * menos que um admin entrasse no painel e marcasse manualmente como pago.
+     */
+    private function processarPagamentoAssinatura(string $event, array $paymentData): void
+    {
+        if (!in_array($event, ['PAYMENT_RECEIVED', 'PAYMENT_CONFIRMED'], true)) {
+            return;
+        }
+
+        $assinatura = Assinatura::where('gateway_assinatura_id', $paymentData['subscription'])->first();
+        if (!$assinatura) {
+            Log::warning("Webhook Asaas: assinatura não encontrada para subscription={$paymentData['subscription']}");
+            return;
+        }
+
+        try {
+            DB::transaction(function () use ($assinatura, $paymentData) {
+                // Trava a linha e confere de novo lá dentro — o Asaas costuma
+                // mandar PAYMENT_RECEIVED e PAYMENT_CONFIRMED pro mesmo
+                // pagamento, e sem isso os pontos e o próximo vencimento
+                // seriam concedidos duas vezes pro mesmo ciclo.
+                $assinaturaTravada = Assinatura::whereKey($assinatura->id)->lockForUpdate()->first();
+                if (!$assinaturaTravada || $assinaturaTravada->fatura_id === $paymentData['id']) {
+                    return;
+                }
+
+                $user = $assinaturaTravada->user;
+                if (!$user) {
+                    return;
+                }
+
+                $isAnual = str_contains($assinaturaTravada->nome_plano, 'anual');
+                $proximoVencimento = $isAnual ? now()->addYear() : now()->addMonth();
+
+                $assinaturaTravada->update([
+                    'status' => 'ativa',
+                    'data_inicio' => $assinaturaTravada->data_inicio ?? now(),
+                    'data_vencimento' => $proximoVencimento,
+                    'fatura_id' => $paymentData['id'],
+                ]);
+
+                $user->update([
+                    'plano_assinatura' => $assinaturaTravada->nome_plano,
+                    'plano_expira_em' => $proximoVencimento,
+                    'asaas_subscription_status' => 'ACTIVE',
+                    'asaas_subscription_id' => $assinaturaTravada->gateway_assinatura_id,
+                ]);
+
+                app(PlanoService::class)->distribuirPontosAssinatura($user, $assinaturaTravada->nome_plano);
+
+                try {
+                    Mail::to($user->email)->queue(new \App\Mail\BemVindoAssinaturaMail($user, $assinaturaTravada->nome_plano));
+                } catch (\Throwable $e) {
+                    Log::error('Erro ao enviar e-mail de boas-vindas da assinatura: ' . $e->getMessage());
+                }
+
+                Log::info("✅ Assinatura {$assinaturaTravada->id} ativada/renovada via webhook Asaas (plano {$assinaturaTravada->nome_plano}).");
+            });
+        } catch (\Throwable $e) {
+            Log::error('Erro ao processar pagamento de assinatura no webhook: ' . $e->getMessage());
+            return;
+        }
+
+        // Nota fiscal da própria plataforma pro assinante — nunca deve
+        // impedir a ativação do plano, que já foi concluída acima.
+        try {
+            $assinaturaAtualizada = $assinatura->fresh();
+            if ($assinaturaAtualizada && $assinaturaAtualizada->user) {
+                app(\App\Services\NotaFiscalService::class)->emitirParaAssinatura($assinaturaAtualizada, $assinaturaAtualizada->user);
+            }
+        } catch (\Throwable $e) {
+            Log::error('Falha ao acionar emissão de nota fiscal da assinatura: ' . $e->getMessage());
         }
     }
 

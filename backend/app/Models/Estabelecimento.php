@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 
 class Estabelecimento extends Model
 {
@@ -28,6 +29,20 @@ class Estabelecimento extends Model
     public function funcionarios()
     {
         return $this->hasMany(Funcionario::class);
+    }
+
+    /** Soma dos produtos vendidos por todos os sócios/equipe vinculados ao local. */
+    public function produtosVendidos(): int
+    {
+        return (int) User::whereIn('id', DB::table('estabelecimento_usuario')
+            ->where('estabelecimento_id', $this->id)
+            ->select('usuario_id'))
+            ->sum('produtos_vendidos');
+    }
+
+    public function horariosFuncionamento()
+    {
+        return $this->hasMany(HorarioFuncionamento::class)->orderBy('dia_semana');
     }
 
     public function servicos()

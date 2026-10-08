@@ -106,6 +106,7 @@ interface ItemExplorar {
   duracao_minutos?: number | string | null;
   total_servicos?: number;
   fila_atual?: number;
+  status_funcionamento?: { aberto: boolean | null; texto: string };
   distancia?: number | null;
   aceita_pontos?: boolean;
   vagas_status?: 'esgotado' | 'poucas_vagas' | null;
@@ -113,6 +114,16 @@ interface ItemExplorar {
   direto_dono?: boolean;
   bloqueado?: boolean;
   destaque_premium?: boolean;
+}
+
+interface PromocaoDestaque {
+  id: number;
+  nome: string;
+  descricao?: string | null;
+  imagem?: string | null;
+  desconto_percentual?: number | string | null;
+  desconto_valor?: number | string | null;
+  vinculo: { tipo: 'servico' | 'item_aluguel'; id: number; nome: string; estabelecimento_id?: number | null; foto?: string | null };
 }
 
 // "Áreas" do Explorar: hotéis, casas, lugares, passeios e veículos (mesmos ids do backend, App\Services\AreasExplorar).
@@ -152,6 +163,7 @@ export default function Descubra() {
   const [pagina, setPagina] = useState(1);
   const [ultimaPagina, setUltimaPagina] = useState(1);
   const [temPremium, setTemPremium] = useState(false);
+  const [promocoesDestaque, setPromocoesDestaque] = useState<PromocaoDestaque[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [carregandoMais, setCarregandoMais] = useState(false);
 
@@ -262,6 +274,7 @@ export default function Descubra() {
         setPagina(json.current_page ?? paginaAlvo);
         setUltimaPagina(json.last_page ?? 1);
         setTemPremium(!!json.meta?.tem_premium);
+        if (primeira) setPromocoesDestaque(json.promocoes_destaque || []);
       } catch {
         if (primeira) setItens([]);
       } finally {
@@ -300,6 +313,15 @@ export default function Descubra() {
       return;
     }
     router.push({ pathname: '/src/screens/ExplorarDetalhes' as never, params: { id: String(item.id), tipo: tipoAtivo } });
+  };
+
+  // Mesmo destino que um card normal levaria para esse item — a promoção
+  // nunca abre uma tela própria/condensada.
+  const abrirPromocao = (promo: PromocaoDestaque) => {
+    router.push({
+      pathname: '/src/screens/ExplorarDetalhes' as never,
+      params: { id: String(promo.vinculo.id), tipo: promo.vinculo.tipo === 'servico' ? 'servicos' : 'reservas' },
+    });
   };
 
   const limpar = () => {
@@ -405,6 +427,7 @@ export default function Descubra() {
           {item.desconto_label ? <Selo texto={item.desconto_label} tom="promo" /> : item.tem_promocao ? <Selo texto="Promoção" tom="promo" /> : null}
           {tipoAtivo === 'estabelecimentos' && (item.fila_atual ? <Selo texto={`${item.fila_atual} na fila`} tom="aviso" /> : <Selo texto="Sem espera" tom="ok" />)}
           {tipoAtivo === 'estabelecimentos' && !!item.total_servicos && <Selo texto={`${item.total_servicos} serviços`} tom="neutro" />}
+          {tipoAtivo === 'estabelecimentos' && !!item.status_funcionamento?.texto && <Selo texto={item.status_funcionamento.texto} tom={item.status_funcionamento.aberto ? 'ok' : 'neutro'} />}
           {item.aceita_pontos && <Selo texto="Aceita pontos" tom="neutro" />}
           {tipoAtivo === 'reservas' && item.direto_dono && <Selo texto="Direto com o dono" tom="neutro" />}
           {item.vagas_status === 'esgotado' && <Selo texto="Esgotado hoje" tom="perigo" />}
@@ -588,6 +611,28 @@ export default function Descubra() {
           </View>
         ) : (
           <>
+            {promocoesDestaque.length > 0 && (
+              <View style={s.secao}>
+                <View style={s.secaoTopo}>
+                  <Text style={s.secaoTitulo}>Promoções em destaque</Text>
+                  <View style={s.secaoPilula}><Ionicons name="pricetag" size={11} color={C.accent} /><Text style={s.secaoPilulaTxt}>Oferta</Text></View>
+                </View>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }}>
+                  {promocoesDestaque.map((promo) => (
+                    <TouchableOpacity key={`promo-${promo.id}`} style={[s.destaque, { width: larguraDestaque }]} onPress={() => abrirPromocao(promo)} activeOpacity={0.92}>
+                      <View style={s.destaqueFoto}>
+                        <Image source={{ uri: promo.vinculo.foto || promo.imagem || 'https://via.placeholder.com/400x300' }} style={s.destaqueImg} contentFit="cover" />
+                      </View>
+                      <View style={{ padding: 12 }}>
+                        <Text style={s.cartaoNome} numberOfLines={1}>{promo.nome}</Text>
+                        <Text style={s.cartaoSub} numberOfLines={1}>{promo.vinculo.nome}</Text>
+                      </View>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+
             {destaques.length > 0 && (
               <View style={s.secao}>
                 <View style={s.secaoTopo}>

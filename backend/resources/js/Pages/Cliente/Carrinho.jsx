@@ -1,13 +1,14 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link, router } from '@inertiajs/react';
 import { useState } from 'react';
+import { brl } from '@/lib/produtosEntrega';
 import { 
     TrashIcon, PlusIcon, MinusIcon, 
     ShoppingBagIcon, MapPinIcon, ClockIcon, 
-    ChevronLeftIcon, ChevronRightIcon 
+    ChevronLeftIcon, ChevronRightIcon, TruckIcon
 } from '@heroicons/react/24/outline';
 
-export default function Carrinho({ auth, itensCarrinho = [] }) {
+export default function Carrinho({ auth, itensCarrinho = [], produtosEntrega = [] }) {
     
     // 1. BLINDAGEM DO ARRAY: Garante que temos sempre uma lista, mesmo se o Laravel mandar paginado
     const arrayCarrinho = Array.isArray(itensCarrinho) ? itensCarrinho : (itensCarrinho.data || []);
@@ -109,7 +110,60 @@ export default function Carrinho({ auth, itensCarrinho = [] }) {
                     </div>
                 )}
 
-                {itensValidos.length === 0 ? (
+                {produtosEntrega.length > 0 && (
+                    <section className="mb-12">
+                        <h2 className="text-2xl font-black text-gray-900 mb-5 flex items-center gap-2">
+                            <TruckIcon className="w-6 h-6 text-[#FF5A00]" /> Produtos para entrega
+                        </h2>
+                        <div className="space-y-4">
+                            {produtosEntrega.map((item) => (
+                                <div key={item.id} className="bg-white rounded-3xl border border-gray-100 shadow-sm p-4 flex flex-col sm:flex-row sm:items-center gap-4">
+                                    <img
+                                        src={item.produto.fotos?.[0] || 'https://placehold.co/160x160/f4f4f5/a1a1aa?text=Produto'}
+                                        alt={item.produto.nome}
+                                        className="w-20 h-20 rounded-2xl object-cover bg-gray-100 flex-shrink-0"
+                                    />
+                                    <div className="flex-1 min-w-0">
+                                        <Link href={route('entregas.produto', item.produto.id)} className="font-bold text-gray-900 hover:text-[#FF5A00] truncate block">
+                                            {item.produto.nome}
+                                        </Link>
+                                        <p className="text-xs text-gray-400 truncate">{item.produto.estabelecimento?.nome || 'Vendedor independente'}</p>
+                                        <p className="text-sm font-black text-[#FF5A00] mt-1">{brl(item.produto.valor_final)}</p>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={() => router.patch(route('entregas.carrinho.update', item.id), { quantidade: Math.max(1, item.quantidade - 1) }, { preserveScroll: true })}
+                                            className="w-9 h-9 rounded-xl border border-gray-200 flex items-center justify-center hover:bg-gray-50"
+                                            aria-label="Diminuir"
+                                        >
+                                            <MinusIcon className="w-4 h-4" />
+                                        </button>
+                                        <span className="font-black w-6 text-center">{item.quantidade}</span>
+                                        <button
+                                            onClick={() => router.patch(route('entregas.carrinho.update', item.id), { quantidade: Math.min(item.quantidade + 1, item.produto.estoque_disponivel) }, { preserveScroll: true })}
+                                            className="w-9 h-9 rounded-xl border border-gray-200 flex items-center justify-center hover:bg-gray-50"
+                                            aria-label="Aumentar"
+                                        >
+                                            <PlusIcon className="w-4 h-4" />
+                                        </button>
+                                    </div>
+                                    <Link href={route('entregas.produto', item.produto.id)} className="text-center bg-gray-950 text-white font-bold text-sm px-5 py-3 rounded-xl hover:bg-[#FF5A00] transition">
+                                        Finalizar compra
+                                    </Link>
+                                    <button
+                                        onClick={() => router.delete(route('entregas.carrinho.destroy', item.id), { preserveScroll: true })}
+                                        className="text-gray-400 hover:text-red-600 p-2"
+                                        aria-label="Remover do carrinho"
+                                    >
+                                        <TrashIcon className="w-5 h-5" />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+                )}
+
+                {itensValidos.length === 0 && produtosEntrega.length > 0 ? null : itensValidos.length === 0 ? (
                     // =======================================================
                     // 👉 ESTADO VAZIO: TEXTO AJUSTADO
                     // =======================================================

@@ -33,6 +33,11 @@ class Pagamento extends Model
         return $this->belongsTo(Agendamento::class);
     }
 
+    public function aluguel()
+    {
+        return $this->belongsTo(Aluguel::class);
+    }
+
     public function estorno()
     {
         return $this->hasOne(Estorno::class, 'pagamento_id');
@@ -50,5 +55,10 @@ class Pagamento extends Model
     public function itemAluguel()
     {
         return $this->belongsTo(ItemAluguel::class, 'item_aluguel_id');
+    }
+
+    public function pedidoEntrega()
+    {
+        return $this->belongsTo(PedidoEntrega::class, 'pedido_entrega_id');
     }
 }

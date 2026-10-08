@@ -123,6 +123,7 @@ class ClienteAgendamentoMobileController extends Controller
             'forma_pagamento'  => 'required|string|in:online_agora,online_depois,presencial',
             'pontos_utilizados' => 'nullable|integer|min:0',
             'cupom_codigo'     => 'nullable|string|max:60',
+            'viagem_id'        => 'nullable|integer|exists:viagens,id',
             'funcionario_id'   => 'nullable|integer',
             'metodo_pagamento' => 'nullable|in:pix,cartao,boleto',
             'parcelas'         => 'nullable|integer|min:1|max:12',
@@ -188,12 +189,8 @@ class ClienteAgendamentoMobileController extends Controller
             // Pontos de fidelidade (saldo GLOBAL, users.pontos_saldo).
             $pontosAplicados = 0;
             $valorDescontoPontos = 0.0;
-            if (($servico->aceita_pontos ?? false) && $request->filled('pontos_utilizados')) {
-                $pontosSolicitados = (int) $validated['pontos_utilizados'];
-                if (!empty($servico->maximo_pontos_permitidos)) {
-                    $pontosSolicitados = min($pontosSolicitados, (int) $servico->maximo_pontos_permitidos);
-                }
-                $pontosAplicados = PontosService::pontosAplicaveis($user, $pontosSolicitados, $valorTotal);
+            if ($request->filled('pontos_utilizados')) {
+                $pontosAplicados = PontosService::pontosParaPedido($user, $servico, (int) $validated['pontos_utilizados'], $valorTotal);
                 if ($pontosAplicados > 0) {
                     $valorDescontoPontos = PontosService::pontosParaValor($pontosAplicados);
                     $valorTotal = max(0, $valorTotal - $valorDescontoPontos);
@@ -212,6 +209,26 @@ class ClienteAgendamentoMobileController extends Controller
                 }
                 $valorDescontoCupom = $this->cupomService->calcularDesconto($cupomAplicado, $valorTotal);
                 $valorTotal = max(0, $valorTotal - $valorDescontoCupom);
+            }
+
+            // Desconto de grupo: se outro membro da mesma viagem colaborativa já
+            // reservou este mesmo serviço (dentro do período da viagem), o grupo
+            // reservando junto ganha desconto extra — e pontos de bônus mais à frente.
+            $viagemDoGrupo = null;
+            $descontoGrupo = 0.0;
+            $participantesGrupo = 0;
+            if ($request->filled('viagem_id')) {
+                $viagemCandidata = \App\Models\Viagem::find($validated['viagem_id']);
+                if ($viagemCandidata && $viagemCandidata->temMembro($user->id)) {
+                    $grupo = app(\App\Services\Viagem\DescontoGrupoService::class)
+                        ->calcular($viagemCandidata, $valorTotal, $servico->id, null, $user->id);
+                    if ($grupo['elegivel']) {
+                        $descontoGrupo = $grupo['desconto'];
+                        $participantesGrupo = $grupo['participantes'];
+                        $valorTotal = $grupo['valor_final'];
+                        $viagemDoGrupo = $viagemCandidata;
+                    }
+                }
             }
 
             // Serviço gratuito (ou que zerou com cupom/pontos/desconto): não existe o
@@ -252,6 +269,31 @@ class ClienteAgendamentoMobileController extends Controller
                     'quantidade'         => $pontosAplicados,
                     'created_at'         => now()
                 ]);
+            }
+
+            // Bônus por reservar em grupo com a viagem: pontos extras, e a reserva já
+            // entra sozinha na agenda compartilhada da viagem (sem precisar compartilhar na mão).
+            if ($viagemDoGrupo) {
+                $pontosBonusGrupo = \App\Services\Viagem\DescontoGrupoService::PONTOS_BONUS;
+                $user->increment('pontos_saldo', $pontosBonusGrupo);
+                DB::table('historico_pontos')->insert([
+                    'usuario_id'         => $user->id,
+                    'estabelecimento_id' => $estabelecimento->id,
+                    'agendamento_id'     => $agendamento->id,
+                    'tipo'               => 'ganho',
+                    'descricao'          => "Bônus por reservar em grupo com a viagem \"{$viagemDoGrupo->titulo}\" ({$participantesGrupo} pessoas)",
+                    'quantidade'         => $pontosBonusGrupo,
+                    'created_at'         => now()
+                ]);
+
+                try {
+                    app(\App\Services\Viagem\ViagemService::class)
+                        ->compartilharReserva($viagemDoGrupo, $user, 'agendamento', $agendamento->id);
+                } catch (\Throwable $e) {
+                    // Nunca pode derrubar a reserva por causa disso — só não entra na
+                    // agenda da viagem automaticamente, o cliente ainda pode compartilhar na mão.
+                    \Illuminate\Support\Facades\Log::warning('Falha ao vincular reserva em grupo à viagem: ' . $e->getMessage());
+                }
             }
 
             if ($cupomAplicado) {
@@ -320,6 +362,12 @@ class ClienteAgendamentoMobileController extends Controller
                 'payment_url' => $linkPagamento, // 👈 Retorna o link para o front-end
                 'pago' => $pagoAgora,
                 'pix_qr_code' => $pixQrCode,
+                'desconto_grupo_viagem' => $viagemDoGrupo ? [
+                    'viagem_id' => $viagemDoGrupo->id,
+                    'participantes' => $participantesGrupo,
+                    'valor_desconto' => $descontoGrupo,
+                    'pontos_bonus' => \App\Services\Viagem\DescontoGrupoService::PONTOS_BONUS,
+                ] : null,
             ], 201);
 
         } catch (CobrancaRecusadaException $e) {
@@ -373,6 +421,7 @@ class ClienteAgendamentoMobileController extends Controller
 
             'pontos_utilizados'    => 'nullable|integer|min:0',
             'cupom_codigo'         => 'nullable|string|max:60',
+            'viagem_id'            => 'nullable|integer|exists:viagens,id',
         ]);
 
         $item = DB::table('itens_aluguel')->where('id', $itemId)->where('ativo', true)->first();
@@ -433,12 +482,8 @@ class ClienteAgendamentoMobileController extends Controller
             // Pontos de fidelidade (saldo GLOBAL, users.pontos_saldo).
             $pontosAplicados = 0;
             $valorDescontoPontos = 0.0;
-            if (($item->aceita_pontos ?? false) && $request->filled('pontos_utilizados')) {
-                $pontosSolicitados = (int) $validated['pontos_utilizados'];
-                if (!empty($item->maximo_pontos_permitidos)) {
-                    $pontosSolicitados = min($pontosSolicitados, (int) $item->maximo_pontos_permitidos);
-                }
-                $pontosAplicados = PontosService::pontosAplicaveis($user, $pontosSolicitados, $valorBruto);
+            if ($request->filled('pontos_utilizados')) {
+                $pontosAplicados = PontosService::pontosParaPedido($user, $item, (int) $validated['pontos_utilizados'], $valorBruto);
                 if ($pontosAplicados > 0) {
                     $valorDescontoPontos = PontosService::pontosParaValor($pontosAplicados);
                 }
@@ -459,6 +504,27 @@ class ClienteAgendamentoMobileController extends Controller
             }
 
             $valorBrutoComDesconto = max(0, $valorBruto - $valorDescontoPontos - $valorDescontoCupom);
+
+            // Desconto de grupo: se outro membro da mesma viagem colaborativa já
+            // reservou este mesmo item, o grupo reservando junto ganha desconto
+            // extra — e pontos de bônus logo após criar a reserva.
+            $viagemDoGrupo = null;
+            $descontoGrupo = 0.0;
+            $participantesGrupo = 0;
+            if ($request->filled('viagem_id')) {
+                $viagemCandidata = \App\Models\Viagem::find($validated['viagem_id']);
+                if ($viagemCandidata && $viagemCandidata->temMembro($user->id)) {
+                    $grupo = app(\App\Services\Viagem\DescontoGrupoService::class)
+                        ->calcular($viagemCandidata, $valorBrutoComDesconto, null, (int) $item->id, $user->id);
+                    if ($grupo['elegivel']) {
+                        $descontoGrupo = $grupo['desconto'];
+                        $participantesGrupo = $grupo['participantes'];
+                        $valorBrutoComDesconto = $grupo['valor_final'];
+                        $viagemDoGrupo = $viagemCandidata;
+                    }
+                }
+            }
+
             $valorCaucao = $item->valor_caucao ?? 0.00;
             $taxaServico = round($valorBrutoComDesconto * \App\Support\Taxas::fracao(), 2);
             $valorTotalFinal = $valorBrutoComDesconto + $valorCaucao + $taxaServico;
@@ -526,6 +592,26 @@ class ClienteAgendamentoMobileController extends Controller
                 ]);
             }
 
+            if ($viagemDoGrupo) {
+                $pontosBonusGrupo = \App\Services\Viagem\DescontoGrupoService::PONTOS_BONUS;
+                $user->increment('pontos_saldo', $pontosBonusGrupo);
+                DB::table('historico_pontos')->insert([
+                    'usuario_id'         => $user->id,
+                    'estabelecimento_id' => null,
+                    'tipo'               => 'ganho',
+                    'descricao'          => "Bônus por reservar em grupo com a viagem \"{$viagemDoGrupo->titulo}\" ({$participantesGrupo} pessoas)",
+                    'quantidade'         => $pontosBonusGrupo,
+                    'created_at'         => now(),
+                ]);
+
+                try {
+                    app(\App\Services\Viagem\ViagemService::class)
+                        ->compartilharReserva($viagemDoGrupo, $user, 'aluguel', $aluguelId);
+                } catch (\Throwable $e) {
+                    \Illuminate\Support\Facades\Log::warning('Falha ao vincular reserva em grupo à viagem: ' . $e->getMessage());
+                }
+            }
+
             $pagoAgora = false;
             $linkPagamento = null;
             $pixQrCode = null;
@@ -557,7 +643,13 @@ class ClienteAgendamentoMobileController extends Controller
                 'aluguel_id' => $aluguelId,
                 'valor_total' => $valorTotalFinal,
                 'data_entrega_prevista' => $dataInicio->toDateTimeString(),
-                'data_devolucao_prevista' => $dataFim->toDateTimeString()
+                'data_devolucao_prevista' => $dataFim->toDateTimeString(),
+                'desconto_grupo_viagem' => $viagemDoGrupo ? [
+                    'viagem_id' => $viagemDoGrupo->id,
+                    'participantes' => $participantesGrupo,
+                    'valor_desconto' => $descontoGrupo,
+                    'pontos_bonus' => \App\Services\Viagem\DescontoGrupoService::PONTOS_BONUS,
+                ] : null,
             ], 201);
 
         } catch (CobrancaRecusadaException $e) {

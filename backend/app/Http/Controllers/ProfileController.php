@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\ProfileUpdateRequest;
+use App\Services\ExclusaoContaService;
 use App\Services\ImageKitService;
 use Carbon\Carbon;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
@@ -22,6 +23,9 @@ class ProfileController extends Controller
         return Inertia::render('Profile/Edit', [
             'mustVerifyEmail' => $user instanceof MustVerifyEmail,
             'status' => session('status'),
+            'produtosVendidos' => (int) $user->produtos_vendidos,
+            // O que impede apagar a conta agora (pagamentos, estornos, agendamentos, pedidos...).
+            'pendenciasExclusao' => app(ExclusaoContaService::class)->pendencias($user),
             
             // Agrupamos os dados para facilitar a exibição e bloqueio no Front-end
             'profile' => [
@@ -156,9 +160,20 @@ class ProfileController extends Controller
     {
         $request->validate([
             'password' => ['required', 'current_password'],
+        ], [
+            'password.required' => 'Digite sua senha para confirmar.',
+            'password.current_password' => 'Senha incorreta.',
         ]);
 
         $user = $request->user();
+
+        // Nada de apagar a conta com dinheiro ou compromisso em aberto com outra pessoa.
+        $pendencias = app(ExclusaoContaService::class)->pendencias($user);
+        if (!empty($pendencias)) {
+            return back()->withErrors([
+                'password' => 'Resolva as pendências antes de apagar a conta: ' . collect($pendencias)->pluck('titulo')->implode(', ') . '.',
+            ]);
+        }
 
         Auth::logout();
         $user->delete();

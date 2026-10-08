@@ -51,10 +51,13 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
     const [usarPontos, setUsarPontos] = useState(false);
 
     const saldoPontosUsuario = Number(auth?.user?.pontos_saldo) || 0;
-    const aceitaPontos = !!servicoSelecionado?.aceita_pontos;
-    const maximoPontosPermitidos = servicoSelecionado?.maximo_pontos_permitidos || null;
+    const { flash = {}, pontosPremium = {} } = usePage().props;
 
-    const { flash = {} } = usePage().props;
+    // Pontos: liberados quando o serviço aceita, ou para cliente premium (até um % do valor).
+    const servicoAceitaPontos = !!servicoSelecionado?.aceita_pontos;
+    const pontosPeloPremium = !servicoAceitaPontos && !!pontosPremium.ativo;
+    const aceitaPontos = servicoAceitaPontos || pontosPeloPremium;
+    const maximoPontosPermitidos = servicoAceitaPontos ? (servicoSelecionado?.maximo_pontos_permitidos || null) : null;
 
     // Calcula o valor total apenas dos produtos extras escolhidos que ainda estão na lista
     const valorDosExtras = listaProdutosExtras.reduce((acc, produto) => {
@@ -74,6 +77,7 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
         quantidade: 1,
         cupom_codigo: '',
         pontos_utilizados: 0,
+        viagem_id: '',
         extras_ids: extras_ids || '' // IDs dos produtos sendo enviados pro Backend
     });
 
@@ -99,12 +103,18 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
         const urlTipoDesconto = parametros.get('tipo_desconto');
 
         const urlExtrasIds = parametros.get('extras_ids');
+        const urlViagemId = parametros.get('viagem_id');
 
         let newState = { ...data };
         let mudouAlgo = false;
 
         if (urlExtrasIds) {
             newState.extras_ids = urlExtrasIds;
+            mudouAlgo = true;
+        }
+
+        if (urlViagemId) {
+            newState.viagem_id = urlViagemId;
             mudouAlgo = true;
         }
 
@@ -182,7 +192,8 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
             let pontosAplicaveis = 0;
             if (aceitaPontos && usarPontos && saldoPontosUsuario > 0) {
                 const maxPeloSubtotal = Math.floor(valorCalculado * PONTOS_POR_REAL);
-                pontosAplicaveis = Math.min(saldoPontosUsuario, maxPeloSubtotal, maximoPontosPermitidos || Infinity);
+                const maxPremium = pontosPeloPremium ? Math.floor(valorCalculado * ((Number(pontosPremium.percentual) || 0) / 100) * PONTOS_POR_REAL) : Infinity;
+                pontosAplicaveis = Math.min(saldoPontosUsuario, maxPeloSubtotal, maxPremium, maximoPontosPermitidos || Infinity);
                 if (pontosAplicaveis > 0) {
                     valorCalculado = Math.max(0, valorCalculado - (pontosAplicaveis / PONTOS_POR_REAL));
                 }
@@ -204,7 +215,7 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
                 pontos_utilizados: pontosAplicaveis,
             }));
         }
-    }, [qtdLocal, servicoSelecionado, cupomAtivo, valorDosExtras, usarPontos, aceitaPontos, saldoPontosUsuario, maximoPontosPermitidos]);
+    }, [qtdLocal, servicoSelecionado, cupomAtivo, valorDosExtras, usarPontos, aceitaPontos, saldoPontosUsuario, maximoPontosPermitidos, pontosPeloPremium, pontosPremium.percentual]);
 
     useEffect(() => {
         if (flash.success && flash.success.includes('PIN')) {
@@ -410,6 +421,13 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
                                 <span className="font-black text-[#FF5A00] text-lg">R$ {Number(pedidoProdutoPendente.valor_total).toFixed(2)}</span>
                             </div>
                         </div>
+
+                        {!!data.viagem_id && (
+                            <div className="flex items-start gap-2 bg-orange-50 border border-orange-100 rounded-2xl px-4 py-3 mb-6">
+                                <UserGroupIcon className="w-5 h-5 text-[#FF5A00] shrink-0 mt-0.5" />
+                                <p className="text-sm text-gray-700">Reservando com o grupo da sua viagem. Se outra pessoa do grupo já reservou isso, vocês ganham desconto e pontos de bônus.</p>
+                            </div>
+                        )}
 
                         <label className="block text-xs font-bold text-gray-700 uppercase mb-2">Forma de pagamento</label>
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-6">
@@ -813,7 +831,10 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
                                                             <SparklesIcon className="w-5 h-5 text-orange-500 shrink-0" />
                                                             <div>
                                                                 <p className="text-sm font-bold text-orange-900">Usar meus pontos</p>
-                                                                <p className="text-xs text-orange-700">Você tem {saldoPontosUsuario} pontos disponíveis</p>
+                                                                <p className="text-xs text-orange-700">
+                                                                    Você tem {saldoPontosUsuario} pontos disponíveis
+                                                                    {pontosPeloPremium && ` · benefício premium: até ${String(pontosPremium.percentual).replace('.', ',')}% do valor`}
+                                                                </p>
                                                             </div>
                                                         </div>
                                                         <input

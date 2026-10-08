@@ -21,14 +21,16 @@ import {
     ShoppingBagIcon,
     TagIcon,
     FireIcon,
-    PlusIcon
+    PlusIcon,
+    TruckIcon
 } from '@heroicons/react/24/solid';
 
-export default function Loja({ auth, estabelecimento, servicosPaginados }) {
+export default function Loja({ auth, estabelecimento, servicosPaginados, statusFuncionamento, produtosVendidos = 0 }) {
     // Abas e Listagem
     const [abaAtiva, setAbaAtiva] = useState('servicos'); // 'servicos' | 'produtos'
     const [produtos, setProdutos] = useState([]);
     const [carregandoProdutos, setCarregandoProdutos] = useState(false);
+    const [produtosEntrega, setProdutosEntrega] = useState([]);
 
     // Estados de Seleção
     const [servicoSelecionado, setServicoSelecionado] = useState(null);
@@ -42,6 +44,12 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
     const [adicionandoAoCarrinho, setAdicionandoAoCarrinho] = useState(false);
 
     const servicos = servicosPaginados.data;
+
+    const [busca, setBusca] = useState('');
+    const [somentePromocoes, setSomentePromocoes] = useState(false);
+    const termoBusca = busca.trim().toLowerCase();
+    const casaBusca = (item) => !termoBusca || String(item.nome || '').toLowerCase().includes(termoBusca);
+    const ehPromocaoEntrega = (p) => Boolean(p.tem_promocao) && Number(p.valor_final) < Number(p.valor);
     const { flash = {} } = usePage().props;
 
     const isAdminOuGerente = ['admin', 'socio', 'gerente'].includes(auth.user?.papel);
@@ -68,6 +76,7 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
         }
 
         fetchProdutosDisponiveis();
+        fetchProdutosEntrega();
     }, [servicos, estabelecimento.id]);
 
     // Deep-link vindo da tela de Ofertas Premium (?open_produto=ID): assim que
@@ -98,6 +107,22 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
             console.error("Erro ao buscar produtos:", error);
         } finally {
             setCarregandoProdutos(false);
+        }
+    };
+
+    // Produtos para entrega/retirada vinculados a este local (botijão de gás,
+    // água, comida etc.) — pedido e pagamento à parte, não entram neste carrinho.
+    const fetchProdutosEntrega = async () => {
+        try {
+            const response = await fetch(`/entregas/catalogo?estabelecimento_id=${estabelecimento.id}`, {
+                headers: { Accept: 'application/json' },
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setProdutosEntrega(Array.isArray(data.data) ? data.data : []);
+            }
+        } catch (error) {
+            // seção opcional: silencia erro e simplesmente não mostra produtos de entrega
         }
     };
 
@@ -247,7 +272,6 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
     const logoUrl = estabelecimento.foto_perfil || 'https://placehold.co/150x150/e2e8f0/828ea8?text=Sem+Logo';
 
     const temAvaliacaoReal = Number(estabelecimento.total_avaliacoes) > 0;
-    const totalPromocoes = servicos.filter(s => Number(s.valor) < 150).length + produtos.filter(p => p.promocao == 1 || p.is_promocao == 1).length;
 
     return (
         <AuthenticatedLayout
@@ -278,7 +302,7 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
             <Head title={`Loja - ${estabelecimento.nome}`} />
 
             {/* HEADER BANNER E PERFIL */}
-            <div className="relative w-full h-72 md:h-[380px] bg-gray-900 overflow-hidden">
+            <div className="relative w-full h-80 md:h-[420px] bg-gray-900 overflow-hidden">
                 <img 
                     src={bannerUrl} 
                     alt="Banner do estabelecimento" 
@@ -317,6 +341,37 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
                                 <span className="text-gray-500">•</span>
                                 <span>{estabelecimento.bairro ? `${estabelecimento.bairro}, ` : ''}{estabelecimento.cidade}</span>
                             </div>
+
+                            {statusFuncionamento && (
+                                <div className="flex items-center gap-3 mt-4 flex-wrap">
+                                    <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-bold backdrop-blur-md border ${
+                                        statusFuncionamento.aberto === true
+                                            ? 'bg-emerald-500/20 border-emerald-300/40 text-emerald-100'
+                                            : statusFuncionamento.aberto === false
+                                                ? 'bg-red-500/20 border-red-300/40 text-red-100'
+                                                : 'bg-white/10 border-white/20 text-white'
+                                    }`}>
+                                        <span className={`w-2 h-2 rounded-full ${statusFuncionamento.aberto ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-400'}`} />
+                                        {statusFuncionamento.texto}
+                                    </span>
+
+                                    {statusFuncionamento.semana?.length > 0 && (
+                                        <details className="relative">
+                                            <summary className="cursor-pointer list-none text-xs font-bold text-white/90 underline underline-offset-4">Ver horários</summary>
+                                            <div className="absolute z-20 mt-2 w-64 bg-white text-zinc-900 rounded-2xl shadow-2xl p-4 space-y-2">
+                                                {statusFuncionamento.semana.map((d) => (
+                                                    <div key={d.dia_semana} className="flex justify-between gap-3 text-xs">
+                                                        <span className="font-semibold">{d.dia}</span>
+                                                        <span className={d.fechado ? 'font-bold text-red-500' : 'text-zinc-600'}>
+                                                            {d.fechado ? 'Fechado' : `${d.abertura} às ${d.fechamento}`}
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </details>
+                                    )}
+                                </div>
+                            )}
 
                             <div className="flex items-center gap-2 mt-4 flex-wrap hidden md:flex">
                                 <span className="bg-white/10 backdrop-blur-md border border-white/20 text-white px-3 py-1.5 rounded-full text-xs font-medium tracking-wide">Profissionais qualificados</span>
@@ -373,8 +428,8 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
                             <HeartIcon className="w-6 h-6" />
                         </div>
                         <div>
-                            <div className="text-2xl font-black text-gray-900 leading-none">{totalPromocoes}</div>
-                            <div className="text-xs text-gray-500 font-medium mt-1">Promoções</div>
+                            <div className="text-2xl font-black text-gray-900 leading-none">{Number(produtosVendidos || 0).toLocaleString('pt-BR')}</div>
+                            <div className="text-xs text-gray-500 font-medium mt-1">Produtos vendidos</div>
                         </div>
                     </div>
                 </div>
@@ -423,19 +478,31 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
                                 >
                                     <ShoppingBagIcon className="w-4 h-4" /> Produtos da Loja
                                 </button>
+                                <button
+                                    onClick={() => setAbaAtiva('entrega')}
+                                    className={`pb-3 font-black text-sm transition-all flex items-center gap-2 px-2 ${abaAtiva === 'entrega' ? 'border-b-2 border-[#FF5A00] text-[#FF5A00]' : 'text-gray-400 hover:text-gray-700 border-b-2 border-transparent'}`}
+                                >
+                                    <TruckIcon className="w-4 h-4" /> Entrega e retirada
+                                    {produtosEntrega.length > 0 && <span className="text-[10px] bg-orange-100 text-[#FF5A00] px-1.5 py-0.5 rounded-full">{produtosEntrega.length}</span>}
+                                </button>
                             </div>
 
                             <div className="w-full lg:w-auto flex flex-wrap items-center gap-3 justify-end">
                                 <div className="relative w-full sm:w-auto">
                                     <MagnifyingGlassIcon className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
-                                    <input 
-                                        type="text" 
-                                        placeholder={`Buscar ${abaAtiva}...`}
+                                    <input
+                                        type="text"
+                                        value={busca}
+                                        onChange={(e) => setBusca(e.target.value)}
+                                        placeholder={`Buscar ${abaAtiva === 'entrega' ? 'produtos para entrega' : abaAtiva}...`}
                                         className="w-full sm:w-64 bg-gray-50 border-transparent rounded-xl py-2.5 pl-10 pr-4 focus:bg-white focus:ring-2 focus:ring-[#FF5A00] focus:border-transparent text-sm transition-all placeholder:text-gray-400"
                                     />
                                 </div>
-                                <button className="bg-gray-900 hover:bg-black text-white font-bold text-sm px-6 py-2.5 rounded-xl shadow-sm transition w-full sm:w-auto">
-                                    Filtrar
+                                <button
+                                    onClick={() => setSomentePromocoes(!somentePromocoes)}
+                                    className={`font-bold text-sm px-6 py-2.5 rounded-xl shadow-sm transition w-full sm:w-auto ${somentePromocoes ? 'bg-[#FF5A00] text-white' : 'bg-gray-900 hover:bg-black text-white'}`}
+                                >
+                                    Promoções
                                 </button>
                             </div>
                         </div>
@@ -451,7 +518,7 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
                                     </div>
                                 ) : (
                                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 animate-in fade-in duration-300">
-                                        {servicos.map((servico) => {
+                                        {servicos.filter((s) => casaBusca(s) && (!somentePromocoes || Number(s.valor) < 150)).map((servico) => {
                                             const fotos = parseJSONSeguro(servico.fotos);
                                             const fotoCapa = fotos.length > 0 ? fotos[0] : 'https://placehold.co/400x300/e2e8f0/828ea8?text=Sem+Imagem';
 
@@ -532,7 +599,7 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
                                     </div>
                                 ) : (
                                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 animate-in fade-in duration-300">
-                                        {produtos.map((produto) => {
+                                        {produtos.filter((p) => casaBusca(p) && (!somentePromocoes || p.promocao == 1 || p.is_promocao == 1)).map((produto) => {
                                             const fotos = parseJSONSeguro(produto.fotos);
                                             const fotoCapa = fotos.length > 0 ? (fotos[0].startsWith('http') ? fotos[0] : `/storage/${fotos[0]}`) : 'https://placehold.co/400x300/e2e8f0/828ea8?text=Sem+Imagem';
 
@@ -605,6 +672,55 @@ export default function Loja({ auth, estabelecimento, servicosPaginados }) {
                                     </div>
                                 )}
                             </>
+                        )}
+
+                        {/* PRODUTOS PARA ENTREGA OU BUSCA (pedido e pagamento à parte) */}
+                        {abaAtiva === 'entrega' && (
+                        <div className="space-y-6">
+                            {produtosEntrega.length === 0 ? (
+                                <div className="text-center py-24 bg-white rounded-3xl shadow-sm border border-gray-100">
+                                    <TruckIcon className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                                    <h3 className="text-xl font-bold text-gray-900">Nenhum produto para entrega</h3>
+                                    <p className="text-gray-500 mt-2 text-sm">Este local ainda não tem produtos disponíveis para entrega ou retirada.</p>
+                                </div>
+                            ) : (
+                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+                                {produtosEntrega.filter((p) => casaBusca(p) && (!somentePromocoes || ehPromocaoEntrega(p))).map((produto) => {
+                                    const temDesconto = produto.tem_promocao && Number(produto.valor_final) < Number(produto.valor);
+                                    return (
+                                        <Link
+                                            key={produto.id}
+                                            href={route('entregas.produto', produto.id)}
+                                            className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex flex-col cursor-pointer group hover:shadow-xl hover:-translate-y-1 transition-all duration-300"
+                                        >
+                                            <div className="w-full aspect-square bg-gray-50 relative overflow-hidden flex items-center justify-center">
+                                                <img
+                                                    src={produto.fotos?.[0] || 'https://placehold.co/400x300/e2e8f0/828ea8?text=Sem+Imagem'}
+                                                    alt={produto.nome}
+                                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                                                />
+                                                {temDesconto && (
+                                                    <span className="absolute top-3 left-3 bg-red-600 text-white text-[10px] font-black uppercase px-2 py-1 rounded-md shadow-sm flex items-center gap-1">
+                                                        <FireIcon className="w-3 h-3" /> -{Math.round((1 - Number(produto.valor_final) / Number(produto.valor)) * 100)}%
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div className="p-4 flex-1 flex flex-col">
+                                                <p className="font-bold text-gray-900 text-sm truncate">{produto.nome}</p>
+                                                <div className="flex items-baseline gap-2 mt-1">
+                                                    <span className="text-lg font-black text-[#FF5A00]">R$ {Number(produto.valor_final).toFixed(2).replace('.', ',')}</span>
+                                                    {temDesconto && <span className="text-xs text-gray-300 line-through">R$ {Number(produto.valor).toFixed(2).replace('.', ',')}</span>}
+                                                </div>
+                                                <p className="text-[11px] text-gray-400 mt-1">
+                                                    {Number(produto.taxa_entrega) > 0 ? `+ R$ ${Number(produto.taxa_entrega).toFixed(2).replace('.', ',')} na entrega` : 'Entrega grátis'}
+                                                </p>
+                                            </div>
+                                        </Link>
+                                    );
+                                })}
+                            </div>
+                            )}
+                        </div>
                         )}
                     </div>
                 )}

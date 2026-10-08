@@ -1,6 +1,6 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, router } from '@inertiajs/react';
-import { Gift, Lock, Sparkles, Coins, Percent } from 'lucide-react';
+import { Gift, Lock, Sparkles, Coins, Percent, ArrowRight } from 'lucide-react';
 
 function IconePromocao({ tipo }) {
     if (tipo === 'pontos_todos' || tipo === 'pontos_plano') return <Coins className="w-6 h-6 text-[#FF5A00]" />;
@@ -8,21 +8,41 @@ function IconePromocao({ tipo }) {
     return <Percent className="w-6 h-6 text-[#FF5A00]" />;
 }
 
+// Mesmo destino que um card normal do Explorar levaria para esse item
+// (ver Explorar.jsx) — a promoção nunca abre uma tela própria/condensada.
+function linkDaPromocao(vinculo) {
+    if (!vinculo) return null;
+    if (vinculo.tipo === 'servico') {
+        return route('cliente.agendar', { estabelecimento: vinculo.estabelecimento_id, servico_id: vinculo.id });
+    }
+    return route('itens.detalhes', vinculo.id);
+}
+
 function CardPromocao({ promo }) {
+    const href = promo.elegivel ? linkDaPromocao(promo.vinculo) : null;
+
     return (
-        <div className={`bg-white rounded-3xl border p-6 shadow-sm relative ${promo.elegivel ? 'border-gray-100' : 'border-gray-100 opacity-75'}`}>
+        <div
+            onClick={href ? () => router.visit(href) : undefined}
+            className={`bg-white rounded-3xl border p-6 shadow-sm relative ${promo.elegivel ? 'border-gray-100' : 'border-gray-100 opacity-75'} ${href ? 'cursor-pointer hover:border-[#FF5A00] hover:shadow-md transition' : ''}`}
+        >
             {!promo.elegivel && (
                 <div className="absolute top-4 right-4 flex items-center gap-1.5 bg-gray-900 text-white text-[10px] font-bold uppercase px-2.5 py-1 rounded-full">
                     <Lock className="w-3 h-3" /> Exclusiva {promo.plano_necessario}
                 </div>
             )}
 
-            <div className="w-12 h-12 rounded-2xl bg-[#FFF3EC] flex items-center justify-center mb-4">
-                <IconePromocao tipo={promo.tipo} />
-            </div>
+            {promo.vinculo?.foto ? (
+                <img src={promo.vinculo.foto} alt={promo.vinculo.nome} className="w-full h-32 object-cover rounded-2xl mb-4" />
+            ) : (
+                <div className="w-12 h-12 rounded-2xl bg-[#FFF3EC] flex items-center justify-center mb-4">
+                    <IconePromocao tipo={promo.tipo} />
+                </div>
+            )}
 
             <h3 className="font-black text-gray-900 text-lg leading-tight">{promo.nome}</h3>
             {promo.descricao && <p className="text-sm text-gray-500 mt-1.5 leading-relaxed">{promo.descricao}</p>}
+            {promo.vinculo?.nome && <p className="text-xs font-bold text-[#FF5A00] mt-1.5">{promo.vinculo.nome}</p>}
 
             <div className="flex flex-wrap gap-2 mt-4">
                 {!!promo.quantidade_pontos && (
@@ -43,11 +63,17 @@ function CardPromocao({ promo }) {
 
             {!promo.elegivel && (
                 <button
-                    onClick={() => router.visit(route('assinatura.status'))}
+                    onClick={(e) => { e.stopPropagation(); router.visit(route('assinatura.status')); }}
                     className="mt-4 w-full py-2.5 rounded-xl bg-gray-900 hover:bg-black text-white text-sm font-bold transition"
                 >
                     Ver plano {promo.plano_necessario}
                 </button>
+            )}
+
+            {href && (
+                <span className="mt-4 flex items-center gap-1.5 text-sm font-bold text-[#FF5A00]">
+                    Ver oferta <ArrowRight className="w-4 h-4" />
+                </span>
             )}
         </div>
     );

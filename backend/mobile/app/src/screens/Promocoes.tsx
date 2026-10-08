@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, SafeAreaView, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, SafeAreaView, RefreshControl, Image } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter, useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -22,6 +22,14 @@ const ENV_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrend
 const cleanBaseUrl = ENV_URL.replace(/\/mobile\/?$/, '').replace(/\/+$/, '');
 const API_URL = `${cleanBaseUrl}/mobile`;
 
+interface VinculoPromocao {
+  tipo: 'servico' | 'item_aluguel';
+  id: number;
+  nome: string;
+  estabelecimento_id?: number | null;
+  foto?: string | null;
+}
+
 interface Promocao {
   id: number;
   nome: string;
@@ -34,6 +42,7 @@ interface Promocao {
   data_fim?: string | null;
   condicoes?: string | null;
   elegivel: boolean;
+  vinculo?: VinculoPromocao | null;
 }
 
 async function pegarToken() {
@@ -75,6 +84,16 @@ export default function Promocoes() {
     return 'pricetag-outline';
   };
 
+  // Mesmo destino que um card normal do Explorar levaria para esse item
+  // (ver mobile/app/(tabs)/explorar.tsx) — a promoção nunca abre uma tela
+  // própria/condensada.
+  const abrirVinculo = (vinculo: VinculoPromocao) => {
+    router.push({
+      pathname: '/src/screens/ExplorarDetalhes' as never,
+      params: { id: String(vinculo.id), tipo: vinculo.tipo === 'servico' ? 'servicos' : 'reservas' },
+    } as never);
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.header}>
@@ -100,8 +119,15 @@ export default function Promocoes() {
               <Text style={styles.emptyText}>Nenhuma promoção disponível no momento.</Text>
             </View>
           ) : (
-            promocoes.map((promo) => (
-              <View key={promo.id} style={[styles.card, !promo.elegivel && styles.cardBloqueado]}>
+            promocoes.map((promo) => {
+              const clicavel = promo.elegivel && !!promo.vinculo;
+              const CardWrapper: any = clicavel ? TouchableOpacity : View;
+              return (
+              <CardWrapper
+                key={promo.id}
+                style={[styles.card, !promo.elegivel && styles.cardBloqueado]}
+                {...(clicavel ? { activeOpacity: 0.85, onPress: () => abrirVinculo(promo.vinculo as VinculoPromocao) } : {})}
+              >
                 {!promo.elegivel && (
                   <View style={styles.lockBadge}>
                     <Ionicons name="lock-closed" size={10} color={COLORS.white} />
@@ -109,12 +135,17 @@ export default function Promocoes() {
                   </View>
                 )}
 
-                <View style={styles.iconBadge}>
-                  <Ionicons name={iconePorTipo(promo.tipo) as any} size={22} color={COLORS.primary} />
-                </View>
+                {promo.vinculo?.foto ? (
+                  <Image source={{ uri: promo.vinculo.foto }} style={styles.cardFoto} />
+                ) : (
+                  <View style={styles.iconBadge}>
+                    <Ionicons name={iconePorTipo(promo.tipo) as any} size={22} color={COLORS.primary} />
+                  </View>
+                )}
 
                 <Text style={styles.cardNome}>{promo.nome}</Text>
                 {!!promo.descricao && <Text style={styles.cardDesc}>{promo.descricao}</Text>}
+                {!!promo.vinculo?.nome && <Text style={styles.vinculoNome}>{promo.vinculo.nome}</Text>}
 
                 <View style={styles.badgesRow}>
                   {!!promo.quantidade_pontos && (
@@ -138,8 +169,16 @@ export default function Promocoes() {
                     <Text style={styles.btnVerPlanoText}>Ver plano {promo.plano_necessario}</Text>
                   </TouchableOpacity>
                 )}
-              </View>
-            ))
+
+                {clicavel && (
+                  <View style={styles.verOfertaRow}>
+                    <Text style={styles.verOfertaText}>Ver oferta</Text>
+                    <Ionicons name="arrow-forward" size={14} color={COLORS.primary} />
+                  </View>
+                )}
+              </CardWrapper>
+              );
+            })
           )}
         </ScrollView>
       )}
@@ -170,8 +209,12 @@ const styles = StyleSheet.create({
   },
   lockBadgeText: { color: COLORS.white, fontSize: 9, fontWeight: '800', textTransform: 'uppercase' },
   iconBadge: { width: 44, height: 44, borderRadius: 14, backgroundColor: COLORS.primaryLight, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  cardFoto: { width: '100%', height: 120, borderRadius: 14, marginBottom: 12, backgroundColor: COLORS.lightGray },
   cardNome: { fontSize: 16, fontWeight: '800', color: COLORS.dark },
+  vinculoNome: { fontSize: 12, fontWeight: '700', color: COLORS.primary, marginTop: 4 },
   cardDesc: { fontSize: 13, color: COLORS.gray, marginTop: 4, lineHeight: 19 },
+  verOfertaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 14 },
+  verOfertaText: { fontSize: 13, fontWeight: '800', color: COLORS.primary },
   badgesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 12 },
   badge: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999 },
   badgeText: { fontSize: 11, fontWeight: '800' },

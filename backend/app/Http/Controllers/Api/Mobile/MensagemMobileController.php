@@ -34,6 +34,14 @@ class MensagemMobileController extends Controller
             return true;
         }
 
+        if ($conversa->vendedor_id && (int) $conversa->vendedor_id === (int) $user->id) {
+            return true;
+        }
+
+        if (!$conversa->estabelecimento_id) {
+            return false;
+        }
+
         return DB::table('estabelecimento_usuario')
             ->where('usuario_id', $user->id)
             ->where('estabelecimento_id', $conversa->estabelecimento_id)
@@ -130,22 +138,31 @@ class MensagemMobileController extends Controller
             'funcionario_id'     => 'nullable|exists:funcionarios,id',
             'agendamento_id'     => 'nullable|exists:agendamentos,id',
             'aluguel_id'         => 'nullable|exists:alugueis,id',
+            'produto_entrega_id' => 'nullable|exists:produtos_entrega,id',
         ]);
 
-        // Conversa sobre uma locação/aluguel: não passa por um Estabelecimento
-        // de verdade (ver Conversa::donoDireto) — o dono vem direto do
-        // aluguel, ignorando qualquer estabelecimento_id vindo do app.
-        if (!empty($validated['aluguel_id'])) {
-            $aluguel = \App\Models\Aluguel::findOrFail($validated['aluguel_id']);
-            if ((int) Auth::id() !== (int) $aluguel->locatario_id) {
-                abort(403, 'Você não tem acesso a esta locação.');
-            }
-            $validated['estabelecimento_id'] = $aluguel->estabelecimento_id;
-        } elseif (empty($validated['estabelecimento_id'])) {
-            abort(422, 'estabelecimento_id é obrigatório fora do contexto de uma locação.');
+        // Conversa sobre um produto para entrega: cliente = quem está logado, vendedor = dono do produto.
+        if (!empty($validated['produto_entrega_id'])) {
+            $produto = \App\Models\ProdutoEntrega::findOrFail($validated['produto_entrega_id']);
+            abort_if((int) $produto->usuario_id === (int) Auth::id(), 422, 'Este é o seu produto.');
+
+            $conversa = \App\Models\Conversa::firstOrCreate([
+                'usuario_id'         => Auth::id(),
+                'produto_entrega_id' => $produto->id,
+                'vendedor_id'        => $produto->usuario_id,
+                'estabelecimento_id' => $produto->estabelecimento_id,
+                'funcionario_id'     => null,
+                'agendamento_id'     => null,
+                'aluguel_id'         => null,
+            ]);
+
+            return response()->json(['conversa_id' => $conversa->id], 201);
         }
 
-        $dados = array_merge($validated, ['usuario_id' => Auth::id()]);
+        // No app o cliente é sempre quem está logado; a mesma validação da web confere
+        // agendamento, profissional e locação (ContextoConversaService).
+        $dados = app(\App\Services\ContextoConversaService::class)->validar(Auth::user(), array_merge($validated, ['usuario_id' => Auth::id()]));
+        $validated['estabelecimento_id'] = $dados['estabelecimento_id'];
 
         if (empty($validated['funcionario_id']) && empty($validated['agendamento_id']) && empty($validated['aluguel_id'])) {
             $conversa = Conversa::firstOrCreate([
@@ -186,10 +203,11 @@ class MensagemMobileController extends Controller
 
         $meusFuncionarioIds = Funcionario::where('usuario_id', $user->id)->pluck('id');
 
-        return Conversa::with(['usuario', 'estabelecimento', 'donoDireto', 'funcionario', 'agendamento.servico', 'aluguel.item', 'ultimaMensagem'])
+        return Conversa::with(['usuario', 'estabelecimento', 'donoDireto', 'funcionario', 'agendamento.servico', 'aluguel.item', 'produtoEntrega', 'vendedor', 'ultimaMensagem'])
             ->where('usuario_id', $user->id)
             ->orWhereIn('estabelecimento_id', $meusEstabelecimentosIds)
             ->orWhereIn('funcionario_id', $meusFuncionarioIds)
+            ->orWhere('vendedor_id', $user->id)
             ->orWhere(function ($q) use ($user) {
                 $q->whereNotNull('aluguel_id')->where('estabelecimento_id', $user->id);
             })
@@ -198,7 +216,7 @@ class MensagemMobileController extends Controller
             ->map(function (Conversa $c) use ($user) {
                 $isEst = $this->ehEquipe($user, $c);
                 $nome = ($isEst ? $c->usuario->name : $c->nomeContraparte()) ?? 'Usuário';
-                $contexto = $c->agendamento?->servico?->nome ?? $c->aluguel?->item?->nome ?? null;
+                $contexto = $c->agendamento?->servico?->nome ?? $c->aluguel?->item?->nome ?? $c->produtoEntrega?->nome ?? null;
 
                 return [
                     'id' => $c->id,

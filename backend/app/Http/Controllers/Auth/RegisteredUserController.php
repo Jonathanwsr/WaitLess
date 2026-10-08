@@ -37,12 +37,13 @@ class RegisteredUserController extends Controller
             'name' => 'required|string|max:255',
             'email' => 'required|string|lowercase|email|max:255|unique:'.User::class,
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
-            // Só os três papéis que a tela de cadastro realmente oferece (Cliente/
-            // Funcionário/Proprietário) podem ser auto-atribuídos aqui — "admin" e
-            // "gerente" eram aceitos por essa validação, permitindo que qualquer
-            // pessoa se cadastrasse como administrador da plataforma só mandando
-            // esse valor no corpo da requisição.
-            'papel' => 'required|string|in:user,atendente,socio',
+            // Só os dois papéis que a tela de cadastro realmente oferece (Cliente/
+            // Proprietário) podem ser auto-atribuídos aqui — "admin", "gerente" e
+            // "atendente" eram aceitos por essa validação, permitindo que qualquer
+            // pessoa se cadastrasse como administrador ou funcionário só mandando
+            // esse valor no corpo da requisição. Funcionário só pode ser criado
+            // por um sócio de dentro do sistema (ver FuncionarioController).
+            'papel' => 'required|string|in:user,socio',
             
             // Novos campos do cliente — só dígitos (e pontuação usual de
             // máscara), pra barrar HTML/script ou texto solto nesses campos
@@ -58,7 +59,7 @@ class RegisteredUserController extends Controller
             'city' => 'required|string|max:100',
             'state' => 'required|string|size:2',
             'person_type' => 'required|in:FISICA,JURIDICA',
-            'birth_date' => 'nullable|date',
+            'birth_date' => 'required_if:person_type,FISICA|nullable|date|before:today',
             'notification_disabled' => 'nullable|boolean',
             'codigo_indicacao' => 'nullable|string|max:12',
 
@@ -107,7 +108,7 @@ class RegisteredUserController extends Controller
             if ($response->failed()) {
                 $erroAsaas = $response->json();
                 $mensagemErro = $erroAsaas['errors'][0]['description'] ?? 'Não foi possível validar seus dados de pagamento.';
-                return back()->withErrors(['cpf_cnpj' => 'Asaas recusou o cadastro: ' . $mensagemErro])->withInput();
+                return back()->withErrors(['cpf_cnpj' => 'Não foi possível validar seus dados: ' . $mensagemErro])->withInput();
             }
 
             // Pega os dados de retorno com sucesso

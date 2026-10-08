@@ -313,7 +313,14 @@ public function pularProximo($id)
     /* =========================================================================
        👉 NOVO: CANCELAMENTO PELO CLIENTE (REGRA DE 1 HORA / 2%)
        ========================================================================= */
-    public function cancelarPeloCliente($id)
+    /**
+     * Rota legada (sem uso hoje pela interface — a tela do cliente chama
+     * ClienteAgendamentoController::cancelar). Corrigida pra não ficar
+     * perigosa: antes marcava o pagamento como "estornado" no banco sem
+     * NUNCA chamar o Asaas de verdade, então o cliente nunca recebia o
+     * dinheiro de volta apesar do status dizer o contrário.
+     */
+    public function cancelarPeloCliente($id, PagamentoService $pagamentoService)
     {
         $agendamento = Agendamento::findOrFail($id);
 
@@ -326,48 +333,12 @@ public function pularProximo($id)
         }
 
         try {
-            DB::beginTransaction();
-
-            $dataHoraAgendamento = Carbon::parse($agendamento->data_agendamento . ' ' . $agendamento->hora_agendamento);
-            $minutosRestantes = now()->diffInMinutes($dataHoraAgendamento, false);
-
-            $pagamento = DB::table('pagamentos')->where('agendamento_id', $agendamento->id)->first();
-            $mensagemEstorno = 'Agendamento cancelado com sucesso.';
-
-            if ($pagamento && $pagamento->status === 'pago') {
-                $valorPago = $pagamento->valor_total;
-                $valorEstorno = $valorPago;
-
-                // Regra: Menos de 60 min, retém 2%
-                if ($minutosRestantes > 0 && $minutosRestantes <= 60) {
-                    $taxaCancelamento = $valorPago * 0.02;
-                    $valorEstorno = $valorPago - $taxaCancelamento;
-                    $mensagemEstorno = "Cancelado. Retenção de 2% aplicada por cancelamento em cima da hora. O valor de R$ " . number_format($valorEstorno, 2, ',', '.') . " será estornado.";
-                } else {
-                    $mensagemEstorno = "Cancelado. O valor integral de R$ " . number_format($valorEstorno, 2, ',', '.') . " será devolvido.";
-                }
-
-                DB::table('pagamentos')->where('id', $pagamento->id)->update([
-                    'status' => 'estornado',
-                    'status_estorno' => 'pendente',
-                    'valor_estornado' => $valorEstorno,
-                    'data_estorno' => now()
-                ]);
-            }
-
-            $agendamento->update([
-                'status' => 'cancelado',
-                'status_pagamento' => 'estornado',
-                'codigo_verificacao' => null
-            ]);
-
-            DB::commit();
-            return redirect()->back()->with('success', $mensagemEstorno);
-
+            $resultado = $pagamentoService->processarCancelamentoAgendamento($agendamento);
         } catch (\Exception $e) {
-            DB::rollBack();
-            return redirect()->back()->withErrors(['error' => 'Falha ao cancelar: ' . $e->getMessage()]);
+            return redirect()->back()->withErrors(['error' => $e->getMessage() ?: 'Falha ao cancelar.']);
         }
+
+        return redirect()->back()->with('success', $resultado['message']);
     }
 
     /* =========================================================================
@@ -405,8 +376,39 @@ public function pularProximo($id)
         $validated = $request->validate([
             'funcionario_id' => 'nullable|exists:funcionarios,id',
         ]);
-        
-        $agendamento->update(['funcionario_id' => $validated['funcionario_id']]);
+
+        $user = Auth::user();
+
+        // Mesma checagem do endpoint mobile: antes, qualquer usuário autenticado
+        // podia reatribuir qualquer agendamento (IDOR). Gerência atribui livre;
+        // funcionário comum só pega pra si um atendimento livre, ou se libera do seu.
+        $gerencia = $user->estabelecimentos()->where('estabelecimentos.id', $agendamento->estabelecimento_id)->exists();
+        $meuFuncionarioId = $gerencia ? null : Funcionario::where('usuario_id', $user->id)
+            ->where('estabelecimento_id', $agendamento->estabelecimento_id)
+            ->value('id');
+
+        $autoAtribuicao = false;
+        if (!$gerencia && $meuFuncionarioId) {
+            $novoId = $validated['funcionario_id'] ?? null;
+            $estavaLivreOuEraMeu = is_null($agendamento->funcionario_id) || (int) $agendamento->funcionario_id === (int) $meuFuncionarioId;
+            $novoEhMeuOuNulo = is_null($novoId) || (int) $novoId === (int) $meuFuncionarioId;
+            $autoAtribuicao = $estavaLivreOuEraMeu && $novoEhMeuOuNulo;
+        }
+
+        if (!$gerencia && !$autoAtribuicao) {
+            abort(403, 'Você não tem permissão para atribuir funcionários neste agendamento.');
+        }
+
+        if (!empty($validated['funcionario_id'])) {
+            $pertenceAoLocal = Funcionario::where('id', $validated['funcionario_id'])
+                ->where('estabelecimento_id', $agendamento->estabelecimento_id)
+                ->exists();
+            if (!$pertenceAoLocal) {
+                return back()->withErrors(['error' => 'Esse funcionário não pertence a este estabelecimento.']);
+            }
+        }
+
+        $agendamento->update(['funcionario_id' => $validated['funcionario_id'], 'atribuido_por' => $user->id]);
         return redirect()->back();
     }
 
@@ -841,7 +843,8 @@ public function pularProximo($id)
         $horaFim = $horaInicio->copy()->addMinutes($duracao);
 
         $estabelecimento = $agendamento->estabelecimento;
-        $enderecoCompleto = "{$estabelecimento->rua}, {$estabelecimento->numero} - {$estabelecimento->bairro}, {$estabelecimento->cidade} - {$estabelecimento->estado}";
+        $enderecoCompleto = self::juntarEndereco($estabelecimento->rua, $estabelecimento->numero, $estabelecimento->bairro, $estabelecimento->cidade, $estabelecimento->estado);
+        $servico = $agendamento->servico;
 
         $dadosTela = [
             'tipo' => 'agendamento',
@@ -861,6 +864,34 @@ public function pularProximo($id)
                 'longitude' => $estabelecimento->longitude,
             ],
             'codigo_verificacao' => $agendamento->codigo_verificacao,
+            'foto_principal' => self::primeiraFoto($servico?->fotos) ?? $estabelecimento->foto_banner ?? $estabelecimento->foto_perfil,
+            'detalhes' => array_values(array_filter([
+                $servico?->tipo_servico ? ['rotulo' => 'Tipo', 'valor' => $servico->tipo_servico] : null,
+                ['rotulo' => 'Duração', 'valor' => "{$duracao} minutos"],
+                $agendamento->quantidade_pessoas ? ['rotulo' => 'Pessoas', 'valor' => (string) $agendamento->quantidade_pessoas] : null,
+                ['rotulo' => 'Profissional', 'valor' => $agendamento->funcionario?->nome ?? 'Será definido pelo local'],
+                ['rotulo' => 'Pagamento', 'valor' => self::rotuloPagamento($agendamento->status_pagamento)],
+                $agendamento->pontos_utilizados ? ['rotulo' => 'Pontos usados', 'valor' => (string) $agendamento->pontos_utilizados] : null,
+            ])),
+            'descricao' => $servico?->descricao,
+            'itens_extras' => DB::table('itens_aluguel')
+                ->where('agendamento_id', $agendamento->id)
+                ->get(['nome', 'quantidade', 'valor_diaria'])
+                ->map(fn ($i) => ['nome' => $i->nome, 'quantidade' => (int) $i->quantidade, 'valor' => (float) $i->valor_diaria])
+                ->values(),
+            'contato' => [
+                'nome' => $estabelecimento->nome,
+                'telefone' => $estabelecimento->telefone,
+                'foto' => $estabelecimento->foto_perfil,
+                'avaliacao' => $estabelecimento->avaliacao_media ? round((float) $estabelecimento->avaliacao_media, 1) : null,
+            ],
+            // Botão "Mensagem": abre (ou reaproveita) a conversa com o local sobre este agendamento.
+            'mensagem' => [
+                'usuario_id' => Auth::id(),
+                'estabelecimento_id' => $agendamento->estabelecimento_id,
+                'agendamento_id' => $agendamento->id,
+            ],
+            'cobranca' => app(\App\Services\CobrancaParceladaService::class)->resumoDoPedido('agendamento_id', $agendamento->id),
         ];
 
         return Inertia::render('Cliente/DetalheAgendamento', [
@@ -898,17 +929,17 @@ public function pularProximo($id)
         $dataFim = Carbon::parse($aluguel->data_fim);
 
         if ($aluguel->cep_entrega) {
-            $enderecoLocal = "{$aluguel->rua_entrega}, {$aluguel->numero_entrega} - {$aluguel->bairro_entrega}, {$aluguel->cidade_entrega} - {$aluguel->estado_entrega}";
+            $enderecoLocal = self::juntarEndereco($aluguel->rua_entrega, $aluguel->numero_entrega, $aluguel->bairro_entrega, $aluguel->cidade_entrega, $aluguel->estado_entrega);
             $tipoLocal = "ENDEREÇO DE ENTREGA";
         } elseif ($aluguel->cep_retirada) {
-            $enderecoLocal = "{$aluguel->rua_retirada}, {$aluguel->numero_retirada} - {$aluguel->bairro_retirada}, {$aluguel->cidade_retirada} - {$aluguel->estado_retirada}";
+            $enderecoLocal = self::juntarEndereco($aluguel->rua_retirada, $aluguel->numero_retirada, $aluguel->bairro_retirada, $aluguel->cidade_retirada, $aluguel->estado_retirada);
             $tipoLocal = "LOCAL DE RETIRADA";
         } else {
-            $enderecoLocal = "{$item->endereco}, {$item->numero} - {$item->bairro}, {$item->cidade} - {$item->estado}";
+            $enderecoLocal = self::juntarEndereco($item->endereco, $item->numero, $item->bairro, $item->cidade, $item->estado);
             $tipoLocal = "LOCAL DO BEM";
         }
 
-        $fotoPrincipal = (!empty($item->fotos) && is_array($item->fotos)) ? $item->fotos[0] : null;
+        $fotoPrincipal = self::primeiraFoto($item->fotos);
 
         $dadosTela = [
             'tipo' => 'aluguel',
@@ -934,9 +965,71 @@ public function pularProximo($id)
             'exige_contrato' => $item->exige_contrato,
             'status_contrato' => $aluguel->contratoDocumento ? ($aluguel->contratoDocumento->assinado ? 'assinado' : 'pendente_assinatura') : 'nao_aplicavel',
             'codigo_verificacao' => substr($aluguel->codigo_reserva, -4),
+            'detalhes' => array_values(array_filter([
+                ['rotulo' => 'Categoria', 'valor' => (string) $item->categoria],
+                ['rotulo' => 'Período', 'valor' => $aluguel->quantidade_periodos . ' ' . $aluguel->tipo_periodo . '(s)'],
+                $aluguel->quantidade ? ['rotulo' => 'Unidades', 'valor' => (string) $aluguel->quantidade] : null,
+                $aluguel->quantidade_pessoas ? ['rotulo' => 'Pessoas', 'valor' => (string) $aluguel->quantidade_pessoas] : null,
+                $item->horario_retirada ? ['rotulo' => 'Chegada / retirada', 'valor' => substr((string) $item->horario_retirada, 0, 5)] : null,
+                $item->horario_entrega ? ['rotulo' => 'Saída / devolução', 'valor' => substr((string) $item->horario_entrega, 0, 5)] : null,
+                (float) $aluguel->valor_caucao > 0 ? ['rotulo' => 'Caução', 'valor' => 'R$ ' . number_format((float) $aluguel->valor_caucao, 2, ',', '.')] : null,
+                ['rotulo' => 'Pagamento', 'valor' => $aluguel->forma_pagamento === 'presencial' ? 'No local' : 'Online'],
+            ])),
+            'descricao' => $item->descricao,
+            'informacoes_extras' => $item->informacoes_extras,
+            'comodidades' => array_values(array_filter([
+                $item->possui_wifi ? 'Wi-Fi' : null,
+                $item->possui_ar_condicionado ? 'Ar-condicionado' : null,
+                $item->mobiliado ? 'Mobiliado' : null,
+                $item->aceita_pet ? 'Aceita pets' : null,
+                $item->piscina ? 'Piscina' : null,
+                $item->churrasqueira ? 'Churrasqueira' : null,
+            ])),
+            'contato' => [
+                'nome' => $aluguel->proprietario->name ?? 'Proprietário',
+                'telefone' => null,
+                'foto' => $aluguel->proprietario->foto_perfil ?? null,
+                'avaliacao' => null,
+            ],
+            'mensagem' => [
+                'usuario_id' => Auth::id(),
+                'aluguel_id' => $aluguel->id,
+            ],
+            'cobranca' => null,
         ];
 
         return $dadosTela;
+    }
+
+    /** Junta as partes de um endereço ignorando as vazias (evita textos como ", - , São Paulo - SP"). */
+    private static function juntarEndereco(?string $rua, ?string $numero, ?string $bairro, ?string $cidade, ?string $estado): string
+    {
+        $linha = trim(implode(', ', array_filter([trim((string) $rua), trim((string) $numero)])));
+        $linha = trim(implode(' - ', array_filter([$linha, trim((string) $bairro)])));
+        $cidadeUf = trim(implode(' - ', array_filter([trim((string) $cidade), trim((string) $estado)])));
+
+        return trim(implode(', ', array_filter([$linha, $cidadeUf]))) ?: 'Endereço não informado';
+    }
+
+    /** Primeira foto de um campo que pode vir como array ou JSON. */
+    private static function primeiraFoto($fotos): ?string
+    {
+        if (is_string($fotos)) {
+            $fotos = json_decode($fotos, true);
+        }
+
+        return is_array($fotos) && !empty($fotos[0]) ? (string) $fotos[0] : null;
+    }
+
+    private static function rotuloPagamento(?string $status): string
+    {
+        return match ($status) {
+            'pago', 'pago_presencial', 'concluido' => 'Pago',
+            'aguardando_pagamento', 'pendente' => 'Aguardando pagamento',
+            'presencial', 'local' => 'No local',
+            'estornado' => 'Estornado',
+            default => $status ? ucfirst(str_replace('_', ' ', $status)) : 'Não informado',
+        };
     }
 
     public function indexAlugueis(Request $request)
@@ -1029,6 +1122,7 @@ public function pularProximo($id)
             'comodidades_selecionadas' => 'nullable|array',
             'pontos_utilizados'        => 'nullable|integer|min:0',
             'cupom_codigo'             => 'nullable|string|max:60',
+            'viagem_id'                => 'nullable|integer|exists:viagens,id',
 
             'tipo_servico' => [
                 'nullable',
@@ -1083,6 +1177,27 @@ public function pularProximo($id)
         $precoFinalCliente = $cotacao['precoFinalCliente'];
         $totalComCaucao = $cotacao['totalComCaucao'];
         $acessoriosFinaisParaSalvar = $cotacao['acessoriosFinaisParaSalvar'];
+
+        // Desconto de grupo: se outro membro da mesma viagem colaborativa já
+        // reservou este mesmo item, o grupo reservando junto ganha desconto
+        // extra — e pontos de bônus logo após criar a reserva.
+        $viagemDoGrupo = null;
+        $descontoGrupo = 0.0;
+        $participantesGrupo = 0;
+        if ($request->filled('viagem_id')) {
+            $viagemCandidata = \App\Models\Viagem::find($validated['viagem_id']);
+            if ($viagemCandidata && $viagemCandidata->temMembro($user->id)) {
+                $grupo = app(\App\Services\Viagem\DescontoGrupoService::class)
+                    ->calcular($viagemCandidata, $precoFinalCliente, null, $item->id, $user->id);
+                if ($grupo['elegivel']) {
+                    $descontoGrupo = $grupo['desconto'];
+                    $participantesGrupo = $grupo['participantes'];
+                    $precoFinalCliente = $grupo['valor_final'];
+                    $totalComCaucao = $precoFinalCliente + ($item->valor_caucao ?? 0);
+                    $viagemDoGrupo = $viagemCandidata;
+                }
+            }
+        }
 
         $taxaMarketplace = \App\Support\Taxas::sobre($precoFinalCliente);
 
@@ -1151,6 +1266,26 @@ public function pularProximo($id)
         $proprietario = User::find($item->estabelecimento_id);
         if ($proprietario) {
             $proprietario->increment('numero_reservas');
+        }
+
+        if ($viagemDoGrupo) {
+            $pontosBonusGrupo = \App\Services\Viagem\DescontoGrupoService::PONTOS_BONUS;
+            $user->increment('pontos_saldo', $pontosBonusGrupo);
+            DB::table('historico_pontos')->insert([
+                'usuario_id'         => $user->id,
+                'estabelecimento_id' => null,
+                'tipo'               => 'ganho',
+                'descricao'          => "Bônus por reservar em grupo com a viagem \"{$viagemDoGrupo->titulo}\" ({$participantesGrupo} pessoas)",
+                'quantidade'         => $pontosBonusGrupo,
+                'created_at'         => now(),
+            ]);
+
+            try {
+                app(\App\Services\Viagem\ViagemService::class)
+                    ->compartilharReserva($viagemDoGrupo, $user, 'aluguel', $aluguel->id);
+            } catch (\Throwable $e) {
+                Log::warning('Falha ao vincular reserva em grupo à viagem: ' . $e->getMessage());
+            }
         }
 
         // Reserva paga online: gera a cobrança no Asaas agora (mesmo padrão já
@@ -1249,7 +1384,7 @@ public function pularProximo($id)
         return response()->json(['success' => true, 'message' => 'Reserva reagendada com sucesso!']);
     }
 
-    public function destroyAluguel($id)
+    public function destroyAluguel($id, PagamentoService $pagamentoService)
     {
         $aluguel = Aluguel::findOrFail($id);
 
@@ -1257,12 +1392,26 @@ public function pularProximo($id)
             abort(403, 'Ação não autorizada.');
         }
 
+        if (in_array($aluguel->status, ['cancelado', 'finalizado'], true)) {
+            return response()->json(['success' => false, 'message' => 'Esta locação não pode mais ser cancelada.'], 422);
+        }
+
         if ($aluguel->pontos_utilizados > 0 && $aluguel->status === 'aguardando_pagamento') {
             User::find($aluguel->locatario_id)->increment('pontos_saldo', $aluguel->pontos_utilizados);
         }
 
-        $aluguel->update(['status' => 'cancelado']);
-        return response()->json(['success' => true, 'message' => 'Reserva cancelada com sucesso!']);
+        try {
+            // Antes, isso só marcava a locação como cancelada — quando o
+            // cliente tinha pago online, o dinheiro NUNCA era devolvido de
+            // verdade pelo Asaas. processarCancelamentoAluguel() cuida do
+            // estorno real (ou devolve 100%/retém a taxa de cancelamento
+            // tardio, conforme a antecedência) e do registro visível pro admin.
+            $resultado = $pagamentoService->processarCancelamentoAluguel($aluguel);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json(['success' => true, 'message' => $resultado['message'], 'estornado' => $resultado['estornado']]);
     }
 
     public function generarEEnviarContrato($aluguelId)
@@ -1470,13 +1619,9 @@ public function pularProximo($id)
 
         $descontoPontos = 0;
         $pontosParaAbater = 0;
-        if ($item->aceita_pontos && !empty($validated['pontos_utilizados'])) {
-            $pontosParaAbater = intval($validated['pontos_utilizados']);
-            
-            if ($user->pontos_saldo < $pontosParaAbater) {
-                return back()->withErrors(['error' => 'Saldo de pontos insuficiente.']);
-            }
-            $descontoPontos = $pontosParaAbater / 100;
+        if (!empty($validated['pontos_utilizados'])) {
+            $pontosParaAbater = \App\Services\PontosService::pontosParaPedido($user, $item, (int) $validated['pontos_utilizados'], max(0, $precoSubtotal - $descontoPromocao));
+            $descontoPontos = \App\Services\PontosService::pontosParaValor($pontosParaAbater);
         }
 
         $precoFinal = max(0, $precoSubtotal - $descontoPromocao - $descontoPontos);
@@ -1652,7 +1797,7 @@ public function pularProximo($id)
             // 2. Vincula os Extras (Produtos) se existirem e atualiza o estoque e valor
             if (!empty($validated['extras'])) {
                 foreach ($validated['extras'] as $produto_id) {
-                    $produto = \App\Models\Produto::findOrFail($produto_id);
+                    $produto = \App\Models\Produto::whereKey($produto_id)->lockForUpdate()->firstOrFail();
 
                     if ($produto->estoque_disponivel > 0) {
                         $produto->decrement('estoque_disponivel', 1);
@@ -1662,7 +1807,8 @@ public function pularProximo($id)
                             'agendamento_id'     => $agendamento->id,
                             'produto_id'         => $produto->id,
                             'usuario_id'         => Auth::id(),
-                            'estabelecimento_id' => $agendamento->estabelecimento_id,
+                            // itens_aluguel.estabelecimento_id aponta para users (o dono), não para estabelecimentos.
+                            'estabelecimento_id' => $produto->usuario_id,
                             'servico_id'         => $agendamento->servico_id,
                             'nome'               => $produto->nome,
                             'categoria'          => 'produto_extra',
@@ -1717,9 +1863,11 @@ public function pularProximo($id)
 
         DB::beginTransaction();
         try {
-            $produto = \App\Models\Produto::findOrFail($request->produto_id);
+            // Trava a linha do produto: duas compras ao mesmo tempo nunca vendem além do estoque.
+            $produto = \App\Models\Produto::whereKey($request->produto_id)->lockForUpdate()->firstOrFail();
 
             if ($produto->estoque_disponivel < $request->quantidade) {
+                DB::rollBack();
                 return redirect()->back()->withErrors(['error' => 'Estoque insuficiente para este produto.']);
             }
 
@@ -1738,7 +1886,8 @@ public function pularProximo($id)
                 'agendamento_id'     => $agendamento->id,
                 'produto_id'         => $produto->id,
                 'usuario_id'         => Auth::id(),
-                'estabelecimento_id' => $agendamento->estabelecimento_id,
+                // itens_aluguel.estabelecimento_id aponta para users (o dono), não para estabelecimentos.
+                'estabelecimento_id' => $produto->usuario_id,
                 'nome'               => $produto->nome,
                 'categoria'          => 'produto_avulso',
                 'descricao'          => $produto->descricao,
@@ -1757,7 +1906,9 @@ public function pularProximo($id)
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return redirect()->back()->withErrors(['error' => 'Erro ao processar produto: ' . $e->getMessage()]);
+            $referencia = strtoupper(Str::random(8));
+            Log::error("Erro ao adicionar produto ao carrinho [{$referencia}]: " . $e->getMessage());
+            return redirect()->back()->withErrors(['error' => "Não foi possível adicionar o produto agora. Tente novamente. Se continuar, informe o código {$referencia} ao suporte."]);
         }
     }
 

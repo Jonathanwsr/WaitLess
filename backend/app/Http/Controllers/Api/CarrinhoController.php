@@ -22,8 +22,15 @@ class CarrinhoController extends Controller
             ->where('user_id', $user->id)
             ->get();
 
+        $produtosEntrega = \App\Models\CarrinhoProdutoEntrega::with('produto.estabelecimento:id,nome')
+            ->where('user_id', $user->id)
+            ->get()
+            ->filter(fn ($item) => $item->produto)
+            ->values();
+
         return Inertia::render('Cliente/Carrinho', [
-            'itensCarrinho' => $itensCarrinho
+            'itensCarrinho' => $itensCarrinho,
+            'produtosEntrega' => $produtosEntrega,
         ]);
     }
 

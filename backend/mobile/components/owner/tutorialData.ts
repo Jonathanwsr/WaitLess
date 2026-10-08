@@ -1,8 +1,8 @@
 /**
- * Conteúdo dos tutoriais do sócio: como cadastrar um local, um serviço e uma reserva (locação).
+ * Conteúdo dos tutoriais do sócio: como cadastrar um local, um serviço, uma reserva (locação) e um produto.
  * Cada passo descreve o que preencher exatamente como aparece nas telas do app.
  */
-export type FluxoTutorial = 'local' | 'servico' | 'reserva';
+export type FluxoTutorial = 'local' | 'servico' | 'reserva' | 'produto';
 
 export interface PassoTutorial {
   titulo: string;
@@ -121,6 +121,61 @@ export const TUTORIAIS: Tutorial[] = [
         titulo: 'Adicione fotos e publique',
         texto: 'Envie boas fotos e toque em “Criar locação”. Sua reserva aparece em Explorar → Reservas para os clientes do estado do seu local.',
         dica: 'O cliente pode pagar no cartão em até 12x, e você recebe no próximo repasse semanal.',
+      },
+    ],
+  },
+  {
+    id: 'produto',
+    rotulo: 'Produto',
+    icone: 'cube-outline',
+    resumo: 'Produtos são itens que você vende com entrega em casa ou retirada no local: gás, água, mercado, bebidas, acessórios…',
+    tempo: '5 min',
+    botao: 'Cadastrar meu produto',
+    passos: [
+      {
+        titulo: 'Entenda os dois tipos de produto',
+        texto: 'Em Mais → “Produtos” há duas abas: “Com serviço ou reserva” é o item extra oferecido ao agendar ou reservar (pomada depois do corte, kit com a quadra); “Entrega e retirada” é o produto vendido sozinho, entregue em casa ou buscado no seu endereço.',
+        campos: ['Com serviço ou reserva', 'Entrega e retirada'],
+        dica: 'Na aba “Com serviço ou reserva” você filtra por serviço, por reserva ou pelos avulsos, e cada produto mostra a que está vinculado.',
+      },
+      {
+        titulo: 'Produto junto de um serviço ou reserva',
+        texto: 'Na aba “Com serviço ou reserva”, toque em + e escolha “Vincular a um serviço” ou “Vincular a uma reserva”. Sem vínculo, ele vira venda avulsa na vitrine.',
+        campos: ['Local', 'Nome do produto', 'Preço', 'Estoque', 'Vincular a um serviço', 'Vincular a uma reserva'],
+        dica: 'O cliente paga o produto junto com o agendamento ou a reserva.',
+      },
+      {
+        titulo: 'Produto para entrega ou retirada',
+        texto: 'Na aba “Entrega e retirada”, toque em “Abrir produtos para entrega” e use o botão de adicionar para abrir o formulário “Novo produto”.',
+      },
+      {
+        titulo: 'Identifique o produto',
+        texto: 'Quanto mais completo, mais fácil o cliente encontra: a busca procura no nome, na descrição, na categoria e no nome do seu local.',
+        campos: ['Nome do produto', 'Categoria', 'Marca', 'Peso ou volume', 'Unidade de medida', 'Código (SKU)', 'Tags', 'Descrição'],
+        dica: 'Escolha a categoria certa: o cliente filtra o catálogo por ela.',
+      },
+      {
+        titulo: 'Defina preço e estoque',
+        texto: 'Informe o preço e quantas unidades você tem. O estoque baixa sozinho a cada venda e volta quando um pedido é cancelado.',
+        campos: ['Preço (R$)', 'Estoque', 'Mínimo por pedido', 'Em promoção', 'Preço promocional (R$)'],
+        dica: 'Produtos em promoção ganham selo de desconto e aparecem no filtro “Em promoção”.',
+      },
+      {
+        titulo: 'Escolha entrega, retirada ou os dois',
+        texto: 'Marque se você entrega em casa, se o cliente pode buscar, ou ambos. Preencha o endereço de onde o produto sai.',
+        campos: ['Entrego em casa', 'Aceito retirada no local', 'Taxa de entrega (R$)', 'Endereço de origem'],
+        dica: 'A taxa de entrega só é cobrada quando o cliente escolhe receber em casa.',
+      },
+      {
+        titulo: 'Vincule ao local, adicione fotos e publique',
+        texto: 'Escolha o local de venda (ou deixe avulso), envie até 3 fotos e deixe “Produto ativo” ligado para aparecer no catálogo.',
+        campos: ['Local de venda', 'Fotos (até 3)', 'Produto ativo'],
+        dica: 'Para receber pagamento online, configure sua carteira. Sem ela, o cliente paga no local ou direto com você.',
+      },
+      {
+        titulo: 'Depois da venda: entregue e finalize',
+        texto: 'Em Mais → “Entregas” você escolhe quem entrega (um funcionário ou você mesmo). Pedido pago online: digite o código de 6 dígitos do cliente. Pagamento no local: toque em “Finalizado”.',
+        dica: 'Precisa cancelar? Use “Cancelar pedido” em Entregas: quem pagou online recebe o valor de volta automaticamente.',
       },
     ],
   },

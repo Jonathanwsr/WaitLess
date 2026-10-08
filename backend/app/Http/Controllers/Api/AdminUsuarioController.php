@@ -35,6 +35,16 @@ class AdminUsuarioController extends Controller
         ]);
     }
 
+    /**
+     * Ficha completa de um usuário (contato, endereço, documentos, resumo de
+     * atividade) pro card "ver detalhes" da lista de usuários — devolve JSON
+     * pro modal buscar via fetch sem recarregar a página inteira.
+     */
+    public function show(User $usuario)
+    {
+        return response()->json($this->service->detalhar($usuario));
+    }
+
     public function liberarPlano(Request $request, User $usuario)
     {
         $validated = $request->validate([

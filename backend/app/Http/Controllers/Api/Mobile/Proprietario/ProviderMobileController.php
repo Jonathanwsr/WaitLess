@@ -136,7 +136,19 @@ class ProviderMobileController extends Controller
                     'payload'  => $asaasPayload,
                 ]);
 
-                $errorDescription = $asaasData['errors'][0]['description'] ?? 'Erro desconhecido na API externa.';
+                // O Asaas às vezes responde em outro formato, sem "errors[]", só
+                // com "message"/"code" direto na raiz (ex: limite de contas de teste).
+                $errorDescription = $asaasData['errors'][0]['description'] ?? $asaasData['message'] ?? 'Erro desconhecido na API externa.';
+                $errorCode = $asaasData['errors'][0]['code'] ?? $asaasData['code'] ?? null;
+
+                // Limite de contas de teste do ambiente sandbox do Asaas — não é um
+                // erro nos dados informados, retentar não resolve. Avisa claramente
+                // em vez de "erro desconhecido".
+                if ($errorCode === 'baas_trial_limit_child_account_creation_reached') {
+                    return response()->json([
+                        'error' => 'O ambiente de testes do nosso parceiro de pagamentos atingiu o limite de contas criadas. Isso não é um problema com os seus dados — é preciso concluir a homologação do gateway para liberar novas contas. Nossa equipe já foi notificada.'
+                    ], 503);
+                }
 
                 if (stripos($errorDescription, 'email') !== false && stripos($errorDescription, 'já está em uso') !== false) {
                     return response()->json([

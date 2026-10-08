@@ -398,6 +398,11 @@
                     <td class="col-center">{{ $relatorio->total_locacoes_avulsas }} locação(ões)</td>
                     <td class="col-right">R$ {{ number_format($relatorio->receita_locacoes_avulsas, 2, ',', '.') }}</td>
                 </tr>
+                <tr>
+                    <td>Produtos para entrega/retirada</td>
+                    <td class="col-center">{{ $relatorio->total_produtos_vendidos }} item(ns)</td>
+                    <td class="col-right">R$ {{ number_format($relatorio->receita_produtos, 2, ',', '.') }}</td>
+                </tr>
             </tbody>
         </table>
 

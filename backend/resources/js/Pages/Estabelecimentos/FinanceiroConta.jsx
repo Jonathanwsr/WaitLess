@@ -3,26 +3,42 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head } from '@inertiajs/react';
 import axios from 'axios'; // <-- Importando axios
 
+// Rascunho salvo no navegador — se o cadastro falhar (ex: erro do gateway de
+// pagamento) ou a página for recarregada por engano, o que já foi digitado
+// não se perde.
+const RASCUNHO_KEY = 'waitless_financeiro_conta_rascunho';
+
+const CAMPOS_PADRAO = {
+  person_type: 'FISICA',
+  name: '',
+  email: '',
+  document: '',
+  birth_date: '',
+  income_value: '',
+  mobile_phone: '',
+  postal_code: '',
+  address: '',
+  address_number: '',
+  complement: '',
+  province: '',
+  company_type: 'MEI',
+  responsible_name: '',
+  responsible_cpf: '',
+  pix_key_type: 'CPF',
+  pix_key: ''
+};
+
+function carregarRascunho() {
+  try {
+    const salvo = localStorage.getItem(RASCUNHO_KEY);
+    return salvo ? { ...CAMPOS_PADRAO, ...JSON.parse(salvo) } : CAMPOS_PADRAO;
+  } catch (e) {
+    return CAMPOS_PADRAO;
+  }
+}
+
 export default function FinanceiroConta({ auth }) {
-  const [formData, setFormData] = useState({
-    person_type: 'FISICA',
-    name: '',
-    email: '',
-    document: '',
-    birth_date: '',
-    income_value: '',
-    mobile_phone: '',
-    postal_code: '',
-    address: '',
-    address_number: '',
-    complement: '',
-    province: '',
-    company_type: 'MEI',
-    responsible_name: '',
-    responsible_cpf: '',
-    pix_key_type: 'CPF',
-    pix_key: ''
-  });
+  const [formData, setFormData] = useState(carregarRascunho);
 
   const [pageLoading, setPageLoading] = useState(true);
   const [hasProfile, setHasProfile] = useState(false);
@@ -43,6 +59,7 @@ export default function FinanceiroConta({ auth }) {
         if (response.data.has_profile) {
           setHasProfile(true);
           setProviderData(response.data.provider);
+          try { localStorage.removeItem(RASCUNHO_KEY); } catch (e) { /* ignora */ }
         }
       } catch (error) {
         console.error("Erro ao carregar dados do provedor:", error);
@@ -53,6 +70,17 @@ export default function FinanceiroConta({ auth }) {
 
     fetchProfile();
   }, []);
+
+  // Salva o rascunho a cada digitação — só enquanto o perfil ainda não existe,
+  // pra não ficar guardando dados de um cadastro já concluído.
+  useEffect(() => {
+    if (hasProfile) return;
+    try {
+      localStorage.setItem(RASCUNHO_KEY, JSON.stringify(formData));
+    } catch (e) {
+      // localStorage indisponível (modo privado, etc.) — segue sem rascunho
+    }
+  }, [formData, hasProfile]);
 
   // --- AUXILIARES DE FORMATAÇÃO PARA EXIBIÇÃO ---
   const formatDateToBR = (dateStr) => {
@@ -219,6 +247,7 @@ export default function FinanceiroConta({ auth }) {
       if (data.provider) {
         setProviderData(data.provider);
         setHasProfile(true);
+        try { localStorage.removeItem(RASCUNHO_KEY); } catch (e) { /* ignora */ }
       }
 
     } catch (error) {

@@ -432,20 +432,10 @@ class AssinaturaController extends Controller
                 $proximoVencimento = $isAnual ? now()->addYear() : now()->addMonth();
 
                 $assinatura->update([
-                    'status'          => 'ativa', 
+                    'status'          => 'ativa',
                     'data_inicio'     => $assinatura->data_inicio ?? now(),
                     'data_vencimento' => $proximoVencimento
                 ]);
-                
-                $pontosPorPlano = [
-                    'premium'             => 50,
-                    'premium-plus'        => 150,
-                    'premium-socio'       => 300,
-                    'premium-anual'       => 600,   
-                    'premium-socio-anual' => 3600   
-                ];
-                
-                $pontosGanhos = $pontosPorPlano[$assinatura->nome_plano] ?? 0;
 
                 $user->update([
                     'plano_assinatura'          => $assinatura->nome_plano,
@@ -453,10 +443,9 @@ class AssinaturaController extends Controller
                     'asaas_subscription_status' => 'ACTIVE'
                 ]);
 
-                if ($pontosGanhos > 0) {
-                    $user->increment('pontos_saldo', $pontosGanhos);
-                }
-                
+                // Pontos: PlanoService::PONTOS_POR_PLANO é a fonte única (mesma
+                // usada pela ativação automática via webhook do Asaas), pra nunca
+                // ter dois lugares concedendo valores diferentes.
                 $this->planoService->distribuirPontosAssinatura($user, $assinatura->nome_plano);
                 break;
         }

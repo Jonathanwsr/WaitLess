@@ -29,7 +29,23 @@ import {
   ArrowLeftIcon
 } from '@heroicons/react/24/solid';
 
-export default function ProdutoManager({ auth, estabelecimentoId, estabelecimentos = [], listaServicos = [], listaReservas = [] }) {
+/**
+ * Sozinha, a tela usa o layout completo. Embutida na tela única "Produtos", mostra só o cabeçalho
+ * (com seus botões) numa faixa, sem repetir menu e título da página.
+ */
+function Moldura({ embutido, header, children, ...resto }) {
+    if (!embutido) {
+        return <AuthenticatedLayout header={header} {...resto}>{children}</AuthenticatedLayout>;
+    }
+    return (
+        <div>
+            {header && <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-2 pb-4">{header}</div>}
+            {children}
+        </div>
+    );
+}
+
+export default function ProdutoManager({ auth, estabelecimentoId, estabelecimentos = [], listaServicos = [], listaReservas = [], embutido = false }) {
   const [produtos, setProdutos] = useState([]);
   const [servicosDisponiveis, setServicosDisponiveis] = useState(listaServicos);
   
@@ -38,6 +54,10 @@ export default function ProdutoManager({ auth, estabelecimentoId, estabeleciment
 
   // Estados de Filtro e Paginação
   const [categoriaFiltro, setCategoriaFiltro] = useState('Todas');
+  // Filtros por vínculo: todos | servico | reserva | avulso, e um serviço/reserva específico ("s:ID" / "r:ID").
+  const [vinculoFiltro, setVinculoFiltro] = useState('todos');
+  const [alvoFiltro, setAlvoFiltro] = useState('');
+  const [buscaProduto, setBuscaProduto] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
 
@@ -273,9 +293,30 @@ export default function ProdutoManager({ auth, estabelecimentoId, estabeleciment
   // --- LÓGICA DE FILTROS E PAGINAÇÃO ---
   const categoriasUnicas = ['Todas', ...new Set(produtos.map(p => p.categoria || 'Outros').filter(Boolean))];
   
-  const produtosFiltrados = categoriaFiltro === 'Todas' 
-    ? produtos 
-    : produtos.filter(p => (p.categoria || 'Outros') === categoriaFiltro);
+  const servicoDoProduto = (p) => p.servico_id ? servicosDisponiveis.find(s => String(s.id) === String(p.servico_id)) : null;
+  const reservaDoProduto = (p) => p.aluguel_id ? listaReservas.find(r => String(r.id) === String(p.aluguel_id)) : null;
+
+  const contagemVinculo = {
+    todos: produtos.length,
+    servico: produtos.filter(p => p.servico_id).length,
+    reserva: produtos.filter(p => p.aluguel_id).length,
+    avulso: produtos.filter(p => !p.servico_id && !p.aluguel_id).length,
+  };
+
+  const termoBusca = buscaProduto.trim().toLowerCase();
+  const produtosFiltrados = produtos.filter(p => {
+    if (categoriaFiltro !== 'Todas' && (p.categoria || 'Outros') !== categoriaFiltro) return false;
+    if (vinculoFiltro === 'servico' && !p.servico_id) return false;
+    if (vinculoFiltro === 'reserva' && !p.aluguel_id) return false;
+    if (vinculoFiltro === 'avulso' && (p.servico_id || p.aluguel_id)) return false;
+    if (alvoFiltro.startsWith('s:') && String(p.servico_id) !== alvoFiltro.slice(2)) return false;
+    if (alvoFiltro.startsWith('r:') && String(p.aluguel_id) !== alvoFiltro.slice(2)) return false;
+    if (termoBusca) {
+      const texto = `${p.nome || ''} ${p.categoria || ''} ${servicoDoProduto(p)?.nome || ''} ${reservaDoProduto(p)?.nome || ''}`.toLowerCase();
+      if (!texto.includes(termoBusca)) return false;
+    }
+    return true;
+  });
 
   const indexOfLastItem = currentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
@@ -287,14 +328,21 @@ export default function ProdutoManager({ auth, estabelecimentoId, estabeleciment
     setCurrentPage(1);
   };
 
+  const mudarVinculo = (v) => {
+    setVinculoFiltro(v);
+    setAlvoFiltro('');
+    setCurrentPage(1);
+  };
+
   return (
-    <AuthenticatedLayout
+    <Moldura
+      embutido={embutido}
       user={auth?.user}
       header={
         <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
           <h2 className="font-semibold text-xl text-gray-800 leading-tight flex items-center gap-2">
             <ShoppingBagIcon className="w-6 h-6 text-[#FF5A00]" />
-            Gestão de Produtos
+            {embutido ? 'Produtos com serviço ou reserva' : 'Gestão de Produtos'}
           </h2>
           <button 
             onClick={() => { setTutorialStep(0); setShowTutorial(true); }}
@@ -306,7 +354,7 @@ export default function ProdutoManager({ auth, estabelecimentoId, estabeleciment
         </div>
       }
     >
-      <Head title="Meus Produtos" />
+      {!embutido && <Head title="Meus Produtos" />}
 
       {/* MODAL DO TUTORIAL ANIMADO */}
       {showTutorial && (
@@ -699,6 +747,56 @@ export default function ProdutoManager({ auth, estabelecimentoId, estabeleciment
             </div>
           )}
 
+          {/* FILTRO POR VÍNCULO: com serviço, com reserva ou avulso */}
+          {!showForm && produtos.length > 0 && (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-5 mx-4 sm:mx-0 space-y-3">
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { id: 'todos', rotulo: 'Todos' },
+                  { id: 'servico', rotulo: 'Com serviço' },
+                  { id: 'reserva', rotulo: 'Com reserva' },
+                  { id: 'avulso', rotulo: 'Avulsos (sem vínculo)' },
+                ].map(v => (
+                  <button
+                    key={v.id}
+                    type="button"
+                    onClick={() => mudarVinculo(v.id)}
+                    className={`px-4 py-2 rounded-xl text-sm font-bold transition border ${vinculoFiltro === v.id ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}
+                  >
+                    {v.rotulo} <span className="opacity-60">({contagemVinculo[v.id]})</span>
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <select
+                  value={alvoFiltro}
+                  onChange={e => { setAlvoFiltro(e.target.value); setCurrentPage(1); }}
+                  className="sm:w-80 border-gray-200 rounded-xl text-sm focus:border-[#FF5A00] focus:ring-[#FF5A00]"
+                  aria-label="Filtrar por serviço ou reserva"
+                >
+                  <option value="">Qualquer serviço ou reserva</option>
+                  {vinculoFiltro !== 'reserva' && vinculoFiltro !== 'avulso' && servicosDisponiveis.length > 0 && (
+                    <optgroup label="Serviços">
+                      {servicosDisponiveis.map(sv => <option key={`s${sv.id}`} value={`s:${sv.id}`}>{sv.nome}</option>)}
+                    </optgroup>
+                  )}
+                  {vinculoFiltro !== 'servico' && vinculoFiltro !== 'avulso' && listaReservas.length > 0 && (
+                    <optgroup label="Reservas">
+                      {listaReservas.map(r => <option key={`r${r.id}`} value={`r:${r.id}`}>{r.nome}</option>)}
+                    </optgroup>
+                  )}
+                </select>
+                <input
+                  type="search"
+                  value={buscaProduto}
+                  onChange={e => { setBuscaProduto(e.target.value); setCurrentPage(1); }}
+                  placeholder="Buscar produto, serviço ou reserva"
+                  className="flex-1 border-gray-200 rounded-xl text-sm focus:border-[#FF5A00] focus:ring-[#FF5A00]"
+                />
+              </div>
+            </div>
+          )}
+
           {/* FILTRO DE CATEGORIAS */}
           {!showForm && produtos.length > 0 && (
             <div className="flex items-center gap-3 overflow-x-auto pb-6 mb-2 scrollbar-hide px-4 sm:px-0">
@@ -742,8 +840,9 @@ export default function ProdutoManager({ auth, estabelecimentoId, estabeleciment
                   }
                 }
 
-                // Identifica se está atrelado a algum serviço
-                const servicoVinculado = produto.servico_id && servicosDisponiveis.find(s => s.id === produto.servico_id);
+                // Identifica a que serviço e/ou reserva o produto está atrelado
+                const servicoVinculado = servicoDoProduto(produto);
+                const reservaVinculada = reservaDoProduto(produto);
 
                 return (
                   <div key={produto.id} className="bg-white border border-gray-100 rounded-[1.5rem] overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col group relative">
@@ -789,10 +888,20 @@ export default function ProdutoManager({ auth, estabelecimentoId, estabeleciment
                         {produto.categoria} {produto.sub_categoria ? `• ${produto.sub_categoria}` : ''} {produto.tamanho ? `• ${produto.tamanho}` : ''}
                       </p>
 
-                      {/* Indicação clara do serviço vinculado caso exista */}
+                      {/* Indicação clara do serviço e/ou da reserva vinculados */}
                       {servicoVinculado && (
-                        <div className="mt-1 mb-2 text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1.5 rounded-md border border-indigo-100 flex items-center gap-1.5 w-fit">
-                          <LinkIcon className="w-3 h-3"/> Atrelado a: {servicoVinculado.nome}
+                        <div className="mt-1 mb-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1.5 rounded-md border border-indigo-100 flex items-center gap-1.5 w-fit">
+                          <LinkIcon className="w-3 h-3"/> Serviço: {servicoVinculado.nome}
+                        </div>
+                      )}
+                      {reservaVinculada && (
+                        <div className="mt-1 mb-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1.5 rounded-md border border-emerald-100 flex items-center gap-1.5 w-fit">
+                          <LinkIcon className="w-3 h-3"/> Reserva: {reservaVinculada.nome}
+                        </div>
+                      )}
+                      {!servicoVinculado && !reservaVinculada && (
+                        <div className="mt-1 mb-1 text-[10px] font-bold text-gray-500 bg-gray-50 px-2.5 py-1.5 rounded-md border border-gray-100 w-fit">
+                          Venda avulsa (sem vínculo)
                         </div>
                       )}
 
@@ -845,6 +954,6 @@ export default function ProdutoManager({ auth, estabelecimentoId, estabeleciment
 
         </div>
       </div>
-    </AuthenticatedLayout>
+    </Moldura>
   );
 }

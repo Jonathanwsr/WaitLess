@@ -20,6 +20,7 @@ import * as SecureStore from 'expo-secure-store';
 import { useRouter } from 'expo-router';
 import { T } from '../../../constants/ClientTheme';
 import { HeaderCliente } from '../../../components/client/ui';
+import EstornosProdutosMobile from '../../../components/client/EstornosProdutosMobile';
 import { alertar } from '../../../services/alertar';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api/mobile';
@@ -38,7 +39,7 @@ export default function MeusEstornosScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   const [estornos, setEstornos] = useState<any[]>([]);
-  const [activeTab, setActiveTab] = useState<'todos' | 'analise' | 'deferidos' | 'indeferidos'>('todos');
+  const [activeTab, setActiveTab] = useState<'todos' | 'analise' | 'deferidos' | 'indeferidos' | 'produtos'>('todos');
   const [busca, setBusca] = useState('');
 
   const [motivo, setMotivo] = useState('');
@@ -367,6 +368,7 @@ export default function MeusEstornosScreen() {
     { id: 'analise', rotulo: 'Em análise', n: listaAnalise.length },
     { id: 'deferidos', rotulo: 'Deferidos', n: listaDeferida.length },
     { id: 'indeferidos', rotulo: 'Indeferidos', n: estornos.filter((i) => INDEFERIDO.includes(i.status)).length },
+    { id: 'produtos', rotulo: 'Produtos', n: 0 },
   ] as const;
 
   const det = detalheCompleto || detalheSelecionado;
@@ -433,7 +435,9 @@ export default function MeusEstornosScreen() {
 
         <Text style={s.secao}>Histórico de estornos</Text>
 
-        {loading ? (
+        {activeTab === 'produtos' ? (
+          <View style={{ paddingBottom: 40 }}><EstornosProdutosMobile /></View>
+        ) : loading ? (
           <ActivityIndicator size="large" color={T.primary} style={{ marginTop: 40 }} />
         ) : dadosFiltrados.length === 0 ? (
           <View style={s.vazio}>

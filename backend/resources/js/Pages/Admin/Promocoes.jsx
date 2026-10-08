@@ -1,9 +1,10 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, useForm, router, usePage } from '@inertiajs/react';
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import axios from 'axios';
 import {
     GiftIcon, PlusIcon, TrashIcon, PlayIcon, PencilIcon, XMarkIcon,
-    CheckCircleIcon, PauseCircleIcon,
+    CheckCircleIcon, PauseCircleIcon, MagnifyingGlassIcon, LinkIcon,
 } from '@heroicons/react/24/solid';
 
 const TIPOS = [
@@ -32,19 +33,105 @@ function Campo({ label, children }) {
 
 const inputClass = "block w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-1 focus:ring-[#FF5A00] focus:border-[#FF5A00] transition-colors";
 
+/**
+ * Busca em tempo real de serviços/itens de aluguel de toda a plataforma pra
+ * vincular à promoção — o admin não gerencia um estabelecimento específico,
+ * então precisa buscar entre todos (ver AdminPromocaoController::buscarItens).
+ */
+function SeletorItemVinculado({ tipo, id, nomeAtual, onSelecionar, onLimpar }) {
+    const [busca, setBusca] = useState('');
+    const [resultados, setResultados] = useState([]);
+    const [buscando, setBuscando] = useState(false);
+    const [aberto, setAberto] = useState(false);
+    const timeoutRef = useRef(null);
+
+    useEffect(() => {
+        if (timeoutRef.current) clearTimeout(timeoutRef.current);
+        if (busca.trim().length < 2) {
+            setResultados([]);
+            return;
+        }
+        timeoutRef.current = setTimeout(async () => {
+            setBuscando(true);
+            try {
+                const { data } = await axios.get(route('admin.promocoes.buscar-itens'), { params: { q: busca } });
+                setResultados(data);
+            } catch (e) {
+                setResultados([]);
+            } finally {
+                setBuscando(false);
+            }
+        }, 350);
+        return () => clearTimeout(timeoutRef.current);
+    }, [busca]);
+
+    if (id) {
+        return (
+            <div className="flex items-center justify-between gap-2 px-3 py-2.5 bg-orange-50 border border-orange-200 rounded-xl">
+                <span className="text-sm font-semibold text-orange-800 flex items-center gap-1.5 truncate">
+                    <LinkIcon className="w-4 h-4 flex-shrink-0" />
+                    {nomeAtual || `${tipo === 'servico' ? 'Serviço' : 'Item de aluguel'} #${id}`}
+                </span>
+                <button type="button" onClick={onLimpar} className="text-orange-500 hover:text-orange-700">
+                    <XMarkIcon className="w-4 h-4" />
+                </button>
+            </div>
+        );
+    }
+
+    return (
+        <div className="relative">
+            <div className="relative">
+                <MagnifyingGlassIcon className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                    className={`${inputClass} pl-9`}
+                    placeholder="Buscar serviço ou item de aluguel pelo nome..."
+                    value={busca}
+                    onChange={(e) => { setBusca(e.target.value); setAberto(true); }}
+                    onFocus={() => setAberto(true)}
+                />
+            </div>
+            {aberto && busca.trim().length >= 2 && (
+                <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-xl shadow-lg max-h-56 overflow-y-auto">
+                    {buscando ? (
+                        <p className="px-3 py-2.5 text-xs text-gray-400">Buscando...</p>
+                    ) : resultados.length === 0 ? (
+                        <p className="px-3 py-2.5 text-xs text-gray-400">Nenhum resultado.</p>
+                    ) : (
+                        resultados.map((r) => (
+                            <button
+                                type="button"
+                                key={`${r.tipo}-${r.id}`}
+                                onClick={() => { onSelecionar(r); setBusca(''); setAberto(false); }}
+                                className="w-full text-left px-3 py-2.5 hover:bg-orange-50 text-sm border-b border-gray-50 last:border-0"
+                            >
+                                <span className="font-semibold text-gray-900">{r.nome}</span>
+                                <span className="block text-xs text-gray-400">{r.tipo === 'servico' ? 'Serviço' : 'Item de aluguel'} · {r.estabelecimento_nome}</span>
+                            </button>
+                        ))
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
 export default function Promocoes({ promocoes, planosValidos }) {
     const { flash = {} } = usePage().props;
     const [formAberto, setFormAberto] = useState(false);
     const [editando, setEditando] = useState(null);
+    const [itemVinculado, setItemVinculado] = useState(null);
 
     const { data, setData, post, processing, errors, reset } = useForm({
         nome: '', descricao: '', tipo: 'pontos_todos', quantidade_pontos: '',
         publico_alvo: 'todos', plano_necessario: '', data_inicio: new Date().toISOString().slice(0, 10),
         data_fim: '', limite_utilizacao: '', ativo: true, condicoes: '', imagem: null,
+        servico_id: '', item_aluguel_id: '',
     });
 
     const abrirNova = () => {
         setEditando(null);
+        setItemVinculado(null);
         reset();
         setFormAberto(true);
     };
@@ -57,8 +144,30 @@ export default function Promocoes({ promocoes, planosValidos }) {
             plano_necessario: promo.plano_necessario || '', data_inicio: promo.data_inicio?.slice(0, 10) || '',
             data_fim: promo.data_fim?.slice(0, 10) || '', limite_utilizacao: promo.limite_utilizacao || '',
             ativo: promo.ativo, condicoes: promo.condicoes || '', imagem: null,
+            servico_id: promo.servico_id || '', item_aluguel_id: promo.item_aluguel_id || '',
         });
+        if (promo.servico) {
+            setItemVinculado({ tipo: 'servico', id: promo.servico.id, nome: promo.servico.nome });
+        } else if (promo.itemAluguel) {
+            setItemVinculado({ tipo: 'item_aluguel', id: promo.itemAluguel.id, nome: promo.itemAluguel.nome });
+        } else {
+            setItemVinculado(null);
+        }
         setFormAberto(true);
+    };
+
+    const selecionarItemVinculado = (r) => {
+        setItemVinculado(r);
+        setData({
+            ...data,
+            servico_id: r.tipo === 'servico' ? r.id : '',
+            item_aluguel_id: r.tipo === 'item_aluguel' ? r.id : '',
+        });
+    };
+
+    const limparItemVinculado = () => {
+        setItemVinculado(null);
+        setData({ ...data, servico_id: '', item_aluguel_id: '' });
     };
 
     const submeter = (e) => {
@@ -185,6 +294,19 @@ export default function Promocoes({ promocoes, planosValidos }) {
                                 </Campo>
 
                                 <div className="sm:col-span-2">
+                                    <Campo label="Vincular a um serviço ou item de aluguel (opcional)">
+                                        <SeletorItemVinculado
+                                            tipo={itemVinculado?.tipo}
+                                            id={itemVinculado?.id}
+                                            nomeAtual={itemVinculado?.nome}
+                                            onSelecionar={selecionarItemVinculado}
+                                            onLimpar={limparItemVinculado}
+                                        />
+                                    </Campo>
+                                    <p className="text-xs text-gray-400 mt-1">Quando vinculada, a promoção aparece como card clicável no Explorar e na tela de Promoções do cliente, levando direto para o agendamento/reserva desse item.</p>
+                                </div>
+
+                                <div className="sm:col-span-2">
                                     <Campo label="Condições (texto livre)">
                                         <textarea className={inputClass} rows={2} maxLength={2000} value={data.condicoes} onChange={(e) => setData('condicoes', e.target.value)} />
                                     </Campo>
@@ -216,6 +338,7 @@ export default function Promocoes({ promocoes, planosValidos }) {
                                         <th className="text-left px-5 py-3">Tipo</th>
                                         <th className="text-left px-5 py-3">Status</th>
                                         <th className="text-left px-5 py-3">Vigência</th>
+                                        <th className="text-left px-5 py-3">Vinculada a</th>
                                         <th className="text-left px-5 py-3">Uso</th>
                                         <th className="text-right px-5 py-3">Ações</th>
                                     </tr>
@@ -236,6 +359,15 @@ export default function Promocoes({ promocoes, planosValidos }) {
                                             <td className="px-5 py-3 text-gray-600 text-xs">
                                                 {new Date(promo.data_inicio).toLocaleDateString('pt-BR')}
                                                 {promo.data_fim ? ` – ${new Date(promo.data_fim).toLocaleDateString('pt-BR')}` : ' (sem fim)'}
+                                            </td>
+                                            <td className="px-5 py-3 text-gray-600 text-xs">
+                                                {promo.servico ? (
+                                                    <span className="flex items-center gap-1 text-orange-700 font-semibold"><LinkIcon className="w-3 h-3" /> {promo.servico.nome}</span>
+                                                ) : promo.itemAluguel ? (
+                                                    <span className="flex items-center gap-1 text-orange-700 font-semibold"><LinkIcon className="w-3 h-3" /> {promo.itemAluguel.nome}</span>
+                                                ) : (
+                                                    <span className="text-gray-300">—</span>
+                                                )}
                                             </td>
                                             <td className="px-5 py-3 text-gray-600 text-xs">
                                                 {promo.utilizacoes_atuais}{promo.limite_utilizacao ? ` / ${promo.limite_utilizacao}` : ''}

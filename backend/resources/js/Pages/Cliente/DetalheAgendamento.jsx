@@ -1,22 +1,39 @@
 import React, { useState, useEffect, useRef } from 'react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { Head, router } from '@inertiajs/react';
+import { Head, router, usePage } from '@inertiajs/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
-import { 
-  ArrowLeft, Calendar, Wallet, MapPin, 
-  ShieldCheck, Download, Navigation, XCircle, 
+import {
+  ArrowLeft, Calendar, Wallet, MapPin,
+  ShieldCheck, Download, Navigation, XCircle,
   Megaphone, Briefcase, Building2, User, CheckCircle2,
   MessageSquare, Car, AlertTriangle, ExternalLink,
-  Heart, FileText, FileSignature, CheckSquare, List, Loader
+  Heart, FileText, FileSignature, CheckSquare, List, Loader,
+  Star, Phone, Package, Info, CreditCard
 } from 'lucide-react';
 
+const brl = (v) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(v) || 0);
+const dataCurta = (iso) => (iso ? new Date(`${String(iso).slice(0, 10)}T12:00:00`).toLocaleDateString('pt-BR') : '-');
+
+const STATUS_TEXTO = {
+  PENDENTE: 'Pendente',
+  CONFIRMADO: 'Confirmado',
+  FINALIZADO: 'Finalizado',
+  CONCLUIDO: 'Concluído',
+  CONCLUÍDO: 'Concluído',
+  CANCELADO: 'Cancelado',
+  AGUARDANDO_PAGAMENTO: 'Aguardando pagamento',
+  PAGA: 'Paga',
+};
+
 export default function DetalheAgendamento({ auth, dados }) {
+  const { flash = {}, errors = {} } = usePage().props;
   const [loadingAcao, setLoadingAcao] = useState(false);
-  
+  const [abrindoConversa, setAbrindoConversa] = useState(false);
+
   // Estado local para o botão de favoritar (Inicia com o valor vindo do BD)
   const [isFavorito, setIsFavorito] = useState(dados?.is_favorito || false);
-  
+
   // Estado para exibir a mensagem flutuante (Toast)
   const [toast, setToast] = useState({ show: false, message: '' });
 
@@ -48,11 +65,13 @@ export default function DetalheAgendamento({ auth, dados }) {
     );
   }
 
-  const isConcluido = dados.status_geral?.toUpperCase() === 'CONCLUÍDO' || dados.status_geral?.toUpperCase() === 'CONCLUIDO';
+  const isConcluido = ['CONCLUÍDO', 'CONCLUIDO', 'FINALIZADO'].includes(dados.status_geral?.toUpperCase());
   const isPendente = dados.status_geral?.toUpperCase() === 'PENDENTE' || dados.status_geral?.toUpperCase() === 'AGUARDANDO_PAGAMENTO';
   const isCancelado = dados.status_geral?.toUpperCase() === 'CANCELADO';
 
   const statusStyles = {
+    CONFIRMADO: "bg-blue-50 text-blue-700 border-blue-200",
+    FINALIZADO: "bg-emerald-50 text-emerald-700 border-emerald-200",
     CONCLUÍDO: "bg-emerald-50 text-emerald-700 border-emerald-200",
     CONCLUIDO: "bg-emerald-50 text-emerald-700 border-emerald-200",
     PENDENTE: "bg-amber-50 text-amber-700 border-amber-200",
@@ -65,7 +84,7 @@ export default function DetalheAgendamento({ auth, dados }) {
   const lat = dados.estabelecimento?.latitude;
   const lng = dados.estabelecimento?.longitude;
 
-  const googleMapsUrl = lat && lng 
+  const googleMapsUrl = lat && lng
     ? `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`
     : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(enderecoTexto)}`;
 
@@ -77,7 +96,7 @@ export default function DetalheAgendamento({ auth, dados }) {
   // Função para mostrar Toast
   const showToast = (mensagem) => {
       setToast({ show: true, message: mensagem });
-      setTimeout(() => setToast({ show: false, message: '' }), 3000); 
+      setTimeout(() => setToast({ show: false, message: '' }), 3000);
   };
 
   // ==========================================================
@@ -97,9 +116,9 @@ export default function DetalheAgendamento({ auth, dados }) {
     setIsFavorito(!isFavorito);
 
     try {
-        const response = await axios.post('/favoritos/toggle', { 
-            tipo: tipoItem, 
-            id: idItemAlvo 
+        const response = await axios.post('/favoritos/toggle', {
+            tipo: tipoItem,
+            id: idItemAlvo
         });
         showToast(response.data.message);
     } catch (error) {
@@ -164,18 +183,42 @@ export default function DetalheAgendamento({ auth, dados }) {
         setIsRastreando(false);
         setLoadingAcao(false);
       },
-      { 
+      {
         enableHighAccuracy: true, // Força uso do chip de GPS real
-        maximumAge: 0, 
-        timeout: 10000 
+        maximumAge: 0,
+        timeout: 10000
       }
     );
   };
 
+  // Abre (ou reaproveita) a conversa no chat do app com o dono do serviço ou da reserva.
   const handleEnviarMensagem = () => {
-    const mensagem = encodeURIComponent(`Olá! Gostaria de falar sobre o meu pedido de ${dados.titulo} (ID: #${dados.id}).`);
-    window.open(`https://api.whatsapp.com/send?text=${mensagem}`, '_blank');
+    if (!dados.mensagem) return;
+    setAbrindoConversa(true);
+    router.post(route('mensagens.iniciar'), dados.mensagem, {
+      onFinish: () => setAbrindoConversa(false),
+      onError: () => showToast('Não foi possível abrir a conversa agora.'),
+    });
   };
+
+  const telefoneLimpo = String(dados.contato?.telefone || '').replace(/\D/g, '');
+  const whatsappUrl = telefoneLimpo
+    ? `https://wa.me/55${telefoneLimpo}?text=${encodeURIComponent(`Olá! Sobre meu pedido de ${dados.titulo} (#${dados.codigo_reserva || dados.id}).`)}`
+    : null;
+
+  const cancelarAgendamento = () => {
+    if (!window.confirm('Cancelar este agendamento? Se você pagou online, o valor é devolvido conforme a regra de cancelamento.')) return;
+    router.post(route('cliente.agendamentos.cancelar', dados.id), {}, { preserveScroll: true });
+  };
+
+  // Mapa sem chave de API: OpenStreetMap com coordenadas, ou Google Maps pelo endereço.
+  const mapaEmbed = lat && lng
+    ? `https://www.openstreetmap.org/export/embed.html?bbox=${Number(lng) - 0.006},${Number(lat) - 0.004},${Number(lng) + 0.006},${Number(lat) + 0.004}&layer=mapnik&marker=${lat},${lng}`
+    : (enderecoTexto && enderecoTexto !== 'Endereço não informado' ? `https://maps.google.com/maps?q=${encodeURIComponent(enderecoTexto)}&z=15&output=embed` : null);
+
+  const detalhes = Array.isArray(dados.detalhes) ? dados.detalhes : [];
+  const itensExtras = Array.isArray(dados.itens_extras) ? dados.itens_extras : [];
+  const cobranca = dados.cobranca;
 
   // Processamento seguro das comodidades (Para Reservas de Imóveis/Veículos)
   const comodidades = Array.isArray(dados.comodidades) ? dados.comodidades : [];
@@ -188,7 +231,7 @@ export default function DetalheAgendamento({ auth, dados }) {
       <Head title={`Detalhes - ${dados.titulo}`} />
 
       <div className="py-8 bg-slate-50/50 min-h-screen relative">
-        
+
         {/* TOAST NOTIFICATION */}
         <AnimatePresence>
             {toast.show && (
@@ -205,10 +248,10 @@ export default function DetalheAgendamento({ auth, dados }) {
         </AnimatePresence>
 
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-          
+
           {/* Topbar: Voltar e Favoritar */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-            <button 
+            <button
               onClick={() => window.history.back()}
               className="inline-flex items-center gap-2 text-sm font-semibold text-gray-600 hover:text-gray-900 transition-colors group w-fit"
             >
@@ -217,13 +260,13 @@ export default function DetalheAgendamento({ auth, dados }) {
               </div>
               Voltar para Meus Pedidos
             </button>
-            
+
             <div className="flex items-center gap-3">
-              <button 
+              <button
                 onClick={handleToggleFavorito}
                 className={`p-2 rounded-xl border transition-all shadow-sm flex items-center justify-center ${
-                  isFavorito 
-                    ? 'bg-rose-50 border-rose-200 text-rose-500' 
+                  isFavorito
+                    ? 'bg-rose-50 border-rose-200 text-rose-500'
                     : 'bg-white border-gray-200 text-gray-400 hover:text-rose-500 hover:bg-rose-50 hover:border-rose-200'
                 }`}
                 title={isFavorito ? "Remover dos Favoritos" : "Salvar nos Favoritos"}
@@ -235,6 +278,12 @@ export default function DetalheAgendamento({ auth, dados }) {
               </span>
             </div>
           </div>
+
+          {(flash.success || errors.error) && (
+            <div className={`mb-6 rounded-2xl px-4 py-3 text-sm font-semibold ${errors.error ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
+              {errors.error || flash.success}
+            </div>
+          )}
 
           {/* Banner Informativo Dinâmico */}
           {isPendente && dados.tipo !== 'aluguel' && (
@@ -248,7 +297,7 @@ export default function DetalheAgendamento({ auth, dados }) {
                   <p className="text-emerald-50/90 text-sm mt-0.5">Fique atento ao painel. Prepare-se para ser chamado à sala.</p>
                 </div>
               </div>
-              <button className="w-full sm:w-auto bg-rose-600 hover:bg-rose-700 text-white font-bold py-2.5 px-6 rounded-xl transition-all text-sm shadow-sm hover:scale-[1.02]">
+              <button onClick={cancelarAgendamento} className="w-full sm:w-auto bg-rose-600 hover:bg-rose-700 text-white font-bold py-2.5 px-6 rounded-xl transition-all text-sm shadow-sm hover:scale-[1.02]">
                 Cancelar Agendamento
               </button>
             </div>
@@ -267,12 +316,19 @@ export default function DetalheAgendamento({ auth, dados }) {
           )}
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-            
+
             {/* COLUNA ESQUERDA: Detalhes do Serviço / Reserva */}
             <div className="lg:col-span-8 space-y-6">
-              
+
               {/* Card Principal */}
-              <div className="bg-white rounded-3xl border border-gray-200/70 p-6 sm:p-8 shadow-sm">
+              <div className="bg-white rounded-3xl border border-gray-200/70 shadow-sm overflow-hidden">
+                {dados.foto_principal && (
+                  <div className="relative h-48 sm:h-60 bg-slate-100">
+                    <img src={dados.foto_principal} alt={dados.titulo} className="w-full h-full object-cover" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+                  </div>
+                )}
+                <div className="p-6 sm:p-8">
                 <div className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-6 pb-6 border-b border-gray-100">
                   <div className="flex items-center gap-4">
                     <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border ${dados.tipo === 'aluguel' ? 'bg-indigo-50/50 text-indigo-600 border-indigo-100' : 'bg-gradient-to-br from-teal-500/10 to-emerald-500/10 text-teal-600 border-teal-500/20'}`}>
@@ -282,7 +338,7 @@ export default function DetalheAgendamento({ auth, dados }) {
                       <div className="flex flex-wrap items-center gap-2.5">
                         <h3 className="text-xl font-bold text-gray-900 tracking-tight">{dados.titulo}</h3>
                         <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${statusStyles[dados.status_geral?.toUpperCase()] || 'bg-gray-50 text-gray-600 border-gray-200'}`}>
-                          {dados.status_geral?.replace(/_/g, ' ')}
+                          {STATUS_TEXTO[dados.status_geral?.toUpperCase()] || dados.status_geral?.replace(/_/g, ' ')}
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5 text-gray-500 mt-1.5">
@@ -302,7 +358,7 @@ export default function DetalheAgendamento({ auth, dados }) {
                     </div>
                     <p className="text-xs text-gray-500 mt-1 font-medium">{dados.horario}</p>
                   </div>
-                  
+
                   <div className="bg-slate-50/60 p-4 rounded-2xl border border-gray-100">
                     <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Resumo Financeiro</p>
                     <div className="flex items-center gap-2 text-gray-900 font-extrabold text-base">
@@ -313,11 +369,83 @@ export default function DetalheAgendamento({ auth, dados }) {
                       {dados.pagamento_confirmado ? '✓ Pagamento Confirmado' : '• Aguardando Pagamento'}
                     </p>
                     {dados.valor_caucao > 0 && (
-                      <p className="text-[10px] text-gray-500 mt-1">Caução: R$ {dados.valor_caucao}</p>
+                      <p className="text-[10px] text-gray-500 mt-1">Caução: {brl(dados.valor_caucao)}</p>
                     )}
                   </div>
                 </div>
+
+                {detalhes.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-6">
+                    {detalhes.map((d) => (
+                      <div key={d.rotulo} className="rounded-2xl border border-gray-100 px-4 py-3">
+                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{d.rotulo}</p>
+                        <p className="text-sm font-bold text-gray-900 mt-0.5">{d.valor}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                </div>
               </div>
+
+              {/* SOBRE O SERVIÇO / RESERVA */}
+              {(dados.descricao || dados.informacoes_extras) && (
+                <div className="bg-white rounded-3xl border border-gray-200/70 p-6 sm:p-8 shadow-sm">
+                  <h4 className="font-bold text-gray-900 mb-3 flex items-center gap-2 text-lg">
+                    <Info className="w-5 h-5 text-teal-600" />
+                    {dados.tipo === 'aluguel' ? 'Sobre a reserva' : 'Sobre o serviço'}
+                  </h4>
+                  {dados.descricao && <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-line">{dados.descricao}</p>}
+                  {dados.informacoes_extras && (
+                    <div className="mt-4 rounded-2xl bg-amber-50 border border-amber-100 p-4">
+                      <p className="text-[10px] font-bold text-amber-700 uppercase tracking-widest mb-1">Informações e regras do local</p>
+                      <p className="text-sm text-amber-900 leading-relaxed whitespace-pre-line">{dados.informacoes_extras}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* PRODUTOS EXTRAS DO PEDIDO */}
+              {itensExtras.length > 0 && (
+                <div className="bg-white rounded-3xl border border-gray-200/70 p-6 sm:p-8 shadow-sm">
+                  <h4 className="font-bold text-gray-900 mb-3 flex items-center gap-2 text-lg">
+                    <Package className="w-5 h-5 text-teal-600" /> Produtos incluídos
+                  </h4>
+                  <ul className="divide-y divide-gray-100">
+                    {itensExtras.map((i, idx) => (
+                      <li key={idx} className="flex items-center justify-between py-2.5 text-sm">
+                        <span className="font-semibold text-gray-800">{i.nome}{i.quantidade > 1 ? ` × ${i.quantidade}` : ''}</span>
+                        <span className="font-bold text-gray-900">{brl(i.valor * (i.quantidade || 1))}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* PAGAMENTO PARCELADO (cobrança enviada pelo local) */}
+              {cobranca && (
+                <div className="bg-white rounded-3xl border border-indigo-100 p-6 sm:p-8 shadow-sm">
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <h4 className="font-bold text-gray-900 flex items-center gap-2 text-lg">
+                      <CreditCard className="w-5 h-5 text-indigo-600" /> Pagamento parcelado
+                    </h4>
+                    <span className="text-xs font-bold text-gray-500">{cobranca.codigo}</span>
+                  </div>
+                  <p className="text-sm text-gray-600">
+                    {brl(cobranca.total)} em {cobranca.parcelas}x · {cobranca.pagas} paga(s)
+                  </p>
+                  <div className="mt-3 h-2 rounded-full bg-indigo-50 overflow-hidden">
+                    <div className="h-full bg-indigo-600 rounded-full" style={{ width: `${cobranca.parcelas ? (cobranca.pagas / cobranca.parcelas) * 100 : 0}%` }} />
+                  </div>
+                  {cobranca.proxima && (
+                    <p className="text-sm text-gray-800 mt-3">
+                      Próxima: parcela {cobranca.proxima.numero} de <b>{brl(cobranca.proxima.valor)}</b>, vence em {dataCurta(cobranca.proxima.vencimento)}.
+                    </p>
+                  )}
+                  <a href={route('cobrancas.minhas')} className="inline-flex items-center gap-1 mt-4 text-sm font-bold text-indigo-700 hover:underline">
+                    Ver parcelas e pagar <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              )}
 
               {/* 📌 CARD DE COMODIDADES E DADOS DO ITEM (Apenas para Locação) */}
               {dados.tipo === 'aluguel' && comodidades.length > 0 && (
@@ -355,27 +483,27 @@ export default function DetalheAgendamento({ auth, dados }) {
                       </span>
                     )}
                   </div>
-                  
+
                   <p className="text-sm text-gray-600 mb-6">
-                    {dados.status_contrato === 'assinado' 
-                      ? 'O contrato de locação já foi assinado digitalmente e possui validade jurídica. Você pode baixar uma cópia do documento oficial em PDF no botão abaixo.' 
+                    {dados.status_contrato === 'assinado'
+                      ? 'O contrato de locação já foi assinado digitalmente e possui validade jurídica. Você pode baixar uma cópia do documento oficial em PDF no botão abaixo.'
                       : 'O proprietário enviou um contrato digital para esta reserva. Para liberar o seu atendimento/produto, você deve assinar o documento através do link seguro.'}
                   </p>
 
                   <div className="flex flex-col sm:flex-row gap-3">
                     {dados.status_contrato === 'assinado' ? (
-                      <a 
-                        href={`/contratos/baixar/${dados.contrato_id}`} 
-                        target="_blank" 
+                      <a
+                        href={`/contratos/baixar/${dados.contrato_id}`}
+                        target="_blank"
                         className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 text-sm"
                       >
                         <Download className="w-4 h-4"/> Baixar PDF Assinado
                       </a>
                     ) : (
                       <>
-                        <a 
-                          href={dados.url_assinatura} 
-                          target="_blank" 
+                        <a
+                          href={dados.url_assinatura}
+                          target="_blank"
                           className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 text-sm flex-1"
                         >
                           <FileText className="w-4 h-4"/> Assinar Contrato Agora
@@ -415,27 +543,28 @@ export default function DetalheAgendamento({ auth, dados }) {
 
             {/* COLUNA DIREITA: Mapa e Painel de Ações */}
             <div className="lg:col-span-4 space-y-6">
-              
+
               {/* Card Mapa */}
               <div className="bg-white rounded-3xl border border-gray-200/70 p-5 shadow-sm">
                 <div className="flex items-center gap-2 mb-4">
                   <MapPin className="w-4 h-4 text-teal-600" />
                   <h4 className="font-bold text-gray-900 text-base">{dados.estabelecimento?.tipo_local_label || 'Localização'}</h4>
                 </div>
-                
+
                 <div className="w-full h-44 rounded-2xl mb-4 overflow-hidden relative shadow-inner border border-gray-100">
-                  {lat && lng ? (
-                    <img 
-                      src={`https://maps.googleapis.com/maps/api/staticmap?center=${lat},${lng}&zoom=15&size=400x200&maptype=roadmap&markers=color:red%7C${lat},${lng}&key=SUA_API_KEY_AQUI`} 
-                      alt="Mapa Real" 
-                      className="w-full h-full object-cover"
-                      onError={(e) => { e.target.style.display = 'none'; }}
+                  {mapaEmbed ? (
+                    <iframe
+                      title="Mapa do local"
+                      src={mapaEmbed}
+                      className="w-full h-full border-0"
+                      loading="lazy"
+                      referrerPolicy="no-referrer-when-downgrade"
                     />
                   ) : (
                     <div className="w-full h-full relative">
-                      <img 
-                        src="https://images.unsplash.com/photo-1524661135-423995f22d0b?q=80&w=400&auto=format&fit=crop" 
-                        alt="Mapa de Referência" 
+                      <img
+                        src="https://images.unsplash.com/photo-1524661135-423995f22d0b?q=80&w=400&auto=format&fit=crop"
+                        alt="Mapa de Referência"
                         className="w-full h-full object-cover brightness-[0.85] contrast-[1.05]"
                       />
                       <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs flex flex-col items-center justify-center p-4 text-center">
@@ -450,10 +579,10 @@ export default function DetalheAgendamento({ auth, dados }) {
                 <p className="text-xs text-gray-600 font-medium mb-4 leading-relaxed bg-slate-50 p-3 rounded-xl border border-gray-100">
                   {enderecoTexto || 'Endereço não informado pelo estabelecimento.'}
                 </p>
-                
+
                 {/* BOTÕES DE GPS SEPARADOS */}
                 <div className="grid grid-cols-2 gap-2">
-                  <a 
+                  <a
                     href={googleMapsUrl}
                     target="_blank"
                     rel="noreferrer"
@@ -463,7 +592,7 @@ export default function DetalheAgendamento({ auth, dados }) {
                     Google Maps
                   </a>
 
-                  <a 
+                  <a
                     href={wazeUrl}
                     target="_blank"
                     rel="noreferrer"
@@ -474,6 +603,43 @@ export default function DetalheAgendamento({ auth, dados }) {
                   </a>
                 </div>
               </div>
+
+              {/* QUEM ATENDE / DONO */}
+              {dados.contato && (
+                <div className="bg-white rounded-3xl border border-gray-200/70 p-5 shadow-sm">
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">
+                    {dados.tipo === 'aluguel' ? 'Responsável pela reserva' : 'Local do atendimento'}
+                  </p>
+                  <div className="flex items-center gap-3">
+                    {dados.contato.foto ? (
+                      <img src={dados.contato.foto} alt={dados.contato.nome} className="w-12 h-12 rounded-2xl object-cover border border-gray-100" />
+                    ) : (
+                      <div className="w-12 h-12 rounded-2xl bg-teal-50 text-teal-700 flex items-center justify-center font-black">
+                        {String(dados.contato.nome || '?').charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <p className="font-bold text-gray-900 truncate">{dados.contato.nome}</p>
+                      {dados.contato.avaliacao && (
+                        <p className="text-xs text-gray-500 flex items-center gap-1"><Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" /> {dados.contato.avaliacao}</p>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleEnviarMensagem}
+                    disabled={abrindoConversa || !dados.mensagem}
+                    className="mt-4 w-full flex items-center justify-center gap-2 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold transition-all text-sm shadow-sm disabled:opacity-50"
+                  >
+                    {abrindoConversa ? <Loader className="w-4 h-4 animate-spin" /> : <MessageSquare className="w-4 h-4" />}
+                    {dados.tipo === 'aluguel' ? 'Mensagem para o dono' : 'Mensagem para o local'}
+                  </button>
+                  {whatsappUrl && (
+                    <a href={whatsappUrl} target="_blank" rel="noreferrer" className="mt-2 w-full flex items-center justify-center gap-2 py-2.5 border border-gray-200 hover:bg-slate-50 rounded-xl font-bold text-xs text-gray-700">
+                      <Phone className="w-3.5 h-3.5 text-emerald-600" /> WhatsApp
+                    </a>
+                  )}
+                </div>
+              )}
 
               {/* Painel de Ações Operacionais */}
               <div className="space-y-3">
@@ -489,12 +655,12 @@ export default function DetalheAgendamento({ auth, dados }) {
 
                 {/* BOTÃO ESTOU A CAMINHO - MODIFICADO COM ESTADO */}
                 {isPendente && dados.tipo !== 'aluguel' && (
-                  <button 
+                  <button
                     onClick={handleACaminho}
                     disabled={loadingAcao}
                     className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl font-bold transition-all text-sm shadow-sm disabled:opacity-50
-                      ${isRastreando 
-                        ? 'bg-rose-100 hover:bg-rose-200 text-rose-700 border border-rose-200' 
+                      ${isRastreando
+                        ? 'bg-rose-100 hover:bg-rose-200 text-rose-700 border border-rose-200'
                         : 'bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-700 hover:to-emerald-700 text-white'
                       }`}
                   >
@@ -508,13 +674,6 @@ export default function DetalheAgendamento({ auth, dados }) {
                   </button>
                 )}
 
-                <button 
-                  onClick={handleEnviarMensagem}
-                  className="w-full flex items-center justify-center gap-2 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold transition-all text-sm shadow-sm"
-                >
-                  <MessageSquare className="w-4 h-4 text-slate-400" />
-                  Falar com Suporte / Local
-                </button>
               </div>
 
             </div>

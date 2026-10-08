@@ -339,6 +339,11 @@ export default function TelaPerfil() {
             onPress={() => router.push('/src/screens/MeusEstornosScreen')}
           />
           <ListItem
+            icon="cash-outline"
+            title="Pagamentos mensais"
+            onPress={() => router.push('/src/screens/MinhasCobrancas')}
+          />
+          <ListItem
             icon="heart-outline"
             title="Meus favoritos"
             onPress={() => router.push('/src/screens/FavoritosDashboard')}
@@ -398,11 +403,17 @@ export default function TelaPerfil() {
             onPress={saindo ? undefined : handleLogout}
           />
           <ListItem
+            icon="lock-closed-outline"
+            title="Alterar senha"
+            subValue="Troque a senha da sua conta"
+            onPress={() => router.push('/src/screens/ContaSeguranca')}
+          />
+          <ListItem
             icon="trash-outline"
             title="Apagar minha conta"
-            subValue="Fale com o suporte para excluir sua conta e dados"
+            subValue="Só sem pendências (pagamentos, pedidos, estornos, reservas)"
             titleColor={COLORS.danger}
-            onPress={() => router.push('/src/screens/TelaSuporte')}
+            onPress={() => router.push('/src/screens/ContaSeguranca')}
             isLast
           />
         </View>

@@ -111,10 +111,24 @@ Route::middleware('auth:sanctum')->group(function () {
     // Categorias de serviço (fonte única, também usada nos filtros do Explorar do cliente).
     Route::get('/categorias-servicos', fn () => response()->json(\App\Support\Categorias::servicos()));
 
+    // Produtos para entrega/retirada (CRUD do sócio) — módulo novo, separado
+    // dos Produtos existentes (que só servem de extra vinculado a um
+    // agendamento/aluguel específico).
+    Route::get('/produtos-entrega', [App\Http\Controllers\Api\Mobile\Proprietario\ProdutoEntregaMobileController::class, 'index']);
+    Route::post('/produtos-entrega', [App\Http\Controllers\Api\Mobile\Proprietario\ProdutoEntregaMobileController::class, 'store']);
+    Route::post('/produtos-entrega/{produtoEntrega}', [App\Http\Controllers\Api\Mobile\Proprietario\ProdutoEntregaMobileController::class, 'update']);
+    Route::patch('/produtos-entrega/{produtoEntrega}/toggle-ativo', [App\Http\Controllers\Api\Mobile\Proprietario\ProdutoEntregaMobileController::class, 'toggleAtivo']);
+    Route::delete('/produtos-entrega/{produtoEntrega}', [App\Http\Controllers\Api\Mobile\Proprietario\ProdutoEntregaMobileController::class, 'destroy']);
+    Route::get('/entregas/pedidos-recebidos', [App\Http\Controllers\Api\Mobile\PedidoEntregaMobileController::class, 'pedidosRecebidos']);
+    Route::post('/entregas/pedidos/{pedidoEntrega}/funcionario', [App\Http\Controllers\Api\Mobile\PedidoEntregaMobileController::class, 'atribuirFuncionario']);
+
     // 1. Estabelecimentos
     Route::post('/estabelecimentos', [ConfiguracoesMobileController::class, 'storeEstabelecimento']);
     Route::post('/estabelecimentos/{estabelecimento}', [ConfiguracoesMobileController::class, 'updateEstabelecimento']);
     Route::patch('/estabelecimentos/{estabelecimento}/toggle-status', [ConfiguracoesMobileController::class, 'toggleStatusEstabelecimento']);
+    Route::get('/estabelecimentos/{estabelecimento}/horarios', [App\Http\Controllers\Api\Mobile\Proprietario\HorarioFuncionamentoMobileController::class, 'index']);
+    Route::post('/estabelecimentos/{estabelecimento}/horarios', [App\Http\Controllers\Api\Mobile\Proprietario\HorarioFuncionamentoMobileController::class, 'store']);
+    Route::delete('/estabelecimentos/{estabelecimento}/horarios/{horario}', [App\Http\Controllers\Api\Mobile\Proprietario\HorarioFuncionamentoMobileController::class, 'destroy']);
 
     // 2. Funcionários
     Route::post('/estabelecimentos/{estabelecimento}/funcionarios', [ConfiguracoesMobileController::class, 'storeFuncionario']);
@@ -138,6 +152,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/alugueis', [ConfiguracoesMobileController::class, 'storeAluguel']);
     Route::get('/alugueis/{aluguel}', [ConfiguracoesMobileController::class, 'showAluguel']);
     Route::put('/alugueis/{aluguel}', [ConfiguracoesMobileController::class, 'updateAluguel']);
+    Route::put('/alugueis/{aluguel}/funcionario', [ConfiguracoesMobileController::class, 'updateFuncionarioAluguel']);
     Route::delete('/alugueis/{aluguel}', [ConfiguracoesMobileController::class, 'destroyAluguel']);
 });
 
@@ -230,6 +245,7 @@ Route::middleware('auth:sanctum')->group(function () {
         // --- ÁREA ADMIN (só papel 'admin') ---
         Route::middleware(CheckAdmin::class)->prefix('admin')->group(function () {
             Route::get('/usuarios', [AdminUsuarioMobileController::class, 'index']);
+            Route::get('/usuarios/{usuario}', [AdminUsuarioMobileController::class, 'show']);
             Route::post('/usuarios/{usuario}/liberar-plano', [AdminUsuarioMobileController::class, 'liberarPlano']);
             Route::post('/usuarios/{usuario}/revogar-plano', [AdminUsuarioMobileController::class, 'revogarPlano']);
         });
@@ -291,6 +307,72 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/favoritos', [FavoritoMobileController::class, 'index']);
         Route::post('/favoritos/toggle', [FavoritoMobileController::class, 'toggleFavorito']);
 
+        // --- ENTREGAS: catálogo de produtos avulsos/vinculados a um local e
+        // pedido com pagamento integrado ao Asaas (ver PedidoEntregaMobileController) ---
+        Route::get('/entregas/catalogo', [App\Http\Controllers\Api\Mobile\PedidoEntregaMobileController::class, 'catalogo']);
+        Route::get('/entregas/categorias', [App\Http\Controllers\Api\Mobile\PedidoEntregaMobileController::class, 'categorias']);
+        Route::get('/entregas/produtos/{produtoEntrega}', [App\Http\Controllers\Api\Mobile\PedidoEntregaMobileController::class, 'produto']);
+        Route::post('/entregas/pedidos', [App\Http\Controllers\Api\Mobile\PedidoEntregaMobileController::class, 'store']);
+        Route::get('/entregas/meus-pedidos', [App\Http\Controllers\Api\Mobile\PedidoEntregaMobileController::class, 'meusPedidos']);
+        Route::get('/entregas/pedidos/{pedidoEntrega}', [App\Http\Controllers\Api\Mobile\PedidoEntregaMobileController::class, 'show']);
+        Route::post('/entregas/pedidos/{pedidoEntrega}/liberar', [App\Http\Controllers\Api\Mobile\PedidoEntregaMobileController::class, 'liberarPagamento'])->middleware('throttle:10,1');
+        Route::get('/entregas/estornos', [App\Http\Controllers\Api\Mobile\PedidoEntregaMobileController::class, 'estornosProdutos']);
+        Route::get('/entregas/recompras', [App\Http\Controllers\Api\EntregasRecursosController::class, 'recompras']);
+        Route::get('/entregas/gestao', [App\Http\Controllers\Api\EntregasGestaoController::class, 'index']);
+
+        // Produtos com serviço ou reserva (mesmos métodos da web, que checam o dono do local).
+        Route::get('/meus-produtos', [App\Http\Controllers\Api\ProdutoController::class, 'dadosApp']);
+        Route::post('/produtos', [App\Http\Controllers\Api\ProdutoController::class, 'store']);
+        Route::post('/produtos/{id}', [App\Http\Controllers\Api\ProdutoController::class, 'update'])->whereNumber('id');
+        Route::delete('/produtos/{id}', [App\Http\Controllers\Api\ProdutoController::class, 'destroy'])->whereNumber('id');
+
+        // Segurança da conta: trocar senha e apagar a conta (sem pendências).
+        Route::get('/conta/pendencias', [App\Http\Controllers\Api\Mobile\ContaMobileController::class, 'pendencias']);
+        Route::post('/conta/senha', [App\Http\Controllers\Api\Mobile\ContaMobileController::class, 'alterarSenha'])->middleware('throttle:10,1');
+        Route::delete('/conta', [App\Http\Controllers\Api\Mobile\ContaMobileController::class, 'apagar'])->middleware('throttle:5,1');
+
+        // Painel de pedidos da gestão (sócio/gerente).
+        Route::get('/gestao/pedidos', [App\Http\Controllers\Api\GestaoPedidosController::class, 'index']);
+
+        // Cobranças parceladas: sócio monta e acompanha; cliente aceita, recusa e paga.
+        Route::get('/cobrancas', [App\Http\Controllers\Api\CobrancaController::class, 'index']);
+        Route::get('/cobrancas/opcoes', [App\Http\Controllers\Api\CobrancaController::class, 'opcoes']);
+        Route::get('/cobrancas/buscar-clientes', [App\Http\Controllers\Api\CobrancaController::class, 'buscarClientes']);
+        Route::post('/cobrancas', [App\Http\Controllers\Api\CobrancaController::class, 'store']);
+        Route::post('/cobrancas/{cobranca}/cancelar', [App\Http\Controllers\Api\CobrancaController::class, 'cancelar']);
+        Route::get('/cobrancas/{cobranca}/comprovante-pdf', [App\Http\Controllers\Api\CobrancaController::class, 'comprovante']);
+        Route::post('/cobrancas/parcelas/{parcela}/baixa', [App\Http\Controllers\Api\CobrancaController::class, 'baixa']);
+        Route::post('/cobrancas/parcelas/{parcela}/sincronizar', [App\Http\Controllers\Api\CobrancaController::class, 'sincronizar']);
+        Route::get('/minhas-cobrancas', [App\Http\Controllers\Api\CobrancaClienteController::class, 'index']);
+        Route::post('/minhas-cobrancas/{cobranca}/aceitar', [App\Http\Controllers\Api\CobrancaClienteController::class, 'aceitar']);
+        Route::post('/minhas-cobrancas/{cobranca}/recusar', [App\Http\Controllers\Api\CobrancaClienteController::class, 'recusar']);
+        Route::get('/minhas-cobrancas/{cobranca}/comprovante-pdf', [App\Http\Controllers\Api\CobrancaClienteController::class, 'comprovante']);
+        Route::get('/entregas/painel-vendas', [App\Http\Controllers\Api\EntregasRecursosController::class, 'painelDeVendas']);
+        Route::post('/entregas/pedidos/{pedido}/avaliar', [App\Http\Controllers\Api\EntregasRecursosController::class, 'avaliar']);
+        Route::post('/entregas/pedidos/{pedido}/posicao', [App\Http\Controllers\Api\EntregasRecursosController::class, 'registrarPosicao']);
+        Route::get('/entregas/pedidos/{pedido}/posicao', [App\Http\Controllers\Api\EntregasRecursosController::class, 'posicao']);
+        Route::get('/entregas/assinaturas', [App\Http\Controllers\Api\EntregasRecursosController::class, 'listarAssinaturas']);
+        Route::post('/entregas/assinaturas', [App\Http\Controllers\Api\EntregasRecursosController::class, 'criarAssinatura']);
+        Route::post('/entregas/assinaturas/{assinatura}/alterar', [App\Http\Controllers\Api\EntregasRecursosController::class, 'alterarAssinatura']);
+        Route::post('/entregas/carrinho', [App\Http\Controllers\Api\CarrinhoEntregaController::class, 'store']);
+        Route::patch('/entregas/carrinho/{item}', [App\Http\Controllers\Api\CarrinhoEntregaController::class, 'update']);
+        Route::delete('/entregas/carrinho/{item}', [App\Http\Controllers\Api\CarrinhoEntregaController::class, 'destroy']);
+        Route::get('/avisos', [App\Http\Controllers\Api\NotificacaoUsuarioController::class, 'listar']);
+        Route::get('/perfil/produtos-vendidos', [App\Http\Controllers\Api\Mobile\MobileAuthController::class, 'produtosVendidos']);
+        Route::post('/avisos/{notificacao}/lido', [App\Http\Controllers\Api\NotificacaoUsuarioController::class, 'marcarLido']);
+        Route::post('/entregas/pedidos/{pedidoEntrega}/cancelar', [App\Http\Controllers\Api\Mobile\PedidoEntregaMobileController::class, 'cancelar']);
+        Route::post('/entregas/pedidos/{pedidoEntrega}/cancelar-vendedor', [App\Http\Controllers\Api\Mobile\PedidoEntregaMobileController::class, 'cancelarPeloVendedor']);
+        Route::post('/entregas/pedidos/{pedidoEntrega}/estorno', [App\Http\Controllers\Api\Mobile\PedidoEntregaMobileController::class, 'solicitarEstorno']);
+        Route::get('/entregas/pedidos/{pedidoEntrega}/comprovante-pdf', [App\Http\Controllers\Api\Mobile\PedidoEntregaMobileController::class, 'comprovantePDF']);
+        Route::post('/entregas/pedidos/{pedidoEntrega}/funcionario', [App\Http\Controllers\Api\Mobile\PedidoEntregaMobileController::class, 'atribuirFuncionario']);
+        Route::get('/produtos-entrega', [App\Http\Controllers\Api\Mobile\Proprietario\ProdutoEntregaMobileController::class, 'index']);
+        Route::post('/produtos-entrega', [App\Http\Controllers\Api\Mobile\Proprietario\ProdutoEntregaMobileController::class, 'store']);
+        Route::post('/produtos-entrega/{produtoEntrega}', [App\Http\Controllers\Api\Mobile\Proprietario\ProdutoEntregaMobileController::class, 'update']);
+        Route::patch('/produtos-entrega/{produtoEntrega}/toggle-ativo', [App\Http\Controllers\Api\Mobile\Proprietario\ProdutoEntregaMobileController::class, 'toggleAtivo']);
+        Route::delete('/produtos-entrega/{produtoEntrega}', [App\Http\Controllers\Api\Mobile\Proprietario\ProdutoEntregaMobileController::class, 'destroy']);
+        Route::post('/produtos-entrega/{produtoEntrega}/vincular-local', [App\Http\Controllers\Api\Mobile\Proprietario\ProdutoEntregaMobileController::class, 'vincularLocal']);
+        Route::get('/entregas/pedidos-recebidos', [App\Http\Controllers\Api\Mobile\PedidoEntregaMobileController::class, 'pedidosRecebidos']);
+
         // --- MENSAGENS / CHAT (equivalente mobile de MensagemController) ---
         Route::get('/mensagens', [MensagemMobileController::class, 'index']);
         Route::get('/mensagens/nao-lidas', [MensagemMobileController::class, 'naoLidas']);
@@ -325,6 +407,7 @@ Route::put('/agendamentos/{agendamento}/funcionario', [MobileAgendamentoControll
 Route::post('/agendamentos/{id}/finalizar', [MobileAgendamentoController::class, 'finalizarComCodigo']);
 Route::get('/clientes/{id}/detalhes', [MobileAgendamentoController::class, 'detalheCliente']);
 Route::get('/equipe/agenda-produtividade', [FuncionarioMobileController::class, 'agenda']);
+Route::get('/relatorio-avancado', [App\Http\Controllers\Api\Mobile\RelatorioAvancadoMobileController::class, 'index']);
 Route::get('/agendamentos/{id}/fila', [MobileAgendamentoController::class, 'statusFila']);
 Route::post('/agendamentos/{id}/sair-fila', [MobileAgendamentoController::class, 'sairDaFila']);
 Route::get('/agendamentos/{id}/comprovante-pdf', [MobileAgendamentoController::class, 'comprovantePDF']);
@@ -336,6 +419,9 @@ Route::get('/agendamentos/{id}/checkout', [App\Http\Controllers\Api\Mobile\Pagam
 Route::post('/pagamento/processar', [PagamentoMobileController::class, 'processar']);
 Route::get('/pagamentos/{agendamento}/resumo', [PagamentoMobileController::class, 'resumoPagamento']);
 Route::post('/pagamentos/{id}/pagar-novamente', [PagamentoMobileController::class, 'pagarNovamente']);
+Route::get('/cartoes-salvos', [PagamentoMobileController::class, 'cartoesSalvos']);
+Route::delete('/cartoes-salvos/{id}', [PagamentoMobileController::class, 'removerCartaoSalvo']);
+Route::get('/relatorio-premium', [App\Http\Controllers\Api\Mobile\RelatorioPremiumMobileController::class, 'relatorio']);
 Route::get('/estornos', [EstornoMobileController::class, 'minhasSolicitacoes']);
 Route::get('/estornos/elegiveis', [EstornoMobileController::class, 'elegiveis']);
 Route::get('/estornos/{id}/detalhes', [EstornoMobileController::class, 'detalhes']);
@@ -389,6 +475,7 @@ Route::post('/reservas/item/{id}/store', [ClienteAgendamentoMobileController::cl
     Route::post('/carteira/contas/{conta}/padrao', [App\Http\Controllers\Api\CarteiraProprietarioController::class, 'definirPadrao']);
     Route::delete('/carteira/contas/{conta}', [App\Http\Controllers\Api\CarteiraProprietarioController::class, 'removerConta']);
     Route::post('/carteira/sacar', [App\Http\Controllers\Api\CarteiraProprietarioController::class, 'sacar']);
+    Route::get('/carteira/historico', [App\Http\Controllers\Api\CarteiraProprietarioController::class, 'historico']);
 
     // Contratos (recurso Premium)
     Route::get('/contratos', [App\Http\Controllers\Api\Mobile\Proprietario\ContratoMobileController::class, 'index']);
@@ -502,8 +589,14 @@ Broadcast::routes(['prefix' => 'mobile', 'middleware' => ['auth:sanctum']]);
     Route::post('/alugueis', [MobileAgendamentoController::class, 'storeAluguel']);
     Route::get('/alugueis/{id}', [MobileAgendamentoController::class, 'showAluguelMobile']);
     Route::put('/alugueis/{id}', [MobileAgendamentoController::class, 'updateAluguel']);
-    Route::delete('/alugueis/{id}', [MobileAgendamentoController::class, 'destroyAluguel']);
-    Route::delete('/alugueis/{id}/cancelar', [MobileAgendamentoController::class, 'destroyAluguel']);
+    // MobileAgendamentoController nunca teve um método destroyAluguel — essas
+    // duas rotas derrubavam com "Call to undefined method" sempre que
+    // chamadas. O app usa a de /cancelar pra cancelar uma locação (ver
+    // mobile/app/agendamentos/detalhes.tsx), então esse botão estava 100%
+    // quebrado; aponta as duas pro método que realmente existe e já faz o
+    // estorno de verdade (App\Http\Controllers\Api\AgendamentoController::destroyAluguel).
+    Route::delete('/alugueis/{id}', [App\Http\Controllers\Api\AgendamentoController::class, 'destroyAluguel']);
+    Route::delete('/alugueis/{id}/cancelar', [App\Http\Controllers\Api\AgendamentoController::class, 'destroyAluguel']);
     Route::post('/alugueis/{id}/contrato', [MobileAgendamentoController::class, 'generarEEnviarContrato']);
     Route::post('/mobile/d4sign/webhook', [MobileAgendamentoController::class, 'webhookD4Sign']);
 

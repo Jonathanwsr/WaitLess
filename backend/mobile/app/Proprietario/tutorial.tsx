@@ -6,11 +6,13 @@ import { O } from '../../constants/OwnerTheme';
 import { OwnerScreen, Card, Segmentado, api } from '../../components/owner/ui';
 import { useCarga } from '../../components/owner/useCarga';
 import { TUTORIAIS, FluxoTutorial } from '../../components/owner/tutorialData';
+
+const PROXIMO: Partial<Record<FluxoTutorial, FluxoTutorial>> = { local: 'servico', servico: 'reserva', reserva: 'produto' };
 import { alertar } from '../../services/alertar';
 
 interface Progresso {
   estabelecimentos: { id: number; nome: string }[];
-  onboarding?: { locais: number; servicos: number; reservas: number };
+  onboarding?: { locais: number; servicos: number; reservas: number; produtos?: number };
 }
 
 export default function TutorialSocio() {
@@ -26,6 +28,7 @@ export default function TutorialSocio() {
     local: (dados?.onboarding?.locais || 0) > 0,
     servico: (dados?.onboarding?.servicos || 0) > 0,
     reserva: (dados?.onboarding?.reservas || 0) > 0,
+    produto: (dados?.onboarding?.produtos || 0) > 0,
   };
 
   const tutorial = TUTORIAIS.find((t) => t.id === ativo)!;
@@ -40,6 +43,8 @@ export default function TutorialSocio() {
       router.push('/Proprietario/CriarEstabelecimento' as never);
     } else if (ativo === 'reserva') {
       router.push('/Proprietario/LocacoesAvulsas' as never);
+    } else if (ativo === 'produto') {
+      router.push('/Proprietario/Produtos' as never);
     } else if (locais.length === 0) {
       alertar('Crie um local primeiro', 'Todo serviço pertence a um local. Vamos começar pelo tutorial de local.', [
         { text: 'Agora não', style: 'cancel' },
@@ -56,7 +61,7 @@ export default function TutorialSocio() {
     <OwnerScreen titulo="Tutoriais">
       {/* HERO */}
       <View style={s.hero}>
-        <Text style={s.heroTitulo}>Comece a vender em 3 passos</Text>
+        <Text style={s.heroTitulo}>Comece a vender em {TUTORIAIS.length} passos</Text>
         <Text style={s.heroTexto}>Cadastre seu local, seus serviços e suas reservas. Cada tutorial leva poucos minutos.</Text>
         <View style={s.trilha}>
           {TUTORIAIS.map((t, i) => (
@@ -133,9 +138,9 @@ export default function TutorialSocio() {
         <Ionicons name="arrow-forward" size={18} color="#fff" />
       </TouchableOpacity>
 
-      {ativo !== 'reserva' && (
-        <TouchableOpacity style={s.proximo} onPress={() => trocar(ativo === 'local' ? 'servico' : 'reserva')} activeOpacity={0.7}>
-          <Text style={s.proximoTxt}>Próximo tutorial: {ativo === 'local' ? 'serviço' : 'reserva'}</Text>
+      {PROXIMO[ativo] && (
+        <TouchableOpacity style={s.proximo} onPress={() => trocar(PROXIMO[ativo] as string)} activeOpacity={0.7}>
+          <Text style={s.proximoTxt}>Próximo tutorial: {TUTORIAIS.find((t) => t.id === PROXIMO[ativo])?.rotulo.toLowerCase()}</Text>
         </TouchableOpacity>
       )}
     </OwnerScreen>

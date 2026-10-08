@@ -38,14 +38,14 @@ class FuncionarioAreaController extends Controller
         $hoje = Carbon::today()->toDateString();
 
         // Obtém o cliente que já está "Na Cadeira" (Status Confirmado)
-        $emAtendimento = Agendamento::with(['usuario', 'servico', 'estabelecimento'])
+        $emAtendimento = Agendamento::with(['usuario', 'servico', 'estabelecimento', 'atribuidoPor:id,name'])
             ->whereIn('funcionario_id', $funcionarioIds)
             ->whereDate('data_agendamento', $hoje)
             ->where('status', 'confirmado')
             ->first();
 
         // Busca os que estão aguardando na fila deste profissional
-        $filaEspera = Agendamento::with(['usuario', 'servico'])
+        $filaEspera = Agendamento::with(['usuario', 'servico', 'atribuidoPor:id,name'])
             ->whereIn('funcionario_id', $funcionarioIds)
             ->whereDate('data_agendamento', $hoje)
             ->whereIn('status', ['pendente', 'atrasado'])
@@ -67,7 +67,7 @@ class FuncionarioAreaController extends Controller
 
         $periodo = $request->get('periodo', 'hoje');
         
-        $queryHistorico = Agendamento::with(['usuario', 'servico', 'estabelecimento', 'finalizadoPor:id,name'])
+        $queryHistorico = Agendamento::with(['usuario', 'servico', 'estabelecimento', 'finalizadoPor:id,name', 'atribuidoPor:id,name'])
             ->whereIn('funcionario_id', $funcionarioIds);
 
         if ($periodo === 'hoje') {

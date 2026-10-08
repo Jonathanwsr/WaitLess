@@ -2,10 +2,26 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import Dropdown from '@/Components/Dropdown';
 import { Link, usePage, router } from '@inertiajs/react';
-import { ShieldCheckIcon, BanknotesIcon, ClipboardDocumentListIcon, ArrowUturnLeftIcon, StarIcon, GlobeAltIcon, BellIcon, GiftIcon, UsersIcon, ChartBarIcon, WalletIcon, MapIcon, QueueListIcon, KeyIcon, ShoppingBagIcon, TicketIcon, DocumentTextIcon, Cog6ToothIcon, SparklesIcon, ArrowsRightLeftIcon, AcademicCapIcon, BuildingStorefrontIcon, LockClosedIcon, LightBulbIcon } from '@heroicons/react/24/solid';
+import { CalendarDaysIcon, ShieldCheckIcon, BanknotesIcon, ClipboardDocumentListIcon, ArrowUturnLeftIcon, StarIcon, GlobeAltIcon, BellIcon, GiftIcon, UsersIcon, ChartBarIcon, WalletIcon, MapIcon, QueueListIcon, KeyIcon, ShoppingBagIcon, TicketIcon, DocumentTextIcon, Cog6ToothIcon, SparklesIcon, ArrowsRightLeftIcon, AcademicCapIcon, BuildingStorefrontIcon, LockClosedIcon, LightBulbIcon, TruckIcon, TvIcon } from '@heroicons/react/24/solid';
 
 export default function AuthenticatedLayout({ header, children }) {
-    const { auth, alertaCarteiraAsaas, menuEstabelecimentoId, menuPremium } = usePage().props;
+    const { auth, alertaCarteiraAsaas, menuEstabelecimentoId, menuPremium, menuPremiumSocio, avisosUsuario } = usePage().props;
+    const urlAtual = (usePage().url || '').split('?')[0];
+
+    /**
+     * Item do menu ativo: a rota exata ou qualquer subtela dela (criar, editar, detalhes, abas),
+     * para a pessoa sempre ver onde está. `exato` desliga as subtelas (item que é "pai" de outros itens).
+     */
+    const estaAtivo = (nome, parametros, exato = false) => {
+        if (route().current(nome)) return true;
+        if (exato || nome.includes('*') || !route().has(nome)) return false;
+        try {
+            const caminho = new URL(route(nome, parametros), window.location.origin).pathname.replace(/\/+$/, '');
+            return caminho !== '' && (urlAtual === caminho || urlAtual.startsWith(caminho + '/'));
+        } catch {
+            return false;
+        }
+    };
     const user = auth.user;
 
     // O estado do Menu Lateral no PC agora usa localStorage para "lembrar" se estava fechado ou aberto
@@ -67,11 +83,18 @@ export default function AuthenticatedLayout({ header, children }) {
         { nome: 'Tutoriais', rota: 'tutoriais.dono', icone: AcademicCapIcon },
         { nome: 'Minha vitrine', rota: 'vitrine.dono', icone: BuildingStorefrontIcon },
         { nome: 'Fila de espera', rota: 'fila.index', icone: QueueListIcon },
+        { nome: 'Painel da fila (TV)', rota: 'estabelecimentos.fila.painel', icone: TvIcon, local: true },
         { nome: 'Locações', rota: 'locacoes.avulsas.index', icone: KeyIcon },
-        { nome: 'Meus produtos', rota: 'produtos.meus', icone: ShoppingBagIcon },
+        // Tela única: produtos com serviço/reserva e produtos para entrega/retirada, em abas.
+        { nome: 'Produtos', rota: 'produtos.meus', icone: ShoppingBagIcon },
+        { nome: 'Entregas', rota: 'entregas.gestao', icone: TruckIcon },
         { nome: 'Avaliações recebidas', rota: 'anfitriao.avaliacoes.index', icone: StarIcon },
         { nome: 'Cupons e marketing', rota: 'estabelecimentos.cupons', icone: TicketIcon, local: true },
         { nome: 'Contratos', rota: 'estabelecimentos.contratos', icone: DocumentTextIcon, local: true, premium: true },
+        { nome: 'Notas fiscais', rota: 'notas-fiscais.index', icone: DocumentTextIcon, premiumSocio: true },
+        { nome: 'Cobranças', rota: 'cobrancas.index', icone: BanknotesIcon, premiumSocio: true },
+        { nome: 'Pedidos da gestão', rota: 'gestao.pedidos.index', icone: ClipboardDocumentListIcon },
+        { nome: 'Painel de vendas', rota: 'entregas.painel-vendas.page', icone: ChartBarIcon },
         { nome: 'Configurações', rota: 'estabelecimentos.configuracoes', icone: Cog6ToothIcon, local: true },
         // Assinatura é billing — só quem paga o plano (o sócio) administra.
         ...(isProprietario ? [{ nome: 'Minha assinatura', rota: 'assinatura.status', icone: SparklesIcon }] : []),
@@ -178,31 +201,31 @@ export default function AuthenticatedLayout({ header, children }) {
                 </div>
                 
                 {/* ÁREA DOS LINKS */}
-                <div className="flex flex-col flex-1 overflow-y-auto space-y-2 pb-10 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                <div className="menu-lateral-rolagem flex flex-col flex-1 min-h-0 overflow-y-auto space-y-2 pb-10">
                     
                     {/* LINKS DE GESTORES (Dono da Loja, Gerente) */}
                     {isGestor && (
                         <>
                             <SectionTitle title="Admin Marketplace" />
                             
-                            <Link href={route('dashboard')} title="Dashboard" className={`${baseLinkClass} ${route().current('dashboard') ? activeLinkClass : inactiveLinkClass}`}>
+                            <Link href={route('dashboard')} title="Dashboard" className={`${baseLinkClass} ${estaAtivo('dashboard') ? activeLinkClass : inactiveLinkClass}`}>
                                 <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Dashboard</span>
                             </Link>
 
-                            <Link href={route('cliente.estornos')} title="Estornos" className={`${baseLinkClass} ${route().current('cliente.estornos') ? activeLinkClass : inactiveLinkClass}`}>
+                            <Link href={route('cliente.estornos')} title="Estornos" className={`${baseLinkClass} ${estaAtivo('cliente.estornos') ? activeLinkClass : inactiveLinkClass}`}>
                                 <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path>
                                 </svg>
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Meus Estornos</span>
                             </Link>
 
-                            <Link href={route('estabelecimentos.index')} title="Estabelecimentos" className={`${baseLinkClass} ${route().current('estabelecimentos.index') ? activeLinkClass : inactiveLinkClass}`}>
+                            <Link href={route('estabelecimentos.index')} title="Estabelecimentos" className={`${baseLinkClass} ${estaAtivo('estabelecimentos.index') ? activeLinkClass : inactiveLinkClass}`}>
                                 <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V10l-9-4-9 4v11m18 0h-4v-5H9v5H5m14 0H5"></path></svg>
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Estabelecimentos</span>
                             </Link>
 
-                            <Link href={route('mensagens.index')}  title="Mensagens" className={`${baseLinkClass} ${route().current('mensagens.index') ? activeLinkClass : inactiveLinkClass}`}>
+                            <Link href={route('mensagens.index')}  title="Mensagens" className={`${baseLinkClass} ${estaAtivo('mensagens.index') ? activeLinkClass : inactiveLinkClass}`}>
                                 <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8-1.045 0-2.047-.157-2.978-.446L3 21l1.5-4.5C3.55 15.19 3 13.65 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Mensagens</span>
                             </Link>
@@ -210,7 +233,7 @@ export default function AuthenticatedLayout({ header, children }) {
                             <Link 
                                 href={route('proprietario.rastreamento')} 
                                 title="Rastreamento" 
-                                className={`${baseLinkClass} ${route().current('proprietario.rastreamento') ? activeLinkClass : inactiveLinkClass}`}
+                                className={`${baseLinkClass} ${estaAtivo('proprietario.rastreamento') ? activeLinkClass : inactiveLinkClass}`}
                             >
                                 <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path>
@@ -223,7 +246,7 @@ export default function AuthenticatedLayout({ header, children }) {
                                 )}
                             </Link>
 
-                            <Link href={route('funcionarios.index')} title="Equipe" className={`${baseLinkClass} ${route().current('funcionarios.index') ? activeLinkClass : inactiveLinkClass}`}>
+                            <Link href={route('funcionarios.index')} title="Equipe" className={`${baseLinkClass} ${estaAtivo('funcionarios.index') ? activeLinkClass : inactiveLinkClass}`}>
                                 <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2"></path></svg>
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Equipe</span>
                             </Link>
@@ -231,22 +254,27 @@ export default function AuthenticatedLayout({ header, children }) {
                             {/* Carteira movimenta dinheiro de verdade — só o sócio (quem recebe) tem
                                 acesso; gerente já é bloqueado no backend, então nem mostramos o link pra ele. */}
                             {isProprietario && (
-                                <Link href={route('carteira.asaas')} title="Carteira" className={`${baseLinkClass} ${route().current('carteira.asaas') || window.location.pathname.includes('/financeiro/conta') ? activeLinkClass : inactiveLinkClass}`}>
+                                <Link href={route('carteira.asaas')} title="Carteira" className={`${baseLinkClass} ${estaAtivo('carteira.asaas') || urlAtual.startsWith('/financeiro/conta') ? activeLinkClass : inactiveLinkClass}`}>
                                     <WalletIcon className="w-6 h-6 shrink-0" />
                                     <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Carteira</span>
                                 </Link>
                             )}
 
-                            {linksGestaoLocal.map(({ nome, rota, icone: Icone, local, premium }) => (
+                            {linksGestaoLocal.map(({ nome, rota, icone: Icone, local, premium, premiumSocio }) => (
                                 <Link
                                     key={rota}
                                     href={local ? route(rota, menuEstabelecimentoId) : route(rota)}
                                     title={nome}
-                                    className={`${baseLinkClass} ${route().current(rota) ? activeLinkClass : inactiveLinkClass}`}
+                                    className={`${baseLinkClass} ${estaAtivo(rota, local ? menuEstabelecimentoId : undefined) ? activeLinkClass : inactiveLinkClass}`}
                                 >
                                     <Icone className="w-6 h-6 shrink-0" />
                                     <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>{nome}</span>
                                     {premium && !menuPremium && (
+                                        <span className={`ml-auto inline-flex items-center gap-1 text-[10px] font-black bg-amber-400 text-zinc-900 px-2 py-0.5 rounded-full transition-all duration-300 ${textVisibilityClass}`}>
+                                            <LockClosedIcon className="w-3 h-3" /> PREMIUM
+                                        </span>
+                                    )}
+                                    {premiumSocio && !menuPremiumSocio && (
                                         <span className={`ml-auto inline-flex items-center gap-1 text-[10px] font-black bg-amber-400 text-zinc-900 px-2 py-0.5 rounded-full transition-all duration-300 ${textVisibilityClass}`}>
                                             <LockClosedIcon className="w-3 h-3" /> PREMIUM
                                         </span>
@@ -264,32 +292,39 @@ export default function AuthenticatedLayout({ header, children }) {
                         <>
                             <SectionTitle title="Área do Cliente" />
                             
-                            <Link href={route('home')} title="Home" className={`${baseLinkClass} ${route().current('home') ? activeLinkClass : inactiveLinkClass}`}>
+                            <Link href={route('home')} title="Home" className={`${baseLinkClass} ${estaAtivo('home') ? activeLinkClass : inactiveLinkClass}`}>
                                 <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Home</span>
                             </Link>
 
-                            <Link href={route('cliente.explorar')} title="Explorar Lojas" className={`${baseLinkClass} ${route().current('cliente.explorar') ? activeLinkClass : inactiveLinkClass}`}>
+                            <Link href={route('cliente.explorar')} title="Explorar Lojas" className={`${baseLinkClass} ${estaAtivo('cliente.explorar') ? activeLinkClass : inactiveLinkClass}`}>
                                 <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Explorar Lojas</span>
                             </Link>
 
-                            <Link href={route('mensagens.index')} title="Mensagens" className={`${baseLinkClass} ${route().current('mensagens.index') ? activeLinkClass : inactiveLinkClass}`}>
+                            {route().has('entregas.index') && (
+                                <Link href={route('entregas.index')} title="Produtos" className={`${baseLinkClass} ${estaAtivo('entregas.*') ? activeLinkClass : inactiveLinkClass}`}>
+                                    <TruckIcon className="w-6 h-6 shrink-0" />
+                                    <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Produtos</span>
+                                </Link>
+                            )}
+
+                            <Link href={route('mensagens.index')} title="Mensagens" className={`${baseLinkClass} ${estaAtivo('mensagens.index') ? activeLinkClass : inactiveLinkClass}`}>
                                 <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8-1.045 0-2.047-.157-2.978-.446L3 21l1.5-4.5C3.55 15.19 3 13.65 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Mensagens</span>
                             </Link>
 
-                            <Link href={route('cliente.ofertas_premium')} title="Ofertas Premium" className={`${baseLinkClass} ${route().current('cliente.ofertas_premium') ? activeLinkClass : inactiveLinkClass}`}>
+                            <Link href={route('cliente.ofertas_premium')} title="Ofertas Premium" className={`${baseLinkClass} ${estaAtivo('cliente.ofertas_premium') ? activeLinkClass : inactiveLinkClass}`}>
                                 <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 16L3 8l5.5 4L12 4l3.5 8L21 8l-2 8H5zm0 0h14v2H5v-2z"></path></svg>
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Ofertas Premium</span>
                             </Link>
 
-                            <Link href={route('cliente.promocoes')} title="Promoções" className={`${baseLinkClass} ${route().current('cliente.promocoes') ? activeLinkClass : inactiveLinkClass}`}>
+                            <Link href={route('cliente.promocoes')} title="Promoções" className={`${baseLinkClass} ${estaAtivo('cliente.promocoes') ? activeLinkClass : inactiveLinkClass}`}>
                                 <GiftIcon className="w-6 h-6 shrink-0" />
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Promoções</span>
                             </Link>
 
-                             <Link href={route('dashboard')} title="Agendamentos" className={`${baseLinkClass} ${route().current('dashboard') ? activeLinkClass : inactiveLinkClass}`}>
+                             <Link href={route('dashboard')} title="Agendamentos" className={`${baseLinkClass} ${estaAtivo('dashboard') ? activeLinkClass : inactiveLinkClass}`}>
                                 <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Agendamentos</span>
                             </Link>
@@ -309,12 +344,12 @@ export default function AuthenticatedLayout({ header, children }) {
 
 
                             
-                            <Link href={route('cliente.carrinho')} title="Carrinho" className={`${baseLinkClass} ${route().current('cliente.carrinho') ? activeLinkClass : inactiveLinkClass}`}>
+                            <Link href={route('cliente.carrinho')} title="Carrinho" className={`${baseLinkClass} ${estaAtivo('cliente.carrinho') ? activeLinkClass : inactiveLinkClass}`}>
                                 <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path></svg>
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Carrinho / Pendentes</span>
                             </Link>
 
-                            <Link href={route('avaliacoes.geral')} title="Minhas Avaliações" className={`${baseLinkClass} ${route().current('avaliacoes.geral') ? activeLinkClass : inactiveLinkClass}`}>
+                            <Link href={route('avaliacoes.geral')} title="Minhas Avaliações" className={`${baseLinkClass} ${estaAtivo('avaliacoes.geral') ? activeLinkClass : inactiveLinkClass}`}>
     <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"></path>
     </svg>
@@ -327,7 +362,7 @@ export default function AuthenticatedLayout({ header, children }) {
                                         <Link 
     href={route().has('assinatura.status') ? route('assinatura.status') : '/minha-assinatura/status'} 
     title="Minha Assinatura" 
-    className={`${baseLinkClass} ${route().has('assinatura.status') && route().current('assinatura.status') ? activeLinkClass : inactiveLinkClass}`}
+    className={`${baseLinkClass} ${route().has('assinatura.status') && estaAtivo('assinatura.status') ? activeLinkClass : inactiveLinkClass}`}
 >
     {/* Ícone de Badge/Selo Premium para representar a assinatura */}
     <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -338,7 +373,28 @@ export default function AuthenticatedLayout({ header, children }) {
     </span>
 </Link>
 
-                            <Link href={route('travel-assistant.index')} title="Assistente de Viagens" className={`${baseLinkClass} ${route().current('travel-assistant.index') ? activeLinkClass : inactiveLinkClass}`}>
+                            {route().has('cobrancas.minhas') && (
+                                <Link href={route('cobrancas.minhas')} title="Pagamentos mensais" className={`${baseLinkClass} ${estaAtivo('cobrancas.minhas') ? activeLinkClass : inactiveLinkClass}`}>
+                                    <BanknotesIcon className="w-6 h-6 shrink-0" />
+                                    <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Pagamentos mensais</span>
+                                </Link>
+                            )}
+
+                            {route().has('entregas.assinaturas.page') && (
+                                <Link href={route('entregas.assinaturas.page')} title="Assinaturas de entrega" className={`${baseLinkClass} ${estaAtivo('entregas.assinaturas.page') ? activeLinkClass : inactiveLinkClass}`}>
+                                    <CalendarDaysIcon className="w-6 h-6 shrink-0" />
+                                    <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Assinaturas</span>
+                                </Link>
+                            )}
+
+                            {route().has('notas-fiscais.index') && (
+                                <Link href={route('notas-fiscais.index')} title="Notas Fiscais" className={`${baseLinkClass} ${estaAtivo('notas-fiscais.index') ? activeLinkClass : inactiveLinkClass}`}>
+                                    <DocumentTextIcon className="w-6 h-6 shrink-0" />
+                                    <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Notas Fiscais</span>
+                                </Link>
+                            )}
+
+                            <Link href={route('travel-assistant.index')} title="Assistente de Viagens" className={`${baseLinkClass} ${estaAtivo('travel-assistant.index') ? activeLinkClass : inactiveLinkClass}`}>
                                 <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path>
                                 </svg>
@@ -347,19 +403,26 @@ export default function AuthenticatedLayout({ header, children }) {
                                 </span>
                             </Link>
 
-                            <Link href={route('viagens.index')} title="Minhas Viagens" className={`${baseLinkClass} ${route().current('viagens.*') ? activeLinkClass : inactiveLinkClass}`}>
+                            <Link href={route('viagens.index')} title="Minhas Viagens" className={`${baseLinkClass} ${estaAtivo('viagens.*') ? activeLinkClass : inactiveLinkClass}`}>
                                 <MapIcon className="w-6 h-6 shrink-0" />
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Minhas Viagens</span>
                             </Link>
 
-                            <Link href={route('cliente.estornos')} title="Estornos" className={`${baseLinkClass} ${route().current('cliente.estornos') ? activeLinkClass : inactiveLinkClass}`}>
+                            <Link href={route('cliente.estornos')} title="Estornos" className={`${baseLinkClass} ${estaAtivo('cliente.estornos') ? activeLinkClass : inactiveLinkClass}`}>
                                 <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path>
                                 </svg>
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Meus Estornos</span>
                             </Link>
                             
-                            <Link href={route('cliente.carteira')} title="Carteira" className={`${baseLinkClass} ${route().current('cliente.carteira') ? activeLinkClass : inactiveLinkClass}`}>
+                            {route().has('cliente.pontos') && (
+                                <Link href={route('cliente.pontos')} title="Meus pontos" className={`${baseLinkClass} ${estaAtivo('cliente.pontos') ? activeLinkClass : inactiveLinkClass}`}>
+                                    <SparklesIcon className="w-6 h-6 shrink-0" />
+                                    <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Meus pontos</span>
+                                </Link>
+                            )}
+
+                            <Link href={route('cliente.carteira')} title="Carteira" className={`${baseLinkClass} ${estaAtivo('cliente.carteira') ? activeLinkClass : inactiveLinkClass}`}>
                                <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg>
                                <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Minha Carteira (Plus)</span>
                             </Link>
@@ -373,22 +436,27 @@ export default function AuthenticatedLayout({ header, children }) {
                         <>
                             <SectionTitle title="Área do Profissional" />
                             
-                            <Link href={route('funcionario.dashboard')} title="Meu Turno" className={`${baseLinkClass} ${route().current('funcionario.dashboard') ? activeLinkClass : inactiveLinkClass}`}>
+                            <Link href={route('funcionario.dashboard')} title="Meu Turno" className={`${baseLinkClass} ${estaAtivo('funcionario.dashboard', undefined, true) ? activeLinkClass : inactiveLinkClass}`}>
                                 <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path></svg>
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Meu Turno (Operação)</span>
                             </Link>
                             
-                            <Link href={route('funcionario.carteira')} title="Produção" className={`${baseLinkClass} ${route().current('funcionario.carteira') ? activeLinkClass : inactiveLinkClass}`}>
+                            <Link href={route('entregas.gestao')} title="Minhas entregas" className={`${baseLinkClass} ${estaAtivo('entregas.gestao') ? activeLinkClass : inactiveLinkClass}`}>
+                                <TruckIcon className="w-6 h-6 shrink-0" />
+                                <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Minhas entregas</span>
+                            </Link>
+
+                            <Link href={route('funcionario.carteira')} title="Produção"className={`${baseLinkClass} ${estaAtivo('funcionario.carteira') ? activeLinkClass : inactiveLinkClass}`}>
                                 <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Minha Produção</span>
                             </Link>
                             
-                            <Link href={route('funcionario.catalogo')} title="Catálogo" className={`${baseLinkClass} ${route().current('funcionario.catalogo') ? activeLinkClass : inactiveLinkClass}`}>
+                            <Link href={route('funcionario.catalogo')} title="Catálogo" className={`${baseLinkClass} ${estaAtivo('funcionario.catalogo') ? activeLinkClass : inactiveLinkClass}`}>
                                 <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"></path></svg>
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Catálogo de Serviços</span>
                             </Link>
                             
-                            <Link href={route('funcionario.ausencias')} title="Ausências" className={`${baseLinkClass} ${route().current('funcionario.ausencias') ? activeLinkClass : inactiveLinkClass}`}>
+                            <Link href={route('funcionario.ausencias')} title="Ausências" className={`${baseLinkClass} ${estaAtivo('funcionario.ausencias') ? activeLinkClass : inactiveLinkClass}`}>
                                 <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Faltas e Ausências</span>
                             </Link>
@@ -400,62 +468,67 @@ export default function AuthenticatedLayout({ header, children }) {
                         <>
                             <SectionTitle title="Administração" />
 
-                            <Link href={route('admin.financeiro.index')} title="Painel Financeiro Master" className={`${baseLinkClass} ${route().current('admin.financeiro.index') ? activeLinkClass : inactiveLinkClass}`}>
+                            <Link href={route('admin.financeiro.index')} title="Painel Financeiro Master" className={`${baseLinkClass} ${estaAtivo('admin.financeiro.index') ? activeLinkClass : inactiveLinkClass}`}>
                                 <BanknotesIcon className="w-6 h-6 shrink-0" />
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Painel Financeiro</span>
                             </Link>
 
-                            <Link href={route('admin.financeiro.pagamentos')} title="Todos os Pagamentos" className={`${baseLinkClass} ${route().current('admin.financeiro.pagamentos') ? activeLinkClass : inactiveLinkClass}`}>
+                            <Link href={route('admin.financeiro.pagamentos')} title="Todos os Pagamentos" className={`${baseLinkClass} ${estaAtivo('admin.financeiro.pagamentos') ? activeLinkClass : inactiveLinkClass}`}>
                                 <BanknotesIcon className="w-6 h-6 shrink-0 opacity-70" />
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Todos os Pagamentos</span>
                             </Link>
 
-                            <Link href={route('admin.agendamentos.index')} title="Auditoria de Agendamentos" className={`${baseLinkClass} ${route().current('admin.agendamentos.index') ? activeLinkClass : inactiveLinkClass}`}>
+                            <Link href={route('admin.agendamentos.index')} title="Auditoria de Agendamentos" className={`${baseLinkClass} ${estaAtivo('admin.agendamentos.index') ? activeLinkClass : inactiveLinkClass}`}>
                                 <ClipboardDocumentListIcon className="w-6 h-6 shrink-0" />
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Agendamentos</span>
                             </Link>
 
-                            <Link href={route('estornos.index')} title="Estornos" className={`${baseLinkClass} ${route().current('estornos.index') ? activeLinkClass : inactiveLinkClass}`}>
+                            <Link href={route('estornos.index')} title="Estornos" className={`${baseLinkClass} ${estaAtivo('estornos.index') ? activeLinkClass : inactiveLinkClass}`}>
                                 <ArrowUturnLeftIcon className="w-6 h-6 shrink-0" />
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Estornos</span>
                             </Link>
 
-                            <Link href={route('admin.assinaturas.index')} title="Assinaturas Gerais" className={`${baseLinkClass} ${route().current('admin.assinaturas.index') ? activeLinkClass : inactiveLinkClass}`}>
+                            <Link href={route('admin.assinaturas.index')} title="Assinaturas Gerais" className={`${baseLinkClass} ${estaAtivo('admin.assinaturas.index') ? activeLinkClass : inactiveLinkClass}`}>
                                 <ShieldCheckIcon className="w-6 h-6 shrink-0" />
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Todas as Assinaturas</span>
                             </Link>
 
-                            <Link href={route('admin.avaliacoes.index')} title="Moderação de Avaliações" className={`${baseLinkClass} ${route().current('admin.avaliacoes.index') ? activeLinkClass : inactiveLinkClass}`}>
+                            <Link href={route('admin.avaliacoes.index')} title="Moderação de Avaliações" className={`${baseLinkClass} ${estaAtivo('admin.avaliacoes.index') ? activeLinkClass : inactiveLinkClass}`}>
                                 <StarIcon className="w-6 h-6 shrink-0" />
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Avaliações</span>
                             </Link>
 
-                            <Link href={route('admin.promocoes.index')} title="Promoções" className={`${baseLinkClass} ${route().current('admin.promocoes.index') ? activeLinkClass : inactiveLinkClass}`}>
+                            <Link href={route('admin.produtos-entrega.index')} title="Produtos para entrega" className={`${baseLinkClass} ${estaAtivo('admin.produtos-entrega.*') ? activeLinkClass : inactiveLinkClass}`}>
+                                <TruckIcon className="w-6 h-6 shrink-0" />
+                                <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Produtos para entrega</span>
+                            </Link>
+
+                            <Link href={route('admin.promocoes.index')} title="Promoções" className={`${baseLinkClass} ${estaAtivo('admin.promocoes.index') ? activeLinkClass : inactiveLinkClass}`}>
                                 <GiftIcon className="w-6 h-6 shrink-0" />
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Promoções</span>
                             </Link>
 
-                            <Link href={route('admin.gamificacao.index')} title="Gamificação" className={`${baseLinkClass} ${route().current('admin.gamificacao.index') ? activeLinkClass : inactiveLinkClass}`}>
+                            <Link href={route('admin.gamificacao.index')} title="Gamificação" className={`${baseLinkClass} ${estaAtivo('admin.gamificacao.index') ? activeLinkClass : inactiveLinkClass}`}>
                                 <LightBulbIcon className="w-6 h-6 shrink-0" />
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Gamificação</span>
                             </Link>
 
-                            <Link href={route('admin.repasses.index')} title="Repasses e antecipações" className={`${baseLinkClass} ${route().current('admin.repasses.index') ? activeLinkClass : inactiveLinkClass}`}>
+                            <Link href={route('admin.repasses.index')} title="Repasses e antecipações" className={`${baseLinkClass} ${estaAtivo('admin.repasses.index') ? activeLinkClass : inactiveLinkClass}`}>
                                 <ArrowsRightLeftIcon className="w-6 h-6 shrink-0" />
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Repasses</span>
                             </Link>
 
-                            <Link href={route('admin.relatorios.index')} title="Relatórios" className={`${baseLinkClass} ${route().current('admin.relatorios.index') ? activeLinkClass : inactiveLinkClass}`}>
+                            <Link href={route('admin.relatorios.index')} title="Relatórios" className={`${baseLinkClass} ${estaAtivo('admin.relatorios.index') ? activeLinkClass : inactiveLinkClass}`}>
                                 <ChartBarIcon className="w-6 h-6 shrink-0" />
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Relatórios</span>
                             </Link>
 
-                            <Link href={route('admin.usuarios.index')} title="Usuários" className={`${baseLinkClass} ${route().current('admin.usuarios.index') ? activeLinkClass : inactiveLinkClass}`}>
+                            <Link href={route('admin.usuarios.index')} title="Usuários" className={`${baseLinkClass} ${estaAtivo('admin.usuarios.index') ? activeLinkClass : inactiveLinkClass}`}>
                                 <UsersIcon className="w-6 h-6 shrink-0" />
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Usuários</span>
                             </Link>
 
-                            <Link href={route('cliente.explorar')} title="Navegar como Cliente" className={`${baseLinkClass} ${route().current('cliente.explorar') ? activeLinkClass : inactiveLinkClass}`}>
+                            <Link href={route('cliente.explorar')} title="Navegar como Cliente" className={`${baseLinkClass} ${estaAtivo('cliente.explorar') ? activeLinkClass : inactiveLinkClass}`}>
                                 <GlobeAltIcon className="w-6 h-6 shrink-0" />
                                 <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Explorar (Cliente)</span>
                             </Link>
@@ -661,6 +734,24 @@ export default function AuthenticatedLayout({ header, children }) {
 
                 <main className="flex-1 py-8 animate-in fade-in duration-500">
                     <div className="mx-auto px-4 sm:px-6 lg:px-8">
+                        {avisosUsuario?.length > 0 && (
+                            <div className="space-y-3 mb-6">
+                                {avisosUsuario.map((aviso) => (
+                                    <div key={aviso.id} className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl p-4 shadow-sm">
+                                        <div className="flex-1 min-w-0">
+                                            <p className="font-bold text-amber-900 text-sm">{aviso.titulo}</p>
+                                            <p className="text-sm text-amber-800 mt-0.5">{aviso.mensagem}</p>
+                                        </div>
+                                        <button
+                                            onClick={() => router.post(route('avisos.lido', aviso.id), {}, { preserveScroll: true })}
+                                            className="text-xs font-bold text-amber-900 underline underline-offset-2 whitespace-nowrap"
+                                        >
+                                            Entendi
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                         {children}
                     </div>
                 </main>

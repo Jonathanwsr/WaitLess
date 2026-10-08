@@ -22,6 +22,7 @@ class AdminRelatorioController extends Controller
         return Inertia::render('Admin/Relatorios', [
             'mes' => $mes,
             'resumo' => $this->service->resumoFinanceiro($mes),
+            'vendasEntregas' => $this->service->resumoVendasEntregas($mes),
             'evolucaoMensal' => $this->service->evolucaoMensal(6),
             'repasses' => $this->service->repassesPorProprietario(),
             'estornos' => $this->service->resumoEstornos(),

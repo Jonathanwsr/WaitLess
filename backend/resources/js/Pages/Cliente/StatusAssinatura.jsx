@@ -33,7 +33,7 @@ export default function StatusAssinatura({ auth, statusAssinatura }) {
                 ciclo: 'mensal',
                 desc: 'Ideal para iniciar e ganhar visibilidade na plataforma.',
                 destaque: false,
-                beneficios: ['Taxas reduzidas', 'Suporte padrão', 'Painel de métricas básico']
+                beneficios: ['Taxas reduzidas em 50% nos pagamentos presenciais', 'Prioridade no Explorar — apareça antes dos concorrentes', '50 pontos de bônus todo mês', 'Painel de métricas básico']
             },
             {
                 id: 'premium-socio',
@@ -44,7 +44,7 @@ export default function StatusAssinatura({ auth, statusAssinatura }) {
                 destaque: true,
                 tema: 'from-teal-500 to-emerald-600',
                 badge: 'Máximo Retorno',
-                beneficios: ['Isenção da taxa da plataforma no balcão', 'Destaque no app', 'Suporte VIP 24/7', 'Métricas avançadas', 'Crie gerentes e convide sócios ilimitados']
+                beneficios: ['Isenção total da taxa da plataforma no balcão', 'Prioridade máxima no Explorar e nas recomendações do app', 'Emissão automática de nota fiscal a cada venda', 'Funcionários ilimitados', '300 pontos de bônus todo mês', 'Suporte VIP 24/7']
             },
             {
                 id: 'premium-anual',
@@ -55,7 +55,7 @@ export default function StatusAssinatura({ auth, statusAssinatura }) {
                 desc: '1 ano inteiro de visibilidade com 30% de desconto.',
                 destaque: false,
                 badge: '30% OFF',
-                beneficios: ['Equivale a apenas R$ 10,50/mês', 'Ganha 600 Pontos na hora', 'Taxas reduzidas', 'Suporte padrão']
+                beneficios: ['Equivale a apenas R$ 10,50/mês', 'Ganha 600 Pontos na hora', 'Taxas reduzidas em 50% nos pagamentos presenciais', 'Prioridade no Explorar']
             },
             {
                 id: 'premium-socio-anual',
@@ -67,7 +67,7 @@ export default function StatusAssinatura({ auth, statusAssinatura }) {
                 destaque: true,
                 tema: 'from-blue-600 to-indigo-700',
                 badge: 'Melhor Custo-Benefício',
-                beneficios: ['Equivale a apenas R$ 21,00/mês', 'Ganha 3600 Pontos na hora', 'Isenção da taxa da plataforma', 'Suporte VIP 24/7', 'Crie gerentes e convide sócios ilimitados']
+                beneficios: ['Equivale a apenas R$ 21,00/mês', 'Ganha 3600 Pontos na hora', 'Isenção total da taxa da plataforma', 'Emissão automática de nota fiscal a cada venda', 'Funcionários ilimitados', 'Prioridade máxima no Explorar e nas recomendações do app', 'Suporte VIP 24/7']
             }
         ] 
         : [

@@ -20,7 +20,7 @@ function SubSecao({ titulo, children }) {
 
 export default function Termos({ versaoAtual }) {
     const { auth } = usePage().props;
-    const versao = versaoAtual || '2.0';
+    const versao = versaoAtual || '2.1';
 
     return (
         <div className="min-h-screen bg-[#FAFAFA]">
@@ -34,7 +34,7 @@ export default function Termos({ versaoAtual }) {
                 <div className="bg-white border border-gray-100 rounded-3xl shadow-[0_4px_25px_rgba(0,0,0,0.04)] p-6 sm:p-10">
                     <span className="text-xs font-black text-[#FF5A00] tracking-widest">CONTRATO</span>
                     <h1 className="text-2xl font-black text-gray-900 mt-2 mb-1">Termo de Compromisso</h1>
-                    <p className="text-xs text-gray-400 mb-8">Versão {versao} · Última atualização: 22 de setembro de 2026</p>
+                    <p className="text-xs text-gray-400 mb-8">Versão {versao} · Última atualização: 3 de outubro de 2026</p>
 
                     <Secao titulo="1. O que é a Lokyva">
                         <p>
@@ -164,16 +164,31 @@ export default function Termos({ versaoAtual }) {
 
                     <Secao titulo="5. Cancelamentos e estornos">
                         <p>
-                            As condições de cancelamento podem variar por estabelecimento e tipo de serviço ou
-                            locação, e são exibidas antes da confirmação da reserva. De forma geral:
+                            Existem dois momentos diferentes em que um valor pago pode ser devolvido: o
+                            <strong className="text-gray-800"> cancelamento</strong> de uma reserva que ainda vai
+                            acontecer, e o <strong className="text-gray-800">estorno</strong> (contestação) de um
+                            serviço que já foi realizado.
                         </p>
-                        <ul className="list-disc pl-5 space-y-1.5">
-                            <li>Solicitações de estorno podem ser abertas diretamente pelo app/site, na área financeira da sua conta, em até <strong className="text-gray-800">4 dias corridos</strong> após a finalização do serviço;</li>
-                            <li>O prestador/estabelecimento responsável é notificado e tem um prazo para responder à solicitação;</li>
-                            <li>Você acompanha o andamento da sua solicitação (pendente, em análise, aprovado, contestado ou concluído) na própria tela de estornos;</li>
-                            <li>Quando aprovado, o estorno é processado junto ao parceiro de pagamentos e o valor retorna pela mesma forma de pagamento utilizada;</li>
-                            <li>Todo o histórico da solicitação — quando foi aberta, respondida e concluída — fica registrado e disponível para consulta.</li>
-                        </ul>
+
+                        <SubSecao titulo="Cancelamento de agendamentos, serviços avulsos e locações">
+                            <ul className="list-disc pl-5 space-y-1.5">
+                                <li>Se o pagamento foi feito dentro da plataforma, cancelar uma reserva confirmada dispara automaticamente a devolução do valor para a mesma forma de pagamento usada na compra, processada junto ao nosso parceiro de pagamentos;</li>
+                                <li>Cancelamentos feitos com <strong className="text-gray-800">24 horas de antecedência ou mais</strong> em relação ao horário/data marcada recebem a devolução integral do valor pago;</li>
+                                <li>Cancelamentos feitos com <strong className="text-gray-800">menos de 24 horas</strong> de antecedência estão sujeitos a uma retenção de <strong className="text-gray-800">2% do valor pago</strong> a título de taxa de cancelamento tardio — o restante (98%) é devolvido normalmente;</li>
+                                <li>Essa taxa existe para compensar o estabelecimento/proprietário pelo horário ou item que ficou reservado e não pôde ser repassado a outro cliente a tempo;</li>
+                                <li>Todo cancelamento com pagamento online gera um registro de estorno vinculado à reserva, com status e valores, disponível para consulta no seu histórico financeiro e, no caso de estabelecimentos/proprietários, também para a administração da Lokyva.</li>
+                            </ul>
+                        </SubSecao>
+
+                        <SubSecao titulo="Estorno (contestação) de um serviço já realizado">
+                            <ul className="list-disc pl-5 space-y-1.5">
+                                <li>Solicitações de estorno podem ser abertas diretamente pelo app/site, na área financeira da sua conta, em até <strong className="text-gray-800">4 dias corridos</strong> após a finalização do serviço;</li>
+                                <li>O prestador/estabelecimento responsável é notificado e tem um prazo para responder à solicitação;</li>
+                                <li>Você acompanha o andamento da sua solicitação (pendente, em análise, aguardando documentos, aprovado, reprovado ou concluído) na própria tela de estornos;</li>
+                                <li>Quando aprovado, o estorno é processado junto ao parceiro de pagamentos e o valor retorna pela mesma forma de pagamento utilizada;</li>
+                                <li>Todo o histórico da solicitação — quando foi aberta, respondida e concluída — fica registrado e disponível para consulta, tanto para quem pagou quanto para a administração da Lokyva.</li>
+                            </ul>
+                        </SubSecao>
                     </Secao>
 
                     <Secao titulo="6. Pontos Lokyva">
@@ -203,11 +218,17 @@ export default function Termos({ versaoAtual }) {
                         </ul>
                     </Secao>
 
-                    <Secao titulo="8. Planos de assinatura">
+                    <Secao titulo="8. Planos de assinatura e serviços premium">
                         <p>
-                            A Lokyva oferece planos de assinatura opcionais, com benefícios como ofertas exclusivas e
-                            acesso a funcionalidades adicionais. As condições gerais são:
+                            A Lokyva oferece planos de assinatura opcionais (premium), com benefícios exclusivos que
+                            variam conforme o tipo de conta:
                         </p>
+                        <ul className="list-disc pl-5 space-y-1.5">
+                            <li>Clientes com plano premium têm acesso a um relatório pessoal com estatísticas de uso (gastos, serviços mais utilizados, pontos acumulados) e a ofertas/destaques exclusivos na busca;</li>
+                            <li>Proprietários e sócios com plano premium têm acesso ao Relatório Avançado do estabelecimento (faturamento, ranking de funcionários, serviços mais vendidos, horários de pico e perfil de clientes) e a limites maiores de equipe/funcionários;</li>
+                            <li>Esses benefícios ficam disponíveis enquanto o plano estiver ativo e dentro da validade (<code className="text-xs bg-gray-100 px-1 py-0.5 rounded">plano_expira_em</code>) — ao vencer sem renovação, o acesso aos recursos exclusivos é encerrado automaticamente, mesmo que o nome do plano ainda apareça no cadastro.</li>
+                        </ul>
+                        <p className="pt-1">As condições gerais da assinatura são:</p>
                         <ul className="list-disc pl-5 space-y-1.5">
                             <li>Cada plano tem um valor e uma periodicidade (mensal ou anual) informados antes da contratação;</li>
                             <li>A cobrança é recorrente e renovada automaticamente ao final de cada ciclo, salvo cancelamento prévio;</li>

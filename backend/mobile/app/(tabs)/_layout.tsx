@@ -59,6 +59,7 @@ export default function TabLayout() {
     >
       <Tabs.Screen name="home" options={{ title: 'Início', tabBarIcon: aba('home', 'home-outline') }} />
       <Tabs.Screen name="explorar" options={{ title: 'Descubra', tabBarIcon: aba('compass', 'compass-outline') }} />
+      <Tabs.Screen name="entregas" options={{ title: 'Entregas', tabBarIcon: aba('bicycle', 'bicycle-outline') }} />
       <Tabs.Screen name="carteira" options={{ title: 'Carteira', tabBarIcon: aba('wallet', 'wallet-outline') }} />
       <Tabs.Screen name="caixa-entrada" options={{ title: 'Mensagens', tabBarIcon: aba('chatbubble', 'chatbubble-outline') }} />
       <Tabs.Screen name="reservas" options={{ title: 'Reservas', tabBarIcon: aba('calendar', 'calendar-outline') }} />

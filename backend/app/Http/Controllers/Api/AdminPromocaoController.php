@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\ItemAluguel;
 use App\Models\Promocao;
+use App\Models\Servico;
 use App\Models\User;
 use App\Services\ImageKitService;
 use App\Services\PlanoService;
@@ -25,7 +27,13 @@ class AdminPromocaoController extends Controller
 
     public function index()
     {
-        $promocoes = Promocao::with('criador:id,name')
+        $promocoes = Promocao::with([
+                'criador:id,name',
+                'servico:id,nome,estabelecimento_id',
+                'servico.estabelecimento:id,nome',
+                'itemAluguel:id,nome,estabelecimento_id',
+                'itemAluguel.estabelecimento:id,name',
+            ])
             ->orderByDesc('created_at')
             ->get()
             ->map(function ($p) {
@@ -39,6 +47,48 @@ class AdminPromocaoController extends Controller
         ]);
     }
 
+    /**
+     * Busca rápida de serviços/itens de aluguel em toda a plataforma, usada
+     * pelo seletor "vincular a um item" no formulário de promoção — o admin
+     * não gerencia um estabelecimento específico, então precisa buscar entre
+     * todos.
+     */
+    public function buscarItens(Request $request)
+    {
+        $termo = trim((string) $request->query('q', ''));
+        if (mb_strlen($termo) < 2) {
+            return response()->json([]);
+        }
+
+        $servicos = Servico::query()
+            ->where('ativo', true)
+            ->where('nome', 'ilike', "%{$termo}%")
+            ->with('estabelecimento:id,nome')
+            ->limit(8)
+            ->get()
+            ->map(fn ($s) => [
+                'tipo' => 'servico',
+                'id' => $s->id,
+                'nome' => $s->nome,
+                'estabelecimento_nome' => $s->estabelecimento?->nome,
+            ]);
+
+        $itens = ItemAluguel::query()
+            ->where('ativo', true)
+            ->where('nome', 'ilike', "%{$termo}%")
+            ->with('estabelecimento:id,name')
+            ->limit(8)
+            ->get()
+            ->map(fn ($i) => [
+                'tipo' => 'item_aluguel',
+                'id' => $i->id,
+                'nome' => $i->nome,
+                'estabelecimento_nome' => $i->estabelecimento?->name,
+            ]);
+
+        return response()->json($servicos->concat($itens)->values());
+    }
+
     private function regrasValidacao(): array
     {
         return [
@@ -47,6 +97,10 @@ class AdminPromocaoController extends Controller
             'tipo' => 'required|in:pontos_todos,pontos_plano,oferta_assinantes,cupom',
             'quantidade_pontos' => 'nullable|integer|min:1|max:1000000',
             'cupom_id' => 'nullable|exists:cupons,id',
+            // Vínculo opcional com um item para a promoção aparecer como card
+            // clicável no Explorar/Promoções — nunca os dois ao mesmo tempo.
+            'servico_id' => 'nullable|integer|exists:servicos,id|prohibits:item_aluguel_id',
+            'item_aluguel_id' => 'nullable|integer|exists:itens_aluguel,id|prohibits:servico_id',
             'desconto_percentual' => 'nullable|numeric|min:0|max:100',
             'desconto_valor' => 'nullable|numeric|min:0',
             'publico_alvo' => 'required|in:todos,clientes,proprietarios',

@@ -124,7 +124,7 @@ export default function AvaliacoesSocio() {
       )}
 
       <Modal visible={!!alvo} transparent animationType="slide" onRequestClose={() => setAlvo(null)}>
-        <KeyboardAvoidingView style={s.overlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingView style={s.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setAlvo(null)} />
           <View style={s.sheet}>
             <View style={s.grip} />

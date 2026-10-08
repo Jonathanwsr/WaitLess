@@ -155,6 +155,74 @@ class EstornoService
     }
 
     /**
+     * CANCELAMENTO DO CLIENTE → ESTORNO AUTOMÁTICO
+     * Usado quando o próprio cliente cancela um agendamento/locação paga
+     * online (sem precisar de disputa/aprovação manual): registra o estorno
+     * na mesma tabela/tela que o admin já usa para acompanhar disputas, e
+     * processa a devolução de verdade no Asaas via aprovarEstorno(). Antes
+     * disso, cada tela de cancelamento fazia sua própria versão dessa lógica
+     * — algumas nunca chegavam a chamar o Asaas de verdade (o valor ficava
+     * marcado como "estornado" no banco sem o dinheiro nunca voltar pro
+     * cliente), e nenhuma ficava visível pro admin.
+     *
+     * @param  string  $categoria  'SERVIÇO' ou 'ALUGUEL'
+     * @return Estorno|null  null quando não dá pra identificar o responsável
+     *                       pelo estabelecimento (ex.: locador avulso sem
+     *                       estabelecimento formal) — nesse caso o chamador
+     *                       deve cair para um estorno direto, sem o registro.
+     */
+    public function criarEEstornarPorCancelamento(User $cliente, Pagamento $pagamento, string $categoria, float $valorEstornar, string $descricao, string $motivo = 'CANCELAMENTO_CLIENTE'): ?Estorno
+    {
+        $responsavelPivot = DB::table('estabelecimento_usuario')
+            ->where('estabelecimento_id', $pagamento->estabelecimento_id)
+            ->whereIn('tipo', ['admin', 'socio', 'proprietario', 'gerente'])
+            ->first() ?? DB::table('estabelecimento_usuario')
+                ->where('estabelecimento_id', $pagamento->estabelecimento_id)
+                ->first();
+
+        if (!$responsavelPivot || !$pagamento->estabelecimento_id) {
+            return null;
+        }
+
+        $valorPago = (float) ($pagamento->valor_total ?? $pagamento->valor);
+        $metodoOriginal = strtoupper($pagamento->metodo_pagamento ?? 'PIX');
+        $formaPagamentoFinal = in_array($metodoOriginal, ['CARTAO', 'CARTÃO', 'CREDIT_CARD'])
+            ? 'CREDIT_CARD'
+            : ($metodoOriginal === 'BOLETO' ? 'BOLETO' : 'PIX');
+
+        $estorno = Estorno::create([
+            'codigo_estorno' => 'CANC-' . strtoupper(uniqid()),
+            'usuario_id' => $cliente->id,
+            'prestador_id' => $responsavelPivot->usuario_id,
+            'estabelecimento_id' => $pagamento->estabelecimento_id,
+            'pagamento_id' => $pagamento->id,
+            'categoria' => $categoria,
+            'valor_pago' => $valorPago,
+            'valor_estornado' => $valorEstornar,
+            'status' => 'PENDENTE',
+            'motivo' => $motivo,
+            'descricao_cliente' => $descricao,
+            'forma_pagamento' => $formaPagamentoFinal,
+            'tipo_estorno' => $valorEstornar < $valorPago ? 'PARCIAL' : 'TOTAL',
+            'id_transacao_asaas' => $pagamento->id_transacao_gateway,
+            'data_pagamento' => $pagamento->data_pagamento ?? $pagamento->updated_at,
+            'data_solicitacao' => now(),
+        ]);
+
+        HistoricoEstorno::create([
+            'estorno_id' => $estorno->id,
+            'usuario_id' => $cliente->id,
+            'novo_status' => 'PENDENTE',
+            'descricao' => 'Cancelamento pelo cliente — estorno automático acionado.',
+            'ip' => request()->ip(),
+        ]);
+
+        $this->aprovarEstorno($estorno, $cliente);
+
+        return $estorno->fresh();
+    }
+
+    /**
      * 2. PRESTADOR CONTESTA O ESTORNO
      */
     public function contestarEstorno(User $prestador, Estorno $estorno, array $dados, array $midias = [])
@@ -220,6 +288,17 @@ class EstornoService
         }
 
         DB::transaction(function () use ($estorno, $adminOuSistema) {
+            // Trava a linha e confere o status de novo DENTRO da transação —
+            // sem isso, dois cliques seguidos (ou uma tentativa automática
+            // concorrendo com o admin aprovando manualmente) podiam passar os
+            // dois pela checagem acima antes de qualquer um gravar o status,
+            // e o Asaas seria chamado duas vezes para o mesmo estorno.
+            $estornoTravado = Estorno::whereKey($estorno->id)->lockForUpdate()->first();
+            if (!$estornoTravado || in_array($estornoTravado->status, ['ESTORNADO', 'CANCELADO', 'REPROVADO'], true)) {
+                throw new Exception("Este estorno já foi finalizado ou cancelado.");
+            }
+            $estorno->setRawAttributes($estornoTravado->getAttributes());
+
             $idTransacao = $estorno->id_transacao_asaas ?? ($estorno->pagamento->id_transacao_gateway ?? null);
 
             if ($idTransacao) {

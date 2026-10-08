@@ -36,6 +36,34 @@ class CarteiraProprietarioController extends Controller
         return response()->json($this->carteira->painel($request->user(), $this->provider($request)));
     }
 
+    /**
+     * Histórico completo e paginado de repasses — o painel() só traz os 30
+     * mais recentes; aqui o proprietário pode puxar qualquer página/período,
+     * filtrando por tipo e status, na hora que quiser (web e mobile).
+     */
+    public function historico(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'tipo' => 'nullable|in:repasse,antecipacao',
+            'status' => 'nullable|in:pendente,processando,concluida,falhou,cancelada',
+            'data_inicio' => 'nullable|date',
+            'data_fim' => 'nullable|date',
+        ]);
+
+        $provider = $this->provider($request);
+        if (!$provider) {
+            return response()->json(['data' => [], 'current_page' => 1, 'last_page' => 1, 'total' => 0]);
+        }
+
+        return response()->json($this->carteira->historicoCompleto(
+            $provider,
+            $validated['tipo'] ?? null,
+            $validated['status'] ?? null,
+            $validated['data_inicio'] ?? null,
+            $validated['data_fim'] ?? null,
+        ));
+    }
+
     public function storeConta(Request $request): JsonResponse
     {
         $provider = $this->provider($request);

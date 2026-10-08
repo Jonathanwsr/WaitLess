@@ -7,6 +7,8 @@ use App\Models\Aluguel;
 use App\Models\CustoOperacional;
 use App\Models\Estorno;
 use App\Models\Pagamento;
+use App\Models\PedidoEntrega;
+use App\Models\ProdutoEntrega;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -51,11 +53,28 @@ class AdminRelatorioService
 
         $volumeServicos = (float) (clone $agendamentosQuery)->sum('valor_final');
         $volumeAlugueis = (float) (clone $alugueisQuery)->sum('valor_total');
-        $volumeTotal = $volumeServicos + $volumeAlugueis;
+        // Produtos para entrega/retirada: o volume conta o que foi pago ou está a caminho/concluído;
+        // a receita só entra quando o pedido é concluído (taxa de 1% só existe em vendas online).
+        $produtosQuery = PedidoEntrega::whereIn('status', ['pago', 'aguardando_confirmacao', 'concluido']);
+        $produtosReceitaQuery = PedidoEntrega::where('status', 'concluido');
+        if ($competencia) {
+            $produtosQuery->whereYear('created_at', $competencia->year)->whereMonth('created_at', $competencia->month);
+            $produtosReceitaQuery->whereYear('data_conclusao', $competencia->year)->whereMonth('data_conclusao', $competencia->month);
+        }
+
+        $volumeProdutos = (float) (clone $produtosQuery)->sum('valor_total');
+        $volumeTotal = $volumeServicos + $volumeAlugueis + $volumeProdutos;
 
         $taxaServicos = (float) (clone $pagamentosTaxaQuery)->sum('taxa');
         $taxaAlugueis = (float) (clone $alugueisQuery)->sum('taxa_plataforma');
-        $receitaPlataforma = $taxaServicos + $taxaAlugueis;
+        $taxaProdutos = (float) (clone $produtosReceitaQuery)->sum('taxa_plataforma');
+        // Cobranças parceladas: taxa de cada parcela paga (split no online, saldo devedor na baixa manual).
+        $taxaCobrancas = (float) DB::table('cobranca_parcelas')
+            ->where('status', 'pago')
+            ->when($competencia, fn ($q) => $q->whereYear('pago_em', $competencia->year)->whereMonth('pago_em', $competencia->month))
+            ->sum('taxa_plataforma');
+
+        $receitaPlataforma = $taxaServicos + $taxaAlugueis + $taxaProdutos + $taxaCobrancas;
 
         $totalRepassado = (float) DB::table('extrato_providers')
             ->where('tipo', 'repasse')
@@ -70,11 +89,71 @@ class AdminRelatorioService
             'volume_total_transacionado' => $volumeTotal,
             'volume_servicos' => $volumeServicos,
             'volume_alugueis' => $volumeAlugueis,
+            'volume_produtos' => $volumeProdutos,
+            'receita_cobrancas' => $taxaCobrancas,
             'receita_plataforma' => $receitaPlataforma,
             'valor_repassado_proprietarios' => $totalRepassado,
             'total_estornado' => $totalEstornado,
             'total_custos_operacionais' => $totalCustos,
             'lucro_liquido_real' => $receitaPlataforma - $totalEstornado - $totalCustos,
+        ];
+    }
+
+    /**
+     * Vendas de produtos para entrega/retirada por situação. Competência = mês em que o pedido foi feito.
+     * "Estornado" conta tanto o pedido em disputa (status estornado) quanto o cancelado cujo valor já foi devolvido.
+     */
+    public function resumoVendasEntregas(?string $mesReferencia = null): array
+    {
+        $competencia = $this->periodoDe($mesReferencia);
+
+        $pedidos = PedidoEntrega::query()
+            ->when($competencia, fn ($q) => $q->whereYear('created_at', $competencia->year)->whereMonth('created_at', $competencia->month));
+
+        $pagamentosEstornados = Pagamento::where('status', 'estornado')->select('id');
+
+        $porStatus = (clone $pedidos)->selectRaw('status, COUNT(*) as total, COALESCE(SUM(valor_total), 0) as valor')
+            ->groupBy('status')
+            ->get()
+            ->keyBy('status');
+
+        $linha = fn (array $statuses) => [
+            'total' => (int) collect($statuses)->sum(fn ($s) => $porStatus[$s]->total ?? 0),
+            'valor' => round((float) collect($statuses)->sum(fn ($s) => $porStatus[$s]->valor ?? 0), 2),
+        ];
+
+        $cancelados = (clone $pedidos)->where('status', 'cancelado');
+        $totalCancelados = (clone $cancelados)->count();
+        $canceladosPeloCliente = (clone $cancelados)->whereColumn('cancelado_por_usuario_id', 'cliente_id')->count();
+
+        $estornados = (clone $pedidos)->where(function ($q) use ($pagamentosEstornados) {
+            $q->where('status', 'estornado')
+                ->orWhere(function ($q2) use ($pagamentosEstornados) {
+                    $q2->where('status', 'cancelado')->whereIn('pagamento_id', $pagamentosEstornados);
+                });
+        });
+
+        $produtosApagados = ProdutoEntrega::onlyTrashed()
+            ->when($competencia, fn ($q) => $q->whereYear('deleted_at', $competencia->year)->whereMonth('deleted_at', $competencia->month))
+            ->count();
+
+        return [
+            'competencia' => $competencia?->format('Y-m'),
+            'vendidos' => $linha(['concluido']),
+            'em_andamento' => $linha(['pendente_pagamento', 'aguardando_confirmacao', 'pago']),
+            'cancelados' => [
+                'total' => $totalCancelados,
+                'valor' => round((float) (clone $cancelados)->sum('valor_total'), 2),
+                'pelo_cliente' => $canceladosPeloCliente,
+                'pelo_vendedor_ou_admin' => $totalCancelados - $canceladosPeloCliente,
+            ],
+            'estornados' => [
+                'total' => (clone $estornados)->count(),
+                'valor' => round((float) (clone $estornados)->sum('valor_total'), 2),
+            ],
+            'produtos_apagados' => $produtosApagados,
+            'produtos_ativos' => ProdutoEntrega::count(),
+            'receita_plataforma' => round((float) (clone $pedidos)->where('status', 'concluido')->sum('taxa_plataforma'), 2),
         ];
     }
 

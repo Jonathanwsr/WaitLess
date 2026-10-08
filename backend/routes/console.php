@@ -22,3 +22,7 @@ Schedule::command('carteira:sincronizar')->everyTenMinutes()->withoutOverlapping
 
 // Gamificação: bônus mensal automático de pontos por plano premium (todo dia 1, de madrugada).
 Schedule::command('gamificacao:bonus-mensal')->monthlyOn(1, '03:00');
+
+Schedule::command('entregas:lembretes-recompra')->dailyAt('10:00');
+Schedule::command('fila:avisar-vez')->everyFiveMinutes();
+Schedule::command('entregas:processar-assinaturas')->dailyAt('06:00');

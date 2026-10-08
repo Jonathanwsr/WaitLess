@@ -51,6 +51,66 @@ class AdminUsuarioService
             ->withQueryString();
     }
 
+    /**
+     * Ficha completa de um usuário para o card "ver detalhes" do admin: todo
+     * o perfil (contato, endereço, documentos) mais um resumo de atividade
+     * (estabelecimentos geridos, agendamentos, avaliações, indicações).
+     * Nunca inclui password/remember_token nem os campos de auditoria de IP/
+     * user-agent do termo de compromisso — não é isso que o admin precisa ver aqui.
+     */
+    public function detalhar(User $usuario): array
+    {
+        $endereco = trim(implode(', ', array_filter([
+            $usuario->endereco ?: $usuario->address,
+            $usuario->bairro ?: $usuario->province,
+            $usuario->cidade ?: $usuario->city,
+            $usuario->estado ?: $usuario->state,
+        ])));
+
+        $estabelecimentos = $usuario->estabelecimentos()
+            ->select('estabelecimentos.id', 'estabelecimentos.nome', 'estabelecimentos.cidade')
+            ->withPivot('tipo')
+            ->get()
+            ->map(fn ($e) => ['id' => $e->id, 'nome' => $e->nome, 'cidade' => $e->cidade, 'tipo' => $e->pivot->tipo])
+            ->values();
+
+        return [
+            'id' => $usuario->id,
+            'name' => $usuario->name,
+            'email' => $usuario->email,
+            'email_verificado' => (bool) $usuario->email_verified_at,
+            'foto_perfil' => $usuario->foto_perfil,
+            'papel' => $usuario->papel,
+            'telefone' => $usuario->telefone ?: $usuario->mobile_phone ?: $usuario->phone,
+            'cpf_cnpj' => $usuario->cpf_cnpj,
+            'tipo_pessoa' => $usuario->person_type,
+            'data_nascimento' => $usuario->birth_date,
+            'endereco_completo' => $endereco ?: null,
+            'cep' => $usuario->cep ?: $usuario->postal_code,
+            'profissao' => $usuario->profissao,
+            'sobre_mim' => $usuario->sobre_mim,
+            'idiomas' => $usuario->idiomas,
+            'onde_estudei' => $usuario->onde_estudei,
+            'plano_assinatura' => $usuario->plano_assinatura,
+            'plano_expira_em' => $usuario->plano_expira_em,
+            'asaas_subscription_status' => $usuario->asaas_subscription_status,
+            'asaas_customer_id' => $usuario->asaas_customer_id,
+            'pontos_saldo' => $usuario->pontos_saldo,
+            'numero_servicos' => $usuario->numero_servicos,
+            'numero_reservas' => $usuario->numero_reservas,
+            'codigo_indicacao' => $usuario->codigo_indicacao,
+            'indicado_por' => $usuario->indicado_por_id ? User::find($usuario->indicado_por_id)?->only(['id', 'name']) : null,
+            'notificacoes_desativadas' => (bool) $usuario->notification_disabled,
+            'criado_em' => $usuario->created_at,
+            'estabelecimentos' => $estabelecimentos,
+            'resumo_atividade' => [
+                'agendamentos' => $usuario->agendamentos()->count(),
+                'avaliacoes_feitas' => DB::table('avaliacoes')->where('usuario_id', $usuario->id)->count(),
+                'indicados' => User::where('indicado_por_id', $usuario->id)->count(),
+            ],
+        ];
+    }
+
     /** Ids de plano válidos para o papel do usuário-alvo (catálogo sócio ou cliente). */
     public function planosValidosParaUsuario(User $usuario): array
     {

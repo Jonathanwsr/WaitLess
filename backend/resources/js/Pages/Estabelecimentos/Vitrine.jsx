@@ -22,7 +22,9 @@ function Foto({ src, alt }) {
     );
 }
 
-export default function Vitrine({ auth, vitrine, divulgacao = null }) {
+import ProdutosVendidosCard from '@/Components/Perfil/ProdutosVendidosCard';
+
+export default function Vitrine({ auth, vitrine, divulgacao = null, produtosVendidos = 0 }) {
     const [aba, setAba] = useState('servicos');
     const [copiado, setCopiado] = useState(false);
 
@@ -63,6 +65,10 @@ export default function Vitrine({ auth, vitrine, divulgacao = null }) {
     return (
         <AuthenticatedLayout user={auth?.user}>
             <Head title="Minha vitrine" />
+
+            <div className="max-w-6xl mx-auto px-4 sm:px-6 pt-6">
+                <ProdutosVendidosCard quantidade={produtosVendidos} titulo="Este local já vendeu" />
+            </div>
 
             <div className="bg-zinc-50 min-h-screen pb-20">
                 <div className="bg-gray-900 text-white text-sm font-semibold px-4 py-2.5 flex flex-wrap items-center justify-center gap-3">

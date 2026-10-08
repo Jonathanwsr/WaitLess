@@ -6,7 +6,7 @@ import { mostrarToast } from './toast';
  * "Favorito adicionado" ou "Removido dos favoritos" (segundo o que o servidor confirmou).
  * Devolve o novo estado, ou null se falhou (a tela deve desfazer a mudança otimista).
  */
-export async function alternarFavoritoRemoto(url: string, tipo: 'estabelecimento' | 'servico' | 'item_aluguel', id: number): Promise<boolean | null> {
+export async function alternarFavoritoRemoto(url: string, tipo: 'estabelecimento' | 'servico' | 'item_aluguel' | 'produto_entrega', id: number): Promise<boolean | null> {
   try {
     const token = (await AsyncStorage.getItem('@waitless_token')) || (await AsyncStorage.getItem('@lokyva_token'));
     const r = await fetch(url, {

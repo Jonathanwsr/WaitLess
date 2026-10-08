@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Mobile;
 use App\Http\Controllers\Controller;
 use App\Models\Agendamento;
 use App\Models\Aluguel;
+use App\Models\Funcionario;
 use App\Models\ItemAluguel;
 use App\Models\Servico;
 use App\Models\User;
@@ -177,7 +178,40 @@ class MobileAgendamentoController extends Controller
             'funcionario_id' => 'nullable|exists:funcionarios,id',
         ]);
 
-        $agendamento->update(['funcionario_id' => $validated['funcionario_id']]);
+        $user = Auth::user();
+
+        // Antes disso, qualquer usuário autenticado podia reatribuir QUALQUER
+        // agendamento a QUALQUER funcionário (nenhuma checagem de dono/vínculo) —
+        // uma IDOR clássica. Agora só quem gerencia o estabelecimento pode
+        // atribuir livremente; um funcionário comum só pode "pegar para si" um
+        // atendimento que ainda está livre, ou se liberar de um que é dele.
+        $gerencia = $user->estabelecimentos()->where('estabelecimentos.id', $agendamento->estabelecimento_id)->exists();
+        $meuFuncionarioId = $gerencia ? null : Funcionario::where('usuario_id', $user->id)
+            ->where('estabelecimento_id', $agendamento->estabelecimento_id)
+            ->value('id');
+
+        $autoAtribuicao = false;
+        if (!$gerencia && $meuFuncionarioId) {
+            $novoId = $validated['funcionario_id'] ?? null;
+            $estavaLivreOuEraMeu = is_null($agendamento->funcionario_id) || (int) $agendamento->funcionario_id === (int) $meuFuncionarioId;
+            $novoEhMeuOuNulo = is_null($novoId) || (int) $novoId === (int) $meuFuncionarioId;
+            $autoAtribuicao = $estavaLivreOuEraMeu && $novoEhMeuOuNulo;
+        }
+
+        if (!$gerencia && !$autoAtribuicao) {
+            return response()->json(['error' => 'Você não tem permissão para atribuir funcionários neste agendamento.'], 403);
+        }
+
+        if (!empty($validated['funcionario_id'])) {
+            $pertenceAoLocal = Funcionario::where('id', $validated['funcionario_id'])
+                ->where('estabelecimento_id', $agendamento->estabelecimento_id)
+                ->exists();
+            if (!$pertenceAoLocal) {
+                return response()->json(['error' => 'Esse funcionário não pertence a este estabelecimento.'], 422);
+            }
+        }
+
+        $agendamento->update(['funcionario_id' => $validated['funcionario_id'], 'atribuido_por' => $user->id]);
         $this->notificarFila($agendamento->estabelecimento_id);
 
         return response()->json(['message' => 'Funcionário atualizado com sucesso.', 'agendamento' => $agendamento], 200);
@@ -283,7 +317,7 @@ class MobileAgendamentoController extends Controller
             $estabelecimentosIdsBusca = [$estabelecimentoId];
         }
 
-        $query = Agendamento::with(['usuario:id,name,foto_perfil,telefone', 'servico:id,nome,valor', 'finalizadoPor:id,name'])
+        $query = Agendamento::with(['usuario:id,name,foto_perfil,telefone', 'servico:id,nome,valor', 'finalizadoPor:id,name', 'atribuidoPor:id,name'])
             ->whereIn('estabelecimento_id', $estabelecimentosIdsBusca)
             ->whereBetween('data_agendamento', [$filtros['data_inicio'], $filtros['data_fim']]);
 
@@ -828,6 +862,8 @@ class MobileAgendamentoController extends Controller
         $dadosEstabelecimento['favoritado'] = \App\Models\Favorito::where('usuario_id', Auth::id())
             ->where('estabelecimento_id', $id)
             ->exists();
+        $dadosEstabelecimento['produtos_vendidos'] = $estabelecimento->produtosVendidos();
+        $dadosEstabelecimento['status_funcionamento'] = \App\Support\StatusFuncionamento::de($estabelecimento->horariosFuncionamento);
 
         return response()->json([
             'estabelecimento' => $dadosEstabelecimento,
@@ -1118,7 +1154,7 @@ class MobileAgendamentoController extends Controller
     public function show($id)
     {
         try {
-            $agendamento = Agendamento::with(['servico', 'estabelecimento'])->find($id);
+            $agendamento = Agendamento::with(['servico', 'estabelecimento', 'funcionario:id,nome'])->find($id);
 
             if (!$agendamento) {
                 return response()->json(['error' => 'Agendamento não encontrado.'], 404);
@@ -1146,6 +1182,8 @@ class MobileAgendamentoController extends Controller
             }
 
             $agendamento->posicao_fila = $posicaoFila;
+            // Pagamento parcelado (cobrança enviada pelo local), se este agendamento fizer parte de uma.
+            $agendamento->cobranca = app(\App\Services\CobrancaParceladaService::class)->resumoDoPedido('agendamento_id', $agendamento->id);
             return response()->json($agendamento, 200);
 
         } catch (\Exception $e) {
@@ -1199,6 +1237,8 @@ class MobileAgendamentoController extends Controller
                 'horario_fim'        => $item->horario_entrega,
                 'quantidade'         => $aluguel->quantidade,
                 'valor_final'        => (float) $aluguel->valor_total,
+                'forma_pagamento'    => $aluguel->forma_pagamento,
+                'valor_caucao'       => (float) ($aluguel->valor_caucao ?? 0),
                 'item' => $item ? [
                     'nome'                 => $item->nome,
                     'descricao'            => $item->descricao,

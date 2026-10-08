@@ -64,13 +64,14 @@ interface ItemReserva {
 interface ItemRemover {
   id: number | string;
   nome: string;
-  tipo: 'estabelecimento' | 'servico' | 'item_aluguel';
+  tipo: 'estabelecimento' | 'servico' | 'item_aluguel' | 'produto_entrega';
 }
 
 interface DadosFavoritos {
   estabelecimentos: Estabelecimento[];
   servicos: Servico[];
   reservas: ItemReserva[];
+  produtos: any[];
 }
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api/mobile';
@@ -80,10 +81,10 @@ const brl = (v: unknown) => `R$ ${Number(v || 0).toFixed(2).replace('.', ',')}`;
 export default function FavoritosDashboard() {
   const router = useRouter();
 
-  const [abaAtiva, setAbaAtiva] = useState<'todos' | 'estabelecimentos' | 'servicos' | 'reservas'>('todos');
+  const [abaAtiva, setAbaAtiva] = useState<'todos' | 'estabelecimentos' | 'servicos' | 'reservas' | 'produtos'>('todos');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [dados, setDados] = useState<DadosFavoritos>({ estabelecimentos: [], servicos: [], reservas: [] });
+  const [dados, setDados] = useState<DadosFavoritos>({ estabelecimentos: [], servicos: [], reservas: [], produtos: [] });
 
   const [modalVisivel, setModalVisivel] = useState(false);
   const [itemParaRemover, setItemParaRemover] = useState<ItemRemover | null>(null);
@@ -110,6 +111,7 @@ export default function FavoritosDashboard() {
         estabelecimentos: json.estabelecimentos || [],
         servicos: json.servicos || [],
         reservas: json.itens_aluguel || [],
+        produtos: json.produtos_entrega || [],
       });
     } catch (e) {
       console.log('Erro ao carregar favoritos da API');
@@ -119,7 +121,7 @@ export default function FavoritosDashboard() {
   };
 
   // Abre o modal de confirmação antes de remover
-  const solicitarRemocao = (item: Estabelecimento | Servico | ItemReserva, tipo: 'estabelecimento' | 'servico' | 'item_aluguel') => {
+  const solicitarRemocao = (item: Estabelecimento | Servico | ItemReserva | any, tipo: 'estabelecimento' | 'servico' | 'item_aluguel' | 'produto_entrega') => {
     setItemParaRemover({ id: item.id, nome: item.nome, tipo });
     setModalVisivel(true);
   };
@@ -137,6 +139,8 @@ export default function FavoritosDashboard() {
         setDados((prev) => ({ ...prev, estabelecimentos: prev.estabelecimentos.filter((e) => e.id !== itemParaRemover.id) }));
       } else if (itemParaRemover.tipo === 'item_aluguel') {
         setDados((prev) => ({ ...prev, reservas: prev.reservas.filter((r) => r.id !== itemParaRemover.id) }));
+      } else if (itemParaRemover.tipo === 'produto_entrega') {
+        setDados((prev) => ({ ...prev, produtos: prev.produtos.filter((p) => p.id !== itemParaRemover.id) }));
       } else {
         setDados((prev) => ({ ...prev, servicos: prev.servicos.filter((s) => s.id !== itemParaRemover.id) }));
       }
@@ -152,14 +156,16 @@ export default function FavoritosDashboard() {
   const temEstabelecimentos = dados.estabelecimentos.length > 0;
   const temServicos = dados.servicos.length > 0;
   const temReservas = dados.reservas.length > 0;
-  const estaVazio = !temEstabelecimentos && !temServicos && !temReservas;
-  const total = dados.estabelecimentos.length + dados.servicos.length + dados.reservas.length;
+  const temProdutos = dados.produtos.length > 0;
+  const estaVazio = !temEstabelecimentos && !temServicos && !temReservas && !temProdutos;
+  const total = dados.estabelecimentos.length + dados.servicos.length + dados.reservas.length + dados.produtos.length;
 
   const ABAS = [
     { id: 'todos', rotulo: 'Todos', icone: 'heart' },
     { id: 'estabelecimentos', rotulo: 'Locais', icone: 'storefront-outline' },
     { id: 'servicos', rotulo: 'Serviços', icone: 'briefcase-outline' },
     { id: 'reservas', rotulo: 'Reservas', icone: 'key-outline' },
+    { id: 'produtos', rotulo: 'Produtos', icone: 'cube-outline' },
   ] as const;
 
   return (
@@ -291,6 +297,23 @@ export default function FavoritosDashboard() {
                       </View>
                     </View>
                   </TouchableOpacity>
+                ))}
+              </>
+            )}
+
+            {(abaAtiva === 'todos' || abaAtiva === 'produtos') && temProdutos && (
+              <>
+                {abaAtiva === 'todos' && <Text style={s.secao}>Produtos para entrega</Text>}
+                {dados.produtos.map((produto) => (
+                  <View key={`produto-${produto.id}`} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, borderColor: T.line }}>
+                    <Image source={{ uri: produto.fotos?.[0] || 'https://placehold.co/160x160/f4f4f5/a1a1aa?text=Produto' }} style={{ width: 64, height: 64, borderRadius: 12 }} contentFit="cover" />
+                    <TouchableOpacity style={{ flex: 1 }} onPress={() => router.push({ pathname: '/src/screens/EntregaDetalhes' as never, params: { id: String(produto.id) } })}>
+                      <Text style={{ fontWeight: '800', color: T.ink, fontSize: 14 }} numberOfLines={2}>{produto.nome}</Text>
+                      <Text style={{ color: T.faint, fontSize: 11, marginTop: 2 }} numberOfLines={1}>{produto.estabelecimento?.nome || 'Vendedor independente'}</Text>
+                      <Text style={{ color: T.primary, fontWeight: '900', marginTop: 4 }}>R$ {Number(produto.valor_final || 0).toFixed(2).replace('.', ',')}</Text>
+                    </TouchableOpacity>
+                    <FavoriteButton ativo onPress={() => solicitarRemocao(produto, 'produto_entrega')} />
+                  </View>
                 ))}
               </>
             )}

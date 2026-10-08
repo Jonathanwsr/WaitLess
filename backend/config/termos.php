@@ -12,5 +12,5 @@ return [
     | o usuário aceitou. Sempre que o texto do termo mudar de forma relevante,
     | incremente este valor.
     */
-    'versao_atual' => '2.0',
+    'versao_atual' => '2.1',
 ];

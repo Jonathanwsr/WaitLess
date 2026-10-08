@@ -202,8 +202,8 @@ export default function Show({ painelInicial }) {
                                     {semReserva.map((i) => (
                                         <li key={i.id} className="py-3 flex flex-wrap items-center justify-between gap-2">
                                             <div><p className="font-bold text-gray-900">{i.titulo}</p><p className="text-xs text-gray-500">{i.dia ? fmtDia(i.dia) : ''} {i.hora_inicio || ''} · {fmt(i.custo_estimado)}</p></div>
-                                            {i.servico_id && i.estabelecimento_id && <Link href={route('cliente.agendar', i.estabelecimento_id)} className="text-sm font-black text-[#FF5A00] hover:underline">Reservar</Link>}
-                                            {i.item_aluguel_id && <Link href={route('itens.detalhes', i.item_aluguel_id)} className="text-sm font-black text-[#FF5A00] hover:underline">Reservar</Link>}
+                                            {i.servico_id && i.estabelecimento_id && <Link href={`${route('cliente.agendar', i.estabelecimento_id)}?servico_id=${i.servico_id}&viagem_id=${viagem.id}`} className="text-sm font-black text-[#FF5A00] hover:underline">Reservar</Link>}
+                                            {i.item_aluguel_id && <Link href={`${route('itens.detalhes', i.item_aluguel_id)}?viagem_id=${viagem.id}`} className="text-sm font-black text-[#FF5A00] hover:underline">Reservar</Link>}
                                         </li>
                                     ))}
                                 </ul>

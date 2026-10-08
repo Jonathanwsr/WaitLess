@@ -82,6 +82,7 @@ class DashboardController extends Controller
             'locais' => $idsLocais->count(),
             'servicos' => $servicos,
             'reservas' => $reservas,
+            'produtos' => \App\Models\ProdutoEntrega::where('usuario_id', $user->id)->count(),
         ];
     }
 

@@ -386,13 +386,13 @@ export default function FuncionarioDashboard({ auth, funcionarios, emAtendimento
                                             <BadgeStatus status={proximoLocal.status} />
                                         </div>
                                         
-                                        {proximoLocal.delegador?.name && (
+                                        {proximoLocal.atribuido_por?.name && (
                                             <div className="flex items-center gap-2 mt-4 text-xs font-bold text-gray-400 bg-gray-50 p-2 rounded-lg border border-gray-100 w-fit">
                                                 <ArrowLeftEndOnRectangleIcon className="w-3.5 h-3.5 text-indigo-400" />
-                                                Delegado por: <span className="text-gray-600">{proximoLocal.delegador.name}</span>
+                                                Atribuído por: <span className="text-gray-600">{proximoLocal.atribuido_por.name}</span>
                                             </div>
                                         )}
-                                        {!proximoLocal.delegador && (
+                                        {!proximoLocal.atribuido_por && (
                                             <div className="flex items-center gap-2 mt-4 text-[10px] font-black uppercase tracking-widest text-indigo-400 bg-indigo-50 px-3 py-1.5 rounded-lg border border-indigo-100 w-fit">
                                                 App / Fila Geral
                                             </div>
@@ -524,8 +524,8 @@ export default function FuncionarioDashboard({ auth, funcionarios, emAtendimento
                                                 <div>
                                                     <p className="font-black text-gray-900 text-lg tracking-tight leading-tight flex items-center gap-2">
                                                         {ag.usuario?.name || 'Cliente'}
-                                                        {ag.delegador?.name && (
-                                                            <span title={`Delegado por ${ag.delegador.name}`} className="bg-indigo-50 text-indigo-500 rounded-md p-1 border border-indigo-100"><ArrowLeftEndOnRectangleIcon className="w-3 h-3"/></span>
+                                                        {ag.atribuido_por?.name && (
+                                                            <span title={`Atribuído por ${ag.atribuido_por.name}`} className="bg-indigo-50 text-indigo-500 rounded-md p-1 border border-indigo-100"><ArrowLeftEndOnRectangleIcon className="w-3 h-3"/></span>
                                                         )}
                                                     </p>
                                                     <p className="text-sm text-gray-500 font-bold mt-1 flex flex-wrap items-center gap-1.5">

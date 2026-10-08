@@ -33,4 +33,34 @@ class Taxas
     {
         return (float) config('taxas.cancelamento_tardio_percentual', 2.0);
     }
+
+    /** Percentual da plataforma sobre vendas de produtos para entrega/retirada, ex.: 1.0 */
+    public static function percentualEntregas(): float
+    {
+        return max(0.0, min(100.0, (float) config('taxas.plataforma_entregas_percentual', 1.0)));
+    }
+
+    /** Percentual que fica com o vendedor na venda de um produto para entrega, ex.: 99.0 */
+    public static function parteDoLocalPercentualEntregas(): float
+    {
+        return round(100 - self::percentualEntregas(), 2);
+    }
+
+    /** Valor da taxa da plataforma sobre uma venda de produto para entrega. */
+    public static function sobreEntregas(float $valor): float
+    {
+        return round($valor * (self::percentualEntregas() / 100), 2);
+    }
+
+    /** Percentual da plataforma sobre pagamentos online de cobranças parceladas, ex.: 0.5 */
+    public static function percentualCobrancas(): float
+    {
+        return max(0.0, min(100.0, (float) config('taxas.plataforma_cobrancas_percentual', 0.5)));
+    }
+
+    /** Percentual que vai para a carteira do sócio na cobrança parcelada (split), ex.: 99.5 */
+    public static function parteDoSocioCobrancasPercentual(): float
+    {
+        return round(100 - self::percentualCobrancas(), 2);
+    }
 }

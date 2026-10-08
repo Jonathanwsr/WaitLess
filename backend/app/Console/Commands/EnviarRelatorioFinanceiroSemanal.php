@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Mail\RelatorioFinanceiroSemanalMail;
 use App\Models\Agendamento;
 use App\Models\Aluguel;
+use App\Models\PedidoEntrega;
 use App\Models\RelatorioFinanceiroSemanal;
 use App\Models\RoboExecucao;
 use App\Models\User;
@@ -117,8 +118,16 @@ class EnviarRelatorioFinanceiroSemanal extends Command
         $receitaAlugueis = (float) $alugueis->sum('valor_total');
         $taxaAlugueis = (float) $alugueis->sum('taxa_plataforma');
 
-        $receitaBrutaTotal = $receitaAgendamentos + $receitaAlugueis;
-        $taxaPlataformaTotal = $taxaAlugueis;
+        // PRODUTOS PARA ENTREGA/RETIRADA concluídos na semana. A taxa de 1% só existe nas vendas online.
+        $produtos = PedidoEntrega::whereIn('estabelecimento_id', $estabelecimentosIds)
+            ->where('status', 'concluido')
+            ->whereBetween('data_conclusao', [$semanaInicio, $semanaFim])
+            ->get();
+        $receitaProdutos = (float) $produtos->sum('valor_total');
+        $taxaProdutos = (float) $produtos->sum('taxa_plataforma');
+
+        $receitaBrutaTotal = $receitaAgendamentos + $receitaAlugueis + $receitaProdutos;
+        $taxaPlataformaTotal = $taxaAlugueis + $taxaProdutos;
         $receitaLiquidaTotal = $receitaBrutaTotal - $taxaPlataformaTotal;
 
         return RelatorioFinanceiroSemanal::updateOrCreate(
@@ -131,6 +140,8 @@ class EnviarRelatorioFinanceiroSemanal extends Command
                 'receita_alugueis_estabelecimento' => $receitaAlugueis,
                 'total_locacoes_avulsas' => 0,
                 'receita_locacoes_avulsas' => 0,
+                'total_produtos_vendidos' => (int) $produtos->sum('quantidade'),
+                'receita_produtos' => $receitaProdutos,
                 'receita_bruta_total' => $receitaBrutaTotal,
                 'taxa_plataforma_total' => $taxaPlataformaTotal,
                 'receita_liquida_total' => $receitaLiquidaTotal,

@@ -217,16 +217,18 @@ function ModalFormulario({ aberto, onFechar, itemEditando, categorias }) {
     if (!aberto) return null;
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm overflow-y-auto">
-            <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-2xl w-full shadow-2xl my-8">
-                <div className="flex items-center justify-between mb-6">
-                    <h3 className="text-2xl font-black text-gray-900">{editando ? 'Editar Locação' : 'Nova Locação Avulsa'}</h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-gray-900/60 backdrop-blur-sm">
+            {/* Altura limitada à tela: título e botões ficam fixos, só o meio do formulário rola. */}
+            <div className="bg-white rounded-3xl max-w-2xl w-full shadow-2xl flex flex-col max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)]">
+                <div className="flex items-center justify-between px-5 sm:px-7 py-4 border-b border-gray-100 shrink-0">
+                    <h3 className="text-xl sm:text-2xl font-black text-gray-900">{editando ? 'Editar Locação' : 'Nova Locação Avulsa'}</h3>
                     <button onClick={onFechar} className="p-2 hover:bg-gray-100 rounded-full">
                         <X className="w-5 h-5 text-gray-500" />
                     </button>
                 </div>
 
-                <form onSubmit={handleSubmit} className="space-y-5">
+                <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+                    <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-5 sm:px-7 py-5 space-y-5">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="sm:col-span-2">
                             <label className="text-xs font-bold text-gray-500 uppercase block mb-1.5">Nome</label>
@@ -511,7 +513,9 @@ function ModalFormulario({ aberto, onFechar, itemEditando, categorias }) {
                         </label>
                     </div>
 
-                    <div className="flex gap-3 pt-2">
+                    </div>
+
+                    <div className="flex gap-3 px-5 sm:px-7 py-4 border-t border-gray-100 bg-white rounded-b-3xl shrink-0">
                         <button type="button" onClick={onFechar} className="flex-1 py-3 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold transition">Cancelar</button>
                         <button type="submit" disabled={processing} className="flex-1 py-3 rounded-xl bg-green-600 hover:bg-green-700 text-white font-bold shadow-lg transition disabled:opacity-60">
                             {processing ? 'Salvando...' : editando ? 'Salvar alterações' : 'Criar locação'}

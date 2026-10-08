@@ -6,8 +6,9 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -27,6 +28,7 @@ const brl = (v: unknown) => `R$ ${Number(v || 0).toFixed(2).replace('.', ',')}`;
 
 export default function PagamentoScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [cancelamentoPct, setCancelamentoPct] = useState(2);
   useEffect(() => {
     fetch(`${API_URL}/taxas`, { headers: { Accept: 'application/json' } })
@@ -53,7 +55,44 @@ export default function PagamentoScreen() {
   const [parcelas, setParcelas] = useState(1);
   const [opcoesParcelas, setOpcoesParcelas] = useState<{ parcelas: number; valor_parcela: number; total: number }[]>([]);
 
+  // Cartões já salvos (tokenizados pelo Asaas na última compra com cartão) —
+  // evita o cliente redigitar número/CVV toda vez.
+  const [cartoesSalvos, setCartoesSalvos] = useState<{ id: number; bandeira: string | null; ultimos_digitos: string | null; nome_titular: string | null; padrao: boolean }[]>([]);
+  const [cartaoSalvoId, setCartaoSalvoId] = useState<number | null>(null);
+  const [mostrarNovoCartao, setMostrarNovoCartao] = useState(false);
+  const [loadingCartoes, setLoadingCartoes] = useState(true);
+
   const pegarToken = async () => (await AsyncStorage.getItem('@waitless_token')) || (await AsyncStorage.getItem('@lokyva_token'));
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const token = await pegarToken();
+        const res = await fetch(`${API_URL}/cartoes-salvos`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+        const json = await res.json().catch(() => null);
+        const lista = Array.isArray(json?.data) ? json.data : [];
+        setCartoesSalvos(lista);
+        const padrao = lista.find((c: any) => c.padrao) || lista[0];
+        if (padrao) setCartaoSalvoId(padrao.id);
+        else setMostrarNovoCartao(true);
+      } catch {
+        setMostrarNovoCartao(true);
+      } finally {
+        setLoadingCartoes(false);
+      }
+    })();
+  }, []);
+
+  const removerCartaoSalvo = async (id: number) => {
+    try {
+      const token = await pegarToken();
+      await fetch(`${API_URL}/cartoes-salvos/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+      setCartoesSalvos((lista) => lista.filter((c) => c.id !== id));
+      if (cartaoSalvoId === id) setCartaoSalvoId(null);
+    } catch {
+      alertar('Não foi possível remover', 'Tente novamente em instantes.');
+    }
+  };
 
   const buscarDadosCheckout = useCallback(async () => {
     if (!agendamento_id) {
@@ -93,7 +132,9 @@ export default function PagamentoScreen() {
     if (!agendamento_id) return alertar('Ops', 'Não encontramos o pedido para pagar. Volte e tente novamente.');
     if (abrindoGateway.current) return; // evita duplo toque abrindo duas cobranças
 
-    if (method === 'cartao') {
+    const usandoCartaoSalvo = method === 'cartao' && !mostrarNovoCartao && !!cartaoSalvoId;
+
+    if (method === 'cartao' && !usandoCartaoSalvo) {
       const numero = cartao.numero.replace(/\D/g, '');
       if (numero.length < 13 || !cartao.titular.trim() || !cartao.mes || !cartao.ano || cartao.cvv.length < 3) {
         return alertar('Dados do cartão', 'Preencha número, nome, validade e CVV do cartão.');
@@ -109,7 +150,8 @@ export default function PagamentoScreen() {
         metodo_pagamento: method,
         parcelas: method === 'cartao' ? parcelas : 1,
         asaas_customer_id: method !== 'local' ? asaas_customer_id : undefined,
-        cartao: method === 'cartao' ? {
+        cartao_salvo_id: usandoCartaoSalvo ? cartaoSalvoId : undefined,
+        cartao: method === 'cartao' && !usandoCartaoSalvo ? {
           numero: cartao.numero.replace(/\D/g, ''),
           titular: cartao.titular.trim(),
           mes: Number(cartao.mes),
@@ -361,8 +403,55 @@ export default function PagamentoScreen() {
               </Text>
             </View>
 
-            {method === 'cartao' && (
+            {method === 'cartao' && !loadingCartoes && cartoesSalvos.length > 0 && !mostrarNovoCartao && (
+              <View style={{ marginBottom: 14 }}>
+                <Text style={s.campoRotulo}>Seu cartão salvo</Text>
+                {cartoesSalvos.map((c) => {
+                  const selecionado = cartaoSalvoId === c.id;
+                  return (
+                    <TouchableOpacity key={c.id} style={[s.cartaoSalvoLinha, selecionado && s.cartaoSalvoLinhaOn]} onPress={() => setCartaoSalvoId(c.id)} activeOpacity={0.85}>
+                      <Ionicons name="card" size={22} color={selecionado ? T.primary : T.muted} />
+                      <Text style={s.cartaoSalvoTxt}>
+                        {(c.bandeira || 'Cartão').toUpperCase()} •••• •••• •••• {c.ultimos_digitos || '----'}
+                      </Text>
+                      {c.padrao && <View style={s.padraoBadge}><Text style={s.padraoBadgeTxt}>Padrão</Text></View>}
+                      <TouchableOpacity hitSlop={10} onPress={() => removerCartaoSalvo(c.id)}>
+                        <Ionicons name="trash-outline" size={16} color={T.muted} />
+                      </TouchableOpacity>
+                    </TouchableOpacity>
+                  );
+                })}
+
+                <TouchableOpacity style={s.addCartaoBtn} onPress={() => setMostrarNovoCartao(true)} activeOpacity={0.8}>
+                  <Ionicons name="add" size={18} color={T.primary} />
+                  <Text style={s.addCartaoTxt}>Adicionar novo cartão</Text>
+                </TouchableOpacity>
+
+                <View style={s.ouDivider}>
+                  <View style={s.ouLinha} />
+                  <Text style={s.ouTxt}>ou</Text>
+                  <View style={s.ouLinha} />
+                </View>
+
+                <TouchableOpacity style={s.pixAtalho} onPress={() => setMethod('pix')} activeOpacity={0.85}>
+                  <MaterialCommunityIcons name="qrcode-scan" size={20} color={T.success} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.pixAtalhoTitulo}>Pagar com Pix</Text>
+                    <Text style={s.pixAtalhoDesc}>Aprovação imediata, sem precisar do cartão.</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={T.faint} />
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {method === 'cartao' && (mostrarNovoCartao || (!loadingCartoes && cartoesSalvos.length === 0)) && (
               <View style={s.cartaoBox}>
+                {cartoesSalvos.length > 0 && (
+                  <TouchableOpacity onPress={() => setMostrarNovoCartao(false)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                    <Ionicons name="chevron-back" size={16} color={T.primary} />
+                    <Text style={[s.campoRotulo, { color: T.primary, marginBottom: 0 }]}>Usar cartão salvo</Text>
+                  </TouchableOpacity>
+                )}
                 <View>
                   <Text style={s.campoRotulo}>Número do cartão</Text>
                   <TextInput style={s.cartaoInput} placeholder="0000 0000 0000 0000" placeholderTextColor={T.faint} keyboardType="number-pad" maxLength={23} autoComplete="cc-number"
@@ -447,7 +536,10 @@ export default function PagamentoScreen() {
       </ScrollView>
 
       {/* BARRA INFERIOR */}
-      <View style={s.barra}>
+      {/* edges={['top']} no SafeAreaView de cima deixa a borda de baixo por
+          conta nossa — sem esse padding o botão de pagar ficava atrás da
+          barra de gestos do Android. */}
+      <View style={[s.barra, { paddingBottom: 14 + (Platform.OS === 'android' ? insets.bottom : 16) }]}>
         <TouchableOpacity style={[s.pagar, processing && { opacity: 0.7 }]} onPress={processarPagamento} disabled={processing} activeOpacity={0.88}>
           {processing ? (
             <ActivityIndicator color="#fff" />
@@ -471,6 +563,19 @@ const s = StyleSheet.create({
   linkAjuda: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: T.card, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 14, marginTop: 8, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
   linkAjudaTxt: { flex: 1, fontSize: 13, fontWeight: '700', color: T.ink },
   cartaoBox: { gap: 10, marginBottom: 12 },
+  cartaoSalvoLinha: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: T.card, borderRadius: 14, borderWidth: 1.5, borderColor: T.line, paddingHorizontal: 14, paddingVertical: 13, marginTop: 8 },
+  cartaoSalvoLinhaOn: { borderColor: T.primary, backgroundColor: T.primarySoft },
+  cartaoSalvoTxt: { flex: 1, fontSize: 13, fontWeight: '700', color: T.ink },
+  padraoBadge: { backgroundColor: T.successBg, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
+  padraoBadgeTxt: { fontSize: 10, fontWeight: '800', color: T.success },
+  addCartaoBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, marginTop: 10, borderWidth: 1.5, borderColor: T.line, borderStyle: 'dashed', borderRadius: 14 },
+  addCartaoTxt: { fontSize: 13, fontWeight: '700', color: T.primary },
+  ouDivider: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 16 },
+  ouLinha: { flex: 1, height: 1, backgroundColor: T.line },
+  ouTxt: { fontSize: 12, color: T.muted, fontWeight: '600' },
+  pixAtalho: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: T.successBg, borderRadius: 16, padding: 14 },
+  pixAtalhoTitulo: { fontSize: 14, fontWeight: '800', color: T.ink },
+  pixAtalhoDesc: { fontSize: 11, color: T.muted, marginTop: 1 },
   cartaoInput: { backgroundColor: T.card, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 15, fontSize: 16, color: T.ink, borderWidth: 1.5, borderColor: T.line },
   campoRotulo: { fontSize: 13, fontWeight: '700', color: T.ink, marginBottom: 6 },
   explica: { flexDirection: 'row', gap: 10, alignItems: 'flex-start', backgroundColor: T.primarySoft, borderRadius: 14, padding: 12, marginTop: 12, marginBottom: 14 },

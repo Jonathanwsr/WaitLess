@@ -31,6 +31,12 @@ class AdminUsuarioMobileController extends Controller
         ]);
     }
 
+    /** Ficha completa de um usuário — mesmo conteúdo do card "ver detalhes" do admin web. */
+    public function show(User $usuario)
+    {
+        return response()->json(['status' => 'success', 'usuario' => $this->service->detalhar($usuario)]);
+    }
+
     public function liberarPlano(Request $request, User $usuario)
     {
         $validated = $request->validate([

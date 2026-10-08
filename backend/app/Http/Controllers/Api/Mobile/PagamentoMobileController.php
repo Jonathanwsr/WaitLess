@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\Mobile;
 
 use App\Http\Controllers\Controller;
 use App\Models\Agendamento;
+use App\Models\CartaoSalvo;
 use App\Models\Pagamento;
 use App\Services\PagamentoService;
 use Illuminate\Http\Request;
@@ -73,13 +74,26 @@ class PagamentoMobileController extends Controller
             'asaas_customer_id' => 'nullable|string',
             'metodo_pagamento'  => 'required|in:pix,boleto,cartao,local',
             'parcelas'          => 'nullable|integer|min:1|max:12',
-            'cartao'            => 'nullable|required_if:metodo_pagamento,cartao|array',
+            'cartao_salvo_id'   => 'nullable|integer',
+            'cartao'            => 'nullable|array',
             'cartao.numero'     => 'required_with:cartao|string|min:13|max:23',
             'cartao.titular'    => 'required_with:cartao|string|max:100',
             'cartao.mes'        => 'required_with:cartao|integer|between:1,12',
             'cartao.ano'        => 'required_with:cartao|integer|min:26|max:2099',
             'cartao.cvv'        => 'required_with:cartao|digits_between:3,4',
         ]);
+
+        $cartaoSalvo = null;
+        if ($request->metodo_pagamento === 'cartao' && $request->filled('cartao_salvo_id')) {
+            $cartaoSalvo = CartaoSalvo::where('id', $request->cartao_salvo_id)->where('user_id', Auth::id())->first();
+            if (!$cartaoSalvo) {
+                return response()->json(['error' => 'Cartão salvo não encontrado.'], 404);
+            }
+        }
+
+        if ($request->metodo_pagamento === 'cartao' && !$cartaoSalvo && !$request->filled('cartao')) {
+            return response()->json(['error' => 'Informe os dados do cartão ou escolha um cartão salvo.'], 422);
+        }
 
         $agendamento = Agendamento::with(['servico', 'estabelecimento'])->find($request->agendamento_id);
 
@@ -121,9 +135,10 @@ class PagamentoMobileController extends Controller
                 $request->metodo_pagamento,
                 $request->asaas_customer_id ?: $pagamentoService->garantirClienteAsaas($request->user()),
                 $ehCartao ? (int) $request->input('parcelas', 1) : 1,
-                $ehCartao ? $request->input('cartao') : null,
+                $ehCartao && !$cartaoSalvo ? $request->input('cartao') : null,
                 $request->user(),
-                $request->ip()
+                $request->ip(),
+                $cartaoSalvo?->token
             );
 
             return response()->json([
@@ -143,6 +158,37 @@ class PagamentoMobileController extends Controller
                 'message' => 'Não foi possível gerar a cobrança agora. Tente novamente em instantes.',
             ], 500);
         }
+    }
+
+    /**
+     * 👉 CARTÕES SALVOS — lista os cartões tokenizados do cliente logado
+     * (nunca expõe número/CVV, só os últimos 4 dígitos e a bandeira).
+     */
+    public function cartoesSalvos(Request $request)
+    {
+        $cartoes = CartaoSalvo::where('user_id', Auth::id())
+            ->orderByDesc('padrao')
+            ->orderByDesc('id')
+            ->get(['id', 'bandeira', 'ultimos_digitos', 'nome_titular', 'padrao']);
+
+        return response()->json(['data' => $cartoes]);
+    }
+
+    public function removerCartaoSalvo(Request $request, $id)
+    {
+        $cartao = CartaoSalvo::where('id', $id)->where('user_id', Auth::id())->first();
+        if (!$cartao) {
+            return response()->json(['error' => 'Cartão não encontrado.'], 404);
+        }
+
+        $eraPadrao = $cartao->padrao;
+        $cartao->delete();
+
+        if ($eraPadrao) {
+            CartaoSalvo::where('user_id', Auth::id())->orderByDesc('id')->first()?->update(['padrao' => true]);
+        }
+
+        return response()->json(['status' => 'success', 'message' => 'Cartão removido.']);
     }
 
     /**

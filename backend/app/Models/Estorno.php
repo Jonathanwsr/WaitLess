@@ -60,11 +60,16 @@ class Estorno extends Model
         return $this->belongsTo(Servico::class); 
     }
 
-    public function itemAluguel() 
-    { 
-        return $this->belongsTo(ItemAluguel::class); 
+    public function itemAluguel()
+    {
+        return $this->belongsTo(ItemAluguel::class);
     }
-    
+
+    public function pedidoEntrega()
+    {
+        return $this->belongsTo(PedidoEntrega::class);
+    }
+
     // Relacionamentos com as tabelas de apoio
     public function historicos() 
     { 
@@ -115,8 +120,12 @@ class Estorno extends Model
                 $providerWallet->increment('valor_estornado', $this->valor_estornado);
             }
 
-            // Marca o pagamento como estornado
+            // Marca o pagamento como estornado — faltava atualizar a coluna
+            // "status" (só "status_estorno" era setado), que é o campo que o
+            // resto do app realmente confere pra saber se um pagamento foi
+            // devolvido ou não.
             $this->pagamento->update([
+                'status' => 'estornado',
                 'permite_estorno' => false,
                 'status_estorno' => 'CONCLUIDO',
                 'valor_estornado' => $this->valor_estornado,

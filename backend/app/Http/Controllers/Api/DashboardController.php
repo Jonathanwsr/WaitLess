@@ -38,7 +38,8 @@ class DashboardController extends Controller
                     'total_fila' => $estabelecimentos->sum('fila_agora'),
                     'total_arrecadado' => $estabelecimentos->sum('arrecadacao_total'),
                     'ativos' => $estabelecimentos->where('ativo', true)->count(),
-                ]
+                ],
+                'fechamentoDia' => $this->fechamentoDoDia($estabelecimentos->pluck('id')),
             ]);
         }
 
@@ -119,6 +120,73 @@ class DashboardController extends Controller
             'usuario' => $user,
             'estabelecimentos_proximos' => $estabelecimentosProximos
         ]);
+    }
+
+    // ====================================================
+    // FECHAMENTO DO DIA (sócio/gerente) — faturamento, serviços mais
+    // vendidos, horário de pico e caixa (presencial x online) somando
+    // todos os estabelecimentos que o usuário gerencia, só com os
+    // atendimentos de HOJE que de fato aconteceram/foram confirmados.
+    // ====================================================
+    private function fechamentoDoDia($estabelecimentoIds)
+    {
+        if ($estabelecimentoIds->isEmpty()) {
+            return [
+                'valor_total' => 0,
+                'atendimentos' => 0,
+                'servicos_mais_vendidos' => [],
+                'horarios_pico' => [],
+                'caixa' => ['presencial' => 0, 'online' => 0],
+            ];
+        }
+
+        $statusRealizados = ['confirmado', 'em_atendimento', 'finalizado'];
+
+        $agendamentosHoje = Agendamento::whereIn('estabelecimento_id', $estabelecimentoIds)
+            ->whereDate('data_agendamento', now()->toDateString())
+            ->whereIn('status', $statusRealizados)
+            ->with('servico:id,nome')
+            ->get(['id', 'estabelecimento_id', 'servico_id', 'hora_agendamento', 'valor_final', 'status_pagamento']);
+
+        $alugueisHoje = Aluguel::whereIn('estabelecimento_id', $estabelecimentoIds)
+            ->whereDate('data_inicio', now()->toDateString())
+            ->whereIn('status', ['confirmado', 'em_andamento', 'finalizado'])
+            ->get(['id', 'estabelecimento_id', 'valor_total', 'forma_pagamento']);
+
+        $valorAgendamentos = (float) $agendamentosHoje->sum('valor_final');
+        $valorAlugueis = (float) $alugueisHoje->sum('valor_total');
+
+        $caixaPresencial = (float) $agendamentosHoje->whereIn('status_pagamento', ['presencial'])->sum('valor_final')
+            + (float) $alugueisHoje->where('forma_pagamento', 'presencial')->sum('valor_total');
+        $caixaOnline = (float) $agendamentosHoje->whereIn('status_pagamento', ['pago', 'pago_online'])->sum('valor_final')
+            + (float) $alugueisHoje->where('forma_pagamento', 'online')->sum('valor_total');
+
+        $servicosMaisVendidos = $agendamentosHoje
+            ->filter(fn ($a) => $a->servico)
+            ->groupBy('servico_id')
+            ->map(fn ($grupo) => [
+                'nome' => $grupo->first()->servico->nome,
+                'quantidade' => $grupo->count(),
+                'valor_total' => (float) $grupo->sum('valor_final'),
+            ])
+            ->sortByDesc('quantidade')
+            ->take(5)
+            ->values();
+
+        $horariosPico = $agendamentosHoje
+            ->groupBy(fn ($a) => substr((string) $a->hora_agendamento, 0, 2) . 'h')
+            ->map(fn ($grupo, $hora) => ['hora' => $hora, 'quantidade' => $grupo->count()])
+            ->sortByDesc('quantidade')
+            ->take(3)
+            ->values();
+
+        return [
+            'valor_total' => $valorAgendamentos + $valorAlugueis,
+            'atendimentos' => $agendamentosHoje->count() + $alugueisHoje->count(),
+            'servicos_mais_vendidos' => $servicosMaisVendidos,
+            'horarios_pico' => $horariosPico,
+            'caixa' => ['presencial' => $caixaPresencial, 'online' => $caixaOnline],
+        ];
     }
 
     // ====================================================

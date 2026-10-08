@@ -17,6 +17,8 @@ class Promocao extends Model
         'tipo',
         'quantidade_pontos',
         'cupom_id',
+        'servico_id',
+        'item_aluguel_id',
         'desconto_percentual',
         'desconto_valor',
         'publico_alvo',
@@ -46,6 +48,18 @@ class Promocao extends Model
         return $this->belongsTo(Cupom::class);
     }
 
+    /** Serviço que esta promoção destaca (opcional, mutuamente exclusivo com itemAluguel). */
+    public function servico()
+    {
+        return $this->belongsTo(Servico::class);
+    }
+
+    /** Item de aluguel que esta promoção destaca (opcional, mutuamente exclusivo com servico). */
+    public function itemAluguel()
+    {
+        return $this->belongsTo(ItemAluguel::class, 'item_aluguel_id');
+    }
+
     public function criador()
     {
         return $this->belongsTo(User::class, 'criado_por');
@@ -70,6 +84,36 @@ class Promocao extends Model
             return 'esgotada';
         }
         return 'ativa';
+    }
+
+    /**
+     * Dados do card de navegação quando a promoção está vinculada a um
+     * serviço ou item de aluguel ativo — null se não houver vínculo ou o
+     * item vinculado não estiver mais ativo, pra nunca gerar um card morto
+     * no Explorar/Promoções (web e mobile).
+     */
+    public function vinculoCard(): ?array
+    {
+        if ($this->servico_id && $this->servico && $this->servico->ativo) {
+            return [
+                'tipo' => 'servico',
+                'id' => $this->servico->id,
+                'nome' => $this->servico->nome,
+                'estabelecimento_id' => $this->servico->estabelecimento_id,
+                'foto' => json_decode($this->servico->fotos ?? '[]', true)[0] ?? null,
+            ];
+        }
+
+        if ($this->item_aluguel_id && $this->itemAluguel && $this->itemAluguel->ativo) {
+            return [
+                'tipo' => 'item_aluguel',
+                'id' => $this->itemAluguel->id,
+                'nome' => $this->itemAluguel->nome,
+                'foto' => json_decode($this->itemAluguel->fotos ?? '[]', true)[0] ?? null,
+            ];
+        }
+
+        return null;
     }
 
     public function scopeVigentes($query)

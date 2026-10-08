@@ -40,6 +40,16 @@ class HandleInertiaRequests extends Middleware
             'menuEstabelecimentoId' => fn () => $this->menuEstabelecimentoId($request),
             'taxaPlataforma' => \App\Support\Taxas::percentual(),
             'menuPremium' => fn () => $request->user() ? ($request->user()->papel === 'admin' || $request->user()->isPremium()) : false,
+            // Premium usa pontos até este % do pedido mesmo onde o local não aceita pontos (PontosService::limiteDePontos).
+            'pontosPremium' => fn () => [
+                'ativo' => (bool) $request->user()?->isPremium(),
+                'percentual' => \App\Services\PontosService::percentualPremiumSemAceite(),
+            ],
+            'avisosUsuario' => fn () => $request->user()
+                ? \App\Models\NotificacaoUsuario::where('usuario_id', $request->user()->id)
+                    ->whereNull('lida_em')->latest()->limit(5)->get(['id', 'titulo', 'mensagem', 'created_at'])
+                : [],
+            'menuPremiumSocio' =>fn () => $request->user() ? ($request->user()->papel === 'admin' || $request->user()->podeGerenciarEquipeAvancada()) : false,
         ];
     }
 

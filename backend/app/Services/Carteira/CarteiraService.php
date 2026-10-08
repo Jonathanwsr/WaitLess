@@ -98,6 +98,25 @@ class CarteiraService
         return $base;
     }
 
+    /**
+     * Histórico completo e paginado de repasses (o painel() só manda os 30
+     * mais recentes) — para o proprietário puxar qualquer período, filtrando
+     * por tipo e status, sempre que quiser, não só um retrato do momento.
+     */
+    public function historicoCompleto(Provider $provider, ?string $tipo, ?string $status, ?string $dataInicio, ?string $dataFim, int $porPagina = 20)
+    {
+        return $provider->transferenciasCarteira()
+            ->with('conta')
+            ->where('tipo', '!=', TransferenciaCarteira::TIPO_VALIDACAO)
+            ->when($tipo, fn ($q) => $q->where('tipo', $tipo))
+            ->when($status, fn ($q) => $q->where('status', $status))
+            ->when($dataInicio, fn ($q) => $q->whereDate('created_at', '>=', $dataInicio))
+            ->when($dataFim, fn ($q) => $q->whereDate('created_at', '<=', $dataFim))
+            ->latest('id')
+            ->paginate($porPagina)
+            ->through(fn (TransferenciaCarteira $t) => $t->paraProprietario());
+    }
+
     private function movimentosVazios(): array
     {
         return [

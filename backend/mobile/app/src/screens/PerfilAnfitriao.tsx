@@ -77,37 +77,42 @@ export default function PerfilAnfitriao() {
         const payload = json.anfitriao || json.estabelecimento || json.data || json;
         const user = payload.usuario || payload.owner || payload;
 
+        // O backend (AnfitriaoMobileController::getPerfil) manda a lista de
+        // itens/serviços dentro de "destaques", não "servicos" — ler a chave
+        // errada fazia essa lista ficar sempre vazia, mesmo com itens cadastrados.
+        const itens = Array.isArray(payload.destaques) ? payload.destaques : [];
+
         setDados({
           anfitriao: {
             id: user.id || payload.id || id,
             nome: user.name || payload.nome || 'Anfitrião',
-            subtitulo: user.papel ? `Papel: ${user.papel}` : (payload.categoria || 'Prestador de Serviços'),
+            subtitulo: user.papel ? `Papel: ${user.papel}` : (payload.subtitulo || 'Prestador de Serviços'),
             foto_perfil: user.foto_perfil || user.avatar || payload.foto_perfil || null,
             capa: payload.foto_banner || payload.capa || user.capa || null,
             total_avaliacoes: user.numero_reservas || payload.total_avaliacoes || 0,
             avaliacao_media: payload.avaliacao_media && Number(payload.avaliacao_media) > 0 ? Number(payload.avaliacao_media).toFixed(1).replace('.', ',') : null,
-            status: user.plano_assinatura ? `Plano ${user.plano_assinatura}` : 'Verificado',
+            status: user.plano_assinatura ? `Plano ${user.plano_assinatura}` : (payload.status || 'Verificado'),
             cidade: user.city || payload.cidade || '',
             estado: user.state || payload.estado || '',
-            
+
             // CAMPOS DA TABELA USERS
             onde_estudou: user.onde_estudou || user.escolaridade || user.estudo || null,
             idiomas: user.idiomas || user.languages || null,
             cpf_cnpj: user.cpf_cnpj || null,
             telefone: user.mobile_phone || user.phone || user.telefone || null
           },
-          servicos: Array.isArray(payload.servicos) && payload.servicos.length > 0 
-            ? payload.servicos.map((s: any) => ({
-                id: s.id,
-                nome: s.nome,
-                preco: Number(s.valor || s.preco || 0).toFixed(2).replace('.', ','),
-                precoAntigo: s.preco_antigo ? Number(s.preco_antigo).toFixed(2).replace('.', ',') : null,
-                desconto: s.desconto || null,
-                img: s.foto || s.imagem || null,
-                badge: s.destaque ? 'Destaque' : null,
-                desc: s.descricao || `${s.duracao_minutos || 30} min`
-              }))
-            : []
+          itens: itens.map((s: any) => ({
+            id: s.id,
+            tipo: s.tipo === 'item' ? 'item' : 'servico',
+            categoria: s.categoria || null,
+            nome: s.nome,
+            preco: s.preco ?? Number(s.valor || 0).toFixed(2).replace('.', ','),
+            precoAntigo: s.precoAntigo || null,
+            desconto: s.desconto || null,
+            img: s.img || null,
+            badge: s.badge || null,
+            desc: s.desc || ''
+          }))
         });
       } else {
         setDados(null);
@@ -121,12 +126,18 @@ export default function PerfilAnfitriao() {
     }
   };
 
-  const irParaServico = (servicoId: string | number) => {
-    // ServicoDetalhes espera o id de um ESTABELECIMENTO, não de um serviço —
-    // o detalhe de um serviço específico é a ExplorarDetalhes.
+  const CATEGORIA_LABEL: Record<string, string> = {
+    casa: 'Casas', apartamento: 'Apartamentos', carro: 'Carros', moto: 'Motos',
+    bicicleta: 'Bicicletas', patinete: 'Patinetes', quadra: 'Quadras', sala: 'Salas',
+    equipamento: 'Equipamentos', ferramenta: 'Ferramentas', outro: 'Outros',
+  };
+
+  const irParaItem = (item: { id: string | number; tipo: string }) => {
+    // Um item de locação (tipo === 'item') abre na aba de "reservas" da
+    // ExplorarDetalhes; um serviço de agendamento abre como 'servico'.
     router.push({
       pathname: '/src/screens/ExplorarDetalhes' as never,
-      params: { id: String(servicoId), tipo: 'servico' }
+      params: { id: String(item.id).replace(/^s/, ''), tipo: item.tipo === 'item' ? 'reservas' : 'servico' }
     });
   };
 
@@ -151,7 +162,21 @@ export default function PerfilAnfitriao() {
     );
   }
 
-  const { anfitriao, servicos } = dados;
+  const { anfitriao, itens } = dados;
+
+  // Os filtros se adaptam ao que esse anfitrião realmente oferece: uma aba por
+  // categoria de locação presente (ex.: só "Carros" se só tiver carros, "Carros"
+  // + "Motos" se tiver os dois) e "Serviços" só se houver agendamento. Nada de
+  // categorias fixas (tipo "SUVs"/"Premium") que não existem no cadastro.
+  const categoriasPresentes: string[] = Array.from(new Set(itens.filter((i: any) => i.tipo === 'item' && i.categoria).map((i: any) => String(i.categoria))));
+  const temServicos = itens.some((i: any) => i.tipo === 'servico');
+  const abas: string[] = ['Destaques', ...categoriasPresentes.map((c) => CATEGORIA_LABEL[c] || c), ...(temServicos ? ['Serviços'] : []), 'Sobre'];
+
+  const itensFiltrados = abaAtiva === 'Destaques' || abaAtiva === 'Sobre'
+    ? itens
+    : abaAtiva === 'Serviços'
+      ? itens.filter((i: any) => i.tipo === 'servico')
+      : itens.filter((i: any) => CATEGORIA_LABEL[i.categoria] === abaAtiva || i.categoria === abaAtiva);
 
   return (
     <View style={styles.container}>
@@ -245,65 +270,64 @@ export default function PerfilAnfitriao() {
           </View>
 
           {/* --- ABAS ( TABS ) --- */}
-          <View style={styles.tabsContainer}>
-            {['Destaques', 'Serviços', 'Sobre'].map((tab) => (
-              <TouchableOpacity 
-                key={tab} 
-                onPress={() => setAbaAtiva(tab)} 
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsContainer}>
+            {abas.map((tab) => (
+              <TouchableOpacity
+                key={tab}
+                onPress={() => setAbaAtiva(tab)}
                 style={[styles.tabItem, abaAtiva === tab && styles.tabItemActive]}
               >
                 <Text style={[styles.tabText, abaAtiva === tab && styles.tabTextActive]}>{tab}</Text>
               </TouchableOpacity>
             ))}
-          </View>
+          </ScrollView>
 
-          {/* --- LISTA DE SERVIÇOS --- */}
+          {/* --- GRADE DE ITENS/SERVIÇOS --- */}
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>{abaAtiva}</Text>
           </View>
 
-          {servicos.length === 0 && <Text style={{ color: COLORS.gray, textAlign: 'center', paddingVertical: 24 }}>Nenhum serviço disponível no momento.</Text>}
+          {itensFiltrados.length === 0 && <Text style={{ color: COLORS.gray, textAlign: 'center', paddingVertical: 24 }}>Nada disponível aqui no momento.</Text>}
 
-          {servicos.map((item: any) => (
-            <TouchableOpacity 
-              key={item.id} 
-              style={styles.card}
-              onPress={() => irParaServico(item.id)}
-              activeOpacity={0.85}
-            >
-              {item.badge && (
-                <View style={styles.badgeTop}>
-                  <Text style={styles.badgeText}>{item.badge}</Text>
-                </View>
-              )}
-              
-              {item.img ? <Image source={{ uri: item.img }} style={styles.cardImage} resizeMode="cover" /> : <View style={[styles.cardImage, { alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.lightGray }]}><Ionicons name="image-outline" size={30} color={COLORS.gray} /></View>}
-              
-              <View style={styles.cardInfo}>
-                <Text style={styles.cardName}>{item.nome}</Text>
-                
-                <View style={styles.priceRow}>
-                  <Text style={styles.cardPrice}>R$ {item.preco}</Text>
-                  <View style={styles.addBtn}>
-                    <Ionicons name="chevron-forward" size={16} color={COLORS.primary} />
+          <View style={styles.grid}>
+            {itensFiltrados.map((item: any) => (
+              <TouchableOpacity
+                key={item.id}
+                style={styles.card}
+                onPress={() => irParaItem(item)}
+                activeOpacity={0.85}
+              >
+                {item.badge && (
+                  <View style={styles.badgeTop}>
+                    <Text style={styles.badgeText}>{item.badge}</Text>
                   </View>
-                </View>
+                )}
 
-                {item.precoAntigo && (
-                  <View style={styles.oldPriceRow}>
-                    <Text style={styles.oldPrice}>R$ {item.precoAntigo}</Text>
+                {item.img ? <Image source={{ uri: item.img }} style={styles.cardImage} resizeMode="cover" /> : <View style={[styles.cardImage, { alignItems: 'center', justifyContent: 'center', backgroundColor: COLORS.lightGray }]}><Ionicons name="image-outline" size={26} color={COLORS.gray} /></View>}
+
+                <View style={styles.cardInfo}>
+                  <Text style={styles.cardName} numberOfLines={1}>{item.nome}</Text>
+                  <Text style={styles.cardDesc} numberOfLines={1}>{item.desc}</Text>
+
+                  <View style={styles.priceRow}>
+                    {item.precoAntigo ? (
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.oldPrice}>R$ {item.precoAntigo}</Text>
+                        <Text style={styles.cardPrice}>R$ {item.preco}</Text>
+                      </View>
+                    ) : (
+                      <Text style={styles.cardPrice}>R$ {item.preco}</Text>
+                    )}
                     {item.desconto && (
                       <View style={styles.discountBadge}>
                         <Text style={styles.discountText}>{item.desconto}</Text>
                       </View>
                     )}
                   </View>
-                )}
-
-                <Text style={styles.cardDesc} numberOfLines={2}>{item.desc}</Text>
-              </View>
-            </TouchableOpacity>
-          ))}
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
 
         </View>
       </ScrollView>
@@ -357,37 +381,33 @@ const styles = StyleSheet.create({
   statLabel: { fontSize: 12, color: COLORS.gray, marginTop: 3 },
   statDivider: { width: 1, height: 28, backgroundColor: COLORS.border },
 
-  tabsContainer: { flexDirection: 'row', backgroundColor: '#E9E9EC', borderRadius: 14, padding: 4, marginBottom: 18 },
-  tabItem: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 11 },
-  tabItemActive: { backgroundColor: COLORS.white, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
+  tabsContainer: { flexDirection: 'row', gap: 8, paddingBottom: 4, marginBottom: 18 },
+  tabItem: { paddingVertical: 9, paddingHorizontal: 16, borderRadius: 11, backgroundColor: '#E9E9EC' },
+  tabItemActive: { backgroundColor: COLORS.secondary },
   tabText: { fontSize: 14, color: COLORS.gray, fontWeight: '600' },
-  tabTextActive: { color: COLORS.primary, fontWeight: '800' },
+  tabTextActive: { color: COLORS.white, fontWeight: '800' },
 
   sectionHeader: { marginBottom: 14 },
   sectionTitle: { fontSize: 20, fontWeight: '800', color: COLORS.secondary, letterSpacing: -0.4 },
 
+  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   card: {
-    backgroundColor: COLORS.white, borderRadius: 22, overflow: 'hidden',
+    width: '48%', backgroundColor: COLORS.white, borderRadius: 18, overflow: 'hidden',
     marginBottom: 16,
-    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3
+    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 3
   },
   badgeTop: {
-    position: 'absolute', top: 12, left: 12, backgroundColor: COLORS.primary,
-    paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10, zIndex: 1
+    position: 'absolute', top: 10, left: 10, backgroundColor: '#DC2626',
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, zIndex: 1
   },
-  badgeText: { color: COLORS.white, fontSize: 11, fontWeight: '800' },
-  cardImage: { width: '100%', height: 150 },
-  cardInfo: { padding: 16, gap: 4 },
-  cardName: { fontSize: 16, color: COLORS.secondary, fontWeight: '700' },
-  priceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 },
-  cardPrice: { fontSize: 20, fontWeight: '800', color: COLORS.secondary, letterSpacing: -0.3 },
-  addBtn: {
-    width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.primarySoft,
-    justifyContent: 'center', alignItems: 'center'
-  },
-  oldPriceRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  oldPrice: { fontSize: 13, color: COLORS.gray, textDecorationLine: 'line-through' },
-  discountBadge: { backgroundColor: COLORS.green, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6 },
-  discountText: { color: COLORS.white, fontSize: 11, fontWeight: 'bold' },
-  cardDesc: { fontSize: 13, color: COLORS.gray, marginTop: 4, lineHeight: 19 }
+  badgeText: { color: COLORS.white, fontSize: 10, fontWeight: '800' },
+  cardImage: { width: '100%', height: 110 },
+  cardInfo: { padding: 12, gap: 2 },
+  cardName: { fontSize: 14, color: COLORS.secondary, fontWeight: '700' },
+  priceRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 6 },
+  cardPrice: { fontSize: 16, fontWeight: '800', color: COLORS.secondary, letterSpacing: -0.3 },
+  oldPrice: { fontSize: 11, color: COLORS.gray, textDecorationLine: 'line-through' },
+  discountBadge: { backgroundColor: COLORS.green, paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6 },
+  discountText: { color: COLORS.white, fontSize: 10, fontWeight: 'bold' },
+  cardDesc: { fontSize: 12, color: COLORS.gray, marginTop: 1 }
 });

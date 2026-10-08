@@ -206,7 +206,11 @@ const s = StyleSheet.create({
   notaLinha: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8 },
   notaTxt: { fontSize: 13, fontWeight: '700', color: O.ink },
   cartao: { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 20, overflow: 'hidden', marginBottom: 12, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
-  foto: { width: 110, backgroundColor: O.soft, alignItems: 'center', justifyContent: 'center' },
+  // Antes sem altura fixa: o container da foto esticava pra virar do tamanho do
+  // texto ao lado (bem baixo e largo), e o "cover" cortava a maior parte da
+  // imagem pra caber nessa proporção estranha. Com altura própria, fica quase
+  // quadrado e o corte fica discreto, igual o resto do app.
+  foto: { width: 110, height: 110, backgroundColor: O.soft, alignItems: 'center', justifyContent: 'center' },
   corpo: { flex: 1, padding: 14, gap: 3 },
   cartaoNome: { fontSize: 15, fontWeight: '800', color: O.ink },
   cartaoSub: { fontSize: 12, color: O.muted },

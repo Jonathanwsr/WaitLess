@@ -84,6 +84,7 @@ export default function AdminUsuarios() {
   const [ultimaPagina, setUltimaPagina] = useState(1);
   const [catalogoPlanos, setCatalogoPlanos] = useState<Record<string, Record<string, PlanoInfo>>>({});
   const [modalUsuario, setModalUsuario] = useState<Usuario | null>(null);
+  const [detalheId, setDetalheId] = useState<number | null>(null);
 
   const carregar = useCallback(async (opts?: { isRefresh?: boolean; page?: number; termo?: string }) => {
     const page = opts?.page ?? 1;
@@ -183,7 +184,7 @@ export default function AdminUsuarios() {
               const temPlanoAtivo = !!usuario.plano_assinatura && usuario.plano_assinatura !== 'gratuito' && usuario.asaas_subscription_status !== 'CANCELLED';
               return (
                 <View key={usuario.id} style={styles.card}>
-                  <View style={styles.cardTopRow}>
+                  <TouchableOpacity style={styles.cardTopRow} onPress={() => setDetalheId(usuario.id)} activeOpacity={0.7}>
                     <View style={styles.avatar}>
                       {usuario.foto_perfil ? (
                         <Image source={{ uri: usuario.foto_perfil }} style={styles.avatarImg} />
@@ -195,7 +196,8 @@ export default function AdminUsuarios() {
                       <Text style={styles.nome} numberOfLines={1}>{usuario.name}</Text>
                       <Text style={styles.email} numberOfLines={1}>{usuario.email}</Text>
                     </View>
-                  </View>
+                    <Ionicons name="chevron-forward" size={18} color={COLORS.gray} />
+                  </TouchableOpacity>
 
                   <View style={styles.badgesRow}>
                     <View style={styles.papelBadge}>
@@ -254,7 +256,122 @@ export default function AdminUsuarios() {
         onFechar={() => setModalUsuario(null)}
         onSucesso={() => { setModalUsuario(null); carregar({ page: pagina }); }}
       />
+
+      {detalheId !== null && <ModalDetalhesUsuario usuarioId={detalheId} onFechar={() => setDetalheId(null)} />}
     </SafeAreaView>
+  );
+}
+
+interface DetalheUsuario {
+  name: string; email: string; foto_perfil?: string | null; papel: string; criado_em?: string | null;
+  telefone?: string | null; endereco_completo?: string | null; cep?: string | null;
+  cpf_cnpj?: string | null; data_nascimento?: string | null; profissao?: string | null;
+  idiomas?: string | null; sobre_mim?: string | null; indicado_por?: { name: string } | null;
+  codigo_indicacao?: string | null; pontos_saldo?: number;
+  resumo_atividade?: { agendamentos: number; avaliacoes_feitas: number; indicados: number };
+  estabelecimentos?: { id: number; nome: string; cidade?: string | null; tipo: string }[];
+}
+
+function LinhaDetalhe({ icone, rotulo, valor }: { icone: any; rotulo: string; valor?: string | null }) {
+  if (!valor) return null;
+  return (
+    <View style={styles.detalheLinha}>
+      <Ionicons name={icone} size={16} color={COLORS.gray} style={{ marginTop: 2 }} />
+      <View style={{ flex: 1 }}>
+        <Text style={styles.detalheRotulo}>{rotulo}</Text>
+        <Text style={styles.detalheValor}>{valor}</Text>
+      </View>
+    </View>
+  );
+}
+
+function ModalDetalhesUsuario({ usuarioId, onFechar }: { usuarioId: number; onFechar: () => void }) {
+  const [dados, setDados] = useState<DetalheUsuario | null>(null);
+  const [carregando, setCarregando] = useState(true);
+
+  React.useEffect(() => {
+    let cancelado = false;
+    (async () => {
+      setCarregando(true);
+      try {
+        const token = await pegarToken();
+        const res = await fetch(`${API_URL}/admin/usuarios/${usuarioId}`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+        const json = await res.json();
+        if (!cancelado) setDados(json.usuario || null);
+      } catch {
+        // mantém vazio
+      } finally {
+        if (!cancelado) setCarregando(false);
+      }
+    })();
+    return () => { cancelado = true; };
+  }, [usuarioId]);
+
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onFechar}>
+      <View style={styles.modalOverlay}>
+        <View style={[styles.modalBox, { maxHeight: '85%' }]}>
+          <TouchableOpacity onPress={onFechar} style={styles.modalClose}>
+            <Ionicons name="close" size={20} color={COLORS.gray} />
+          </TouchableOpacity>
+
+          {carregando || !dados ? (
+            <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+              <ActivityIndicator color={COLORS.primary} />
+            </View>
+          ) : (
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                <View style={styles.avatar}>
+                  {dados.foto_perfil ? (
+                    <Image source={{ uri: dados.foto_perfil }} style={styles.avatarImg} />
+                  ) : (
+                    <Text style={styles.avatarInitial}>{dados.name?.charAt(0)?.toUpperCase()}</Text>
+                  )}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.nome}>{dados.name}</Text>
+                  <Text style={styles.email}>{PAPEL_LABEL[dados.papel] || dados.papel}{dados.criado_em ? ` · desde ${new Date(dados.criado_em).toLocaleDateString('pt-BR')}` : ''}</Text>
+                </View>
+              </View>
+
+              <View style={styles.detalheStatsRow}>
+                <View style={styles.detalheStat}><Text style={styles.detalheStatNum}>{dados.pontos_saldo ?? 0}</Text><Text style={styles.detalheStatRotulo}>Pontos</Text></View>
+                <View style={styles.detalheStat}><Text style={styles.detalheStatNum}>{dados.resumo_atividade?.agendamentos ?? 0}</Text><Text style={styles.detalheStatRotulo}>Agendamentos</Text></View>
+                <View style={styles.detalheStat}><Text style={styles.detalheStatNum}>{dados.resumo_atividade?.avaliacoes_feitas ?? 0}</Text><Text style={styles.detalheStatRotulo}>Avaliações</Text></View>
+              </View>
+
+              <Text style={styles.modalLabel}>Contato</Text>
+              <LinhaDetalhe icone="mail-outline" rotulo="E-mail" valor={dados.email} />
+              <LinhaDetalhe icone="call-outline" rotulo="Telefone" valor={dados.telefone} />
+              <LinhaDetalhe icone="location-outline" rotulo="Endereço" valor={[dados.endereco_completo, dados.cep].filter(Boolean).join(' · ')} />
+
+              <Text style={[styles.modalLabel, { marginTop: 10 }]}>Documentos e perfil</Text>
+              <LinhaDetalhe icone="card-outline" rotulo="CPF/CNPJ" valor={dados.cpf_cnpj} />
+              <LinhaDetalhe icone="calendar-outline" rotulo="Nascimento" valor={dados.data_nascimento ? new Date(dados.data_nascimento).toLocaleDateString('pt-BR') : null} />
+              <LinhaDetalhe icone="briefcase-outline" rotulo="Profissão" valor={dados.profissao} />
+              <LinhaDetalhe icone="language-outline" rotulo="Idiomas" valor={dados.idiomas} />
+              <LinhaDetalhe icone="information-circle-outline" rotulo="Sobre" valor={dados.sobre_mim} />
+              <LinhaDetalhe icone="person-add-outline" rotulo="Indicado por" valor={dados.indicado_por?.name} />
+              <LinhaDetalhe icone="gift-outline" rotulo="Código de indicação" valor={dados.codigo_indicacao} />
+
+              {!!dados.estabelecimentos?.length && (
+                <>
+                  <Text style={[styles.modalLabel, { marginTop: 10 }]}>Estabelecimentos</Text>
+                  {dados.estabelecimentos.map((e) => (
+                    <View key={e.id} style={styles.estabelecimentoLinha}>
+                      <Ionicons name="storefront-outline" size={15} color={COLORS.gray} />
+                      <Text style={styles.estabelecimentoNome} numberOfLines={1}>{e.nome}</Text>
+                      <Text style={styles.estabelecimentoTipo}>{e.tipo}</Text>
+                    </View>
+                  ))}
+                </>
+              )}
+            </ScrollView>
+          )}
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -415,4 +532,15 @@ const styles = StyleSheet.create({
   },
   modalSubmit: { backgroundColor: COLORS.primary, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
   modalSubmitText: { color: COLORS.white, fontSize: 14, fontWeight: '800' },
+
+  detalheStatsRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
+  detalheStat: { flex: 1, backgroundColor: COLORS.lightGray, borderRadius: 12, paddingVertical: 10, alignItems: 'center' },
+  detalheStatNum: { fontSize: 16, fontWeight: '800', color: COLORS.dark },
+  detalheStatRotulo: { fontSize: 9, fontWeight: '800', color: COLORS.gray, textTransform: 'uppercase', marginTop: 2 },
+  detalheLinha: { flexDirection: 'row', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#F5F5F7' },
+  detalheRotulo: { fontSize: 10, fontWeight: '800', color: COLORS.gray, textTransform: 'uppercase' },
+  detalheValor: { fontSize: 13, fontWeight: '600', color: COLORS.dark, marginTop: 1 },
+  estabelecimentoLinha: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: COLORS.lightGray, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, marginBottom: 6 },
+  estabelecimentoNome: { flex: 1, fontSize: 13, fontWeight: '600', color: COLORS.dark },
+  estabelecimentoTipo: { fontSize: 10, fontWeight: '800', color: COLORS.gray, textTransform: 'uppercase' },
 });

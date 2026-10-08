@@ -72,9 +72,13 @@ function Dado({ icone, rotulo, valor, ultimo }: { icone: string; rotulo: string;
 export default function PerfilSocio() {
   const router = useRouter();
 
-  const { dados, carregando, atualizando, erro, recarregar, atualizar } = useCarga<{ usuario: Usuario; locais: number }>(async () => {
-    const [me, painel] = await Promise.all([api('/me'), api('/proprietario/dashboard').catch(() => null)]);
-    return { usuario: me.user as Usuario, locais: painel?.estabelecimentos?.length ?? 0 };
+  const { dados, carregando, atualizando, erro, recarregar, atualizar } = useCarga<{ usuario: Usuario; locais: number; vendas: any }>(async () => {
+    const [me, painel, vendas] = await Promise.all([
+      api('/me'),
+      api('/proprietario/dashboard').catch(() => null),
+      api('/perfil/produtos-vendidos').catch(() => null),
+    ]);
+    return { usuario: me.user as Usuario, locais: painel?.estabelecimentos?.length ?? 0, vendas };
   });
 
   const u = dados?.usuario;
@@ -125,6 +129,20 @@ export default function PerfilSocio() {
         <Erro mensagem={erro} aoTentar={recarregar} />
       ) : u && (
         <>
+          {dados?.vendas && (
+            <Card style={{ gap: 10 }}>
+              <Rotulo>Produtos vendidos</Rotulo>
+              <Text style={{ fontSize: 28, fontWeight: '900', color: O.ink }}>{Number(dados.vendas.produtos_vendidos || 0).toLocaleString('pt-BR')}</Text>
+              <Text style={{ fontSize: 12, color: O.muted }}>Entregas de produtos concluídas por você.</Text>
+              {(dados.vendas.estabelecimentos || []).map((e: any) => (
+                <View key={e.id} style={{ flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: O.line, paddingTop: 8 }}>
+                  <Text style={{ fontSize: 13, color: O.ink, fontWeight: '700' }}>{e.nome}</Text>
+                  <Text style={{ fontSize: 13, color: O.muted }}>{Number(e.produtos_vendidos || 0).toLocaleString('pt-BR')}</Text>
+                </View>
+              ))}
+            </Card>
+          )}
+
           {/* CABEÇALHO DO PERFIL */}
           <View style={s.hero}>
             <View style={s.avatar}>
@@ -193,12 +211,13 @@ export default function PerfilSocio() {
           {/* AÇÕES DA CONTA */}
           <Rotulo>Ações da conta</Rotulo>
           <Card style={{ paddingVertical: 2 }}>
+            <LinhaMenu icone="lock-closed-outline" titulo="Alterar senha" descricao="Troque a senha da sua conta" aoPressionar={() => router.push('/src/screens/ContaSeguranca' as never)} />
             <LinhaMenu icone="log-out-outline" titulo="Sair da conta" descricao="Encerrar sessão neste aparelho" aoPressionar={sair} />
-            <TouchableOpacity style={s.apagar} onPress={() => router.push('/src/screens/TelaSuporte' as never)} activeOpacity={0.7}>
+            <TouchableOpacity style={s.apagar} onPress={() => router.push('/src/screens/ContaSeguranca' as never)} activeOpacity={0.7}>
               <View style={[s.dadoIcone, { backgroundColor: O.dangerBg }]}><Ionicons name="trash-outline" size={17} color={O.danger} /></View>
               <View style={{ flex: 1 }}>
                 <Text style={s.apagarTitulo}>Apagar minha conta</Text>
-                <Text style={s.apagarDesc}>Fale com o suporte para excluir sua conta e dados</Text>
+                <Text style={s.apagarDesc}>Só sem pendências (pagamentos, pedidos, estornos, reservas)</Text>
               </View>
               <Ionicons name="chevron-forward" size={16} color={O.faint} />
             </TouchableOpacity>

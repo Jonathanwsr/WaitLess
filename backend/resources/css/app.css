@@ -1,3 +1,42 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/*
+ * Menu lateral: a barra de rolagem fica invisível e só aparece ao passar o mouse sobre o menu.
+ * A rolagem (roda do mouse, toque) funciona sempre; o espaço da barra é reservado para os itens
+ * não "pularem" quando ela aparece.
+ */
+@layer components {
+    .menu-lateral-rolagem {
+        scrollbar-width: thin;
+        scrollbar-color: transparent transparent;
+        scrollbar-gutter: stable;
+        transition: scrollbar-color 0.2s ease;
+    }
+
+    .menu-lateral-rolagem:hover {
+        scrollbar-color: rgba(255, 255, 255, 0.45) transparent;
+    }
+
+    .menu-lateral-rolagem::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    .menu-lateral-rolagem::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    .menu-lateral-rolagem::-webkit-scrollbar-thumb {
+        background-color: transparent;
+        border-radius: 9999px;
+    }
+
+    .menu-lateral-rolagem:hover::-webkit-scrollbar-thumb {
+        background-color: rgba(255, 255, 255, 0.45);
+    }
+
+    .menu-lateral-rolagem:hover::-webkit-scrollbar-thumb:hover {
+        background-color: rgba(255, 255, 255, 0.7);
+    }
+}

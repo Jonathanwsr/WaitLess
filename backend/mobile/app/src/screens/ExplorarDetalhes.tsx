@@ -12,6 +12,7 @@ import {
   SafeAreaView,
   useWindowDimensions,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -197,6 +198,7 @@ async function pegarToken() {
 
 export default function ExplorarDetalhes() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { width: larguraTela } = useWindowDimensions();
   // Altura da galeria acompanha a largura da tela (proporção maior, tipo capa) —
   // antes era um valor fixo de 290, pequeno demais em telas largas.
@@ -207,6 +209,10 @@ export default function ExplorarDetalhes() {
   const rawTipo = params.tipo;
   const tipoParam = Array.isArray(rawTipo) ? rawTipo[0] : rawTipo;
   const ehAluguel = tipoParam === 'reservas';
+  // Veio de uma viagem colaborativa (tocou em "Reservar" na agenda do grupo) —
+  // se outro membro já reservou o mesmo serviço, essa reserva sai com desconto de grupo.
+  const rawViagemId = params.viagemId;
+  const viagemId = Array.isArray(rawViagemId) ? rawViagemId[0] : rawViagemId;
 
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(false);
@@ -281,6 +287,7 @@ export default function ExplorarDetalhes() {
   // Pontos de fidelidade (saldo global) e cupom de desconto
   const [saldoPontos, setSaldoPontos] = useState(0);
   const [usarPontos, setUsarPontos] = useState(false);
+  const [pontosPremium, setPontosPremium] = useState<{ ativo: boolean; percentual: number }>({ ativo: false, percentual: 0 });
   const [cupomInput, setCupomInput] = useState('');
   const [cupomAtivo, setCupomAtivo] = useState<{ codigo: string; valor: number; tipo: string } | null>(null);
   const [validandoCupom, setValidandoCupom] = useState(false);
@@ -301,6 +308,7 @@ export default function ExplorarDetalhes() {
       if (res.ok) {
         const data = await res.json();
         setSaldoPontos(data.pontos_saldo ?? 0);
+        if (data.pontos_premium) setPontosPremium({ ativo: !!data.pontos_premium.ativo, percentual: Number(data.pontos_premium.percentual) || 0 });
       }
     } catch (e) {
       // segue com saldo 0; não é crítico pra tela carregar
@@ -483,8 +491,11 @@ export default function ExplorarDetalhes() {
     return false;
   })();
 
-  const aceitaPontos = ehAluguel ? !!itemAluguel?.aceita_pontos : !!servico?.aceita_pontos;
-  const maximoPontosPermitidos = ehAluguel ? itemAluguel?.maximo_pontos_permitidos : servico?.maximo_pontos_permitidos;
+  // Pontos liberados quando o local aceita, ou para cliente premium (até um % do valor).
+  const localAceitaPontos = ehAluguel ? !!itemAluguel?.aceita_pontos : !!servico?.aceita_pontos;
+  const pontosPeloPremium = !localAceitaPontos && pontosPremium.ativo;
+  const aceitaPontos = localAceitaPontos || pontosPeloPremium;
+  const maximoPontosPermitidos = localAceitaPontos ? (ehAluguel ? itemAluguel?.maximo_pontos_permitidos : servico?.maximo_pontos_permitidos) : null;
 
   // Subtotal antes de pontos/cupom, e prévia dos descontos — o valor final e
   // autoritativo é sempre recalculado no servidor.
@@ -493,7 +504,8 @@ export default function ExplorarDetalhes() {
   const pontosAplicaveisPreview = (() => {
     if (!aceitaPontos || !usarPontos || saldoPontos <= 0) return 0;
     const maxPeloSubtotal = Math.floor(subtotalBase * PONTOS_POR_REAL);
-    return Math.min(saldoPontos, maxPeloSubtotal, maximoPontosPermitidos || Infinity);
+    const maxPremium = pontosPeloPremium ? Math.floor(subtotalBase * (pontosPremium.percentual / 100) * PONTOS_POR_REAL) : Infinity;
+    return Math.min(saldoPontos, maxPeloSubtotal, maxPremium, maximoPontosPermitidos || Infinity);
   })();
   const descontoPontosPreview = pontosAplicaveisPreview / PONTOS_POR_REAL;
 
@@ -660,6 +672,7 @@ export default function ExplorarDetalhes() {
             forma_pagamento: formaPagamento,
             pontos_utilizados: pontosAplicaveisPreview || undefined,
             cupom_codigo: cupomAtivo?.codigo || undefined,
+            viagem_id: viagemId ? Number(viagemId) : undefined,
             ...pagamentoOnline,
           }),
         });
@@ -671,9 +684,13 @@ export default function ExplorarDetalhes() {
         if (json.payment_url && !json.pago) {
           await WebBrowser.openBrowserAsync(json.payment_url);
         }
+        const grupo = json.desconto_grupo_viagem;
+        const avisoGrupo = grupo
+          ? `\n\nDesconto de grupo aplicado: R$ ${Number(grupo.valor_desconto).toFixed(2).replace('.', ',')} por vocês ${grupo.participantes} estarem reservando juntos, +${grupo.pontos_bonus} pontos de bônus!`
+          : '';
         alertar(
           json.pago ? 'Pagamento aprovado!' : 'Agendamento confirmado!',
-          json.codigo_verificacao ? `Seu PIN de atendimento é ${json.codigo_verificacao}. Guarde-o para apresentar no local.` : 'Você receberá a confirmação em instantes.',
+          (json.codigo_verificacao ? `Seu PIN de atendimento é ${json.codigo_verificacao}. Guarde-o para apresentar no local.` : 'Você receberá a confirmação em instantes.') + avisoGrupo,
           [{ text: 'OK', onPress: () => router.push('/(tabs)/home' as never) }]
         );
       } else if (itemAluguel) {
@@ -688,6 +705,7 @@ export default function ExplorarDetalhes() {
             forma_pagamento: formaPagamento,
             pontos_utilizados: pontosAplicaveisPreview || undefined,
             cupom_codigo: cupomAtivo?.codigo || undefined,
+            viagem_id: viagemId ? Number(viagemId) : undefined,
             ...pagamentoOnline,
           }),
         });
@@ -699,11 +717,15 @@ export default function ExplorarDetalhes() {
         if (json.payment_url && !json.pago) {
           await WebBrowser.openBrowserAsync(json.payment_url);
         }
+        const grupoAluguel = json.desconto_grupo_viagem;
+        const avisoGrupoAluguel = grupoAluguel
+          ? `\n\nDesconto de grupo aplicado: R$ ${Number(grupoAluguel.valor_desconto).toFixed(2).replace('.', ',')} por vocês ${grupoAluguel.participantes} estarem reservando juntos, +${grupoAluguel.pontos_bonus} pontos de bônus!`
+          : '';
         alertar(
           json.pago ? 'Pagamento aprovado!' : 'Reserva enviada!',
-          json.pago
+          (json.pago
             ? `Sua reserva está confirmada. Valor total: R$ ${Number(json.valor_total).toFixed(2).replace('.', ',')}`
-            : `Sua reserva foi registrada. Valor total: R$ ${Number(json.valor_total).toFixed(2).replace('.', ',')}`,
+            : `Sua reserva foi registrada. Valor total: R$ ${Number(json.valor_total).toFixed(2).replace('.', ',')}`) + avisoGrupoAluguel,
           [{ text: 'OK', onPress: () => router.push('/(tabs)/home' as never) }]
         );
       }
@@ -1050,6 +1072,14 @@ export default function ExplorarDetalhes() {
             </>
           )}
 
+          {/* VIAGEM EM GRUPO — se outro membro já reservou o mesmo serviço/item, sai com desconto */}
+          {!!viagemId && (
+            <View style={s.explica}>
+              <Ionicons name="people-outline" size={18} color={T.primary} />
+              <Text style={s.explicaTxt}>Reservando com o grupo da sua viagem. Se outra pessoa do grupo já reservou {ehAluguel ? 'este item' : 'este serviço'}, vocês ganham desconto e pontos de bônus.</Text>
+            </View>
+          )}
+
           {/* 1. DATA */}
           <Text style={s.secao}>{ehAluguel ? (movel ? 'Escolha a data de retirada' : 'Escolha a data de entrada') : 'Horários disponíveis'}</Text>
 
@@ -1351,7 +1381,10 @@ export default function ExplorarDetalhes() {
               <View style={s.pontosIcone}><Ionicons name="gift-outline" size={18} color={T.primary} /></View>
               <View style={{ flex: 1 }}>
                 <Text style={s.pontosTitulo}>Usar meus pontos</Text>
-                <Text style={s.pontosDesc}>Você tem {saldoPontos} pontos disponíveis</Text>
+                <Text style={s.pontosDesc}>
+                  Você tem {saldoPontos} pontos disponíveis
+                  {pontosPeloPremium ? ` · benefício premium: até ${String(pontosPremium.percentual).replace('.', ',')}% do valor` : ''}
+                </Text>
               </View>
               <View style={[s.check, usarPontos && s.checkOn]}>{usarPontos && <Ionicons name="checkmark" size={14} color="#fff" />}</View>
             </TouchableOpacity>
@@ -1386,7 +1419,10 @@ export default function ExplorarDetalhes() {
       </ScrollView>
 
       {/* RODAPÉ: TOTAL + BOTÃO */}
-      <View style={s.rodape}>
+      {/* SafeAreaView do react-native puro não cobre a barra de gestos do
+          Android — sem esse padding extra, o botão de reservar ficava
+          parcialmente escondido atrás dela. */}
+      <View style={[s.rodape, { paddingBottom: 20 + (Platform.OS === 'android' ? insets.bottom : 0) }]}>
         <View style={s.rodapeCard}>
           <View style={{ flex: 1 }}>
             <Text style={s.rodapeRotulo}>Total {ehAluguel ? `(${quantidadePeriodos}x ${tipoPeriodo})` : 'a pagar'}</Text>

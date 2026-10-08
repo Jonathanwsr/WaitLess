@@ -18,6 +18,7 @@ class RelatorioFinanceiroSemanal extends Model
         'receita_agendamentos' => 'decimal:2',
         'receita_alugueis_estabelecimento' => 'decimal:2',
         'receita_locacoes_avulsas' => 'decimal:2',
+        'receita_produtos' => 'decimal:2',
         'receita_bruta_total' => 'decimal:2',
         'taxa_plataforma_total' => 'decimal:2',
         'receita_liquida_total' => 'decimal:2',

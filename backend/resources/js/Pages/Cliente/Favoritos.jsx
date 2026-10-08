@@ -2,13 +2,14 @@ import React, { useState } from 'react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Heart, MapPin, Star, ImageOff, Calendar, Compass } from 'lucide-react';
+import { alternarFavoritoProduto } from '@/lib/produtosEntrega';
 
-export default function Favoritos({ estabelecimentos = [], servicos = [], itensAluguel = [], reservas = {} }) {
+export default function Favoritos({ estabelecimentos = [], servicos = [], itensAluguel = [], produtosEntrega = [], reservas = {} }) {
     // 1. Pegamos o auth de forma global e segura através do usePage()
     const { auth } = usePage().props;
     const [abaAtiva, setAbaAtiva] = useState('estabelecimentos');
 
-    const totalFavoritos = estabelecimentos.length + servicos.length + itensAluguel.length;
+    const totalFavoritos = estabelecimentos.length + servicos.length + itensAluguel.length + produtosEntrega.length;
 
     const handleToggleFavorito = (tipo, id) => {
         router.post('/api/favoritos/toggle', { tipo, id }, {
@@ -38,6 +39,7 @@ export default function Favoritos({ estabelecimentos = [], servicos = [], itensA
         { id: 'estabelecimentos', label: 'Estabelecimentos', count: estabelecimentos.length },
         { id: 'servicos', label: 'Serviços', count: servicos.length },
         { id: 'itens', label: 'Reservas', count: itensAluguel.length },
+        { id: 'produtos', label: 'Produtos', count: produtosEntrega.length },
         { id: 'reservas', label: 'Meus agendamentos', count: null },
     ];
 
@@ -267,6 +269,38 @@ export default function Favoritos({ estabelecimentos = [], servicos = [], itensA
                             </div>
                         )}
                     </div>
+                )}
+
+                {abaAtiva === 'produtos' && (
+                    produtosEntrega.length === 0 ? (
+                        <div className="text-center py-20 bg-white rounded-3xl border border-gray-100">
+                            <p className="text-sm font-semibold text-gray-400">Nenhum produto favoritado. Toque no coração de um produto para salvá-lo aqui.</p>
+                            <Link href={route('entregas.index')} className="inline-block mt-4 text-sm font-bold text-[#FF5A00]">Ver produtos</Link>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
+                            {produtosEntrega.map((produto) => (
+                                <div key={produto.id} className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden flex flex-col">
+                                    <Link href={route('entregas.produto', produto.id)} className="block">
+                                        <div className="aspect-square bg-gray-100">
+                                            <img src={produto.fotos?.[0] || 'https://placehold.co/400x400/f4f4f5/a1a1aa?text=Produto'} alt={produto.nome} className="w-full h-full object-cover" />
+                                        </div>
+                                        <div className="p-4">
+                                            <p className="font-bold text-gray-900 text-sm line-clamp-2">{produto.nome}</p>
+                                            <p className="text-xs text-gray-400 truncate mt-1">{produto.estabelecimento?.nome || 'Vendedor independente'}</p>
+                                            <p className="text-base font-black text-[#FF5A00] mt-2">R$ {Number(produto.valor_final).toFixed(2).replace('.', ',')}</p>
+                                        </div>
+                                    </Link>
+                                    <button
+                                        onClick={async () => { await alternarFavoritoProduto(produto.id); router.reload({ only: ['produtosEntrega'] }); }}
+                                        className="mx-4 mb-4 text-xs font-bold text-gray-500 hover:text-red-600 text-left"
+                                    >
+                                        Remover dos favoritos
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    )
                 )}
 
                 {abaAtiva === 'reservas' && (

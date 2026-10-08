@@ -83,6 +83,7 @@ class ClienteAgendamentoController extends Controller
             'desconto_id'      => 'nullable|exists:descontos,id',
             'pontos_utilizados' => 'nullable|integer|min:0',
             'cupom_codigo'     => 'nullable|string|max:60',
+            'viagem_id'        => 'nullable|integer|exists:viagens,id',
             'funcionario_id'   => 'nullable|integer',
         ]);
 
@@ -152,17 +153,13 @@ class ClienteAgendamentoController extends Controller
                 }
             }
 
-            // Pontos de fidelidade (saldo GLOBAL, users.pontos_saldo) — só se o
-            // serviço aceitar resgate de pontos.
+            // Pontos de fidelidade (saldo GLOBAL, users.pontos_saldo): se o serviço aceita pontos,
+            // ou se o cliente é premium (com limite), ver PontosService::limiteDePontos.
             $user = Auth::user();
             $pontosAplicados = 0;
             $valorDescontoPontos = 0.0;
-            if ($servico->aceita_pontos && $request->filled('pontos_utilizados')) {
-                $pontosSolicitados = (int) $validated['pontos_utilizados'];
-                if ($servico->maximo_pontos_permitidos) {
-                    $pontosSolicitados = min($pontosSolicitados, (int) $servico->maximo_pontos_permitidos);
-                }
-                $pontosAplicados = PontosService::pontosAplicaveis($user, $pontosSolicitados, $valorTotal);
+            if ($request->filled('pontos_utilizados')) {
+                $pontosAplicados = PontosService::pontosParaPedido($user, $servico, (int) $validated['pontos_utilizados'], $valorTotal);
                 if ($pontosAplicados > 0) {
                     $valorDescontoPontos = PontosService::pontosParaValor($pontosAplicados);
                     $valorTotal = max(0, $valorTotal - $valorDescontoPontos);
@@ -177,6 +174,26 @@ class ClienteAgendamentoController extends Controller
                 $cupomAplicado = $this->cupomService->buscarValidoParaUsuario($validated['cupom_codigo'], $user, $estabelecimento->id, $servico->id);
                 $valorDescontoCupom = $this->cupomService->calcularDesconto($cupomAplicado, $valorTotal);
                 $valorTotal = max(0, $valorTotal - $valorDescontoCupom);
+            }
+
+            // Desconto de grupo: se outro membro da mesma viagem colaborativa já
+            // reservou este mesmo serviço (dentro do período da viagem), o grupo
+            // reservando junto ganha desconto extra — e pontos de bônus mais à frente.
+            $viagemDoGrupo = null;
+            $descontoGrupo = 0.0;
+            $participantesGrupo = 0;
+            if ($request->filled('viagem_id')) {
+                $viagemCandidata = \App\Models\Viagem::find($validated['viagem_id']);
+                if ($viagemCandidata && $viagemCandidata->temMembro($user->id)) {
+                    $grupo = app(\App\Services\Viagem\DescontoGrupoService::class)
+                        ->calcular($viagemCandidata, $valorTotal, $servico->id, null, $user->id);
+                    if ($grupo['elegivel']) {
+                        $descontoGrupo = $grupo['desconto'];
+                        $participantesGrupo = $grupo['participantes'];
+                        $valorTotal = $grupo['valor_final'];
+                        $viagemDoGrupo = $viagemCandidata;
+                    }
+                }
             }
 
             // Serviço gratuito (ou que zerou com cupom/pontos/desconto): não existe o
@@ -232,6 +249,29 @@ class ClienteAgendamentoController extends Controller
                 $this->cupomService->marcarUsado($user, $cupomAplicado);
             }
 
+            // Bônus por reservar em grupo com a viagem: pontos extras, e a reserva já
+            // entra sozinha na agenda compartilhada da viagem (sem precisar compartilhar na mão).
+            if ($viagemDoGrupo) {
+                $pontosBonusGrupo = \App\Services\Viagem\DescontoGrupoService::PONTOS_BONUS;
+                $user->increment('pontos_saldo', $pontosBonusGrupo);
+                DB::table('historico_pontos')->insert([
+                    'usuario_id'         => $user->id,
+                    'estabelecimento_id' => $estabelecimento->id,
+                    'agendamento_id'     => $agendamento->id,
+                    'tipo'               => 'ganho',
+                    'descricao'          => "Bônus por reservar em grupo com a viagem \"{$viagemDoGrupo->titulo}\" ({$participantesGrupo} pessoas)",
+                    'quantidade'         => $pontosBonusGrupo,
+                    'created_at'         => now()
+                ]);
+
+                try {
+                    app(\App\Services\Viagem\ViagemService::class)
+                        ->compartilharReserva($viagemDoGrupo, $user, 'agendamento', $agendamento->id);
+                } catch (\Throwable $e) {
+                    Log::warning('Falha ao vincular reserva em grupo à viagem: ' . $e->getMessage());
+                }
+            }
+
             if ($isPresencial) {
                 Pagamento::create([
                     'usuario_id'         => Auth::id(),
@@ -271,8 +311,12 @@ class ClienteAgendamentoController extends Controller
 
             DB::commit();
 
+            $avisoGrupo = $viagemDoGrupo
+                ? " Desconto de grupo aplicado: R$ " . number_format($descontoGrupo, 2, ',', '.') . " por vocês {$participantesGrupo} estarem reservando juntos na viagem \"{$viagemDoGrupo->titulo}\"!"
+                : '';
+
             if ($ehGratuito) {
-                return redirect()->route('dashboard')->with('success', 'Reserva gratuita confirmada! O seu PIN de segurança foi gerado.');
+                return redirect()->route('dashboard')->with('success', 'Reserva gratuita confirmada! O seu PIN de segurança foi gerado.' . $avisoGrupo);
             }
 
             if ($formaEscolhida === 'online_agora' && !empty($cobrancaAsaas['invoice_url'])) {
@@ -280,10 +324,10 @@ class ClienteAgendamentoController extends Controller
             }
 
             if ($formaEscolhida === 'online_depois') {
-                return redirect()->route('dashboard')->with('warning', 'Vaga reservada! Pague online pelo painel antes do prazo expirar.');
+                return redirect()->route('dashboard')->with('warning', 'Vaga reservada! Pague online pelo painel antes do prazo expirar.' . $avisoGrupo);
             }
 
-            return redirect()->route('dashboard')->with('success', 'Agendamento confirmado! O seu PIN de segurança foi gerado para pagamento no local.');
+            return redirect()->route('dashboard')->with('success', 'Agendamento confirmado! O seu PIN de segurança foi gerado para pagamento no local.' . $avisoGrupo);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
             DB::rollBack();
@@ -348,187 +392,48 @@ class ClienteAgendamentoController extends Controller
      */
     public function cancelar($id)
     {
+        $agendamento = Agendamento::find($id);
+
+        if (!$agendamento) return back()->with('error', 'Agendamento não encontrado.');
+        if ($agendamento->usuario_id != Auth::id()) return back()->with('error', 'Você não tem permissão para cancelar este agendamento.');
+        if ($agendamento->status === 'cancelado') return back()->with('warning', 'Este agendamento já se encontra cancelado.');
+
         try {
-            $agendamento = Agendamento::with('estabelecimento')->find($id);
-
-            if (!$agendamento) return back()->with('error', 'Agendamento não encontrado.');
-            if ($agendamento->usuario_id != Auth::id()) return back()->with('error', 'Você não tem permissão para cancelar este agendamento.');
-            if ($agendamento->status === 'cancelado') return back()->with('warning', 'Este agendamento já se encontra cancelado.');
-
-            $pagamento = Pagamento::where('agendamento_id', $agendamento->id)->first();
-            $mensagemAlerta = 'Agendamento cancelado com sucesso. Sua vaga foi libertada.';
-
-            // Lógica de Reembolso para Pagamentos Online
-            if (in_array($agendamento->status_pagamento, ['pago', 'pago_online']) && $pagamento && $pagamento->id_transacao_gateway) {
-
-                $dataHoraServico = Carbon::parse($agendamento->data_agendamento . ' ' . $agendamento->hora_agendamento);
-                $limiteGratis = $dataHoraServico->copy()->subMinutes(30);
-
-                $isCancelamentoGratis = Carbon::now()->lessThanOrEqualTo($limiteGratis);
-
-                $valorOriginal = $pagamento->valor;
-                $valorEstorno = $valorOriginal;
-                $taxaCancelamento = 0;
-
-                // Se cancelou atrasado, deduz 2% do estorno
-                if (!$isCancelamentoGratis) {
-                    $taxaCancelamento = round($valorOriginal * 0.02, 2);
-                    $valorEstorno = $valorOriginal - $taxaCancelamento;
-                    $mensagemAlerta = "Cancelamento efetuado! Como foi feito a menos de 30min do horário, uma taxa de 2% (R$ {$taxaCancelamento}) foi retida. O restante será estornado.";
-                } else {
-                    $mensagemAlerta = 'Cancelamento gratuito efetuado com sucesso! O valor integral foi estornado à sua conta.';
-                }
-
-                try {
-                    DB::beginTransaction();
-
-                    // Aciona a API do Asaas enviando o valor exato a ser estornado
-                    $this->pagamentoService->estornarPagamento($pagamento->id_transacao_gateway, $valorEstorno);
-
-                    // Reverte pontos de fidelidade que o usuário tinha ganho com este pagamento
-                    $this->reverterPontosDeFidelidade($agendamento);
-
-                    $pagamento->update(['status' => 'estornado', 'valor_liquido' => 0]);
-
-                    // Registra no extrato do lojista a dedução da devolução
-                    $providerId = DB::table('providers')
-                        ->where('user_id', $agendamento->estabelecimento->user_id ?? 0) // Ajuste conforme seu relacionamento de dono
-                        ->value('id');
-
-                    if ($providerId) {
-                        DB::table('extrato_providers')->insert([
-                            'provider_id'      => $providerId,
-                            'usuario_id'       => Auth::id(),
-                            'origem_type'      => 'App\Models\Agendamento',
-                            'origem_id'        => $agendamento->id,
-                            'tipo'             => 'estorno',
-                            'valor_bruto'      => $valorEstorno,
-                            'taxa_plataforma'  => 0,
-                            'valor_liquido'    => $valorEstorno * -1, // Abate o que saiu
-                            'descricao'        => $isCancelamentoGratis ? 'Estorno integral por cancelamento do cliente' : 'Estorno parcial (Cliente cancelou em cima da hora)',
-                            'status'           => 'estornado',
-                            'codigo_transacao' => $pagamento->id_transacao_gateway,
-                            'metodo_pagamento' => $pagamento->metodo_pagamento,
-                            'created_at'       => now()
-                        ]);
-                    }
-
-                    DB::commit();
-
-                } catch (Exception $e) {
-                    DB::rollBack();
-                    return back()->with('error', 'Falha ao processar o estorno financeiro no Asaas. Cancelamento abortado.');
-                }
-            }
-
-            // O simples fato do status ser 'cancelado' tira ele da fila de atendimento no frontend/backend
-            $agendamento->update(['status' => 'cancelado', 'status_pagamento' => ($pagamento && $pagamento->status === 'estornado') ? 'estornado' : 'cancelado']);
-
-            if ($pagamento && $pagamento->status !== 'estornado') {
-                $pagamento->update(['status' => 'cancelado']);
-            }
-
-            return back()->with('success', $mensagemAlerta);
-
+            // Centralizado em PagamentoService::processarCancelamentoAgendamento
+            // (mesma regra usada pelo app mobile): até 30 min antes devolve
+            // 100%, depois disso retém a taxa de cancelamento tardio — e o
+            // estorno fica registrado na mesma tabela/tela que o admin usa
+            // pra acompanhar disputas, não só um status solto no pagamento.
+            $resultado = $this->pagamentoService->processarCancelamentoAgendamento($agendamento);
         } catch (Exception $e) {
             Log::error("Erro ao cancelar o agendamento #{$id}: " . $e->getMessage());
-            return back()->with('error', 'Ocorreu um erro ao tentar cancelar. Tente novamente.');
+            return back()->with('error', $e->getMessage() ?: 'Ocorreu um erro ao tentar cancelar. Tente novamente.');
         }
+
+        return back()->with('success', $resultado['message']);
     }
 
     /**
      * 👉 CANCELAMENTO DE ALUGUEL (LOCAÇÃO)
      * Regra: Devolve 100% se for até 24 HORAS (1 dia) antes. Devolve 98% se for depois.
+     * (O endpoint realmente usado pelo cliente hoje é AgendamentoController::destroyAluguel;
+     * este fica aqui por nome/semântica e já delega pra mesma lógica central.)
      */
     public function cancelarAluguel($id)
     {
+        $aluguel = Aluguel::find($id);
+
+        if (!$aluguel) return back()->with('error', 'Locação não encontrada.');
+        if ($aluguel->locatario_id != Auth::id()) return back()->with('error', 'Permissão negada.');
+        if ($aluguel->status === 'cancelado') return back()->with('warning', 'Esta locação já está cancelada.');
+
         try {
-            $aluguel = Aluguel::with('estabelecimento')->find($id);
-
-            if (!$aluguel) return back()->with('error', 'Locação não encontrada.');
-            if ($aluguel->locatario_id != Auth::id()) return back()->with('error', 'Permissão negada.');
-            if ($aluguel->status === 'cancelado') return back()->with('warning', 'Esta locação já está cancelada.');
-
-            $pagamento = Pagamento::where('aluguel_id', $aluguel->id)->first();
-            $mensagemAlerta = 'Reserva de aluguel cancelada com sucesso.';
-
-            if (in_array($aluguel->status, ['pago', 'confirmado']) && $pagamento && $pagamento->id_transacao_gateway) {
-
-                $dataHoraInicio = Carbon::parse($aluguel->data_inicio . ' ' . $aluguel->hora_inicio);
-                $limiteGratis = $dataHoraInicio->copy()->subDay(); // 1 DIA DE ANTECEDÊNCIA
-
-                $isCancelamentoGratis = Carbon::now()->lessThanOrEqualTo($limiteGratis);
-
-                $valorOriginal = $pagamento->valor;
-                $valorEstorno = $valorOriginal;
-                $taxaCancelamento = 0;
-
-                if (!$isCancelamentoGratis) {
-                    $taxaCancelamento = round($valorOriginal * 0.02, 2);
-                    $valorEstorno = $valorOriginal - $taxaCancelamento;
-                    $mensagemAlerta = "Aluguel cancelado! Como a regra é 24h de aviso prévio, uma taxa de 2% (R$ {$taxaCancelamento}) foi retida. O restante será estornado.";
-                } else {
-                    $mensagemAlerta = 'Cancelamento gratuito de locação efetuado! 100% do valor estornado.';
-                }
-
-                try {
-                    DB::beginTransaction();
-
-                    $this->pagamentoService->estornarPagamento($pagamento->id_transacao_gateway, $valorEstorno);
-                    $this->reverterPontosDeFidelidade($aluguel, true); // true = é aluguel
-
-                    $pagamento->update(['status' => 'estornado', 'valor_liquido' => 0]);
-
-                    // Lógica similar de extrato omitida por brevidade (idêntica ao Agendamento)
-                    DB::commit();
-
-                } catch (Exception $e) {
-                    DB::rollBack();
-                    return back()->with('error', 'Falha no estorno do Aluguel pelo gateway.');
-                }
-            }
-
-            $aluguel->update(['status' => 'cancelado']);
-            if ($pagamento && $pagamento->status !== 'estornado') $pagamento->update(['status' => 'cancelado']);
-
-            return back()->with('success', $mensagemAlerta);
-
+            $resultado = $this->pagamentoService->processarCancelamentoAluguel($aluguel);
         } catch (Exception $e) {
             Log::error("Erro ao cancelar o aluguel #{$id}: " . $e->getMessage());
-            return back()->with('error', 'Ocorreu um erro ao cancelar. Tente novamente.');
+            return back()->with('error', $e->getMessage() ?: 'Ocorreu um erro ao cancelar. Tente novamente.');
         }
-    }
 
-    /**
-     * 👉 FUNÇÃO AUXILIAR: Remove os pontos do usuário caso ele cancele a reserva paga
-     */
-    private function reverterPontosDeFidelidade($entidade, $isAluguel = false)
-    {
-        $colunaFiltro = $isAluguel ? 'aluguel_id' : 'agendamento_id';
-        $userId = $isAluguel ? $entidade->locatario_id : $entidade->usuario_id;
-
-        $pontosGanhosNessaTransacao = DB::table('historico_pontos')
-            ->where($colunaFiltro, $entidade->id)
-            ->where('tipo', 'ganho')
-            ->sum('quantidade');
-
-        if ($pontosGanhosNessaTransacao > 0) {
-            DB::table('pontos_usuario_estabelecimento')
-                ->where('usuario_id', $userId)
-                ->where('estabelecimento_id', $entidade->estabelecimento_id)
-                ->decrement('total_pontos', $pontosGanhosNessaTransacao);
-
-            DB::table('historico_pontos')->insert([
-                'usuario_id'         => $userId,
-                'estabelecimento_id' => $entidade->estabelecimento_id,
-                $colunaFiltro        => $entidade->id,
-                // historico_pontos.tipo só aceita 'ganho'/'uso' (CHECK constraint) —
-                // 'perda' não existe e derrubava todo o cancelamento com erro de banco.
-                'tipo'               => 'uso',
-                'descricao'          => 'Estorno de pontos por cancelamento do cliente',
-                'quantidade'         => $pontosGanhosNessaTransacao,
-                'created_at'         => now()
-            ]);
-        }
+        return back()->with('success', $resultado['message']);
     }
 }

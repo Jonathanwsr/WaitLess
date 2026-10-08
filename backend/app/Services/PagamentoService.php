@@ -4,16 +4,23 @@ namespace App\Services;
 
 use App\Exceptions\CarteiraAsaasNaoConfiguradaException;
 use App\Exceptions\CobrancaRecusadaException;
+use App\Models\Aluguel;
 use App\Models\User;
 use App\Models\Agendamento;
 use App\Models\Pagamento;
+use App\Models\PedidoEntrega;
+use App\Models\ProdutoEntrega;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Mail; 
+use Illuminate\Support\Facades\Mail;
 
 class PagamentoService
 {
+    public function __construct(private EstornoService $estornoService, private NotaFiscalService $notaFiscalService)
+    {
+    }
+
     /** Parcelamento no cartão sem juros para o cliente (o lojista absorve a taxa do Asaas). */
     public const PARCELAS_MAXIMAS = 12;
     public const PARCELA_MINIMA = 20.00;
@@ -76,19 +83,35 @@ class PagamentoService
     }
 
     /**
-     * 👉 VERIFICA SE O ESTABELECIMENTO É ISENTO DA TAXA PRESENCIAL (Premium/Sócio)
+     * 👉 FRAÇÃO DA TAXA PRESENCIAL QUE AINDA É COBRADA (Premium/Sócio)
+     *
+     * 0.0 = isento total, 0.5 = taxa reduzida pela metade, 1.0 = taxa cheia.
+     * Isenção total: vínculo de sócio (dono de verdade) OU plano Sócio
+     * Premium ativo (mensal ou anual — antes só o mensal tinha isenção, quem
+     * assinava "Sócio Anual" nunca recebia o que a tela promete). Taxa
+     * reduzida: plano Premium base (mensal ou anual) ativo, mesmo sem ser
+     * sócio — "Taxas reduzidas" era só texto de marketing até aqui, nada no
+     * código de fato reduzia a taxa de ninguém.
      */
-    private function isIsentoTaxaPresencial($estabelecimentoId)
+    private function fracaoTaxaPresencial($estabelecimentoId): float
     {
-        return DB::table('estabelecimento_usuario')
+        $vinculos = DB::table('estabelecimento_usuario')
             ->join('users', 'estabelecimento_usuario.usuario_id', '=', 'users.id')
             ->where('estabelecimento_usuario.estabelecimento_id', $estabelecimentoId)
-            ->where(function($query) {
-                // É isento se for 'socio' na pivot OU 'premium-socio' no plano_assinatura
-                $query->where('estabelecimento_usuario.tipo', 'like', '%socio%')
-                      ->orWhere('users.plano_assinatura', 'premium-socio');
-            })
-            ->exists();
+            ->select('estabelecimento_usuario.tipo', 'users.plano_assinatura', 'users.plano_expira_em')
+            ->get();
+
+        $planoAtivo = fn ($v) => $v->plano_expira_em && \Carbon\Carbon::parse($v->plano_expira_em)->isFuture();
+
+        $isento = $vinculos->contains(fn ($v) => str_contains((string) $v->tipo, 'socio'))
+            || $vinculos->contains(fn ($v) => in_array($v->plano_assinatura, ['premium-socio', 'premium-socio-anual'], true) && $planoAtivo($v));
+        if ($isento) {
+            return 0.0;
+        }
+
+        $temPremiumBase = $vinculos->contains(fn ($v) => in_array($v->plano_assinatura, ['premium', 'premium-anual'], true) && $planoAtivo($v));
+
+        return $temPremiumBase ? 0.5 : 1.0;
     }
 
     /**
@@ -103,10 +126,10 @@ class PagamentoService
 
         $pin = str_pad(mt_rand(0, 9999), 4, '0', STR_PAD_LEFT);
 
-        // Verifica se NÃO É isento. Se não for, cobra a taxa da plataforma
-        if (!$this->isIsentoTaxaPresencial($estabelecimentoId)) {
-            $taxaPlataforma = \App\Support\Taxas::sobre($valorTotal);
-            
+        $fracaoTaxa = $this->fracaoTaxaPresencial($estabelecimentoId);
+        if ($fracaoTaxa > 0) {
+            $taxaPlataforma = round(\App\Support\Taxas::sobre($valorTotal) * $fracaoTaxa, 2);
+
             DB::table('estabelecimentos')
                 ->where('id', $estabelecimentoId)
                 ->increment('saldo_devedor', $taxaPlataforma);
@@ -142,8 +165,10 @@ class PagamentoService
      * @param array|null $cartao  ['numero','titular','mes','ano','cvv'] — quando informado, o cartão é
      *                            cobrado na hora pelo Asaas (sem sair da página). Os dados do cartão
      *                            nunca são gravados aqui.
+     * @param string|null $cartaoSalvoToken  Token do Asaas de um cartão já salvo anteriormente — quando
+     *                            informado, cobra direto nesse cartão e ignora $cartao (nem precisa vir preenchido).
      */
-    public function criarCobrancaAsaas($agendamento, string $metodo, ?string $asaasCustomerId, int $parcelas = 1, ?array $cartao = null, ?User $titular = null, ?string $ip = null)
+    public function criarCobrancaAsaas($agendamento, string $metodo, ?string $asaasCustomerId, int $parcelas = 1, ?array $cartao = null, ?User $titular = null, ?string $ip = null, ?string $cartaoSalvoToken = null)
     {
         $valorTotal = $agendamento->valor_total ?? $agendamento->valor_final;
 
@@ -205,7 +230,12 @@ class PagamentoService
             $payloadAsaas['totalValue'] = round($valorTotal, 2);
         }
 
-        if ($metodo === 'cartao' && $cartao && $titular) {
+        if ($metodo === 'cartao' && $cartaoSalvoToken) {
+            // Cobrança num cartão já tokenizado — o Asaas reaproveitra os dados do
+            // titular da tokenização original, não precisa reenviar número/CVV.
+            $payloadAsaas['creditCardToken'] = $cartaoSalvoToken;
+            $payloadAsaas['remoteIp'] = $ip ?: request()->ip();
+        } elseif ($metodo === 'cartao' && $cartao && $titular) {
             $payloadAsaas['creditCard'] = [
                 'holderName' => $cartao['titular'],
                 'number' => preg_replace('/\D/', '', $cartao['numero']),
@@ -238,8 +268,29 @@ class PagamentoService
         }
 
         $asaasPayment = $response->json();
-        $cartaoAprovado = $metodo === 'cartao' && $cartao && in_array($asaasPayment['status'] ?? '', ['CONFIRMED', 'RECEIVED'], true);
+        $cartaoAprovado = $metodo === 'cartao' && ($cartao || $cartaoSalvoToken) && in_array($asaasPayment['status'] ?? '', ['CONFIRMED', 'RECEIVED'], true);
         $isAgendamento = $agendamento instanceof Agendamento;
+
+        // Cartão novo (não veio de um já salvo) e aprovado: o Asaas tokeniza
+        // automaticamente toda cobrança de cartão — guardamos esse token pra
+        // próxima vez o cliente não precisar redigitar os dados do cartão.
+        if ($cartaoAprovado && $cartao && !$cartaoSalvoToken && $titular && !empty($asaasPayment['creditCard']['creditCardToken'])) {
+            try {
+                $numeroMascarado = (string) ($asaasPayment['creditCard']['creditCardNumber'] ?? '');
+                \App\Models\CartaoSalvo::updateOrCreate(
+                    ['user_id' => $titular->id, 'token' => $asaasPayment['creditCard']['creditCardToken']],
+                    [
+                        'bandeira' => $asaasPayment['creditCard']['creditCardBrand'] ?? null,
+                        'ultimos_digitos' => substr($numeroMascarado, -4) ?: null,
+                        'nome_titular' => $cartao['titular'] ?? null,
+                        'padrao' => !\App\Models\CartaoSalvo::where('user_id', $titular->id)->exists(),
+                    ]
+                );
+            } catch (\Throwable $e) {
+                // Nunca deixa uma falha ao salvar o cartão derrubar um pagamento que já foi aprovado.
+                Log::warning('Falha ao salvar cartão tokenizado: ' . $e->getMessage());
+            }
+        }
 
         $novoPagamento = Pagamento::create([
             'usuario_id'           => $isAgendamento ? $agendamento->usuario_id : $agendamento->locatario_id,
@@ -280,6 +331,14 @@ class PagamentoService
         }
 
         $this->enviarEmailNotificacao($agendamento, $cartaoAprovado ? 'pago' : 'pendente', $asaasPayment['invoiceUrl'], $pin);
+
+        if ($cartaoAprovado) {
+            try {
+                $this->notaFiscalService->emitirParaPagamento($novoPagamento);
+            } catch (\Throwable $e) {
+                Log::error('Falha ao acionar emissão de nota fiscal (cartão): ' . $e->getMessage());
+            }
+        }
 
         return [
             'status'      => 'success',
@@ -355,44 +414,35 @@ class PagamentoService
                 $mensagem = 'Cancelamento gratuito efetuado com sucesso! O valor integral será devolvido para a forma de pagamento original.';
             }
 
-            DB::beginTransaction();
             try {
-                $this->estornarPagamento($pagamento->id_transacao_gateway, $valorEstorno);
-                $this->reverterPontosDeFidelidade($agendamento);
+                // Cria o registro em "estornos" (mesma tabela/tela que o admin já usa
+                // pra disputas) e processa a devolução real no Asaas via
+                // EstornoService::aprovarEstorno — sem isso, cada endpoint de
+                // cancelamento fazia sua própria versão dessa lógica, e pelo menos
+                // um deles nunca chegava a chamar o Asaas de verdade.
+                $cliente = $agendamento->usuario ?? User::find($agendamento->usuario_id);
+                $estorno = $cliente ? $this->estornoService->criarEEstornarPorCancelamento(
+                    $cliente,
+                    $pagamento,
+                    'SERVIÇO',
+                    $valorEstorno,
+                    $isCancelamentoGratis ? 'Cancelamento do cliente dentro do prazo gratuito.' : 'Cancelamento tardio do cliente (taxa retida).'
+                ) : null;
 
-                $pagamento->update(['status' => 'estornado', 'valor_liquido' => 0]);
-
-                $provider = DB::table('providers')
-                    ->join('users', 'providers.user_id', '=', 'users.id')
-                    ->join('estabelecimento_usuario', 'users.id', '=', 'estabelecimento_usuario.usuario_id')
-                    ->where('estabelecimento_usuario.estabelecimento_id', $agendamento->estabelecimento_id)
-                    ->select('providers.id')
-                    ->first();
-
-                if ($provider) {
-                    DB::table('extrato_providers')->insert([
-                        'provider_id'      => $provider->id,
-                        'usuario_id'       => $agendamento->usuario_id,
-                        'origem_type'      => 'App\\Models\\Agendamento',
-                        'origem_id'        => $agendamento->id,
-                        'tipo'             => 'estorno',
-                        'valor_bruto'      => $valorEstorno,
-                        'taxa_plataforma'  => 0,
-                        'valor_liquido'    => $valorEstorno * -1,
-                        'descricao'        => $isCancelamentoGratis ? 'Estorno integral por cancelamento do cliente' : 'Estorno parcial (cliente cancelou em cima da hora)',
-                        'status'           => 'estornado',
-                        'codigo_transacao' => $pagamento->id_transacao_gateway,
-                        'metodo_pagamento' => $pagamento->metodo_pagamento,
-                        'created_at'       => now(),
-                    ]);
+                if (!$estorno) {
+                    // Não deu pra identificar o responsável pelo estabelecimento (raro) —
+                    // mesmo assim o cliente não pode ficar sem o reembolso.
+                    $this->estornarPagamento($pagamento->id_transacao_gateway, $valorEstorno);
+                    $pagamento->update(['status' => 'estornado', 'valor_liquido' => 0]);
                 }
 
-                DB::commit();
+                $this->reverterPontosDeFidelidade($agendamento);
             } catch (\Exception $e) {
-                DB::rollBack();
                 Log::error('Falha ao estornar cancelamento de agendamento #' . $agendamento->id . ': ' . $e->getMessage());
                 throw new \Exception('Não foi possível processar a devolução do valor agora. Tente novamente em alguns minutos ou fale com o suporte.');
             }
+
+            $pagamento->refresh();
         }
 
         $agendamento->update([
@@ -405,6 +455,302 @@ class PagamentoService
         }
 
         return ['message' => $mensagem, 'estornado' => (bool) ($pagamento && $pagamento->status === 'estornado')];
+    }
+
+    /**
+     * 👉 CANCELAMENTO DE ALUGUEL (LOCAÇÃO) COM ESTORNO AUTOMÁTICO
+     *
+     * Mesma regra que a tela de serviços, só que com 24h de antecedência em
+     * vez de 30 minutos (faz mais sentido para locação): cancelar até 1 dia
+     * antes do início devolve 100%; depois disso, retém a taxa de
+     * cancelamento tardio e estorna o restante. Chamada tanto pelo endpoint
+     * web (DELETE /minhas-reservas/cancelar/{id}) quanto pelo mobile — antes
+     * disso esse endpoint só marcava a locação como cancelada e NUNCA
+     * devolvia o dinheiro ao cliente, mesmo quando o pagamento tinha sido
+     * feito online.
+     */
+    public function processarCancelamentoAluguel(Aluguel $aluguel): array
+    {
+        $pagamento = Pagamento::where('aluguel_id', $aluguel->id)->first();
+        $mensagem = 'Locação cancelada com sucesso.';
+
+        if (in_array($aluguel->status, ['confirmado', 'em_andamento'], true) && $pagamento && $pagamento->status === 'pago' && $pagamento->id_transacao_gateway) {
+            $limiteGratis = \Carbon\Carbon::parse($aluguel->data_inicio)->subDay();
+            $isCancelamentoGratis = now()->lessThanOrEqualTo($limiteGratis);
+
+            $valorOriginal = (float) ($pagamento->valor_total ?? $pagamento->valor);
+            $valorEstorno = $valorOriginal;
+
+            if (!$isCancelamentoGratis) {
+                $taxaCancelamento = round($valorOriginal * \App\Support\Taxas::cancelamentoTardioPercentual() / 100, 2);
+                $valorEstorno = $valorOriginal - $taxaCancelamento;
+                $mensagem = "Locação cancelada! Como foi feito a menos de 24h do início, uma taxa de " . \App\Support\Taxas::cancelamentoTardioPercentual() . "% (R$ " . number_format($taxaCancelamento, 2, ',', '.') . ") foi retida. O restante será devolvido para a forma de pagamento original.";
+            } else {
+                $mensagem = 'Cancelamento gratuito efetuado! O valor integral será devolvido para a forma de pagamento original.';
+            }
+
+            try {
+                $cliente = $aluguel->locatario ?? User::find($aluguel->locatario_id);
+                $estorno = $cliente ? $this->estornoService->criarEEstornarPorCancelamento(
+                    $cliente,
+                    $pagamento,
+                    'ALUGUEL',
+                    $valorEstorno,
+                    $isCancelamentoGratis ? 'Cancelamento do cliente dentro do prazo gratuito.' : 'Cancelamento tardio do cliente (taxa retida).'
+                ) : null;
+
+                if (!$estorno) {
+                    $this->estornarPagamento($pagamento->id_transacao_gateway, $valorEstorno);
+                    $pagamento->update(['status' => 'estornado', 'valor_liquido' => 0]);
+                }
+            } catch (\Exception $e) {
+                Log::error('Falha ao estornar cancelamento de aluguel #' . $aluguel->id . ': ' . $e->getMessage());
+                throw new \Exception('Não foi possível processar a devolução do valor agora. Tente novamente em alguns minutos ou fale com o suporte.');
+            }
+
+            $pagamento->refresh();
+        }
+
+        $aluguel->update(['status' => 'cancelado']);
+
+        if ($pagamento && $pagamento->status !== 'estornado') {
+            $pagamento->update(['status' => 'cancelado']);
+        }
+
+        return ['message' => $mensagem, 'estornado' => (bool) ($pagamento && $pagamento->status === 'estornado')];
+    }
+
+    /**
+     * 👉 COBRANÇA ASAAS DE UM PEDIDO DE ENTREGA
+     *
+     * Método dedicado (em vez de estender criarCobrancaAsaas) porque um
+     * PedidoEntrega tem um formato diferente de Agendamento/Aluguel e o
+     * vendedor sempre existe como `vendedor_id` (users.id) — nunca via
+     * Estabelecimento, já que o produto pode ser avulso. A taxa da
+     * plataforma aqui é a de entregas (1% por padrão), não a taxa geral.
+     *
+     * @param array|null $cartao  ['numero','titular','mes','ano','cvv']
+     * @param string|null $cartaoSalvoToken  Token de um cartão já salvo anteriormente.
+     */
+    public function criarCobrancaEntrega(PedidoEntrega $pedido, string $metodo, ?string $asaasCustomerId, int $parcelas = 1, ?array $cartao = null, ?User $titular = null, ?string $ip = null, ?string $cartaoSalvoToken = null): array
+    {
+        $valorTotal = (float) $pedido->valor_total;
+
+        $provider = DB::table('providers')
+            ->where('user_id', $pedido->vendedor_id)
+            ->whereNotNull('asaas_wallet_id')
+            ->select('id', 'asaas_wallet_id')
+            ->first();
+
+        if (!$provider || !$provider->asaas_wallet_id) {
+            throw new CarteiraAsaasNaoConfiguradaException();
+        }
+
+        if ($metodo === 'cartao' && $parcelas > $this->maximoParcelas($valorTotal)) {
+            throw new CobrancaRecusadaException('Parcelamento acima do permitido para este valor.');
+        }
+
+        $billingTypeMap = ['pix' => 'PIX', 'boleto' => 'BOLETO', 'cartao' => 'CREDIT_CARD'];
+        $billingTypeAsaas = $billingTypeMap[$metodo];
+
+        $payloadAsaas = [
+            'customer'    => $asaasCustomerId,
+            'billingType' => $billingTypeAsaas,
+            'dueDate'     => date('Y-m-d'),
+            'description' => "Pedido de entrega #{$pedido->codigo_pedido}",
+            'value'       => $valorTotal,
+            'escrow'      => true,
+            'split' => [
+                [
+                    'walletId' => $provider->asaas_wallet_id,
+                    'percentualValue' => \App\Support\Taxas::parteDoLocalPercentualEntregas(),
+                ]
+            ]
+        ];
+
+        if ($metodo === 'cartao' && $parcelas > 1) {
+            unset($payloadAsaas['value']);
+            $payloadAsaas['installmentCount'] = $parcelas;
+            $payloadAsaas['totalValue'] = round($valorTotal, 2);
+        }
+
+        if ($metodo === 'cartao' && $cartaoSalvoToken) {
+            $payloadAsaas['creditCardToken'] = $cartaoSalvoToken;
+            $payloadAsaas['remoteIp'] = $ip ?: request()->ip();
+        } elseif ($metodo === 'cartao' && $cartao && $titular) {
+            $payloadAsaas['creditCard'] = [
+                'holderName' => $cartao['titular'],
+                'number' => preg_replace('/\D/', '', $cartao['numero']),
+                'expiryMonth' => str_pad((string) $cartao['mes'], 2, '0', STR_PAD_LEFT),
+                'expiryYear' => strlen((string) $cartao['ano']) === 2 ? '20' . $cartao['ano'] : (string) $cartao['ano'],
+                'ccv' => $cartao['cvv'],
+            ];
+            $payloadAsaas['creditCardHolderInfo'] = array_filter([
+                'name' => $titular->name,
+                'email' => $titular->email,
+                'cpfCnpj' => preg_replace('/\D/', '', (string) $titular->cpf_cnpj),
+                'postalCode' => preg_replace('/\D/', '', (string) $titular->postal_code),
+                'addressNumber' => $titular->address_number,
+                'mobilePhone' => preg_replace('/\D/', '', (string) $titular->mobile_phone) ?: null,
+            ]);
+            $payloadAsaas['remoteIp'] = $ip ?: request()->ip();
+        }
+
+        $response = Http::withHeaders([
+            'access_token' => config('services.asaas.key'),
+        ])->post(config('services.asaas.url') . '/payments', $payloadAsaas);
+
+        if ($response->failed()) {
+            Log::error("Erro Asaas Service (entrega)", ['resposta' => $response->json(), 'metodo' => $metodo]);
+            if ($metodo === 'cartao' && $response->status() === 400) {
+                throw new CobrancaRecusadaException($response->json('errors.0.description') ?: 'Cartão recusado. Confira os dados ou use outro cartão.');
+            }
+            throw new \Exception('Falha na comunicação com o gateway de pagamento.');
+        }
+
+        $asaasPayment = $response->json();
+        $cartaoAprovado = $metodo === 'cartao' && ($cartao || $cartaoSalvoToken) && in_array($asaasPayment['status'] ?? '', ['CONFIRMED', 'RECEIVED'], true);
+
+        if ($cartaoAprovado && $cartao && !$cartaoSalvoToken && $titular && !empty($asaasPayment['creditCard']['creditCardToken'])) {
+            try {
+                $numeroMascarado = (string) ($asaasPayment['creditCard']['creditCardNumber'] ?? '');
+                \App\Models\CartaoSalvo::updateOrCreate(
+                    ['user_id' => $titular->id, 'token' => $asaasPayment['creditCard']['creditCardToken']],
+                    [
+                        'bandeira' => $asaasPayment['creditCard']['creditCardBrand'] ?? null,
+                        'ultimos_digitos' => substr($numeroMascarado, -4) ?: null,
+                        'nome_titular' => $cartao['titular'] ?? null,
+                        'padrao' => !\App\Models\CartaoSalvo::where('user_id', $titular->id)->exists(),
+                    ]
+                );
+            } catch (\Throwable $e) {
+                Log::warning('Falha ao salvar cartão tokenizado (entrega): ' . $e->getMessage());
+            }
+        }
+
+        $taxaPlataforma = \App\Support\Taxas::sobreEntregas($valorTotal);
+
+        $novoPagamento = Pagamento::create([
+            'usuario_id'           => $pedido->cliente_id,
+            'estabelecimento_id'   => $pedido->estabelecimento_id,
+            'pedido_entrega_id'    => $pedido->id,
+            'gateway_pagamento'    => 'Asaas',
+            'id_transacao_gateway' => $asaasPayment['id'],
+            'valor'                => $valorTotal,
+            'taxa'                 => $taxaPlataforma,
+            'valor_liquido'        => round($valorTotal - $taxaPlataforma, 2),
+            'status'               => $cartaoAprovado ? 'pago' : 'pendente',
+            'metodo_pagamento'     => $metodo,
+        ]);
+
+        $pedido->update([
+            'pagamento_id' => $novoPagamento->id,
+            'status'       => $cartaoAprovado ? 'pago' : 'pendente_pagamento',
+        ]);
+
+        if ($cartaoAprovado) {
+            try {
+                $this->notaFiscalService->emitirParaPagamento($novoPagamento);
+            } catch (\Throwable $e) {
+                Log::error('Falha ao acionar emissão de nota fiscal (entrega, cartão): ' . $e->getMessage());
+            }
+        }
+
+        return [
+            'status'      => 'success',
+            'payment_id'  => $asaasPayment['id'],
+            'pix_qr_code' => $asaasPayment['pixQrCode'] ?? null,
+            'invoice_url' => $asaasPayment['invoiceUrl'],
+            'aprovado'    => $cartaoAprovado,
+        ];
+    }
+
+    /**
+     * 👉 CANCELAMENTO DE PEDIDO DE ENTREGA COM ESTORNO AUTOMÁTICO
+     *
+     * Sem "horário marcado" como agendamento/aluguel, a regra aqui é mais
+     * simples: enquanto o pedido ainda não foi concluído (cliente não
+     * recebeu/retirou), o cancelamento devolve 100% do valor. Depois de
+     * concluído, cancelamento não é mais permitido — o cliente precisa abrir
+     * um ESTORNO (disputa), igual ao fluxo de serviço/aluguel. Essa regra é
+     * verificada pelo chamador antes de invocar este método.
+     */
+    public function processarCancelamentoPedidoEntrega(PedidoEntrega $pedido, ?int $canceladoPorId = null, string $motivo = 'CANCELAMENTO_CLIENTE'): array
+    {
+        $pagamento = $pedido->pagamento_id ? Pagamento::find($pedido->pagamento_id) : null;
+        $mensagem = 'Pedido cancelado com sucesso.';
+
+        if ($pedido->status === 'pago' && $pagamento && $pagamento->id_transacao_gateway) {
+            $valorEstorno = (float) $pedido->valor_total;
+            $descricao = $motivo === 'CANCELAMENTO_VENDEDOR'
+                ? 'Cancelamento do pedido de entrega pelo vendedor.'
+                : 'Cancelamento do pedido de entrega pelo cliente.';
+
+            try {
+                $cliente = $pedido->cliente ?? User::find($pedido->cliente_id);
+                $estorno = ($cliente && $pagamento->estabelecimento_id) ? $this->estornoService->criarEEstornarPorCancelamento(
+                    $cliente,
+                    $pagamento,
+                    'ENTREGA',
+                    $valorEstorno,
+                    $descricao,
+                    $motivo
+                ) : null;
+
+                if ($estorno) {
+                    $estorno->update(['pedido_entrega_id' => $pedido->id]);
+                } else {
+                    // Vendedor avulso sem Estabelecimento formal (ou sem vínculo
+                    // identificável) — mesmo assim o cliente não pode ficar sem o reembolso.
+                    $this->estornarPagamento($pagamento->id_transacao_gateway, $valorEstorno);
+                    $pagamento->update(['status' => 'estornado', 'valor_liquido' => 0]);
+                }
+            } catch (\Exception $e) {
+                Log::error('Falha ao estornar cancelamento do pedido de entrega #' . $pedido->id . ': ' . $e->getMessage());
+                throw new \Exception('Não foi possível processar a devolução do valor agora. Tente novamente em alguns minutos ou fale com o suporte.');
+            }
+
+            $pagamento->refresh();
+            // O Asaas pode levar até 1 hora para devolver o valor; o pedido fica "cancelado" até lá.
+            $mensagem = 'Pedido cancelado! O valor integral será devolvido para a forma de pagamento original, o que pode levar até 1 hora.';
+        } elseif ($pagamento && $pagamento->status === 'pendente' && $pagamento->id_transacao_gateway) {
+            // Cobrança ainda não paga: cancela no Asaas para o cliente não conseguir pagar um pedido cancelado.
+            $this->cancelarCobrancaAsaas($pagamento->id_transacao_gateway);
+        }
+
+        // O estoque volta em todo cancelamento, inclusive nos pedidos que já tinham sido pagos.
+        ProdutoEntrega::whereKey($pedido->produto_entrega_id)->increment('estoque_disponivel', $pedido->quantidade);
+
+        $pedido->update([
+            'status' => 'cancelado',
+            'data_cancelamento' => now(),
+            'cancelado_por_usuario_id' => $canceladoPorId,
+        ]);
+
+        if ($pagamento && $pagamento->status !== 'estornado') {
+            $pagamento->update(['status' => 'cancelado']);
+        }
+
+        return ['message' => $mensagem, 'estornado' => (bool) ($pagamento && $pagamento->status === 'estornado')];
+    }
+
+    /** Cancela uma cobrança pendente no Asaas. Best-effort: registra a falha e segue. */
+    public function cancelarCobrancaAsaas(?string $idTransacaoGateway): bool
+    {
+        if (!$idTransacaoGateway) {
+            return false;
+        }
+
+        $response = Http::withHeaders([
+            'access_token' => config('services.asaas.key'),
+        ])->delete(config('services.asaas.url') . "/payments/{$idTransacaoGateway}");
+
+        if ($response->failed()) {
+            Log::warning("Não foi possível cancelar a cobrança {$idTransacaoGateway} no Asaas", ['resposta' => $response->json()]);
+            return false;
+        }
+
+        return true;
     }
 
     /**

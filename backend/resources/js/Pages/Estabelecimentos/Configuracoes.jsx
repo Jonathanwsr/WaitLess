@@ -33,7 +33,21 @@ import {
     CurrencyDollarIcon
 } from '@heroicons/react/24/solid';
 
-export default function Configuracoes({ auth, estabelecimento, meusEstabelecimentos, funcionarios, servicos, itensAluguel = [], itens_aluguel = [], produtos = [], categoriasServicos = [] }) {
+// Rascunho do formulário de nova locação (item de aluguel) — se der erro ao
+// salvar ou a página recarregar, o que já foi digitado não se perde. Fotos
+// (arquivos) nunca são salvas aqui, só os campos de texto/seleção.
+const RASCUNHO_ITEM_KEY = 'waitless_configuracoes_item_rascunho';
+
+function carregarRascunhoItem() {
+    try {
+        const salvo = localStorage.getItem(RASCUNHO_ITEM_KEY);
+        return salvo ? JSON.parse(salvo) : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+export default function Configuracoes({ auth, estabelecimento, meusEstabelecimentos, funcionarios, servicos, itensAluguel = [], itens_aluguel = [], produtos = [], categoriasServicos = [], horariosFuncionamento = [] }) {
     // ==========================================
     // 1. RECUPERA A ABA ATIVA DO LOCALSTORAGE
     // ==========================================
@@ -248,6 +262,36 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                 formDetalhes.setError(erros);
             }
         });
+    };
+
+    // ==========================================
+    // HORÁRIO DE FUNCIONAMENTO (opcional, um dia por linha)
+    // ==========================================
+    const DIAS_SEMANA = ['Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'Sábado'];
+    const [horarioEdicao, setHorarioEdicao] = useState(null); // { dia_semana, hora_abertura, hora_fechamento, fechado }
+    const horarioPorDia = (dia) => horariosFuncionamento.find((h) => h.dia_semana === dia);
+
+    const abrirEdicaoHorario = (dia) => {
+        const existente = horarioPorDia(dia);
+        setHorarioEdicao({
+            dia_semana: dia,
+            hora_abertura: existente?.hora_abertura?.slice(0, 5) || '09:00',
+            hora_fechamento: existente?.hora_fechamento?.slice(0, 5) || '18:00',
+            fechado: existente?.fechado || false,
+        });
+    };
+
+    const salvarHorario = () => {
+        if (!horarioEdicao) return;
+        router.post(route('estabelecimentos.horarios.store', estabelecimento.id), horarioEdicao, {
+            preserveScroll: true,
+            onSuccess: () => { setHorarioEdicao(null); mostrarMensagem('Horário salvo!'); },
+        });
+    };
+
+    const apagarHorario = (horario) => {
+        if (!confirm(`Remover o horário de ${DIAS_SEMANA[horario.dia_semana]}?`)) return;
+        router.delete(route('estabelecimentos.horarios.destroy', [estabelecimento.id, horario.id]), { preserveScroll: true });
     };
 
     const toggleStatusEstabelecimento = () => {
@@ -646,6 +690,28 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         produtos_vinculados: [],
     });
 
+    // Restaura o rascunho de uma nova locação, se houver, uma única vez ao
+    // carregar a página — nunca sobrescreve uma edição em andamento.
+    useEffect(() => {
+        const rascunho = carregarRascunhoItem();
+        if (rascunho && !isEditingItem) {
+            formItem.setData((data) => ({ ...data, ...rascunho }));
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // Salva o rascunho a cada digitação — só enquanto é um item NOVO (não
+    // durante a edição de um item já existente, que já está salvo no servidor).
+    useEffect(() => {
+        if (isEditingItem) return;
+        try {
+            localStorage.setItem(RASCUNHO_ITEM_KEY, JSON.stringify({ ...formItem.data, fotos: [] }));
+        } catch (e) {
+            // localStorage indisponível (modo privado, etc.) — segue sem rascunho
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [formItem.data, isEditingItem]);
+
     // Funções para adicionar vagas por Data e Horário
     const handleAddDiaDisponivel = () => {
         if (!novaDispData || !novaDispQtd) return;
@@ -894,6 +960,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
     const cancelarEdicaoItem = () => {
         setIsEditingItem(false);
         formItem.reset();
+        try { localStorage.removeItem(RASCUNHO_ITEM_KEY); } catch (e) { /* ignora */ }
         setDiasMesInput('');
         setSimulacaoPontos('');
         setQuadradosFotosItem(Array(24).fill(null));
@@ -1161,7 +1228,58 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                         <div className="flex justify-end pt-6"><PrimaryButton className="bg-green-600 px-8 py-3 rounded-xl shadow-lg">Salvar Alterações</PrimaryButton></div>
                                     </form>
                                 </div>
-                                
+
+                                <div className="bg-white p-6 sm:p-8 rounded-2xl shadow-sm border border-gray-200">
+                                    <h3 className="text-lg font-bold text-gray-900 mb-1">Horário de Funcionamento</h3>
+                                    <p className="text-sm text-gray-500 mb-5">Opcional — defina o horário de cada dia, marque como fechado ou deixe sem cadastro.</p>
+
+                                    <div className="space-y-2">
+                                        {DIAS_SEMANA.map((nomeDia, dia) => {
+                                            const horario = horarioPorDia(dia);
+                                            const emEdicao = horarioEdicao?.dia_semana === dia;
+                                            return (
+                                                <div key={dia} className="flex flex-wrap items-center gap-3 py-2.5 px-3 rounded-xl border border-gray-100 bg-gray-50/50">
+                                                    <span className="w-32 text-sm font-semibold text-gray-700 flex-shrink-0">{nomeDia}</span>
+
+                                                    {emEdicao ? (
+                                                        <div className="flex flex-wrap items-center gap-2 flex-1">
+                                                            <label className="flex items-center gap-1.5 text-xs font-semibold text-gray-600">
+                                                                <input type="checkbox" checked={horarioEdicao.fechado} onChange={(e) => setHorarioEdicao({ ...horarioEdicao, fechado: e.target.checked })} className="rounded border-gray-300 text-[#FF5A00]" />
+                                                                Fechado
+                                                            </label>
+                                                            {!horarioEdicao.fechado && (
+                                                                <>
+                                                                    <input type="time" className="border border-gray-200 rounded-lg px-2 py-1 text-sm" value={horarioEdicao.hora_abertura} onChange={(e) => setHorarioEdicao({ ...horarioEdicao, hora_abertura: e.target.value })} />
+                                                                    <span className="text-gray-400 text-xs">até</span>
+                                                                    <input type="time" className="border border-gray-200 rounded-lg px-2 py-1 text-sm" value={horarioEdicao.hora_fechamento} onChange={(e) => setHorarioEdicao({ ...horarioEdicao, hora_fechamento: e.target.value })} />
+                                                                </>
+                                                            )}
+                                                            <button onClick={salvarHorario} className="text-xs font-bold bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg">Salvar</button>
+                                                            <button onClick={() => setHorarioEdicao(null)} className="text-xs font-bold text-gray-400 hover:text-gray-600 px-2">Cancelar</button>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex items-center gap-3 flex-1">
+                                                            {horario ? (
+                                                                <span className={`text-sm ${horario.fechado ? 'text-gray-400 italic' : 'text-gray-700 font-medium'}`}>
+                                                                    {horario.fechado ? 'Fechado' : `${horario.hora_abertura?.slice(0, 5)} — ${horario.hora_fechamento?.slice(0, 5)}`}
+                                                                </span>
+                                                            ) : (
+                                                                <span className="text-sm text-gray-300">Não definido</span>
+                                                            )}
+                                                            <button onClick={() => abrirEdicaoHorario(dia)} className="text-xs font-bold text-orange-600 hover:text-orange-800 ml-auto">
+                                                                {horario ? 'Editar' : 'Definir'}
+                                                            </button>
+                                                            {horario && (
+                                                                <button onClick={() => apagarHorario(horario)} className="text-xs font-bold text-red-500 hover:text-red-700">Apagar</button>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
                                 <div className={`p-6 sm:p-8 rounded-2xl shadow-sm border ${estabelecimento.ativo ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}>
                                     <h3 className={`text-lg font-bold mb-2 ${estabelecimento.ativo ? 'text-red-800' : 'text-green-800'}`}>
                                         {estabelecimento.ativo ? 'Desativar Estabelecimento' : 'Ativar Estabelecimento'}

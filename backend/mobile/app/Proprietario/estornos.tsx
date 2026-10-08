@@ -215,7 +215,7 @@ export default function EstornosSocio() {
       )}
 
       <Modal visible={!!alvo} transparent animationType="slide" onRequestClose={fecharModalContestar}>
-        <KeyboardAvoidingView style={s.overlay} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingView style={s.overlay} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={fecharModalContestar} />
           <View style={s.sheet}>
             <View style={s.grip} />

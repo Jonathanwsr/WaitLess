@@ -15,6 +15,7 @@ import {
   Switch,
   Modal,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -45,6 +46,8 @@ const BASE_API = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onren
 
 // --- TIPAGENS TYPESCRIPT ---
 interface Estabelecimento {
+  produtos_vendidos?: number;
+  status_funcionamento?: { aberto: boolean | null; texto: string };
   id: number;
   nome: string;
   foto_perfil?: string;
@@ -95,6 +98,7 @@ interface ItemCarrinho extends ItemCatalogo {
 
 export default function CriarReserva() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const searchParams = useLocalSearchParams();
 
   const rawId = searchParams.id || searchParams.estabelecimentoId;
@@ -106,6 +110,7 @@ export default function CriarReserva() {
   const [estabelecimento, setEstabelecimento] = useState<Estabelecimento | null>(null);
   const [servicos, setServicos] = useState<ItemCatalogo[]>([]);
   const [produtosExtras, setProdutosExtras] = useState<ItemCatalogo[]>([]);
+  const [produtosEntrega, setProdutosEntrega] = useState<ItemCatalogo[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<boolean>(false);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
@@ -342,6 +347,7 @@ export default function CriarReserva() {
 
         buscarSaldoPontos(cleanBaseUrl, token, estData.id || id);
         buscarProdutosExtras(cleanBaseUrl, token, estData.id || id);
+        buscarProdutosEntrega(cleanBaseUrl, token, estData.id || id);
       } else {
         setError(true);
       }
@@ -387,6 +393,31 @@ export default function CriarReserva() {
       }
     } catch (e) {
       // seção opcional: silencia erro e simplesmente não mostra itens extras
+    }
+  };
+
+  // Produtos para entrega/retirada vinculados a este local (botijão de gás,
+  // água, comida, etc.) — pedido e pagamento à parte, não entram no carrinho
+  // do agendamento/aluguel atual.
+  const buscarProdutosEntrega = async (baseUrl: string, token: string | null, estId: string) => {
+    try {
+      const res = await fetch(`${baseUrl}/mobile/entregas/catalogo?estabelecimento_id=${estId}`, {
+        headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const lista = Array.isArray(data.data) ? data.data : [];
+        setProdutosEntrega(lista.map((p: any) => ({
+          id: p.id,
+          nome: p.nome,
+          descricao: p.descricao,
+          valor: p.valor,
+          valor_promocional: p.tem_promocao ? p.valor_promocional : undefined,
+          foto: p.fotos?.[0],
+        })));
+      }
+    } catch (e) {
+      // seção opcional: silencia erro e simplesmente não mostra produtos de entrega
     }
   };
 
@@ -639,7 +670,7 @@ export default function CriarReserva() {
         <Text style={styles.headerSubtitle}>Preencha os detalhes para agendar ou alugar.</Text>
       </SafeAreaView>
 
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 190, paddingHorizontal: 16 }}>
 
           {/* LINK/CARD PERFIL DO ESTABELECIMENTO */}
@@ -669,6 +700,17 @@ export default function CriarReserva() {
                   ) : (
                     <Text style={styles.ratingCount}>Novo por aqui, ainda sem avaliações</Text>
                   )}
+                </View>
+
+                <View style={[styles.ratingRow, { marginTop: 6, flexWrap: 'wrap' }]}>
+                  {!!estabelecimento.status_funcionamento?.texto && (
+                    <Text style={[styles.ratingCount, { color: estabelecimento.status_funcionamento.aberto ? '#047857' : '#B91C1C', fontWeight: '700' }]}>
+                      {estabelecimento.status_funcionamento.texto}
+                    </Text>
+                  )}
+                  <Text style={styles.ratingCount}>
+                    {' · '}{Number(estabelecimento.produtos_vendidos || 0).toLocaleString('pt-BR')} produtos vendidos
+                  </Text>
                 </View>
 
                 <View style={styles.priceRow}>
@@ -1074,6 +1116,56 @@ export default function CriarReserva() {
             </>
           )}
 
+          {/* SEÇÃO 3.2: PRODUTOS PARA ENTREGA OU BUSCA (pedido e pagamento à parte) */}
+          {produtosEntrega.length > 0 && (
+            <>
+              <Text style={styles.sectionTitle}>Produtos para Entrega ou Busca</Text>
+              <View style={styles.catalogContainer}>
+                {produtosEntrega.map((item) => {
+                  const precoEfetivo = obterPrecoEfetivo(item);
+                  const precoOriginal = obterPrecoOriginal(item);
+                  const temDesconto = !!item.valor_promocional && item.valor_promocional < precoOriginal;
+
+                  return (
+                    <TouchableOpacity
+                      key={`entrega-${item.id}`}
+                      style={styles.itemCard}
+                      activeOpacity={0.85}
+                      onPress={() => router.push({ pathname: '/src/screens/EntregaDetalhes' as never, params: { id: String(item.id) } })}
+                    >
+                      <View style={styles.itemCardContent}>
+                        <Image source={{ uri: item.foto || DEFAULT_PROFILE }} style={styles.itemImage} />
+                        <View style={styles.itemInfo}>
+                          <Text style={styles.itemName} numberOfLines={1}>{item.nome}</Text>
+                          {item.descricao ? (
+                            <Text style={styles.itemDesc} numberOfLines={2}>{item.descricao}</Text>
+                          ) : null}
+
+                          <View style={styles.itemPriceRow}>
+                            <Text style={styles.itemPrice}>
+                              R$ {precoEfetivo.toFixed(2).replace('.', ',')}
+                            </Text>
+                            {temDesconto && (
+                              <Text style={styles.itemOldPrice}>
+                                R$ {precoOriginal.toFixed(2).replace('.', ',')}
+                              </Text>
+                            )}
+                          </View>
+                        </View>
+                      </View>
+
+                      <View style={styles.quantityContainer}>
+                        <View style={[styles.qtdButton, styles.qtdButtonAdd]}>
+                          <Ionicons name="arrow-forward" size={18} color={COLORS.cardBg} />
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </>
+          )}
+
           {/* SEÇÃO 4: SEUS DADOS */}
           <Text style={styles.sectionTitle}>{numSecao(4)}. Seus Dados</Text>
           <View style={styles.formCard}>
@@ -1267,7 +1359,9 @@ export default function CriarReserva() {
       </Modal>
 
       {/* BARRA FIXA INFERIOR COM RESUMO DE VALORES E CONFIRMAÇÃO */}
-      <View style={styles.footerBar}>
+      {/* O padding fixo de 16 no Android não cobria a barra de gestos em
+          todos os aparelhos — usa o inset real do dispositivo. */}
+      <View style={[styles.footerBar, { paddingBottom: Platform.OS === 'android' ? Math.max(16, insets.bottom) : 28 }]}>
         <View style={styles.footerPriceContainer}>
           <Text style={styles.footerTotalLabel}>Total a Pagar</Text>
           <Text style={styles.footerTotalValue}>

@@ -5,7 +5,9 @@ import DeleteUserForm from './Partials/DeleteUserForm';
 import UpdatePasswordForm from './Partials/UpdatePasswordForm';
 import UpdateProfileInformationForm from './Partials/UpdateProfileInformationForm';
 
-export default function Edit({ mustVerifyEmail, status }) {
+import ProdutosVendidosCard from '@/Components/Perfil/ProdutosVendidosCard';
+
+export default function Edit({ mustVerifyEmail, status, produtosVendidos = 0, pendenciasExclusao = [] }) {
     return (
         <AuthenticatedLayout
             header={
@@ -18,6 +20,7 @@ export default function Edit({ mustVerifyEmail, status }) {
 
             <div className="py-12">
                 <div className="mx-auto max-w-7xl space-y-6 sm:px-6 lg:px-8">
+                    <ProdutosVendidosCard quantidade={produtosVendidos} titulo="Você já vendeu" />
                     <div className="bg-white p-4 shadow sm:rounded-lg sm:p-8 dark:bg-gray-800">
                         <UpdateProfileInformationForm
                             mustVerifyEmail={mustVerifyEmail}
@@ -44,12 +47,12 @@ export default function Edit({ mustVerifyEmail, status }) {
                         </Link>
                     </div>
 
-                    <div className="bg-white p-4 shadow sm:rounded-lg sm:p-8 dark:bg-gray-800">
+                    <div className="bg-white p-5 sm:p-8 rounded-3xl border border-gray-100 shadow-sm dark:bg-gray-800">
                         <UpdatePasswordForm className="max-w-xl" />
                     </div>
 
-                    <div className="bg-white p-4 shadow sm:rounded-lg sm:p-8 dark:bg-gray-800">
-                        <DeleteUserForm className="max-w-xl" />
+                    <div className="bg-white p-5 sm:p-8 rounded-3xl border border-red-100 shadow-sm dark:bg-gray-800">
+                        <DeleteUserForm className="max-w-xl" pendencias={pendenciasExclusao} />
                     </div>
                 </div>
             </div>

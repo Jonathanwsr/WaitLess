@@ -52,6 +52,33 @@ class PlanoService
     ];
 
     /**
+     * Pontos concedidos na ativação/renovação de cada plano premium vendido
+     * hoje — fonte única usada pelo webhook do Asaas (ver
+     * PagamentoController::webhookAsaas) e por distribuirPontosAssinatura().
+     * Antes, cada um desses dois lugares usava um catálogo de pontos
+     * diferente (um com as chaves certas mas nunca chamado pelo fluxo real
+     * de pagamento, outro com chaves de um catálogo antigo que não batiam
+     * com nenhum plano vendido) — a tela de assinatura prometia "600/3600
+     * pontos" para os planos anuais e ninguém nunca recebia, porque nenhuma
+     * das duas rotas de concessão realmente rodava para o pagamento de verdade.
+     */
+    /**
+     * Limite de funcionários (atendentes + gerentes) por estabelecimento para
+     * quem não está no plano Sócio Premium (mensal ou anual) — antes não
+     * existia limite nenhum pra ninguém, então "funcionários ilimitados" no
+     * plano premium não era um benefício de verdade, era o padrão pra todos.
+     */
+    const LIMITE_FUNCIONARIOS_PLANO_GRATUITO = 3;
+
+    const PONTOS_POR_PLANO = [
+        'premium'             => 50,
+        'premium-plus'        => 150,
+        'premium-socio'       => 300,
+        'premium-anual'       => 600,
+        'premium-socio-anual' => 3600,
+    ];
+
+    /**
      * Lista os planos premium que um determinado papel (socio/user) pode assinar.
      */
     public function planosPermitidos(string $papel): array
@@ -73,9 +100,9 @@ class PlanoService
      */
     public function distribuirPontosAssinatura(User $user, string $plano)
     {
-        if (!array_key_exists($plano, self::CATALOGO)) return false;
+        if (!array_key_exists($plano, self::PONTOS_POR_PLANO)) return false;
 
-        $pontosGanhos = self::CATALOGO[$plano]['pontos'];
+        $pontosGanhos = self::PONTOS_POR_PLANO[$plano];
 
         DB::transaction(function () use ($user, $pontosGanhos, $plano) {
             // Acumula no saldo principal do usuário

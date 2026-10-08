@@ -232,11 +232,55 @@ class ProdutoController extends Controller
             ->orderBy('nome')
             ->get(['id', 'nome', 'categoria']);
 
-        return Inertia::render('Estabelecimentos/ProdutoManager', [
-            'produtos'         => $produtos,
-            'estabelecimentos' => $estabelecimentos,
-            'listaServicos'    => $listaServicos,
-            'listaReservas'    => $listaReservas,
+        // Tela única de produtos: aba "Com serviço ou reserva" (estes produtos) e aba "Entrega e retirada"
+        // (produtos_entrega), que só sócio/proprietário/admin podem gerenciar.
+        $papel = mb_strtolower((string) Auth::user()->papel);
+        $podeEntrega = in_array($papel, ['socio', 'sócio', 'proprietario', 'proprietário', 'admin'], true);
+        $aba = request('aba') === 'entrega' && $podeEntrega ? 'entrega' : 'vinculados';
+
+        return Inertia::render('Estabelecimentos/Produtos', [
+            'aba'              => $aba,
+            'podeEntrega'      => $podeEntrega,
+            'vinculados'       => [
+                'produtos'         => $produtos,
+                'estabelecimentos' => $estabelecimentos,
+                'listaServicos'    => $listaServicos,
+                'listaReservas'    => $listaReservas,
+            ],
+            'entrega'          => $podeEntrega ? app(ProdutoEntregaController::class)->dadosDaTela() : null,
+        ]);
+    }
+
+    /**
+     * App: dados da aba "Com serviço ou reserva" (produtos, locais e o que pode ser vinculado).
+     * Cada produto já vem com o nome do serviço e da reserva a que está vinculado.
+     */
+    public function dadosApp()
+    {
+        $usuarioId = Auth::id();
+        $estabelecimentosIds = DB::table('estabelecimento_usuario')->where('usuario_id', $usuarioId)->pluck('estabelecimento_id');
+
+        $servicos = \App\Models\Servico::whereIn('estabelecimento_id', $estabelecimentosIds)->where('ativo', true)->orderBy('nome')->get(['id', 'nome', 'estabelecimento_id']);
+        $reservas = \App\Models\ItemAluguel::catalogo()->where('estabelecimento_id', $usuarioId)->orderBy('nome')->get(['id', 'nome', 'categoria']);
+        $nomeServico = $servicos->pluck('nome', 'id');
+        $nomeReserva = $reservas->pluck('nome', 'id');
+
+        $produtos = Produto::whereIn('estabelecimento_id', $estabelecimentosIds)
+            ->orWhere('usuario_id', $usuarioId)
+            ->orderByDesc('created_at')
+            ->get()
+            ->map(function (Produto $p) use ($nomeServico, $nomeReserva) {
+                $p->setAttribute('servico_nome', $p->servico_id ? ($nomeServico[$p->servico_id] ?? null) : null);
+                $p->setAttribute('reserva_nome', $p->aluguel_id ? ($nomeReserva[$p->aluguel_id] ?? null) : null);
+
+                return $p;
+            });
+
+        return response()->json([
+            'produtos' => $produtos,
+            'estabelecimentos' => Estabelecimento::whereIn('id', $estabelecimentosIds)->get(['id', 'nome']),
+            'servicos' => $servicos,
+            'reservas' => $reservas,
         ]);
     }
 
@@ -349,38 +393,42 @@ class ProdutoController extends Controller
                 'quantidade'                 => 'required|integer|min:1'
             ]);
 
-            $produto = Produto::findOrFail($request->produto_id);
+            // Trava a linha do produto dentro da transação: compras simultâneas nunca vendem além do estoque.
+            return DB::transaction(function () use ($request) {
+                $produto = Produto::whereKey($request->produto_id)->lockForUpdate()->firstOrFail();
 
-            if ($produto->estoque_disponivel < $request->quantidade) {
-                return response()->json(['error' => 'Estoque insuficiente.'], 400);
-            }
+                if ($produto->estoque_disponivel < $request->quantidade) {
+                    return response()->json(['error' => 'Estoque insuficiente.'], 400);
+                }
 
-            DB::table('itens_aluguel')->insert([
-                'nome'                       => $produto->nome,
-                'categoria'                  => 'outro',
-                'descricao'                  => $produto->descricao,
-                'quantidade'                 => $request->quantidade,
-                'valor_diaria'               => $produto->valor_final,
-                'usuario_id'                 => Auth::id(), // Registra o usuário logado
-                'estabelecimento_id'         => $produto->estabelecimento_id,
-                'servico_id'                 => $request->servico_id,
-                'agendamento_id'             => $request->agendamento_id,
-                'aluguel_id'                 => $request->aluguel_id,
-                'pagamento_id'               => $request->pagamento_id,
-                'usuario_estabelecimento_id' => $request->usuario_estabelecimento_id ?? null,
-                'created_at'                 => now(),
-                'updated_at'                 => now(),
-            ]);
+                DB::table('itens_aluguel')->insert([
+                    'nome'                       => $produto->nome,
+                    'categoria'                  => 'outro',
+                    'descricao'                  => $produto->descricao,
+                    'quantidade'                 => $request->quantidade,
+                    'valor_diaria'               => $produto->valor_final,
+                    'usuario_id'                 => Auth::id(), // Registra o usuário logado
+                    // itens_aluguel.estabelecimento_id aponta para users (o dono), não para estabelecimentos.
+                    'estabelecimento_id'         => $produto->usuario_id,
+                    'servico_id'                 => $request->servico_id,
+                    'agendamento_id'             => $request->agendamento_id,
+                    'aluguel_id'                 => $request->aluguel_id,
+                    'pagamento_id'               => $request->pagamento_id,
+                    'usuario_estabelecimento_id' => $request->usuario_estabelecimento_id ?? null,
+                    'created_at'                 => now(),
+                    'updated_at'                 => now(),
+                ]);
 
-            $produto->decrement('estoque_disponivel', $request->quantidade);
-            if (isset($produto->quantidade_vendida)) {
-                $produto->increment('quantidade_vendida', $request->quantidade);
-            }
+                $produto->decrement('estoque_disponivel', $request->quantidade);
+                if (isset($produto->quantidade_vendida)) {
+                    $produto->increment('quantidade_vendida', $request->quantidade);
+                }
 
-            return response()->json([
-                'message'          => 'Produto vinculado com sucesso!',
-                'estoque_restante' => $produto->estoque_disponivel
-            ], 200);
+                return response()->json([
+                    'message'          => 'Produto vinculado com sucesso!',
+                    'estoque_restante' => $produto->estoque_disponivel
+                ], 200);
+            });
 
         } catch (\Exception $e) {
             Log::error('Erro ao vincular produto na tabela itens_aluguel: ' . $e->getMessage());

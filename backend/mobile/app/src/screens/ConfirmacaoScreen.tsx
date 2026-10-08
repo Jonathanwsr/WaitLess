@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView, ActivityIndicator, Platform } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -25,6 +26,7 @@ interface CheckoutData {
 
 export default function ConfirmacaoScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const searchParams = useLocalSearchParams();
 
   // Pegando o id passado da tela de pagamento
@@ -249,7 +251,9 @@ export default function ConfirmacaoScreen() {
         </View>
       </ScrollView>
 
-      <View style={s.rodape}>
+      {/* SafeAreaView do react-native puro não cobre a barra de gestos do
+          Android — sem esse padding o botão "Finalizar" ficava atrás dela. */}
+      <View style={[s.rodape, { paddingBottom: 14 + (Platform.OS === 'android' ? insets.bottom : 14) }]}>
         <TouchableOpacity style={s.btnFinalizar} onPress={() => router.push('/(tabs)/home')} activeOpacity={0.88}>
           <Text style={s.btnFinalizarTxt}>Finalizar</Text>
           <Ionicons name="arrow-forward" size={18} color="#fff" />

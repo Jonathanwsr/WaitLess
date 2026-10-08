@@ -2,8 +2,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Head } from '@inertiajs/react';
 import axios from 'axios';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import EstornosProdutos from '@/Components/Entregas/EstornosProdutos';
 
-export default function MeusEstornos({ auth }) {
+export default function MeusEstornos({ auth, pedidosProdutos = [] }) {
     // =========================================================================
     // ESTADOS DA APLICAÇÃO
     // =========================================================================
@@ -208,6 +209,9 @@ export default function MeusEstornos({ auth }) {
                         <button onClick={() => setAbaAtiva('solicitacoes')} className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${abaAtiva === 'solicitacoes' ? 'bg-white text-blue-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-900'}`}>
                             Minhas Solicitações
                         </button>
+                        <button onClick={() => setAbaAtiva('produtos')} className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${abaAtiva === 'produtos' ? 'bg-white text-blue-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-900'}`}>
+                            Produtos
+                        </button>
                     </div>
                 </div>
 
@@ -280,6 +284,8 @@ export default function MeusEstornos({ auth }) {
                 )}
 
                 {/* CONTEÚDO DA ABA 2: SOLICITAÇÕES */}
+                {abaAtiva === 'produtos' && <EstornosProdutos pedidos={pedidosProdutos} />}
+
                 {abaAtiva === 'solicitacoes' && (
                     <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
                         <div className="overflow-x-auto">

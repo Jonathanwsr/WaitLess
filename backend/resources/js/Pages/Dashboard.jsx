@@ -18,10 +18,24 @@ import {
     CommandLineIcon,
     ArrowUturnLeftIcon,
     KeyIcon,
-    EyeIcon
+    EyeIcon,
+    ClockIcon,
+    FireIcon,
+    BuildingStorefrontIcon,
+    SparklesIcon
 } from '@heroicons/react/24/outline';
 
-export default function Dashboard({ auth, estabelecimentos = [], metricas = {} }) {
+const formatarMoeda = (valor) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor || 0);
+
+export default function Dashboard({ auth, estabelecimentos = [], metricas = {}, fechamentoDia = {} }) {
+    const fechamento = {
+        valor_total: 0,
+        atendimentos: 0,
+        servicos_mais_vendidos: [],
+        horarios_pico: [],
+        caixa: { presencial: 0, online: 0 },
+        ...fechamentoDia,
+    };
     return (
         <AuthenticatedLayout
             header={
@@ -99,6 +113,81 @@ export default function Dashboard({ auth, estabelecimentos = [], metricas = {} }
                     </div>
                 </div>
 
+                {/* --- SEÇÃO 1.5: Fechamento do dia --- */}
+                <div className="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700/50 p-6 shadow-sm">
+                    <div className="flex items-center justify-between mb-5">
+                        <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                            <BuildingStorefrontIcon className="w-5 h-5 text-[#FF5A00]" />
+                            Fechamento do dia
+                        </h3>
+                        <span className="text-xs font-medium text-gray-400">{new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })}</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                        <div className="bg-[#F8F9FA] dark:bg-gray-900/60 rounded-xl p-4">
+                            <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Faturado hoje</p>
+                            <p className="text-xl font-bold text-gray-900 dark:text-white">{formatarMoeda(fechamento.valor_total)}</p>
+                        </div>
+                        <div className="bg-[#F8F9FA] dark:bg-gray-900/60 rounded-xl p-4">
+                            <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Atendimentos</p>
+                            <p className="text-xl font-bold text-gray-900 dark:text-white">{fechamento.atendimentos}</p>
+                        </div>
+                        <div className="bg-[#F8F9FA] dark:bg-gray-900/60 rounded-xl p-4">
+                            <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Caixa presencial</p>
+                            <p className="text-xl font-bold text-gray-900 dark:text-white">{formatarMoeda(fechamento.caixa.presencial)}</p>
+                        </div>
+                        <div className="bg-[#F8F9FA] dark:bg-gray-900/60 rounded-xl p-4">
+                            <p className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">Caixa online</p>
+                            <p className="text-xl font-bold text-gray-900 dark:text-white">{formatarMoeda(fechamento.caixa.online)}</p>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Serviços mais vendidos */}
+                        <div>
+                            <h4 className="text-sm font-bold text-gray-700 dark:text-gray-200 flex items-center gap-1.5 mb-3">
+                                <FireIcon className="w-4 h-4 text-amber-500" />
+                                Serviços mais vendidos hoje
+                            </h4>
+                            {fechamento.servicos_mais_vendidos.length === 0 ? (
+                                <p className="text-sm text-gray-400">Nenhum atendimento registrado hoje ainda.</p>
+                            ) : (
+                                <ul className="space-y-2">
+                                    {fechamento.servicos_mais_vendidos.map((s, i) => (
+                                        <li key={i} className="flex items-center justify-between text-sm bg-[#F8F9FA] dark:bg-gray-900/60 rounded-lg px-3 py-2">
+                                            <span className="font-medium text-gray-800 dark:text-gray-200 truncate">{s.nome}</span>
+                                            <span className="flex items-center gap-2 shrink-0">
+                                                <span className="text-xs font-bold text-gray-500 dark:text-gray-400">{s.quantidade}x</span>
+                                                <span className="text-xs font-semibold text-gray-900 dark:text-white">{formatarMoeda(s.valor_total)}</span>
+                                            </span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
+                        </div>
+
+                        {/* Horários de pico */}
+                        <div>
+                            <h4 className="text-sm font-bold text-gray-700 dark:text-gray-200 flex items-center gap-1.5 mb-3">
+                                <ClockIcon className="w-4 h-4 text-indigo-500" />
+                                Horários de pico hoje
+                            </h4>
+                            {fechamento.horarios_pico.length === 0 ? (
+                                <p className="text-sm text-gray-400">Sem movimento registrado hoje ainda.</p>
+                            ) : (
+                                <div className="flex flex-wrap gap-2">
+                                    {fechamento.horarios_pico.map((h, i) => (
+                                        <span key={i} className="inline-flex items-center gap-1.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 text-sm font-semibold px-3 py-1.5 rounded-lg">
+                                            {h.hora}
+                                            <span className="text-xs font-bold bg-indigo-600 text-white rounded-full px-1.5 py-0.5">{h.quantidade}</span>
+                                        </span>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
                 {/* --- SEÇÃO 2: Cabeçalho da Listagem --- */}
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pt-4">
                     <h3 className="text-xl font-bold text-gray-900 dark:text-white">
@@ -117,6 +206,15 @@ export default function Dashboard({ auth, estabelecimentos = [], metricas = {} }
                                 Painel Master
                             </Link>
                         )}
+
+                        {/* 👉 RELATÓRIO AVANÇADO (PREMIUM) */}
+                        <Link
+                            href={route('relatorios.avancado')}
+                            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-sm font-semibold text-gray-700 dark:text-gray-200 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 transition shadow-sm"
+                        >
+                            <SparklesIcon className="w-4 h-4 text-indigo-500" />
+                            Relatório Avançado
+                        </Link>
 
                         {/* 👉 BOTÃO DE ESTORNOS */}
                         <Link

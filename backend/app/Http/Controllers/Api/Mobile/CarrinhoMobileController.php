@@ -49,9 +49,26 @@ class CarrinhoMobileController extends Controller
             ];
         });
 
+        $produtosEntrega = \App\Models\CarrinhoProdutoEntrega::with('produto.estabelecimento:id,nome')
+            ->where('user_id', $user->id)
+            ->get()
+            ->filter(fn ($item) => $item->produto)
+            ->values()
+            ->map(fn ($item) => [
+                'id' => $item->id,
+                'quantidade' => $item->quantidade,
+                'produto_entrega_id' => $item->produto_entrega_id,
+                'nome' => $item->produto->nome,
+                'fotos' => $item->produto->fotos ?? [],
+                'estabelecimento_nome' => $item->produto->estabelecimento->nome ?? 'Vendedor independente',
+                'preco_unitario' => $item->produto->valor_final,
+                'estoque_disponivel' => $item->produto->estoque_disponivel,
+            ]);
+
         return response()->json([
             'status' => 'success',
             'data' => $itens,
+            'produtos_entrega' => $produtosEntrega,
             'resumo' => [
                 'quantidade_itens' => $itens->sum('quantidade'),
                 'total_carrinho' => $total,

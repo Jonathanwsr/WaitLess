@@ -21,6 +21,7 @@ class ClientePromocaoController extends Controller
         $ehProprietario = in_array($papel, ['socio', 'proprietario', 'gerente']);
 
         $promocoes = Promocao::vigentes()
+            ->with(['servico:id,nome,estabelecimento_id,fotos,ativo', 'itemAluguel:id,nome,fotos,ativo'])
             ->where(function ($q) use ($ehProprietario) {
                 $q->where('publico_alvo', 'todos')
                     ->orWhere('publico_alvo', $ehProprietario ? 'proprietarios' : 'clientes');
@@ -44,6 +45,7 @@ class ClientePromocaoController extends Controller
                 'condicoes' => $promo->condicoes,
                 'imagem' => $promo->imagem,
                 'elegivel' => $elegivel,
+                'vinculo' => $promo->vinculoCard(),
             ];
         })->values()->all();
     }

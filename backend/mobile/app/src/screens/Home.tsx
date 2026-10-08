@@ -23,6 +23,7 @@ import * as SecureStore from 'expo-secure-store';
 import * as Location from 'expo-location';
 import { T } from '../../../constants/ClientTheme';
 import { FavoriteButton, HeaderCliente } from '../../../components/client/ui';
+import AvisosUsuario from '../../../components/client/AvisosUsuario';
 import { alternarFavoritoRemoto } from '../../../services/favoritos';
 
 // Planos de cliente considerados Premium (mesmo catálogo usado no backend,
@@ -132,6 +133,15 @@ const CORES_CATEGORIA: Record<string, string> = {
 // Fallback só pra ramo digitado fora da lista oficial ("Outros" etc.) — mesmo
 // assim usa a cor da marca em vez de um cinza sem graça.
 const COR_PADRAO = T.primary;
+
+// A linha de categorias vinha 100% das que já têm estabelecimento cadastrado
+// (GROUP BY ramo_atuacao real) — então, numa base ainda pequena, só "Beleza"
+// aparecia e o cliente não tinha como nem saber que dava pra filtrar por outra
+// coisa. Essas sugestões ficam sempre visíveis (cada uma bate por substring
+// com uma chave que já existe em ICONES_CATEGORIA/CORES_CATEGORIA) e, quando
+// não há nenhum estabelecimento daquele ramo ainda, o filtro só retorna lista
+// vazia — não quebra nada.
+const CATEGORIAS_SUGERIDAS = ['Beleza', 'Estética', 'Saúde', 'Academia', 'Pet', 'Automotivo', 'Restaurantes', 'Eventos', 'Locadoras', 'Spa'];
 
 function normalizarNomeCategoria(nome: string): string {
   return nome
@@ -462,6 +472,14 @@ export default function Home() {
   const abrirFiltros = () => { setRascunho(filtros); setModalFiltros(true); };
   const aplicarRascunho = () => { setFiltros(rascunho); setModalFiltros(false); };
 
+  // Sugestões fixas + categorias reais que não caem em nenhuma sugestão (ramos
+  // "fora da lista oficial" digitados pelo lojista), sem duplicar as que já
+  // batem por substring com uma sugestão.
+  const categoriasExibidas: Categoria[] = [
+    ...CATEGORIAS_SUGERIDAS.map((nome) => ({ nome, total: 0 })),
+    ...categorias.filter((c) => !CATEGORIAS_SUGERIDAS.some((s) => normalizarNomeCategoria(c.nome).includes(normalizarNomeCategoria(s)))),
+  ];
+
   const abrirEstabelecimento = (id: number) => {
     router.push({ pathname: '/src/screens/EstabelecimentoDetalhes' as never, params: { id: id.toString() } });
   };
@@ -597,6 +615,8 @@ export default function Home() {
             </HeaderCliente>
           </View>
 
+          <AvisosUsuario />
+
           {/* BUSCA */}
           <View style={s.busca}>
             <Ionicons name="search" size={20} color="#8A92A6" />
@@ -642,13 +662,13 @@ export default function Home() {
           </ScrollView>
 
           {/* CATEGORIAS - Ícones limpos e profissionais */}
-          {categorias.length > 0 && (
+          {categoriasExibidas.length > 0 && (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.categorias}>
               <TouchableOpacity style={s.categoria} onPress={() => atualizarFiltro({ categoria: null })} activeOpacity={0.8}>
                 <View style={[s.categoriaIcone, { backgroundColor: !filtros.categoria ? T.ink : `${T.ink}1F` }]}><MaterialIcons name="apps" size={26} color={!filtros.categoria ? '#fff' : T.ink} /></View>
                 <Text style={[s.categoriaTxt, !filtros.categoria && { color: T.ink, fontWeight: '700' }]}>Tudo</Text>
               </TouchableOpacity>
-              {categorias.map((cat) => {
+              {categoriasExibidas.map((cat) => {
                 const on = filtros.categoria === cat.nome;
                 const cor = resolverCorCategoria(cat.nome);
                 // Fundo sempre colorido (tom suave da cor da categoria) — antes só

@@ -1,7 +1,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link } from '@inertiajs/react';
 import { useState } from 'react';
-import { Store, Scissors, KeyRound, Check, ChevronDown, Lightbulb, ArrowRight } from 'lucide-react';
+import { Store, Scissors, KeyRound, Package, Check, ChevronDown, Lightbulb, ArrowRight } from 'lucide-react';
 
 const TUTORIAIS = [
     {
@@ -95,7 +95,62 @@ const TUTORIAIS = [
             },
         ],
     },
+    {
+        id: 'produto',
+        rotulo: 'Produto',
+        titulo: 'Vender um produto',
+        icone: Package,
+        tempo: '6 min',
+        resumo: 'Todos os produtos ficam em “Produtos”, separados em dois tipos: os que vão junto de um serviço ou reserva, e os vendidos com entrega ou retirada.',
+        botao: 'Cadastrar meu produto',
+        passos: [
+            {
+                titulo: 'Entenda os dois tipos de produto',
+                texto: 'No menu lateral clique em “Produtos”. A tela tem duas abas: “Com serviço ou reserva” é o item extra oferecido na hora de agendar ou reservar (pomada depois do corte, kit com a quadra); “Entrega e retirada” é o produto vendido sozinho, entregue em casa ou buscado no seu endereço (gás, água, mercado).',
+                campos: ['Com serviço ou reserva', 'Entrega e retirada'],
+                dica: 'Na aba “Com serviço ou reserva” você filtra por serviço, por reserva ou pelos avulsos, e cada produto mostra a que está vinculado.',
+            },
+            {
+                titulo: 'Produto junto de um serviço ou reserva',
+                texto: 'Na aba “Com serviço ou reserva”, cadastre o produto e escolha em “Vincular a um serviço” ou “Vincular a uma reserva”. Sem vínculo, ele vira uma venda avulsa na vitrine do seu local.',
+                campos: ['Nome', 'Categoria', 'Valor', 'Estoque', 'Vincular a um serviço', 'Vincular a uma reserva'],
+                dica: 'O cliente paga o produto junto com o agendamento ou a reserva.',
+            },
+            { titulo: 'Produto para entrega ou retirada', texto: 'Na aba “Entrega e retirada”, clique em “Novo produto”. Os próximos passos mostram cada campo.' },
+            {
+                titulo: 'Identifique o produto',
+                texto: 'Quanto mais completo, mais fácil o cliente encontra: a busca procura no nome, na descrição, na categoria e no nome do seu local.',
+                campos: ['Nome do produto', 'Categoria', 'Marca', 'Peso ou volume', 'Unidade de medida', 'Código interno (SKU)', 'Tags', 'Descrição (opcional)'],
+                dica: 'Escolha a categoria certa: o cliente filtra o catálogo por ela.',
+            },
+            {
+                titulo: 'Defina preço e estoque',
+                texto: 'Informe o valor e quantas unidades você tem. O estoque baixa sozinho a cada venda e volta quando um pedido é cancelado.',
+                campos: ['Valor normal (R$)', 'Estoque disponível', 'Quantidade mínima por pedido', 'Em promoção', 'Valor promocional (R$)'],
+                dica: 'Produtos em promoção ganham selo de desconto e aparecem no filtro “Em promoção”.',
+            },
+            {
+                titulo: 'Escolha entrega, retirada ou os dois',
+                texto: 'Marque se você entrega em casa, se o cliente pode buscar, ou ambos. Preencha o endereço de onde o produto sai.',
+                campos: ['Entrego em casa', 'Aceito retirada no local', 'Taxa de entrega (R$)', 'Endereço de origem'],
+                dica: 'A taxa de entrega só é cobrada quando o cliente escolhe receber em casa.',
+            },
+            {
+                titulo: 'Vincule ao local, adicione fotos e publique',
+                texto: 'Vincule a um local já cadastrado (ou deixe avulso), envie até 3 fotos e deixe “Ativo” marcado para aparecer no catálogo.',
+                campos: ['Vincular a um local (opcional)', 'Fotos (até 3)', 'Ativo'],
+                dica: 'Para receber pagamento online, configure sua carteira em Financeiro. Sem ela, o cliente paga no local ou direto com você.',
+            },
+            {
+                titulo: 'Depois da venda: entregue e finalize',
+                texto: 'Em “Entregas” você escolhe quem entrega (um funcionário ou você mesmo). Pedido pago online: peça ao cliente o código de 6 dígitos para liberar o pagamento. Pagamento no local: basta clicar em “Finalizado”.',
+                dica: 'Precisa cancelar? Em “Entregas” use “Cancelar pedido”: quem pagou online recebe o valor de volta automaticamente.',
+            },
+        ],
+    },
 ];
+
+const PROXIMO = { local: 'servico', servico: 'reserva', reserva: 'produto' };
 
 export default function Tutoriais({ auth, locais = [], progresso = {}, fluxoInicial = 'local' }) {
     const [ativo, setAtivo] = useState(fluxoInicial);
@@ -107,6 +162,7 @@ export default function Tutoriais({ auth, locais = [], progresso = {}, fluxoInic
     const destino = () => {
         if (ativo === 'local') return route('estabelecimentos.create');
         if (ativo === 'reserva') return route('locacoes.avulsas.index');
+        if (ativo === 'produto') return route('produtos.meus', { aba: 'entrega' });
         if (locais.length === 0) return null;
         return route('estabelecimentos.configuracoes', locais[0].id) + '?aba=servicos';
     };
@@ -120,8 +176,8 @@ export default function Tutoriais({ auth, locais = [], progresso = {}, fluxoInic
                 <div className="max-w-3xl mx-auto px-4 py-8">
                     {/* HERO */}
                     <div className="rounded-3xl bg-gradient-to-br from-[#006837] to-emerald-600 text-white p-7 shadow-lg">
-                        <h1 className="text-2xl md:text-3xl font-black tracking-tight">Comece a vender em 3 passos</h1>
-                        <p className="text-emerald-50 mt-2 text-sm md:text-base">Cadastre seu local, seus serviços e suas reservas. Cada tutorial leva poucos minutos.</p>
+                        <h1 className="text-2xl md:text-3xl font-black tracking-tight">Comece a vender em {TUTORIAIS.length} passos</h1>
+                        <p className="text-emerald-50 mt-2 text-sm md:text-base">Cadastre seu local, seus serviços, suas reservas e seus produtos. Cada tutorial leva poucos minutos.</p>
                         <div className="flex items-center mt-6">
                             {TUTORIAIS.map((t, i) => (
                                 <div key={t.id} className="flex items-center flex-1 last:flex-none">
@@ -132,7 +188,7 @@ export default function Tutoriais({ auth, locais = [], progresso = {}, fluxoInic
                                 </div>
                             ))}
                         </div>
-                        <p className="text-xs text-emerald-50 mt-3 font-semibold">{concluidas} de 3 etapas concluídas</p>
+                        <p className="text-xs text-emerald-50 mt-3 font-semibold">{concluidas} de {TUTORIAIS.length} etapas concluídas</p>
                     </div>
 
                     {/* ABAS */}
@@ -211,13 +267,13 @@ export default function Tutoriais({ auth, locais = [], progresso = {}, fluxoInic
                         </button>
                     )}
 
-                    {ativo !== 'reserva' && (
+                    {PROXIMO[ativo] && (
                         <button
                             type="button"
-                            onClick={() => { setAtivo(ativo === 'local' ? 'servico' : 'reserva'); setAberto(0); }}
+                            onClick={() => { setAtivo(PROXIMO[ativo]); setAberto(0); }}
                             className="w-full mt-3 py-3 text-sm font-bold text-gray-500 hover:text-gray-800"
                         >
-                            Próximo tutorial: {ativo === 'local' ? 'serviço' : 'reserva'}
+                            Próximo tutorial: {TUTORIAIS.find((t) => t.id === PROXIMO[ativo]).rotulo.toLowerCase()}
                         </button>
                     )}
                 </div>

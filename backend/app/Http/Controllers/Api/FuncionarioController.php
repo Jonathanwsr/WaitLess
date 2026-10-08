@@ -139,6 +139,15 @@ class FuncionarioController extends Controller
             return back()->withErrors(['cargo' => 'Criar gerentes é um recurso exclusivo do plano Sócio Premium. Faça upgrade em Minha assinatura.']);
         }
 
+        // Funcionários ilimitados é um benefício do plano Sócio Premium — sem
+        // isso, qualquer plano (até o grátis) podia criar quantos quisesse.
+        if ($user->papel !== 'admin' && !$user->podeGerenciarEquipeAvancada()) {
+            $totalAtual = $estabelecimento->funcionarios()->count();
+            if ($totalAtual >= \App\Services\PlanoService::LIMITE_FUNCIONARIOS_PLANO_GRATUITO) {
+                return back()->withErrors(['cargo' => 'Você atingiu o limite de ' . \App\Services\PlanoService::LIMITE_FUNCIONARIOS_PLANO_GRATUITO . ' funcionários do plano gratuito. Assine o plano Sócio Premium para criar funcionários ilimitados.']);
+            }
+        }
+
         $novoUsuario = User::create([
             'name'     => $validated['nome'],
             'email'    => $validated['email'],
