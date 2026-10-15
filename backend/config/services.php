@@ -41,9 +41,12 @@ return [
         'webhook_token' => env('ASAAS_WEBHOOK_TOKEN'),
     ],
     
+    // Moderação de imagens (Hive AI). Desligada por padrão: a estrutura fica pronta para o futuro.
+    // Para ligar: HIVE_MODERACAO_ATIVA=true e HIVE_API_KEY no .env.
     'hive' => [
-    'key' => env('HIVE_API_KEY'),
-],
+        'ativo' => (bool) env('HIVE_MODERACAO_ATIVA', false),
+        'key' => env('HIVE_API_KEY'),
+    ],
 
     'imagekit' => [
         'public_key' => env('IMAGEKIT_PUBLIC_KEY'),

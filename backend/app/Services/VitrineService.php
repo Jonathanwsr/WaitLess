@@ -67,7 +67,8 @@ class VitrineService
                 ];
             })->values();
 
-        $reservas = ItemAluguel::catalogo()->where('estabelecimento_id', $dono->id)->where('ativo', true)->orderBy('nome')->get()
+        // Só as reservas deste local (as avulsas e as de outros locais ficam fora da vitrine dele).
+        $reservas = ItemAluguel::catalogo()->doLocal($estab->id)->where('ativo', true)->orderBy('nome')->get()
             ->map(function ($i) use ($disponibilidade, $primeiraFoto, $precoFinal) {
                 $resumo = $disponibilidade->resumoHoje($i);
                 return [
@@ -122,6 +123,8 @@ class VitrineService
                 'foto_perfil' => $estab->foto_perfil,
                 'foto_banner' => $estab->foto_banner,
                 'ramo_atuacao' => $estab->ramo_atuacao,
+                'bio' => $estab->bio,
+                'site' => $estab->site,
                 'bairro' => $estab->bairro,
                 'cidade' => $estab->cidade,
                 'estado' => $estab->estado,

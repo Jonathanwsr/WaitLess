@@ -152,7 +152,7 @@ export default function Create() {
                 </div>
             }
         >
-            <Head title="Criar Estabelecimento - WaitLess" />
+            <Head title="Criar Estabelecimento" />
 
             <div className="max-w-4xl mx-auto mt-4 sm:mt-8 mb-6 sm:mb-12 px-4 sm:px-0">
                 

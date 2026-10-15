@@ -26,16 +26,11 @@ class PontosService
         return round($pontos / self::PONTOS_POR_REAL, 2);
     }
 
-    /** Percentual máximo do pedido que um premium paga com pontos onde o local não aceita pontos. */
-    public static function percentualPremiumSemAceite(): float
-    {
-        return max(0.0, min(100.0, (float) config('pontos.premium_sem_aceite_percentual', 20)));
-    }
-
     /**
      * Regra única de uso de pontos num serviço ou reserva.
+     * - Cliente premium: usa quantos pontos quiser em qualquer serviço ou reserva (até o valor do pedido),
+     *   mesmo onde o local não aceita pontos e acima do limite que o local definiu.
      * - Local aceita pontos: vale o limite que ele definiu (ou o pedido inteiro, se não definiu).
-     * - Local não aceita, mas o cliente é premium: pode usar até o percentual de config/pontos.php.
      * - Senão: não pode usar pontos (devolve null).
      *
      * @param object $item Servico ou ItemAluguel (precisa de aceita_pontos e maximo_pontos_permitidos)
@@ -47,14 +42,14 @@ class PontosService
             return null;
         }
 
+        if ($user->isPremium()) {
+            return self::valorParaPontos($subtotal);
+        }
+
         if ($item->aceita_pontos) {
             $limiteDoLocal = (int) ($item->maximo_pontos_permitidos ?? 0);
 
             return $limiteDoLocal > 0 ? $limiteDoLocal : self::valorParaPontos($subtotal);
-        }
-
-        if ($user->isPremium()) {
-            return self::valorParaPontos($subtotal * self::percentualPremiumSemAceite() / 100);
         }
 
         return null;

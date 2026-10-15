@@ -35,8 +35,8 @@ export default function ResetPassword({ token, email }) {
 
     return (
         // Fundo externo unificado cinza claro
-        <div className="min-h-screen bg-[#f3f4f6] flex items-center justify-center p-4 sm:p-6 lg:p-8 font-sans antialiased selection:bg-emerald-500 selection:text-white">
-            <Head title="Redefinir Senha - Waitless" />
+        <div className="min-h-screen bg-[#f3f4f6] flex items-center justify-center p-4 sm:p-6 lg:p-8 font-sans antialiased selection:bg-[#FF5A00] selection:text-white">
+            <Head title="Redefinir Senha" />
 
             {/* CARD PRINCIPAL CENTRALIZADO */}
             <div className="w-full max-w-6xl bg-white rounded-[24px] md:rounded-[32px] shadow-2xl flex flex-col lg:flex-row overflow-hidden min-h-[750px] border border-gray-100">
@@ -46,7 +46,7 @@ export default function ResetPassword({ token, email }) {
                     <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent z-10" />
                     <img 
                         src="/images/cadastro.png" 
-                        alt="Fundo de Redefinição Waitless" 
+                        alt="Fundo de Redefinição Lokyva" 
                         className="absolute inset-0 w-full h-full object-cover object-center transform hover:scale-105 transition-transform duration-1000 ease-in-out"
                     />
                 </div>
@@ -55,16 +55,16 @@ export default function ResetPassword({ token, email }) {
                 <div className="w-full lg:w-1/2 flex flex-col justify-center items-center px-6 py-10 sm:px-12 md:px-16 xl:px-20 bg-white overflow-y-auto">
                     <div className="max-w-md w-full space-y-8">
                         
-                        {/* Cabeçalho de Identidade (Logo Waitless) */}
+                        {/* Cabeçalho de Identidade (Logo Lokyva) */}
                         <div className="text-center space-y-3">
-                            <div className="inline-flex items-center justify-center w-14 h-14 bg-slate-900 rounded-2xl shadow-lg text-white font-black text-xl mb-2">
+                            <div className="inline-flex items-center justify-center w-14 h-14 bg-[#FF5A00] rounded-2xl shadow-lg text-white font-black text-xl mb-2">
                                 <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 6h16M4 12h16M4 18h16" />
                                 </svg>
                             </div>
                             <div className="space-y-1">
-                                <h2 className="text-2xl font-black tracking-tight text-slate-900">Waitless</h2>
-                                <p className="text-[10px] font-bold text-emerald-500 tracking-wider uppercase">Simplifique. Agende. Conquiste.</p>
+                                <h2 className="text-2xl font-black tracking-tight text-slate-900">Lokyva</h2>
+                                <p className="text-[10px] font-bold text-[#FF5A00] tracking-wider uppercase">Simplifique. Agende. Conquiste.</p>
                             </div>
                         </div>
 
@@ -101,7 +101,7 @@ export default function ResetPassword({ token, email }) {
                             <div className="space-y-1.5">
                                 <label htmlFor="password" className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Nova Senha</label>
                                 <div className="relative group">
-                                    <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-gray-400 pointer-events-none group-focus-within:text-emerald-500 transition-colors">
+                                    <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-gray-400 pointer-events-none group-focus-within:text-[#FF5A00] transition-colors">
                                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
                                     </span>
                                     <input
@@ -109,7 +109,7 @@ export default function ResetPassword({ token, email }) {
                                         type={showPassword ? "text" : "password"}
                                         name="password"
                                         value={data.password}
-                                        className="block w-full pl-11 pr-12 py-3.5 bg-white border border-gray-200 rounded-xl text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all shadow-sm"
+                                        className="block w-full pl-11 pr-12 py-3.5 bg-white border border-gray-200 rounded-xl text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-[#FF5A00] transition-all shadow-sm"
                                         placeholder="••••••••"
                                         onChange={(e) => setData('password', e.target.value)}
                                         required
@@ -130,7 +130,7 @@ export default function ResetPassword({ token, email }) {
                             <div className="space-y-1.5">
                                 <label htmlFor="password_confirmation" className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">Confirmar Nova Senha</label>
                                 <div className="relative group">
-                                    <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-gray-400 pointer-events-none group-focus-within:text-emerald-500 transition-colors">
+                                    <span className="absolute inset-y-0 left-0 flex items-center pl-4 text-gray-400 pointer-events-none group-focus-within:text-[#FF5A00] transition-colors">
                                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
                                     </span>
                                     <input
@@ -138,7 +138,7 @@ export default function ResetPassword({ token, email }) {
                                         type={showConfirmPassword ? "text" : "password"}
                                         name="password_confirmation"
                                         value={data.password_confirmation}
-                                        className="block w-full pl-11 pr-12 py-3.5 bg-white border border-gray-200 rounded-xl text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all shadow-sm"
+                                        className="block w-full pl-11 pr-12 py-3.5 bg-white border border-gray-200 rounded-xl text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-100 focus:border-[#FF5A00] transition-all shadow-sm"
                                         placeholder="••••••••"
                                         onChange={(e) => setData('password_confirmation', e.target.value)}
                                         required
@@ -158,7 +158,7 @@ export default function ResetPassword({ token, email }) {
                             <div className="pt-4">
                                 <button
                                     type="submit"
-                                    className="w-full py-4 px-4 bg-slate-900 hover:bg-black active:scale-[0.99] text-white font-bold text-sm rounded-xl shadow-md shadow-slate-900/20 transition-all duration-200 disabled:opacity-70 disabled:cursor-not-allowed flex justify-center items-center gap-2"
+                                    className="w-full py-4 px-4 bg-[#FF5A00] hover:bg-[#E8590C] active:scale-[0.99] text-white font-bold text-sm rounded-xl shadow-lg shadow-orange-500/25 transition-all duration-200 disabled:opacity-70 disabled:cursor-not-allowed flex justify-center items-center gap-2"
                                     disabled={processing}
                                 >
                                     {processing ? (
@@ -169,7 +169,7 @@ export default function ResetPassword({ token, email }) {
                                             </svg>
                                             Salvando nova senha...
                                         </>
-                                    ) : 'Redefinir Senha'}
+                                    ) : 'Salvar nova senha'}
                                 </button>
                             </div>
                         </form>
@@ -180,7 +180,7 @@ export default function ResetPassword({ token, email }) {
                                 Lembrou seus dados?{' '}
                                 <Link
                                     href={route('login')}
-                                    className="font-bold text-emerald-500 hover:text-emerald-600 transition inline-flex items-center gap-1 group"
+                                    className="font-bold text-[#FF5A00] hover:text-[#E8590C] transition inline-flex items-center gap-1 group"
                                 >
                                     Voltar para o login 
                                     <span className="text-sm font-normal group-hover:translate-x-1 transition-transform">→</span>

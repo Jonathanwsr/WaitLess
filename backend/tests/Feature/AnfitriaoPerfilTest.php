@@ -47,7 +47,10 @@ class AnfitriaoPerfilTest extends TestCase
         $estabelecimento = Estabelecimento::create(['nome' => 'Locadora Anfitriao ' . uniqid()]);
         $estabelecimento->proprietarios()->attach($socio->id, ['tipo' => 'socio']);
 
-        ItemAluguel::create(['estabelecimento_id' => $socio->id, 'nome' => 'Van', 'categoria' => 'carro', 'valor_diaria' => 150, 'ativo' => true]);
+        // Reserva cadastrada no local (dono em estabelecimento_id, local em local_id). Locações avulsas
+        // do dono não entram no perfil do local.
+        ItemAluguel::create(['estabelecimento_id' => $socio->id, 'local_id' => $estabelecimento->id, 'nome' => 'Van', 'categoria' => 'carro', 'valor_diaria' => 150, 'ativo' => true]);
+        ItemAluguel::create(['estabelecimento_id' => $socio->id, 'nome' => 'Bike avulsa', 'categoria' => 'bicicleta', 'valor_diaria' => 40, 'ativo' => true]);
         Servico::create(['estabelecimento_id' => $estabelecimento->id, 'nome' => 'Corte', 'tipo_servico' => 'Outro', 'valor' => 60, 'duracao_minutos' => 30, 'ativo' => true]);
 
         $response = $this->actingAs($cliente)->getJson("/api/mobile/catalogo/estabelecimentos/{$estabelecimento->id}");

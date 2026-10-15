@@ -26,3 +26,18 @@ Schedule::command('gamificacao:bonus-mensal')->monthlyOn(1, '03:00');
 Schedule::command('entregas:lembretes-recompra')->dailyAt('10:00');
 Schedule::command('fila:avisar-vez')->everyFiveMinutes();
 Schedule::command('entregas:processar-assinaturas')->dailyAt('06:00');
+
+// Venda cruzada de viagem: oferta de veículo 2 dias antes do check-in da hospedagem.
+Schedule::command('viagem:ofertas-cruzadas')->everyFifteenMinutes()->withoutOverlapping();
+
+// Flash Deals: devolve o preço original assim que a oferta relâmpago vence.
+Schedule::command('flash-deals:encerrar')->everyMinute()->withoutOverlapping();
+
+// Notas fiscais: acompanha a autorização na prefeitura (status, número, PDF/XML) e avisa por e-mail.
+Schedule::command('notas:sincronizar')->everyThirtyMinutes()->withoutOverlapping();
+
+// Assinatura cancelada: ao fim do ciclo pago, a conta volta para o plano Grátis.
+Schedule::command('assinaturas:voltar-gratuito')->dailyAt('00:30');
+
+// Carteiras que ficaram aguardando o Asaas liberar novas subcontas: tenta abrir sozinho.
+Schedule::command('carteira:abrir-pendentes')->hourly()->withoutOverlapping();

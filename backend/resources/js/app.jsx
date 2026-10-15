@@ -8,7 +8,7 @@ import ErrorBoundary from './Components/ErrorBoundary';
 import AvisosGlobais from './Components/AvisosGlobais';
 import { avisar } from './lib/avisos';
 
-const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
+const appName = 'Lokyva';
 
 // Depois de um novo deploy/build, o navegador pode ainda ter em memória o
 // nome do arquivo JS antigo de uma página (code-splitting do Vite). Ao

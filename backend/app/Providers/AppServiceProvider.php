@@ -26,6 +26,7 @@ class AppServiceProvider extends ServiceProvider
         Vite::prefetch(concurrency: 3);
 
         \App\Models\Agendamento::observe(\App\Observers\AgendamentoObserver::class);
+        \App\Models\Aluguel::observe(\App\Observers\AluguelCrossSellObserver::class);
 
         // App em português: mensagens de validação, datas por extenso ("21 de setembro") e "há 5 minutos".
         // Definido aqui para não depender do APP_LOCALE de cada ambiente; o que faltar cai no inglês.

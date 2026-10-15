@@ -14,6 +14,7 @@ import {
   KeyboardAvoidingView,
   Switch,
   Modal,
+  Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
@@ -64,6 +65,8 @@ interface Estabelecimento {
   bairro?: string;
   cidade?: string;
   locais_retirada_disponiveis?: string[];
+  site?: string | null;
+  bio?: string | null;
 }
 
 interface ItemCatalogo {
@@ -109,6 +112,8 @@ export default function CriarReserva() {
 
   const [estabelecimento, setEstabelecimento] = useState<Estabelecimento | null>(null);
   const [servicos, setServicos] = useState<ItemCatalogo[]>([]);
+  // Reservas cadastradas neste local (hospedagem, veículo, equipamento): aparecem também na loja de serviços.
+  const [reservasDoLocal, setReservasDoLocal] = useState<ItemCatalogo[]>([]);
   const [produtosExtras, setProdutosExtras] = useState<ItemCatalogo[]>([]);
   const [produtosEntrega, setProdutosEntrega] = useState<ItemCatalogo[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -333,6 +338,7 @@ export default function CriarReserva() {
           listaCatalogo = json.locacoes || json.itens_aluguel || [];
         } else {
           listaCatalogo = json.servicos || estData.servicos || [];
+          setReservasDoLocal(json.locacoes || json.itens_aluguel || []);
         }
 
         setServicos(listaCatalogo);
@@ -745,6 +751,25 @@ export default function CriarReserva() {
             </View>
           </View>
 
+          {/* SOBRE O LOCAL: descrição e site cadastrados em Editar local */}
+          {(!!estabelecimento.bio || !!estabelecimento.site) && (
+            <View style={styles.sobreBox}>
+              {!!estabelecimento.bio && (
+                <>
+                  <Text style={styles.sobreTitulo}>Sobre {estabelecimento.nome}</Text>
+                  <Text style={styles.sobreTexto}>{estabelecimento.bio}</Text>
+                </>
+              )}
+              {!!estabelecimento.site && (
+                <TouchableOpacity style={styles.sobreSite} activeOpacity={0.8} onPress={() => Linking.openURL(String(estabelecimento.site))}>
+                  <Ionicons name="globe-outline" size={16} color={COLORS.primary} />
+                  <Text style={styles.sobreSiteTxt} numberOfLines={1}>{String(estabelecimento.site).replace(/^https?:\/\//i, '').replace(/\/$/, '')}</Text>
+                  <Ionicons name="open-outline" size={14} color={COLORS.primary} />
+                </TouchableOpacity>
+              )}
+            </View>
+          )}
+
           {/* TAGS / COMODIDADES DO ESTABELECIMENTO */}
           <View style={styles.tagsContainer}>
             {tipo === 'aluguel' ? (
@@ -1049,6 +1074,39 @@ export default function CriarReserva() {
               })
             )}
           </View>
+
+          {/* RESERVAS DESTE LOCAL: cada uma abre a página da reserva (datas, pessoas e pagamento) */}
+          {tipo !== 'aluguel' && reservasDoLocal.length > 0 && (
+            <>
+              <Text style={styles.sectionTitle}>Reservas deste local</Text>
+              <View style={styles.catalogContainer}>
+                {reservasDoLocal.map((item) => {
+                  const preco = Number(item.valor_diaria || item.valor || 0);
+                  return (
+                    <TouchableOpacity
+                      key={`reserva-${item.id}`}
+                      style={styles.itemCard}
+                      activeOpacity={0.8}
+                      onPress={() => router.push({ pathname: '/src/screens/ExplorarDetalhes', params: { id: String(item.id), tipo: 'reservas' } })}
+                    >
+                      <View style={styles.itemCardContent}>
+                        <Image source={{ uri: item.foto_principal || item.foto || DEFAULT_PROFILE }} style={styles.itemImage} />
+                        <View style={styles.itemInfo}>
+                          <Text style={styles.itemName} numberOfLines={1}>{item.nome}</Text>
+                          {!!item.categoria && <Text style={styles.itemDesc} numberOfLines={1}>{String(item.categoria).replace(/_/g, ' ')}</Text>}
+                          <View style={styles.itemPriceRow}>
+                            <Text style={styles.itemPrice}>R$ {preco.toFixed(2).replace('.', ',')}</Text>
+                            <Text style={styles.itemPriceUnit}>/dia</Text>
+                          </View>
+                        </View>
+                        <Ionicons name="chevron-forward" size={18} color={COLORS.gray} />
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </>
+          )}
 
           {/* SEÇÃO 3.1: ITENS ADICIONAIS (estilo iFood — adicione mais ao pedido) */}
           {produtosExtras.length > 0 && (
@@ -1528,6 +1586,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: COLORS.primary
   },
+  sobreBox: { backgroundColor: '#FFFFFF', borderRadius: 16, borderWidth: 1, borderColor: '#E6E7E9', padding: 14, marginTop: 12, gap: 8 },
+  sobreTitulo: { fontSize: 15, fontWeight: '800', color: '#282828' },
+  sobreTexto: { fontSize: 14, color: '#6A6C72', lineHeight: 20 },
+  sobreSite: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', backgroundColor: '#FFF1E4', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, maxWidth: '100%' },
+  sobreSiteTxt: { fontSize: 13, fontWeight: '700', color: '#C2570A', flexShrink: 1 },
   operationInfoBox: {
     backgroundColor: COLORS.cardBg,
     borderRadius: 20,

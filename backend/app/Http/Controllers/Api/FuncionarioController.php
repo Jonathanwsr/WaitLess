@@ -221,7 +221,8 @@ class FuncionarioController extends Controller
             'cargo'    => ['required', 'string', 'in:' . implode(',', array_keys(self::CARGOS_FUNCIONARIO))],
             'email'    => 'nullable|email|unique:users,email,' . $funcionario->usuario_id,
             'password' => 'nullable|string|min:8',
-            'estabelecimento_id' => 'required|exists:estabelecimentos,id'
+            'estabelecimento_id' => 'required|exists:estabelecimentos,id',
+            'birth_date' => 'nullable|date|before:today',
         ]);
 
         $papel = self::CARGOS_FUNCIONARIO[$validated['cargo']];
@@ -238,7 +239,7 @@ class FuncionarioController extends Controller
 
         $funcionario->update([
             'nome'     => $validated['nome'],
-            'telefone' => $validated['telefone'],
+            'telefone' => $validated['telefone'] ?? null,
             'cargo'    => $validated['cargo'],
             'estabelecimento_id' => $validated['estabelecimento_id'] // Permite transferir de loja
         ]);
@@ -255,6 +256,9 @@ class FuncionarioController extends Controller
                 }
                 if (!empty($validated['password'])) {
                     $user->password = Hash::make($validated['password']);
+                }
+                if (array_key_exists('birth_date', $validated)) {
+                    $user->birth_date = $validated['birth_date'];
                 }
                 $user->save();
 
@@ -294,15 +298,26 @@ class FuncionarioController extends Controller
         abort(403, 'Você não tem permissão para editar funcionários de outro estabelecimento.');
     }
 
-    // 3. Carrega o relacionamento do usuário vinculado ao funcionário (onde fica o e-mail)
-    $funcionario->load('usuario');
+    // 3. Carrega só o necessário do usuário vinculado (e-mail, foto, nascimento e celular)
+    $funcionario->load('usuario:id,name,email,foto_perfil,birth_date,mobile_phone', 'estabelecimento:id,nome');
 
     // 4. Busca APENAS os estabelecimentos que pertencem a esse usuário para listar no <select> do React
     $estabelecimentosAlocados = auth()->user()->estabelecimentos;
 
+    $atendimentos = \App\Models\Agendamento::where('funcionario_id', $funcionario->id);
+    $ultimaAtividade = $funcionario->usuario_id
+        ? \App\Models\AtividadeEquipe::where('usuario_id', $funcionario->usuario_id)->latest()->first(['descricao', 'created_at'])
+        : null;
+
     return inertia('Estabelecimentos/EditarFuncionario', [
         'funcionario' => $funcionario,
-        'estabelecimentos' => $estabelecimentosAlocados,
+        'estabelecimentos' => $estabelecimentosAlocados->map(fn ($e) => ['id' => $e->id, 'nome' => $e->nome])->values(),
+        'resumo' => [
+            'atendimentos' => (clone $atendimentos)->where('status', 'finalizado')->count(),
+            'avaliacao' => ($m = (clone $atendimentos)->whereNotNull('nota')->avg('nota')) ? round((float) $m, 1) : null,
+            'ultima_atividade' => $ultimaAtividade ? ['descricao' => $ultimaAtividade->descricao, 'em' => $ultimaAtividade->created_at?->toIso8601String()] : null,
+        ],
+        'podeGerenciarEquipeAvancada' => auth()->user()->papel === 'admin' || auth()->user()->podeGerenciarEquipeAvancada(),
     ]);
 
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { Head, router, usePage } from '@inertiajs/react';
+import { Head, Link, router, usePage } from '@inertiajs/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
 import {
@@ -161,7 +161,7 @@ export default function DetalheAgendamento({ auth, dados }) {
 
         try {
           // Envia as coordenadas a cada atualização para o Backend (que jogará no Websocket)
-          await axios.post('/api/rastreamento/update', {
+          await axios.post('/rastreamento/update', {
             agendamento_id: dados.id,
             lat: latitude,
             lng: longitude
@@ -206,6 +206,30 @@ export default function DetalheAgendamento({ auth, dados }) {
     ? `https://wa.me/55${telefoneLimpo}?text=${encodeURIComponent(`Olá! Sobre meu pedido de ${dados.titulo} (#${dados.codigo_reserva || dados.id}).`)}`
     : null;
 
+  // Reserva (locação): cancelar segue a política do item; o valor volta automaticamente.
+  const cancelamento = dados.cancelamento;
+  const [cancelandoReserva, setCancelandoReserva] = useState(false);
+  const podeCancelarReserva = dados.tipo === 'aluguel' && !isCancelado && !['FINALIZADO', 'CONCLUIDO', 'CONCLUÍDO'].includes(dados.status_geral?.toUpperCase());
+
+  const cancelarReserva = async () => {
+    const simulacao = cancelamento?.se_cancelar_agora;
+    const aviso = simulacao
+      ? `Se cancelar agora, você recebe ${brl(simulacao.valor_reembolso)} de volta (${simulacao.explicacao})`
+      : 'A reserva será cancelada.';
+    if (!window.confirm(`Cancelar esta reserva?\n\n${aviso}`)) return;
+
+    setCancelandoReserva(true);
+    try {
+      const { data } = await axios.delete(route('cliente.reservas.destroy', dados.id));
+      showToast(data?.message || 'Reserva cancelada.');
+      router.reload();
+    } catch (e) {
+      showToast(e.response?.data?.message || 'Não foi possível cancelar agora.');
+    } finally {
+      setCancelandoReserva(false);
+    }
+  };
+
   const cancelarAgendamento = () => {
     if (!window.confirm('Cancelar este agendamento? Se você pagou online, o valor é devolvido conforme a regra de cancelamento.')) return;
     router.post(route('cliente.agendamentos.cancelar', dados.id), {}, { preserveScroll: true });
@@ -230,7 +254,7 @@ export default function DetalheAgendamento({ auth, dados }) {
     >
       <Head title={`Detalhes - ${dados.titulo}`} />
 
-      <div className="py-8 bg-slate-50/50 min-h-screen relative">
+      <div className="pb-8 bg-slate-50/50 min-h-screen relative">
 
         {/* TOAST NOTIFICATION */}
         <AnimatePresence>
@@ -249,16 +273,16 @@ export default function DetalheAgendamento({ auth, dados }) {
 
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
 
-          {/* Topbar: Voltar e Favoritar */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+          {/* Topbar: trilha de navegação e favoritar */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
             <button
               onClick={() => window.history.back()}
-              className="inline-flex items-center gap-2 text-sm font-semibold text-gray-600 hover:text-gray-900 transition-colors group w-fit"
+              className="inline-flex items-center gap-3 text-[11px] font-bold uppercase tracking-wider text-gray-500 hover:text-gray-900 transition-colors group w-fit"
             >
-              <div className="p-2 bg-white rounded-xl shadow-sm border border-gray-200/60 group-hover:border-gray-300 transition-all">
+              <span className="w-9 h-9 rounded-full bg-white border border-gray-200 shadow-sm flex items-center justify-center group-hover:border-gray-300">
                 <ArrowLeft className="w-4 h-4" />
-              </div>
-              Voltar para Meus Pedidos
+              </span>
+              {dados.tipo === 'aluguel' ? 'Minhas reservas' : 'Meus agendamentos'} <span className="text-gray-300">›</span> <span className="text-gray-900">Detalhes</span>
             </button>
 
             <div className="flex items-center gap-3">
@@ -277,6 +301,11 @@ export default function DetalheAgendamento({ auth, dados }) {
                 ID: #{dados.codigo_reserva || dados.id}
               </span>
             </div>
+          </div>
+
+          <div className="mb-6">
+            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-gray-900">{dados.tipo === 'aluguel' ? 'Detalhes da Reserva' : 'Detalhes do Agendamento'}</h1>
+            <p className="text-sm text-gray-500 mt-1">Visualize as informações completas {dados.tipo === 'aluguel' ? 'da sua reserva' : 'da sua sessão'}.</p>
           </div>
 
           {(flash.success || errors.error) && (
@@ -330,33 +359,37 @@ export default function DetalheAgendamento({ auth, dados }) {
                 )}
                 <div className="p-6 sm:p-8">
                 <div className="flex flex-col sm:flex-row justify-between items-start gap-4 mb-6 pb-6 border-b border-gray-100">
-                  <div className="flex items-center gap-4">
-                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border ${dados.tipo === 'aluguel' ? 'bg-indigo-50/50 text-indigo-600 border-indigo-100' : 'bg-gradient-to-br from-teal-500/10 to-emerald-500/10 text-teal-600 border-teal-500/20'}`}>
-                      {dados.tipo === 'aluguel' ? <Building2 className="w-6 h-6" /> : <Briefcase className="w-6 h-6" />}
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2 mb-2">
+                      {(dados.ramo || dados.tipo === 'aluguel') && (
+                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-600">{dados.tipo === 'aluguel' ? 'Reserva' : dados.ramo}</span>
+                      )}
+                      <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${statusStyles[dados.status_geral?.toUpperCase()] || 'bg-gray-50 text-gray-600 border-gray-200'}`}>
+                        {STATUS_TEXTO[dados.status_geral?.toUpperCase()] || dados.status_geral?.replace(/_/g, ' ')}
+                      </span>
                     </div>
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2.5">
-                        <h3 className="text-xl font-bold text-gray-900 tracking-tight">{dados.titulo}</h3>
-                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wider ${statusStyles[dados.status_geral?.toUpperCase()] || 'bg-gray-50 text-gray-600 border-gray-200'}`}>
-                          {STATUS_TEXTO[dados.status_geral?.toUpperCase()] || dados.status_geral?.replace(/_/g, ' ')}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1.5 text-gray-500 mt-1.5">
-                        {dados.tipo === 'aluguel' ? <MapPin className="w-4 h-4 text-gray-400" /> : <User className="w-4 h-4 text-gray-400" />}
-                        <span className="text-sm font-medium">{dados.subtitulo}</span>
-                      </div>
+                    <h3 className="text-2xl font-black text-[#E8590C] tracking-tight leading-tight">{dados.titulo}</h3>
+                    <div className="flex items-center gap-1.5 text-gray-500 mt-1.5">
+                      {dados.tipo === 'aluguel' ? <MapPin className="w-4 h-4 text-gray-400" /> : <User className="w-4 h-4 text-gray-400" />}
+                      <span className="text-sm font-medium">{dados.subtitulo}</span>
                     </div>
+                  </div>
+                  <div className="sm:text-right shrink-0">
+                    <p className="text-2xl font-black text-gray-900">{brl(dados.valor)}</p>
+                    <p className={`text-[11px] font-bold uppercase tracking-wider ${dados.pagamento_confirmado ? 'text-emerald-600' : 'text-amber-600'}`}>
+                      {dados.pagamento_confirmado ? 'Valor pago' : 'Valor a pagar'}
+                    </p>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  <div className="bg-slate-50/60 p-4 rounded-2xl border border-gray-100">
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-2">Data e Horário</p>
-                    <div className="flex items-center gap-2 text-gray-900 font-bold text-base">
-                      <Calendar className="w-4 h-4 text-teal-600" />
-                      {dados.data_formatada}
+                  <div className="flex items-center gap-3 bg-slate-50/60 p-4 rounded-2xl border border-gray-100">
+                    <span className="w-11 h-11 rounded-full bg-orange-50 text-[#E8590C] flex items-center justify-center shrink-0"><Calendar className="w-5 h-5" /></span>
+                    <div>
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Data e horário</p>
+                      <p className="text-gray-900 font-bold text-base">{dados.data_formatada}</p>
+                      <p className="text-xs text-gray-500 font-medium">{dados.horario}</p>
                     </div>
-                    <p className="text-xs text-gray-500 mt-1 font-medium">{dados.horario}</p>
                   </div>
 
                   <div className="bg-slate-50/60 p-4 rounded-2xl border border-gray-100">
@@ -387,6 +420,34 @@ export default function DetalheAgendamento({ auth, dados }) {
                 </div>
               </div>
 
+              {/* ESTABELECIMENTO */}
+              {dados.contato && (
+                <div className="bg-white rounded-3xl border border-gray-200/70 p-5 sm:p-6 shadow-sm">
+                  <h4 className="font-bold text-gray-900 mb-3">{dados.tipo === 'aluguel' ? 'Responsável' : 'Estabelecimento'}</h4>
+                  <div className="flex items-center gap-4">
+                    {dados.contato.foto ? (
+                      <img src={dados.contato.foto} alt={dados.contato.nome} className="w-14 h-14 rounded-2xl object-cover border border-gray-100" />
+                    ) : (
+                      <div className="w-14 h-14 rounded-2xl bg-teal-50 text-teal-700 flex items-center justify-center font-black text-lg">
+                        {String(dados.contato.nome || '?').charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="font-bold text-gray-900 uppercase truncate">{dados.contato.nome}</p>
+                      {dados.ramo && <p className="text-xs text-gray-500 truncate">{dados.ramo}</p>}
+                      {dados.contato.avaliacao && (
+                        <p className="text-xs text-gray-500 flex items-center gap-1 mt-0.5"><Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" /> {dados.contato.avaliacao}</p>
+                      )}
+                    </div>
+                    {dados.estabelecimento_id && route().has('estabelecimentos.loja') && (
+                      <Link href={route('estabelecimentos.loja', dados.estabelecimento_id)} className="shrink-0 px-4 py-2 rounded-xl border border-orange-200 text-[#E8590C] text-xs font-bold hover:bg-orange-50">
+                        Ver perfil
+                      </Link>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* SOBRE O SERVIÇO / RESERVA */}
               {(dados.descricao || dados.informacoes_extras) && (
                 <div className="bg-white rounded-3xl border border-gray-200/70 p-6 sm:p-8 shadow-sm">
@@ -401,6 +462,44 @@ export default function DetalheAgendamento({ auth, dados }) {
                       <p className="text-sm text-amber-900 leading-relaxed whitespace-pre-line">{dados.informacoes_extras}</p>
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* POLÍTICA DE CANCELAMENTO (reservas) */}
+              {dados.tipo === 'aluguel' && cancelamento && (
+                <div className="bg-white rounded-3xl border border-gray-200/70 p-6 sm:p-8 shadow-sm">
+                  <h4 className="font-bold text-gray-900 mb-1 flex items-center gap-2 text-lg">
+                    <ShieldCheck className="w-5 h-5 text-teal-600" /> Política de cancelamento: {cancelamento.nome}
+                  </h4>
+                  <p className="text-sm text-gray-600 leading-relaxed">{cancelamento.resumo}</p>
+
+                  {cancelamento.valor_reembolsado !== null && isCancelado && (
+                    <p className="mt-4 text-sm font-semibold text-emerald-700 bg-emerald-50 rounded-2xl px-4 py-3">
+                      Reserva cancelada. Valor devolvido: {brl(cancelamento.valor_reembolsado)}, na forma de pagamento original.
+                    </p>
+                  )}
+
+                  {cancelamento.se_cancelar_agora && (
+                    <div className="mt-4 rounded-2xl bg-slate-50 border border-gray-100 p-4">
+                      <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Se cancelar agora</p>
+                      <p className="text-xl font-black text-gray-900 mt-1">
+                        Você recebe {brl(cancelamento.se_cancelar_agora.valor_reembolso)}
+                        <span className="text-sm font-semibold text-gray-500"> ({cancelamento.se_cancelar_agora.percentual}% do valor)</span>
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">{cancelamento.se_cancelar_agora.explicacao}</p>
+                    </div>
+                  )}
+
+                  {podeCancelarReserva && (
+                    <button
+                      onClick={cancelarReserva}
+                      disabled={cancelandoReserva}
+                      className="mt-4 w-full sm:w-auto bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold py-2.5 px-6 rounded-xl text-sm disabled:opacity-50"
+                    >
+                      {cancelandoReserva ? 'Cancelando...' : 'Cancelar reserva'}
+                    </button>
+                  )}
+                  <p className="text-[11px] text-gray-400 mt-3">O valor volta sozinho na forma de pagamento original. Você não precisa pedir estorno.</p>
                 </div>
               )}
 
@@ -607,28 +706,11 @@ export default function DetalheAgendamento({ auth, dados }) {
               {/* QUEM ATENDE / DONO */}
               {dados.contato && (
                 <div className="bg-white rounded-3xl border border-gray-200/70 p-5 shadow-sm">
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">
-                    {dados.tipo === 'aluguel' ? 'Responsável pela reserva' : 'Local do atendimento'}
-                  </p>
-                  <div className="flex items-center gap-3">
-                    {dados.contato.foto ? (
-                      <img src={dados.contato.foto} alt={dados.contato.nome} className="w-12 h-12 rounded-2xl object-cover border border-gray-100" />
-                    ) : (
-                      <div className="w-12 h-12 rounded-2xl bg-teal-50 text-teal-700 flex items-center justify-center font-black">
-                        {String(dados.contato.nome || '?').charAt(0).toUpperCase()}
-                      </div>
-                    )}
-                    <div className="min-w-0">
-                      <p className="font-bold text-gray-900 truncate">{dados.contato.nome}</p>
-                      {dados.contato.avaliacao && (
-                        <p className="text-xs text-gray-500 flex items-center gap-1"><Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" /> {dados.contato.avaliacao}</p>
-                      )}
-                    </div>
-                  </div>
+                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-3">Contato</p>
                   <button
                     onClick={handleEnviarMensagem}
                     disabled={abrindoConversa || !dados.mensagem}
-                    className="mt-4 w-full flex items-center justify-center gap-2 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold transition-all text-sm shadow-sm disabled:opacity-50"
+                    className="w-full flex items-center justify-center gap-2 py-3 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold transition-all text-sm shadow-sm disabled:opacity-50"
                   >
                     {abrindoConversa ? <Loader className="w-4 h-4 animate-spin" /> : <MessageSquare className="w-4 h-4" />}
                     {dados.tipo === 'aluguel' ? 'Mensagem para o dono' : 'Mensagem para o local'}
@@ -643,6 +725,24 @@ export default function DetalheAgendamento({ auth, dados }) {
 
               {/* Painel de Ações Operacionais */}
               <div className="space-y-3">
+                {dados.tipo !== 'aluguel' && dados.servico_id && route().has('cliente.servicos.show') && (
+                  <Link
+                    href={route('cliente.servicos.show', dados.servico_id)}
+                    className="w-full flex items-center justify-center gap-2 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold transition-all text-sm shadow-sm"
+                  >
+                    <Calendar className="w-4 h-4" /> Agendar novamente
+                  </Link>
+                )}
+
+                {isPendente && dados.tipo !== 'aluguel' && (
+                  <button
+                    onClick={cancelarAgendamento}
+                    className="w-full flex items-center justify-center gap-2 py-3 bg-red-600 hover:bg-red-700 text-white rounded-xl font-black uppercase tracking-wide transition-all text-sm shadow-sm"
+                  >
+                    Cancelar serviço
+                  </button>
+                )}
+
                 <a
                   href={dados.tipo === 'aluguel' ? `/alugueis/${dados.id}/comprovante-pdf` : `/agendamentos/${dados.id}/comprovante-pdf`}
                   target="_blank"
@@ -650,8 +750,20 @@ export default function DetalheAgendamento({ auth, dados }) {
                   className="w-full flex items-center justify-center gap-2 py-3 bg-white hover:bg-slate-50 border border-gray-200 rounded-xl font-bold text-gray-700 transition-all text-sm shadow-2xs text-center"
                 >
                   <Download className="w-4 h-4 text-gray-500" />
-                  Baixar Comprovante
+                  Baixar comprovante
                 </a>
+
+                {dados.pagamento_confirmado && (
+                  <a
+                    href={route('pagamentos.comprovante', dados.tipo === 'aluguel' ? { aluguel_id: dados.id } : { agendamento_id: dados.id })}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full flex items-center justify-center gap-2 py-3 bg-white hover:bg-slate-50 border border-gray-200 rounded-xl font-bold text-gray-700 transition-all text-sm shadow-2xs text-center"
+                  >
+                    <Download className="w-4 h-4 text-gray-500" />
+                    Comprovante do pagamento
+                  </a>
+                )}
 
                 {/* BOTÃO ESTOU A CAMINHO - MODIFICADO COM ESTADO */}
                 {isPendente && dados.tipo !== 'aluguel' && (
@@ -674,6 +786,25 @@ export default function DetalheAgendamento({ auth, dados }) {
                   </button>
                 )}
 
+                {dados.estabelecimento_id && route().has('estabelecimentos.loja') && (
+                  <Link
+                    href={route('estabelecimentos.loja', dados.estabelecimento_id)}
+                    className="w-full flex items-center justify-center gap-2 py-3 bg-white hover:bg-slate-50 border border-gray-200 rounded-xl font-bold text-gray-700 transition-all text-sm shadow-2xs"
+                  >
+                    <Building2 className="w-4 h-4 text-gray-500" /> Ver o estabelecimento
+                  </Link>
+                )}
+
+                {dados.mensagem && (
+                  <button
+                    type="button"
+                    onClick={handleEnviarMensagem}
+                    disabled={abrindoConversa}
+                    className="w-full flex items-center justify-center gap-1.5 py-2 text-xs text-gray-500 hover:text-gray-800"
+                  >
+                    <Info className="w-3.5 h-3.5" /> Precisa de ajuda? <span className="font-bold text-[#E8590C]">Fale com {dados.tipo === 'aluguel' ? 'o responsável' : 'o local'}</span>
+                  </button>
+                )}
               </div>
 
             </div>

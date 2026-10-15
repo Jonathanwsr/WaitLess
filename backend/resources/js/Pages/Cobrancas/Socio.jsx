@@ -404,7 +404,7 @@ export default function Socio({ cobrancas = [], estabelecimentos = [], podeCriar
         <AuthenticatedLayout user={auth.user}>
             <Head title="Cobranças" />
 
-            <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 space-y-6">
+            <div className="max-w-5xl mx-auto px-4 sm:px-6 pb-8 space-y-5">
                 <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
                     <div>
                         <p className="text-xs font-bold uppercase tracking-widest text-[#FF5A00]">Cobranças parceladas</p>

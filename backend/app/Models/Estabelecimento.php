@@ -55,9 +55,10 @@ class Estabelecimento extends Model
         return $this->hasMany(Agendamento::class);
     }
 
+    /** Reservas do catálogo deste local (o item guarda o local em local_id e o dono em estabelecimento_id). */
     public function itensAluguel()
     {
-        return $this->hasMany(ItemAluguel::class);
+        return $this->hasMany(ItemAluguel::class, 'local_id');
     }
 
     public function produtos()

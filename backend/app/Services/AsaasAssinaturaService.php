@@ -21,7 +21,12 @@ class AsaasAssinaturaService
     /**
      * Cria a cobrança no Asaas (Assinatura Recorrente ou Avulsa)
      */
-    public function criarCobranca(Assinatura $assinatura, User $user, array $planoData, string $metodo)
+    /**
+     * @param array|null $cartao   ['numero','titular','mes','ano','cvv'] — cartão digitado na tela de assinatura.
+     *                             Vai direto para o Asaas (que guarda o cartão na assinatura); nada é salvo aqui.
+     * @param array|null $titular  ['nome','email','cpf_cnpj','cep','numero','telefone'] — exigido pelo Asaas junto do cartão.
+     */
+    public function criarCobranca(Assinatura $assinatura, User $user, array $planoData, string $metodo, ?array $cartao = null, ?array $titular = null, ?string $ip = null)
     {
         // Converte o método recebido do frontend para o padrão da API do Asaas (apenas PIX ou Cartão de Crédito)
         $billingType = match ($metodo) {
@@ -51,6 +56,26 @@ class AsaasAssinaturaService
             $endpoint = '/payments';
         }
 
+        // Cartão digitado na tela: o Asaas cadastra o cartão na assinatura e cobra sozinho a cada ciclo.
+        if ($billingType === 'CREDIT_CARD' && $cartao) {
+            $payload['creditCard'] = [
+                'holderName' => $cartao['titular'],
+                'number' => preg_replace('/\D/', '', (string) $cartao['numero']),
+                'expiryMonth' => str_pad((string) $cartao['mes'], 2, '0', STR_PAD_LEFT),
+                'expiryYear' => strlen((string) $cartao['ano']) === 2 ? '20' . $cartao['ano'] : (string) $cartao['ano'],
+                'ccv' => (string) $cartao['cvv'],
+            ];
+            $payload['creditCardHolderInfo'] = array_filter([
+                'name' => $titular['nome'] ?? $user->name,
+                'email' => $titular['email'] ?? $user->email,
+                'cpfCnpj' => preg_replace('/\D/', '', (string) ($titular['cpf_cnpj'] ?? $user->cpf_cnpj)),
+                'postalCode' => preg_replace('/\D/', '', (string) ($titular['cep'] ?? $user->postal_code)),
+                'addressNumber' => $titular['numero'] ?? $user->address_number,
+                'mobilePhone' => preg_replace('/\D/', '', (string) ($titular['telefone'] ?? $user->mobile_phone ?? $user->telefone)) ?: null,
+            ]);
+            $payload['remoteIp'] = $ip ?: request()->ip();
+        }
+
         $response = Http::withHeaders([
             'access_token' => $this->key,
         ])->post($this->url . $endpoint, $payload);
@@ -61,6 +86,51 @@ class AsaasAssinaturaService
         }
 
         return $response->json();
+    }
+
+    /**
+     * Cobrança da assinatura que está em aberto (pendente ou vencida) e, se for Pix, o QR code para pagar.
+     * O Asaas também manda essa cobrança por e-mail; aqui ela aparece na tela quando está perto de vencer.
+     */
+    public function cobrancaEmAberto(string $assinaturaGatewayId): ?array
+    {
+        $lista = Http::withHeaders(['access_token' => $this->key])->timeout(15)
+            ->get("{$this->url}/subscriptions/{$assinaturaGatewayId}/payments", ['limit' => 10]);
+        if ($lista->failed()) {
+            return null;
+        }
+
+        $cobranca = collect($lista->json('data') ?? [])
+            ->filter(fn ($p) => in_array($p['status'] ?? null, ['PENDING', 'OVERDUE'], true))
+            ->sortBy('dueDate')
+            ->first();
+        if (!$cobranca) {
+            return null;
+        }
+
+        $dados = [
+            'id' => $cobranca['id'],
+            'valor' => (float) ($cobranca['value'] ?? 0),
+            'vencimento' => $cobranca['dueDate'] ?? null,
+            'vencida' => ($cobranca['status'] ?? null) === 'OVERDUE',
+            'forma' => $cobranca['billingType'] ?? null,
+            'link' => $cobranca['invoiceUrl'] ?? null,
+            'pix' => null,
+        ];
+
+        if (($cobranca['billingType'] ?? null) === 'PIX') {
+            $qr = Http::withHeaders(['access_token' => $this->key])->timeout(15)
+                ->get("{$this->url}/payments/{$cobranca['id']}/pixQrCode");
+            if ($qr->successful()) {
+                $dados['pix'] = [
+                    'imagem' => $qr->json('encodedImage'),
+                    'copia_e_cola' => $qr->json('payload'),
+                    'expira_em' => $qr->json('expirationDate'),
+                ];
+            }
+        }
+
+        return $dados;
     }
 
     /**

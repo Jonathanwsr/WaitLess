@@ -242,7 +242,7 @@ class CarteiraMobileController extends Controller
                 'value' => $saldoReal,
                 'pixAddressKey' => $provider->pix_key,
                 'pixAddressKeyType' => $provider->pix_key_type,
-                'description' => 'Saque via WaitLess Mobile',
+                'description' => 'Saque via Lokyva Mobile',
             ]);
 
         if ($responseTransfer->failed()) {

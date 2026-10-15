@@ -20,7 +20,7 @@ function SubSecao({ titulo, children }) {
 
 export default function Termos({ versaoAtual }) {
     const { auth } = usePage().props;
-    const versao = versaoAtual || '2.1';
+    const versao = versaoAtual || '2.2';
 
     return (
         <div className="min-h-screen bg-[#FAFAFA]">
@@ -34,7 +34,7 @@ export default function Termos({ versaoAtual }) {
                 <div className="bg-white border border-gray-100 rounded-3xl shadow-[0_4px_25px_rgba(0,0,0,0.04)] p-6 sm:p-10">
                     <span className="text-xs font-black text-[#FF5A00] tracking-widest">CONTRATO</span>
                     <h1 className="text-2xl font-black text-gray-900 mt-2 mb-1">Termo de Compromisso</h1>
-                    <p className="text-xs text-gray-400 mb-8">Versão {versao} · Última atualização: 3 de outubro de 2026</p>
+                    <p className="text-xs text-gray-400 mb-8">Versão {versao} · Última atualização: 10 de outubro de 2026</p>
 
                     <Secao titulo="1. O que é a Lokyva">
                         <p>
@@ -248,14 +248,59 @@ export default function Termos({ versaoAtual }) {
                         <ul className="list-disc pl-5 space-y-1.5">
                             <li>O cliente paga pela reserva/agendamento dentro da plataforma;</li>
                             <li>O pagamento é registrado e vinculado ao estabelecimento/prestador responsável pelo serviço;</li>
-                            <li>O valor líquido (já descontada a taxa da plataforma) fica disponível na conta de recebimento do estabelecimento/prestador;</li>
+                            <li>No momento do pagamento, o valor líquido (já descontada a comissão da plataforma) vai direto para a conta de recebimento do estabelecimento/prestador, pelo split descrito na cláusula 10;</li>
                             <li>Os repasses para a chave PIX cadastrada são processados periodicamente, de forma automática;</li>
                             <li>Cancelamentos e estornos aprovados são descontados do saldo disponível, já que o valor correspondente foi devolvido ao cliente;</li>
                             <li>O estabelecimento/prestador acompanha seu saldo, valores retidos e histórico de repasses na sua própria área financeira.</li>
                         </ul>
                     </Secao>
 
-                    <Secao titulo="10. Locação de itens e veículos">
+                    <Secao titulo="10. Natureza da intermediação, comissão e notas fiscais">
+                        <p>
+                            Esta cláusula vale para estabelecimentos, proprietários, sócios e prestadores (os
+                            <strong className="text-gray-800"> parceiros</strong>) que vendem pela Lokyva, e explica
+                            quem vende o quê, para quem vai cada valor e quem emite cada documento fiscal.
+                        </p>
+
+                        <SubSecao titulo="10.1 Quem vende é o parceiro">
+                            <p>
+                                O serviço, a reserva, a locação ou o produto é vendido e prestado pelo parceiro,
+                                diretamente ao cliente. A Lokyva presta ao parceiro um serviço de intermediação de
+                                negócios e de licenciamento de uso da plataforma (vitrine, agenda, reservas, cobrança
+                                e comunicação). A Lokyva não compra nem revende o que o parceiro oferece.
+                            </p>
+                        </SubSecao>
+
+                        <SubSecao titulo="10.2 Como o pagamento é dividido (split)">
+                            <ul className="list-disc pl-5 space-y-1.5">
+                                <li>O cliente paga pela plataforma, por meio de uma instituição de pagamento parceira;</li>
+                                <li>No mesmo momento, o arranjo de pagamento divide o valor: a parte do parceiro vai direto para a conta de pagamento (carteira) dele, e só a comissão da Lokyva fica com a Lokyva;</li>
+                                <li>A parte do parceiro pertence ao parceiro desde o pagamento e não integra a receita da Lokyva. A Lokyva não recebe esse valor para repassar depois;</li>
+                                <li>A comissão é um percentual sobre o valor pago, informado na plataforma antes da venda. Hoje é de 6% em reservas e serviços, 1% em produtos com entrega ou retirada e 0,5% em parcelas de cobranças. Mudanças são avisadas com antecedência;</li>
+                                <li>Pagamentos recebidos fora da plataforma (no local, em dinheiro ou outra forma) não passam pela Lokyva. Quando houver comissão sobre eles, ela é cobrada do parceiro à parte.</li>
+                            </ul>
+                        </SubSecao>
+
+                        <SubSecao titulo="10.3 Notas fiscais">
+                            <ul className="list-disc pl-5 space-y-1.5">
+                                <li><strong className="text-gray-800">Nota da venda:</strong> é do parceiro, emitida para o cliente pelo valor total da venda. Emitir esta nota e recolher os tributos da venda é responsabilidade exclusiva do parceiro;</li>
+                                <li><strong className="text-gray-800">Emissão automática da nota da venda:</strong> no plano Sócio Premium, a plataforma pode emitir a nota da venda em nome do parceiro, pela conta de pagamento dele, com a configuração fiscal informada por ele. Os dados fiscais e o cadastro na prefeitura continuam sendo responsabilidade do parceiro;</li>
+                                <li><strong className="text-gray-800">Nota da comissão:</strong> a Lokyva emite para o parceiro, pelo valor da comissão, a nota do serviço de intermediação. É o documento da despesa do parceiro com a plataforma;</li>
+                                <li><strong className="text-gray-800">Assinaturas:</strong> a Lokyva emite a nota de cada cobrança de plano para o assinante;</li>
+                                <li>Quando um pagamento é estornado por inteiro, as notas da venda e da comissão daquele pagamento são canceladas.</li>
+                            </ul>
+                        </SubSecao>
+
+                        <SubSecao titulo="10.4 Responsabilidades do parceiro">
+                            <ul className="list-disc pl-5 space-y-1.5">
+                                <li>Manter corretos e atualizados o CNPJ (ou CPF, quando permitido), o endereço e os dados fiscais;</li>
+                                <li>Cumprir as obrigações fiscais, trabalhistas, sanitárias, de consumo e regulatórias do que vende;</li>
+                                <li>Responder ao cliente pela qualidade, entrega e garantia do que vende.</li>
+                            </ul>
+                        </SubSecao>
+                    </Secao>
+
+                    <Secao titulo="11. Locação de itens e veículos">
                         <p>
                             Ao reservar um item ou veículo para locação, o locatário se compromete a devolvê-lo nas
                             mesmas condições em que foi retirado, respeitando o período contratado. Contratos de
@@ -264,7 +309,7 @@ export default function Termos({ versaoAtual }) {
                         </p>
                     </Secao>
 
-                    <Secao titulo="11. Condutas proibidas">
+                    <Secao titulo="12. Condutas proibidas">
                         <p>Ao usar a Lokyva, você concorda em não:</p>
                         <ul className="list-disc pl-5 space-y-1.5">
                             <li>Fornecer informações falsas no cadastro ou em avaliações;</li>
@@ -278,16 +323,16 @@ export default function Termos({ versaoAtual }) {
                         </p>
                     </Secao>
 
-                    <Secao titulo="12. Limitação de responsabilidade">
+                    <Secao titulo="13. Limitação de responsabilidade">
                         <p>
-                            A Lokyva atua como intermediadora e não se responsabiliza pela qualidade dos serviços
+                            A Lokyva atua como intermediadora (cláusula 10) e não se responsabiliza pela qualidade dos serviços
                             prestados nem pelo estado dos itens alugados por terceiros na plataforma. Sempre que
                             possível, disputas devem ser resolvidas primeiro entre cliente e estabelecimento/
                             prestador, com a Lokyva podendo intermediar quando necessário.
                         </p>
                     </Secao>
 
-                    <Secao titulo="13. Alterações neste termo">
+                    <Secao titulo="14. Alterações neste termo">
                         <p>
                             Este termo pode ser atualizado periodicamente. Quando uma alteração relevante for feita, a
                             versão é incrementada e o usuário pode precisar aceitar novamente antes de continuar
@@ -296,7 +341,7 @@ export default function Termos({ versaoAtual }) {
                         </p>
                     </Secao>
 
-                    <Secao titulo="14. Contato">
+                    <Secao titulo="15. Contato">
                         <p>
                             Dúvidas sobre este termo podem ser enviadas para{' '}
                             <a href="mailto:suporte@lokyva.com" className="text-[#FF5A00] font-semibold">suporte@lokyva.com</a>.

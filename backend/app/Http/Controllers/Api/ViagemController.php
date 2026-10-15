@@ -129,7 +129,9 @@ class ViagemController extends Controller
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
-        if (!$user->isPremium()) {
+        // Montar a mala à mão é para todos; gerar o roteiro automático (sem itens) é Premium.
+        $montadaAMao = is_array($request->input('itens'));
+        if (!$montadaAMao && !$user->isPremium()) {
             return response()->json(['erro' => self::MSG_PREMIUM, 'premium_necessario' => true], 403);
         }
 
@@ -173,6 +175,26 @@ class ViagemController extends Controller
         });
 
         return response()->json(['mensagem' => 'Roteiro atualizado.', 'avisos' => $novo['avisos']]);
+    }
+
+    /** Catálogo da mala de viagem: o que existe no destino para pôr na viagem, por categoria. */
+    public function catalogoMala(Request $request, \App\Services\Viagem\MalaViagemService $mala): JsonResponse
+    {
+        $dados = $request->validate([
+            'categoria' => 'required|in:' . implode(',', \App\Services\Viagem\MalaViagemService::CATEGORIAS),
+            'cidade' => 'required|string|min:2|max:120',
+            'busca' => 'nullable|string|max:80',
+            'filtros' => 'nullable|array',
+            'filtros.*' => 'in:' . implode(',', \App\Services\Viagem\MalaViagemService::FILTROS),
+            'ordem' => 'nullable|in:' . implode(',', \App\Services\Viagem\MalaViagemService::ORDENS),
+            'preco_max' => 'nullable|numeric|min:0',
+        ]);
+
+        return response()->json($mala->buscar($dados['categoria'], $dados['cidade'], $dados['busca'] ?? null, [
+            'filtros' => $dados['filtros'] ?? [],
+            'ordem' => $dados['ordem'] ?? 'relevancia',
+            'preco_max' => $dados['preco_max'] ?? null,
+        ]));
     }
 
     // ------------------------------------------------------------- viagem

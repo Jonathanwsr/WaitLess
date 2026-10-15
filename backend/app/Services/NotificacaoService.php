@@ -45,7 +45,7 @@ class NotificacaoService
                 'Content-Type' => 'application/json',
                 'Accept' => 'application/json',
             ])->post('https://api.brevo.com/v3/smtp/email', [
-                'sender' => ['name' => 'WaitLess', 'email' => 'suporte@waitless.com.br'],
+                'sender' => ['name' => 'Lokyva', 'email' => config('mail.from.address', 'suporte@lokyva.com')],
                 'to' => [['email' => $user->email, 'name' => $user->name]],
                 'subject' => $assunto,
                 'htmlContent' => $htmlContent,

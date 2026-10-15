@@ -130,7 +130,7 @@ export default function AgendaFuncionarios({ auth, estabelecimento, funcionarios
                             `).join('')}
                         </tbody>
                     </table>
-                    <div class="footer">Gerado pelo sistema WaitLess em ${new Date().toLocaleString('pt-BR')}</div>
+                    <div class="footer">Gerado pelo sistema Lokyva em ${new Date().toLocaleString('pt-BR')}</div>
                 </body>
             </html>
         `;

@@ -1,363 +1,353 @@
-import React, { useState, useEffect } from 'react';
-import axios from 'axios'; 
+import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import { Head, Link } from '@inertiajs/react';
+import React, { useEffect, useState } from 'react';
+import axios from 'axios';
+import {
+    MagnifyingGlassIcon, MapPinIcon, CalendarDaysIcon, UsersIcon, SparklesIcon, ArrowRightIcon, StarIcon,
+    BuildingStorefrontIcon, KeyIcon, WalletIcon, BookmarkIcon, UserPlusIcon, GlobeAmericasIcon, CheckCircleIcon,
+    ExclamationCircleIcon, ArrowTopRightOnSquareIcon,
+} from '@heroicons/react/24/outline';
+
+const brl = (v) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(v) || 0);
+const CORES = ['bg-orange-500', 'bg-sky-500', 'bg-emerald-500', 'bg-violet-500'];
+
+function Aviso({ aviso, aoFechar }) {
+    if (!aviso) return null;
+    const ok = aviso.tipo === 'ok';
+    return (
+        <div className={`flex items-start justify-between gap-3 rounded-2xl border px-4 py-3 text-sm font-semibold ${ok ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-red-200 bg-red-50 text-red-700'}`}>
+            <span className="flex items-center gap-2">{ok ? <CheckCircleIcon className="h-5 w-5" /> : <ExclamationCircleIcon className="h-5 w-5" />}{aviso.texto}</span>
+            <button type="button" onClick={aoFechar} className="text-xs opacity-70 hover:opacity-100">Fechar</button>
+        </div>
+    );
+}
 
 export default function TravelAssistant() {
-    // Estados de busca
     const [busca, setBusca] = useState('');
     const [dias, setDias] = useState(5);
     const [pessoas, setPessoas] = useState(2);
     const [carregando, setCarregando] = useState(false);
-
-    // Estados do retorno da API
     const [resultado, setResultado] = useState(null);
+    const [fotoAtiva, setFotoAtiva] = useState(0);
+    const [aviso, setAviso] = useState(null);
 
-    // Estados para criação de uma nova viagem persistente no BD
     const [tituloViagem, setTituloViagem] = useState('');
     const [orcamentoLimite, setOrcamentoLimite] = useState('');
+    const [salvando, setSalvando] = useState(false);
     const [minhasViagens, setMinhasViagens] = useState([]);
-    const [conviteEmail, setConviteEmail] = useState('');
+    const [convites, setConvites] = useState({});
 
-    // Estado para controlar a exibição do Modal de Cadastro Completo
-    const [exibirModalCadastro, setExibirModalCadastro] = useState(false);
-
-    // Cards dos 27 estados com a contagem REAL de lojas, serviços e reservas do sistema
     const [estados, setEstados] = useState([]);
     const [carregandoEstados, setCarregandoEstados] = useState(true);
 
     useEffect(() => {
         carregarMinhasViagens();
-        obterLocalizacaoAutomatica();
         axios.get(route('explorar.estados'))
-            .then(({ data }) => setEstados(data))
+            .then(({ data }) => setEstados(Array.isArray(data) ? data : []))
             .catch(() => setEstados([]))
             .finally(() => setCarregandoEstados(false));
     }, []);
 
-    // Estados com resultados primeiro (mais resultados no topo), depois os demais em ordem alfabética.
     const estadosOrdenados = [...estados].sort((a, b) => (b.total - a.total) || a.nome.localeCompare(b.nome, 'pt-BR'));
-
-    // Cada card abre o Explorar já filtrado pelo estado e na aba que tem resultados.
+    const sugestoes = estadosOrdenados.filter((e) => e.total > 0).slice(0, 5);
     const urlExplorar = (uf, tipo) => route('cliente.explorar', { estado: uf, tipo_busca: tipo });
-    const melhorAba = (e) => (e.lojas > 0 ? 'estabelecimentos' : e.servicos > 0 ? 'servicos' : e.reservas > 0 ? 'reservas' : 'estabelecimentos');
-
-    // Função nativa da janela para retornar à última tela do usuário
-    const handleVoltar = () => {
-        if (typeof window !== 'undefined') {
-            window.history.back();
-        }
-    };
-
-    // Captura automática de localização via API Web do navegador
-    const obterLocalizacaoAutomatica = () => {
-        if (navigator.geolocation) {
-            navigator.geolocation.getCurrentPosition(
-                (position) => {
-                    const { latitude, longitude } = position.coords;
-                    executarBusca(`/api/travel-assistant/search?latitude=${latitude}&longitude=${longitude}&dias=${dias}&pessoas=${pessoas}`);
-                },
-                (error) => {
-                    console.warn("Permissão de localização não concedida ou indisponível no momento.");
-                },
-                { enableHighAccuracy: true, timeout: 6000 }
-            );
-        }
-    };
 
     const carregarMinhasViagens = async () => {
         try {
-            const res = await axios.get(`/api/viagens?_t=${Date.now()}`);
-            setMinhasViagens(res.data);
-        } catch (err) {
-            console.error("Erro ao buscar viagens do usuário", err);
+            const { data } = await axios.get('/api/viagens', { params: { _t: Date.now() } });
+            setMinhasViagens(Array.isArray(data) ? data : []);
+        } catch {
+            setMinhasViagens([]);
         }
     };
 
-    const handleBuscaTexto = async (e) => {
-        e.preventDefault();
-        if (!busca) return;
-        executarBusca(`/api/travel-assistant/search?busca=${busca}&dias=${dias}&pessoas=${pessoas}`);
-    };
-
-    const handleBuscaGPS = () => {
-        if (!navigator.geolocation) {
-            alert("Geolocalização não é suportada pelo seu navegador.");
-            return;
-        }
-
+    const buscar = async (params) => {
         setCarregando(true);
-        navigator.geolocation.getCurrentPosition(
-            (position) => {
-                const { latitude, longitude } = position.coords;
-                executarBusca(`/api/travel-assistant/search?latitude=${latitude}&longitude=${longitude}&dias=${dias}&pessoas=${pessoas}`);
-            },
-            (error) => {
-                setCarregando(false);
-                alert("Não foi possível acessar sua localização. Digite o local manualmente.");
-            },
-            { enableHighAccuracy: true }
-        );
-    };
-
-    const executarBusca = async (url) => {
-        setCarregando(true);
+        setAviso(null);
         try {
-            const caractereConexao = url.includes('?') ? '&' : '?';
-            const urlFinal = `${url}${caractereConexao}_t=${Date.now()}`;
-            const res = await axios.get(urlFinal);
-            setResultado(res.data);
-        } catch (err) {
-            console.error("Erro na busca de destino", err);
+            const { data } = await axios.get('/api/travel-assistant/search', { params: { ...params, dias, pessoas }, headers: { Accept: 'application/json' } });
+            setResultado(data && typeof data === 'object' ? data : null);
+            setFotoAtiva(0);
+            if (!tituloViagem && data?.destino_detectado) setTituloViagem(`Viagem para ${data.destino_detectado}`);
+        } catch {
+            setAviso({ tipo: 'erro', texto: 'Não foi possível montar o guia agora. Tente outro destino.' });
         } finally {
             setCarregando(false);
         }
     };
 
-    const handleCriarViagem = async (e) => {
+    const buscarTexto = (e) => {
         e.preventDefault();
-        if (!tituloViagem) return;
+        if (busca.trim()) buscar({ busca: busca.trim() });
+    };
 
+    const usarGps = () => {
+        if (!navigator.geolocation) {
+            setAviso({ tipo: 'erro', texto: 'Seu navegador não permite usar a localização. Digite o destino.' });
+            return;
+        }
+        setCarregando(true);
+        navigator.geolocation.getCurrentPosition(
+            ({ coords }) => buscar({ latitude: coords.latitude, longitude: coords.longitude }),
+            () => {
+                setCarregando(false);
+                setAviso({ tipo: 'erro', texto: 'Não conseguimos sua localização. Digite o destino.' });
+            },
+            { enableHighAccuracy: true, timeout: 8000 },
+        );
+    };
+
+    const salvarViagem = async (e) => {
+        e.preventDefault();
+        if (!tituloViagem.trim()) return;
+        setSalvando(true);
         try {
-            const dadosNovaViagem = {
-                titulo: tituloViagem,
-                destino: resultado?.destino_detectado || busca || 'Destino Personalizado',
+            await axios.post('/api/viagens', {
+                titulo: tituloViagem.trim(),
+                destino: resultado?.destino_detectado || busca || 'Destino',
                 data_inicio: new Date().toISOString().split('T')[0],
-                data_fim: new Date(Date.now() + dias * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+                data_fim: new Date(Date.now() + dias * 86400000).toISOString().split('T')[0],
                 orcamento_limite: orcamentoLimite || resultado?.orcamento_estimado?.total_estimado || 0,
                 quantidade_pessoas: pessoas,
-                gastos_planejados: resultado?.orcamento_estimado?.itens_orcamento?.map(item => ({
-                    item: item.categoria,
-                    valor: item.valor_total
-                })) || []
-            };
-
-            await axios.post('/api/viagens', dadosNovaViagem);
-            alert("Viagem salva com sucesso!");
-            setTituloViagem('');
+                gastos_planejados: resultado?.orcamento_estimado?.itens_orcamento?.map((i) => ({ item: i.categoria, valor: i.valor_total })) || [],
+            });
+            setAviso({ tipo: 'ok', texto: 'Viagem salva! Ela aparece em "Meus roteiros".' });
             setOrcamentoLimite('');
-            setExibirModalCadastro(false);
             carregarMinhasViagens();
-        } catch (err) {
-            console.error("Erro ao criar viagem", err);
-            alert("Ocorreu um erro ao salvar sua viagem.");
+        } catch {
+            setAviso({ tipo: 'erro', texto: 'Não foi possível salvar a viagem.' });
+        } finally {
+            setSalvando(false);
         }
     };
 
-    const handleConvidarAmigo = async (e, viagemId) => {
+    const convidar = async (e, viagemId) => {
         e.preventDefault();
-        if (!conviteEmail) return;
-
+        const email = (convites[viagemId] || '').trim();
+        if (!email) return;
         try {
-            await axios.post(`/api/viagens/${viagemId}/adicionar-amigo`, { email: conviteEmail });
-            alert("Amigo adicionado à sua viagem!");
-            setConviteEmail('');
+            await axios.post(`/api/viagens/${viagemId}/adicionar-amigo`, { email });
+            setConvites((c) => ({ ...c, [viagemId]: '' }));
+            setAviso({ tipo: 'ok', texto: 'Amigo adicionado à viagem!' });
             carregarMinhasViagens();
         } catch (err) {
-            alert(err.response?.data?.message || "Erro ao convidar.");
+            setAviso({ tipo: 'erro', texto: err.response?.data?.message || 'Não foi possível convidar.' });
         }
     };
+
+    const fotos = (resultado?.galeria_unsplash || []).filter((f) => f?.url);
+    const orc = resultado?.orcamento_estimado;
+    const maiorItem = Math.max(1, ...(orc?.itens_orcamento || []).map((i) => Number(i.valor_total) || 0));
+    const locais = resultado?.estabelecimentos_locais || [];
+    const itens = resultado?.recomendacoes_locais || [];
+    const campo = 'w-full rounded-xl border-0 bg-gray-50 py-3 text-sm font-medium text-gray-900 ring-1 ring-gray-200 focus:bg-white focus:ring-2 focus:ring-orange-500';
 
     return (
-        <div className="min-h-screen bg-slate-50 text-slate-800 font-sans pb-16 antialiased relative">
-            
-            {/* Cabeçalho Modernizado */}
-            <header className="bg-white/80 backdrop-blur-md border-b border-slate-100 px-6 py-4 sticky top-0 z-40 shadow-sm transition-all duration-300">
-                <div className="max-w-7xl mx-auto flex justify-between items-center">
-                    
-                    <div className="flex items-center gap-4">
-                        {/* Botão de Voltar Minimalista */}
-                        <button 
-                            onClick={handleVoltar}
-                            className="p-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200/60 text-slate-600 rounded-xl transition-all duration-200 flex items-center justify-center group"
-                            aria-label="Voltar para a tela anterior"
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4 transition-transform group-hover:-translate-x-0.5">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
-                            </svg>
-                        </button>
+        <AuthenticatedLayout>
+            <Head title="Assistente de viagens" />
 
-                        {/* Logo */}
-                        <div className="flex items-center gap-1.5 cursor-pointer">
-                            <span className="text-orange-600 text-2xl font-black tracking-tight">w</span>
-                            <span className="text-slate-900 text-xl font-bold tracking-tight">waitless</span>
-                        </div>
-                        
-                        {/* Menu de Navegação */}
-                        <nav className="hidden lg:flex gap-6 text-sm font-semibold text-slate-500 ml-6">
-                            <span className="text-orange-600 border-b-2 border-orange-600 pb-1 cursor-pointer">Explorar</span>
-                            <span className="hover:text-slate-900 transition cursor-pointer">Hospedagens</span>
-                            <span className="hover:text-slate-900 transition cursor-pointer">Restaurantes</span>
-                            <span className="hover:text-slate-900 transition cursor-pointer">Serviços</span>
-                            <span className="hover:text-slate-900 transition cursor-pointer">Ofertas</span>
-                        </nav>
-                    </div>
-
-                    {/* Perfil e Notificações */}
-                    <div className="flex items-center gap-5">
-                        <span className="hidden sm:flex items-center gap-2 text-sm font-semibold text-slate-600 cursor-pointer hover:text-orange-600 transition">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4 text-orange-600">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />
-                            </svg>
-                            Favoritos
+            <div className="mx-auto max-w-7xl space-y-6">
+                {/* ===== HERO + BUSCA ===== */}
+                <section className="relative overflow-hidden rounded-3xl bg-gray-900">
+                    <img src="https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1600&q=70" alt="" className="absolute inset-0 h-full w-full object-cover opacity-40" />
+                    <div className="absolute inset-0 bg-gradient-to-r from-gray-900/90 via-gray-900/60 to-transparent" />
+                    <div className="relative px-5 py-8 sm:px-10 sm:py-12">
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-bold text-white backdrop-blur">
+                            <SparklesIcon className="h-4 w-4" /> Assistente de viagens Lokyva
                         </span>
-                        
-                        <div className="relative p-2 cursor-pointer hover:bg-slate-50 rounded-full transition">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 text-slate-600">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
-                            </svg>
-                            <span className="absolute top-1.5 right-1.5 bg-red-500 w-2 h-2 rounded-full"></span>
-                        </div>
-                        
-                        <div className="flex items-center gap-2.5 border-l pl-5 border-slate-200">
-                            <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-orange-600 font-bold text-sm">
-                                J
-                            </div>
-                            <div className="hidden sm:block text-xs">
-                                <p className="font-bold text-slate-900">Olá, Jonathan</p>
-                                <p className="text-slate-400 font-medium">Cliente</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </header>
+                        <h1 className="mt-4 max-w-2xl text-3xl font-black leading-tight text-white sm:text-4xl">Planeje sua viagem em minutos</h1>
+                        <p className="mt-2 max-w-xl text-sm text-white/80 sm:text-base">Descubra o destino, veja lugares e reservas disponíveis, estime o orçamento e salve tudo para dividir com quem vai junto.</p>
 
-            {/* Banner Principal */}
-            <div className="relative bg-gradient-to-r from-orange-500 to-amber-600 text-white overflow-hidden py-20 px-6 md:px-12">
-                <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=1500&q=80')] bg-cover bg-center opacity-20 mix-blend-multiply"></div>
-                <div className="relative max-w-7xl mx-auto space-y-3">
-                    <h1 className="text-3xl md:text-4xl lg:text-5xl font-black tracking-tight drop-shadow-sm">
-                        Encontre o lugar perfeito para sua viagem
-                    </h1>
-                    <p className="max-w-xl text-base md:text-lg text-slate-100/90">
-                        Pesquise por destinos, datas e descubra as melhores opções dinâmicas perto de você ou ao redor do mundo.
-                    </p>
-                </div>
-            </div>
-
-            {/* Buscador Inteligente Flutuante */}
-            <div className="max-w-7xl mx-auto px-6 -mt-10 relative z-20">
-                <div className="bg-white rounded-2xl shadow-xl shadow-slate-200/80 border border-slate-100 p-6 transition-all duration-300">
-                    <form onSubmit={handleBuscaTexto} className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-end">
-                        
-                        {/* Destino */}
-                        <div className="lg:col-span-4 space-y-2">
-                            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Para onde você vai?</label>
-                            <div className="relative">
-                                <div className="absolute left-3.5 top-3.5 text-slate-400">
-                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4">
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.603 10.602z" />
-                                    </svg>
-                                </div>
-                                <input 
-                                    type="text" 
-                                    placeholder="País, estado, cidade, CEP ou local" 
-                                    value={busca} 
-                                    onChange={(e) => setBusca(e.target.value)}
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-4 py-3 text-slate-800 placeholder-slate-400 font-medium focus:outline-none focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10 transition duration-200"
-                                />
-                            </div>
-                        </div>
-
-                        {/* Duração */}
-                        <div className="lg:col-span-2 space-y-2">
-                            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Duração (Dias)</label>
-                            <input 
-                                type="number" 
-                                min="1" 
-                                value={dias} 
-                                onChange={(e) => setDias(e.target.value)}
-                                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 font-medium focus:outline-none focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10 transition duration-200"
-                            />
-                        </div>
-
-                        {/* Pessoas */}
-                        <div className="lg:col-span-3 space-y-2">
-                            <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">Hóspedes / Pessoas</label>
-                            <div className="relative flex items-center">
-                                <input 
-                                    type="number" 
-                                    min="1" 
-                                    value={pessoas} 
-                                    onChange={(e) => setPessoas(e.target.value)}
-                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-4 pr-24 py-3 text-slate-800 font-medium focus:outline-none focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10 transition duration-200"
-                                />
-                                <button
-                                    type="button"
-                                    onClick={() => setExibirModalCadastro(true)}
-                                    className="absolute right-2 bg-orange-50 hover:bg-orange-100 text-orange-600 text-xs font-bold px-3 py-1.5 rounded-lg transition-colors duration-200"
-                                >
-                                    + Cadastrar
+                        <form onSubmit={buscarTexto} className="mt-6 grid gap-2 rounded-2xl bg-white p-3 shadow-2xl sm:grid-cols-12">
+                            <label className="relative sm:col-span-5">
+                                <MapPinIcon className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+                                <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Para onde você vai? Cidade, estado ou lugar" className={`${campo} pl-10 pr-3`} />
+                            </label>
+                            <label className="relative sm:col-span-2">
+                                <CalendarDaysIcon className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+                                <input type="number" min="1" max="60" value={dias} onChange={(e) => setDias(Math.max(1, Number(e.target.value) || 1))} className={`${campo} pl-10 pr-2`} aria-label="Dias" />
+                                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">dias</span>
+                            </label>
+                            <label className="relative sm:col-span-2">
+                                <UsersIcon className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
+                                <input type="number" min="1" max="30" value={pessoas} onChange={(e) => setPessoas(Math.max(1, Number(e.target.value) || 1))} className={`${campo} pl-10 pr-2`} aria-label="Pessoas" />
+                                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400">pessoas</span>
+                            </label>
+                            <div className="flex gap-2 sm:col-span-3">
+                                <button type="submit" disabled={carregando} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-orange-600 px-4 py-3 text-sm font-bold text-white hover:bg-orange-700 disabled:opacity-60">
+                                    <MagnifyingGlassIcon className="h-5 w-5" /> Buscar
+                                </button>
+                                <button type="button" onClick={usarGps} disabled={carregando} className="rounded-xl bg-gray-100 px-3 text-gray-700 hover:bg-gray-200" title="Usar minha localização" aria-label="Usar minha localização">
+                                    <MapPinIcon className="h-5 w-5" />
                                 </button>
                             </div>
-                        </div>
+                        </form>
 
-                        {/* Botões de Ação */}
-                        <div className="lg:col-span-3 flex gap-2">
-                            <button type="submit" className="flex-1 bg-orange-600 hover:bg-orange-700 text-white font-bold py-3.5 px-4 rounded-xl transition duration-200 shadow-lg shadow-orange-600/20 flex items-center justify-center">
-                                <span>Buscar lugares</span>
-                            </button>
-                            <a
-                                href={route('cliente.explorar', busca ? { endereco_manual: busca, tipo_busca: 'estabelecimentos' } : { tipo_busca: 'estabelecimentos' })}
-                                className="flex-1 text-center bg-white border border-slate-200 hover:border-orange-500 hover:text-orange-600 text-slate-700 font-bold py-3.5 px-4 rounded-xl transition duration-200"
-                            >
-                                Ver lojas
-                            </a>
-                            <a
-                                href={`/viagens/nova?cidade=${encodeURIComponent(busca || '')}`}
-                                className="flex-1 text-center bg-slate-900 hover:bg-slate-800 text-white font-bold py-3.5 px-4 rounded-xl transition duration-200"
-                            >
-                                Roteiro inteligente
-                            </a>
-                            <button 
-                                type="button" 
-                                onClick={handleBuscaGPS} 
-                                className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-3.5 rounded-xl transition duration-200 flex items-center justify-center gap-1.5 font-semibold text-sm" 
-                                title="Usar minha localização atual"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25s-7.5-4.108-7.5-11.25z" />
-                                </svg>
-                                GPS
-                            </button>
-                        </div>
-                    </form>
-                </div>
-            </div>
+                        {sugestoes.length > 0 && (
+                            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-white/80">
+                                <span>Com mais opções:</span>
+                                {sugestoes.map((e) => (
+                                    <button key={e.uf} type="button" onClick={() => { setBusca(e.nome); buscar({ busca: e.nome }); }} className="rounded-full bg-white/15 px-3 py-1 font-semibold text-white backdrop-blur hover:bg-white/25">
+                                        {e.nome}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </section>
 
-            <div className="max-w-7xl mx-auto px-6 mt-12 space-y-12">
-                
-                {/* Loader */}
+                <Aviso aviso={aviso} aoFechar={() => setAviso(null)} />
+
                 {carregando && (
-                    <div className="text-center py-16">
-                        <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-orange-600 mx-auto"></div>
-                        <p className="text-slate-400 mt-4 font-semibold text-sm">Montando o seu guia inteligente personalizado...</p>
+                    <div className="flex flex-col items-center gap-3 rounded-3xl bg-white py-16 text-center shadow-sm">
+                        <span className="h-10 w-10 animate-spin rounded-full border-4 border-orange-200 border-t-orange-600" />
+                        <p className="text-sm font-semibold text-gray-500">Montando o seu guia de viagem…</p>
                     </div>
                 )}
 
-                {/* Explore por estado (dados reais do sistema) */}
-                {!carregando && !resultado && (
-                    <section className="space-y-6">
-                        <div>
-                            <h2 className="text-2xl font-black text-slate-900 tracking-tight">Explore por estado</h2>
-                            <p className="text-sm text-slate-400 font-medium">Toque em um estado para ver as lojas, serviços e reservas disponíveis lá.</p>
-                        </div>
+                {/* ===== RESULTADO ===== */}
+                {!carregando && resultado && (
+                    <div className="space-y-6">
+                        <section className="grid gap-5 lg:grid-cols-5">
+                            <div className="overflow-hidden rounded-3xl bg-white shadow-sm lg:col-span-3">
+                                <div className="relative aspect-[16/9] bg-gray-100">
+                                    {fotos[fotoAtiva] && <img src={fotos[fotoAtiva].url} alt={fotos[fotoAtiva].descricao} className="h-full w-full object-cover" />}
+                                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-5">
+                                        <p className="text-xs font-bold uppercase tracking-wider text-white/80">Seu destino</p>
+                                        <h2 className="text-2xl font-black text-white sm:text-3xl">{resultado.destino_detectado}</h2>
+                                    </div>
+                                </div>
+                                {fotos.length > 1 && (
+                                    <div className="flex gap-2 overflow-x-auto p-3">
+                                        {fotos.map((f, i) => (
+                                            <button key={f.url} type="button" onClick={() => setFotoAtiva(i)} className={`h-14 w-20 shrink-0 overflow-hidden rounded-lg ring-2 ${i === fotoAtiva ? 'ring-orange-500' : 'ring-transparent opacity-70 hover:opacity-100'}`}>
+                                                <img src={f.url} alt="" className="h-full w-full object-cover" />
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
 
+                            <div className="flex flex-col rounded-3xl bg-white p-5 shadow-sm lg:col-span-2">
+                                <h3 className="flex items-center gap-2 font-bold text-gray-900"><GlobeAmericasIcon className="h-5 w-5 text-orange-500" /> Sobre o destino</h3>
+                                <p className="mt-2 line-clamp-[9] text-sm leading-relaxed text-gray-600">{resultado.resumo_wikipedia?.resumo}</p>
+                                {resultado.resumo_wikipedia?.link && (
+                                    <a href={resultado.resumo_wikipedia.link} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-sm font-bold text-orange-600 hover:underline">
+                                        Ler mais na Wikipédia <ArrowTopRightOnSquareIcon className="h-4 w-4" />
+                                    </a>
+                                )}
+                                <Link href={route('viagens.nova', { cidade: resultado.destino_detectado })} className="mt-auto inline-flex items-center justify-between rounded-2xl bg-gray-900 px-4 py-3 text-sm font-bold text-white hover:bg-black">
+                                    <span className="flex items-center gap-2"><SparklesIcon className="h-5 w-5 text-orange-400" /> Montar roteiro inteligente</span>
+                                    <ArrowRightIcon className="h-5 w-5" />
+                                </Link>
+                            </div>
+                        </section>
+
+                        {/* LUGARES E RESERVAS NO DESTINO */}
+                        {(locais.length > 0 || itens.length > 0) ? (
+                            <section className="grid gap-5 lg:grid-cols-2">
+                                {locais.length > 0 && (
+                                    <div className="rounded-3xl bg-white p-5 shadow-sm">
+                                        <h3 className="mb-3 flex items-center gap-2 font-bold text-gray-900"><BuildingStorefrontIcon className="h-5 w-5 text-orange-500" /> Lugares no destino</h3>
+                                        <ul className="divide-y divide-gray-100">
+                                            {locais.map((l) => (
+                                                <li key={l.id}>
+                                                    <Link href={route('estabelecimentos.loja', l.id)} className="flex items-center gap-3 py-2.5 hover:opacity-80">
+                                                        {l.foto ? <img src={l.foto} alt="" className="h-12 w-12 rounded-xl object-cover" /> : <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-orange-50 font-black text-orange-500">{l.nome.charAt(0)}</span>}
+                                                        <span className="min-w-0 flex-1">
+                                                            <span className="block truncate text-sm font-bold text-gray-900">{l.nome}</span>
+                                                            <span className="block truncate text-xs text-gray-500">{[l.ramo, l.bairro, l.distancia !== null ? `${String(l.distancia).replace('.', ',')} km` : null].filter(Boolean).join(' · ')}</span>
+                                                        </span>
+                                                        {l.avaliacao && <span className="inline-flex items-center gap-1 text-xs font-bold text-gray-700"><StarIcon className="h-4 w-4 fill-amber-400 text-amber-400" />{String(l.avaliacao).replace('.', ',')}</span>}
+                                                    </Link>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+                                {itens.length > 0 && (
+                                    <div className="rounded-3xl bg-white p-5 shadow-sm">
+                                        <h3 className="mb-3 flex items-center gap-2 font-bold text-gray-900"><KeyIcon className="h-5 w-5 text-orange-500" /> Reservas e aluguéis</h3>
+                                        <ul className="divide-y divide-gray-100">
+                                            {itens.slice(0, 10).map((i) => (
+                                                <li key={i.id}>
+                                                    <Link href={route('itens.detalhes', i.id)} className="flex items-center gap-3 py-2.5 hover:opacity-80">
+                                                        <span className="flex h-12 w-12 items-center justify-center rounded-xl bg-sky-50 text-sky-600"><KeyIcon className="h-5 w-5" /></span>
+                                                        <span className="min-w-0 flex-1">
+                                                            <span className="block truncate text-sm font-bold text-gray-900">{i.nome}</span>
+                                                            <span className="block truncate text-xs capitalize text-gray-500">{[String(i.categoria || '').replace(/_/g, ' '), i.cidade].filter(Boolean).join(' · ')}</span>
+                                                        </span>
+                                                        {Number(i.valor_diaria) > 0 && <span className="text-sm font-bold text-gray-900">{brl(i.valor_diaria)}<span className="text-xs font-normal text-gray-400">/dia</span></span>}
+                                                    </Link>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+                            </section>
+                        ) : (
+                            <div className="rounded-3xl bg-white p-6 text-center text-sm text-gray-500 shadow-sm">
+                                Ainda não há lugares cadastrados neste destino. Veja o <Link href={route('cliente.explorar')} className="font-bold text-orange-600">Explorar</Link> para outras opções.
+                            </div>
+                        )}
+
+                        {/* ORÇAMENTO + SALVAR */}
+                        <section className="grid gap-5 lg:grid-cols-2">
+                            <div className="rounded-3xl bg-white p-5 shadow-sm">
+                                <h3 className="flex items-center gap-2 font-bold text-gray-900"><WalletIcon className="h-5 w-5 text-orange-500" /> Orçamento estimado</h3>
+                                <p className="text-xs text-gray-400">{dias} dias · {pessoas} {pessoas === 1 ? 'pessoa' : 'pessoas'} · valores de referência</p>
+                                <ul className="mt-4 space-y-3">
+                                    {(orc?.itens_orcamento || []).map((i, idx) => (
+                                        <li key={i.categoria}>
+                                            <div className="mb-1 flex justify-between text-sm"><span className="text-gray-700">{i.categoria}</span><span className="font-bold text-gray-900">{brl(i.valor_total)}</span></div>
+                                            <div className="h-2 overflow-hidden rounded-full bg-gray-100"><div className={`h-full rounded-full ${CORES[idx % CORES.length]}`} style={{ width: `${Math.max(4, (Number(i.valor_total) / maiorItem) * 100)}%` }} /></div>
+                                        </li>
+                                    ))}
+                                </ul>
+                                <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-4">
+                                    <span className="text-sm font-semibold text-gray-500">Total estimado</span>
+                                    <span className="text-2xl font-black text-orange-600">{brl(orc?.total_estimado)}</span>
+                                </div>
+                            </div>
+
+                            <form onSubmit={salvarViagem} className="flex flex-col rounded-3xl bg-white p-5 shadow-sm">
+                                <h3 className="flex items-center gap-2 font-bold text-gray-900"><BookmarkIcon className="h-5 w-5 text-orange-500" /> Salvar esta viagem</h3>
+                                <p className="text-xs text-gray-400">Guarde o plano para convidar amigos e controlar os gastos reais.</p>
+                                <label className="mt-4 text-xs font-semibold text-gray-600">Nome da viagem
+                                    <input value={tituloViagem} onChange={(e) => setTituloViagem(e.target.value)} placeholder="Ex.: Férias em família" className={`mt-1 ${campo} px-4`} required />
+                                </label>
+                                <label className="mt-3 text-xs font-semibold text-gray-600">Limite de gastos <span className="font-normal text-gray-400">(opcional)</span>
+                                    <input type="number" min="0" value={orcamentoLimite} onChange={(e) => setOrcamentoLimite(e.target.value)} placeholder={orc?.total_estimado ? `Sugestão: ${brl(orc.total_estimado)}` : 'R$'} className={`mt-1 ${campo} px-4`} />
+                                </label>
+                                <button type="submit" disabled={salvando} className="mt-auto rounded-xl bg-orange-600 py-3 text-sm font-bold text-white hover:bg-orange-700 disabled:opacity-60 sm:mt-5">
+                                    {salvando ? 'Salvando…' : 'Salvar viagem'}
+                                </button>
+                            </form>
+                        </section>
+                    </div>
+                )}
+
+                {/* ===== EXPLORAR POR ESTADO ===== */}
+                {!carregando && !resultado && (
+                    <section>
+                        <h2 className="text-lg font-black text-gray-900">Explore por estado</h2>
+                        <p className="mb-3 text-sm text-gray-500">Toque em um estado para ver lojas, serviços e reservas disponíveis.</p>
                         {carregandoEstados ? (
-                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
-                                {Array.from({ length: 12 }).map((_, i) => <div key={i} className="h-32 rounded-2xl bg-slate-100 animate-pulse" />)}
+                            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+                                {Array.from({ length: 12 }).map((_, i) => <div key={i} className="h-24 animate-pulse rounded-2xl bg-gray-100" />)}
                             </div>
                         ) : (
-                            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+                            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
                                 {estadosOrdenados.map((e) => (
-                                    <div key={e.uf} className={`bg-white rounded-2xl border shadow-sm p-4 flex flex-col gap-3 transition duration-200 hover:shadow-lg hover:-translate-y-0.5 ${e.total > 0 ? 'border-slate-100' : 'border-slate-100 opacity-70'}`}>
-                                        <a href={urlExplorar(e.uf, melhorAba(e))} className="flex items-center gap-3">
-                                            <span className={`w-11 h-11 rounded-xl flex items-center justify-center font-black text-sm ${e.total > 0 ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-400'}`}>{e.uf}</span>
-                                            <span className="font-bold text-slate-900 leading-tight text-sm">{e.nome}</span>
-                                        </a>
-                                        <div className="flex flex-wrap gap-1.5 text-[11px] font-bold">
-                                            <a href={urlExplorar(e.uf, 'estabelecimentos')} className={`px-2 py-1 rounded-md ${e.lojas > 0 ? 'bg-slate-900 text-white hover:bg-slate-700' : 'bg-slate-100 text-slate-400 pointer-events-none'}`}>{e.lojas} {e.lojas === 1 ? 'loja' : 'lojas'}</a>
-                                            <a href={urlExplorar(e.uf, 'servicos')} className={`px-2 py-1 rounded-md ${e.servicos > 0 ? 'bg-orange-500 text-white hover:bg-orange-600' : 'bg-slate-100 text-slate-400 pointer-events-none'}`}>{e.servicos} {e.servicos === 1 ? 'serviço' : 'serviços'}</a>
-                                            <a href={urlExplorar(e.uf, 'reservas')} className={`px-2 py-1 rounded-md ${e.reservas > 0 ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-slate-100 text-slate-400 pointer-events-none'}`}>{e.reservas} {e.reservas === 1 ? 'reserva' : 'reservas'}</a>
+                                    <div key={e.uf} className={`flex flex-col gap-2 rounded-2xl border border-gray-100 bg-white p-3 shadow-sm transition hover:-translate-y-0.5 hover:shadow ${e.total > 0 ? '' : 'opacity-60'}`}>
+                                        <button type="button" onClick={() => { setBusca(e.nome); buscar({ busca: e.nome }); }} className="flex items-center gap-2 text-left">
+                                            <span className={`flex h-9 w-9 items-center justify-center rounded-xl text-xs font-black ${e.total > 0 ? 'bg-orange-100 text-orange-600' : 'bg-gray-100 text-gray-400'}`}>{e.uf}</span>
+                                            <span className="text-sm font-bold leading-tight text-gray-900">{e.nome}</span>
+                                        </button>
+                                        <div className="flex flex-wrap gap-1 text-[10px] font-bold">
+                                            <a href={urlExplorar(e.uf, 'estabelecimentos')} className={`rounded px-1.5 py-0.5 ${e.lojas > 0 ? 'bg-gray-900 text-white' : 'pointer-events-none bg-gray-100 text-gray-400'}`}>{e.lojas} lojas</a>
+                                            <a href={urlExplorar(e.uf, 'servicos')} className={`rounded px-1.5 py-0.5 ${e.servicos > 0 ? 'bg-orange-500 text-white' : 'pointer-events-none bg-gray-100 text-gray-400'}`}>{e.servicos} serv.</a>
+                                            <a href={urlExplorar(e.uf, 'reservas')} className={`rounded px-1.5 py-0.5 ${e.reservas > 0 ? 'bg-emerald-600 text-white' : 'pointer-events-none bg-gray-100 text-gray-400'}`}>{e.reservas} res.</a>
                                         </div>
                                     </div>
                                 ))}
@@ -366,182 +356,38 @@ export default function TravelAssistant() {
                     </section>
                 )}
 
-                {/* Exibição dos Resultados da Busca */}
-                {!carregando && resultado && (
-                    <div className="space-y-8 animate-fadeIn">
-                        
-                        {/* Seção Informações Culturais */}
-                        {resultado?.resumo_wikipedia && (
-                            <section className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-                                <h3 className="text-xl font-bold text-slate-900 mb-3 tracking-tight">
-                                    Cultura & História do Local
-                                </h3>
-                                <p className="text-slate-500 leading-relaxed text-sm font-medium">
-                                    {resultado.resumo_wikipedia?.resumo}
-                                </p>
-                                <a href={resultado.resumo_wikipedia?.link} target="_blank" rel="noreferrer" className="text-orange-600 hover:text-orange-700 inline-block mt-3 font-bold transition text-sm">
-                                    Saiba mais na Wikipedia &rarr;
-                                </a>
-                            </section>
-                        )}
-
-                        {/* Grid de Orçamentos e Ações */}
-                        <section className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                            <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-between">
-                                <div>
-                                    <h3 className="text-lg font-bold text-slate-900 mb-4 tracking-tight">Orçamento Estimado ({dias} dias / {pessoas} pessoas)</h3>
-                                    <table className="w-full text-left text-sm text-slate-500">
-                                        <thead>
-                                            <tr className="border-b border-slate-100 pb-2 font-bold text-slate-400 text-xs uppercase tracking-wider">
-                                                <th className="py-2">Categoria</th>
-                                                <th className="py-2 text-right">Valor Estimado</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {resultado?.orcamento_estimado?.itens_orcamento?.map((item, idx) => (
-                                                <tr key={idx} className="border-b border-slate-50 font-medium">
-                                                    <td className="py-3 text-slate-700">{item.categoria}</td>
-                                                    <td className="py-3 text-right text-slate-900">R$ {parseFloat(item.valor_total).toFixed(2)}</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                                <div className="border-t border-slate-100 mt-4 pt-4 flex justify-between items-center">
-                                    <span className="text-slate-400 font-bold text-sm uppercase">Total Estimado:</span>
-                                    <span className="text-xl font-black text-orange-600">R$ {parseFloat(resultado?.orcamento_estimado?.total_estimado || 0).toFixed(2)}</span>
-                                </div>
-                            </div>
-
-                            {/* Criação de Roteiro */}
-                            <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-                                <h3 className="text-lg font-bold text-slate-900 mb-2 tracking-tight">Deseja Salvar esta Viagem?</h3>
-                                <p className="text-sm text-slate-400 mb-4 font-medium">Salve esse destino no seu perfil para convidar amigos e controlar os seus gastos reais.</p>
-                                <form onSubmit={handleCriarViagem} className="space-y-4">
-                                    <input 
-                                        type="text" 
-                                        placeholder="Nome do planejamento (Ex: Férias de Verão)" 
-                                        value={tituloViagem}
-                                        onChange={(e) => setTituloViagem(e.target.value)}
-                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:border-orange-500 text-sm font-medium"
-                                        required
-                                    />
-                                    <input 
-                                        type="number" 
-                                        placeholder="Defina um limite de gastos (Opcional)" 
-                                        value={orcamentoLimite}
-                                        onChange={(e) => setOrcamentoLimite(e.target.value)}
-                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-slate-800 focus:outline-none focus:border-orange-500 text-sm font-medium"
-                                    />
-                                    <button type="submit" className="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-3.5 rounded-xl transition shadow-lg shadow-orange-600/15">
-                                        Criar Meu Planejamento
-                                    </button>
-                                </form>
-                            </div>
-                        </section>
+                {/* ===== MEUS ROTEIROS ===== */}
+                <section className="rounded-3xl bg-white p-5 shadow-sm">
+                    <div className="mb-4 flex items-center justify-between">
+                        <h2 className="text-lg font-black text-gray-900">Meus roteiros</h2>
+                        {route().has('viagens.index') && <Link href={route('viagens.index')} className="text-sm font-bold text-orange-600 hover:underline">Ver todos</Link>}
                     </div>
-                )}
-
-                {/* Roteiros Ativos/Colaborativos */}
-                <section className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
-                    <h2 className="text-xl font-black text-slate-900 mb-4 tracking-tight">Meus Roteiros Colaborativos</h2>
-                    {minhasViagens.length > 0 ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {minhasViagens.map((viagem) => (
-                                <div key={viagem.id} className="bg-slate-50 p-5 rounded-xl border border-slate-100 space-y-4">
-                                    <div className="flex justify-between items-start">
-                                        <div>
-                                            <h3 className="text-base font-bold text-slate-900 tracking-tight">{viagem.titulo}</h3>
-                                            <span className="text-xs text-orange-600 font-bold">Destino: {viagem.destino}</span>
+                    {minhasViagens.length === 0 ? (
+                        <p className="py-6 text-center text-sm text-gray-400">Você ainda não salvou nenhuma viagem. Busque um destino acima para começar.</p>
+                    ) : (
+                        <div className="grid gap-3 md:grid-cols-2">
+                            {minhasViagens.map((v) => (
+                                <div key={v.id} className="rounded-2xl border border-gray-100 p-4">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                            <p className="truncate font-bold text-gray-900">{v.titulo}</p>
+                                            <p className="flex items-center gap-1 text-xs text-gray-500"><MapPinIcon className="h-3.5 w-3.5" /> {v.destino}</p>
                                         </div>
-                                        <span className="text-xs font-bold bg-orange-100 text-orange-600 px-3 py-1 rounded-full">
-                                            Limite: R$ {parseFloat(viagem.orcamento_limite).toFixed(2)}
-                                        </span>
+                                        {Number(v.orcamento_limite) > 0 && <span className="shrink-0 rounded-full bg-orange-50 px-2.5 py-1 text-xs font-bold text-orange-600">Limite {brl(v.orcamento_limite)}</span>}
                                     </div>
-
-                                    {/* Formulário para Convidar Amigos */}
-                                    <form onSubmit={(e) => handleConvidarAmigo(e, viagem.id)} className="flex gap-2">
-                                        <input 
-                                            type="email" 
-                                            placeholder="E-mail do amigo" 
-                                            value={conviteEmail}
-                                            onChange={(e) => setConviteEmail(e.target.value)}
-                                            className="flex-1 bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs focus:outline-none focus:border-orange-500 font-medium"
-                                            required
-                                        />
-                                        <button 
-                                            type="submit" 
-                                            className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-1.5 rounded-xl transition duration-200"
-                                        >
-                                            Convidar
-                                        </button>
+                                    <form onSubmit={(e) => convidar(e, v.id)} className="mt-3 flex gap-2">
+                                        <input type="email" value={convites[v.id] || ''} onChange={(e) => setConvites((c) => ({ ...c, [v.id]: e.target.value }))} placeholder="E-mail de quem vai junto" className="min-w-0 flex-1 rounded-xl border-gray-200 text-xs focus:border-orange-500 focus:ring-orange-500" required />
+                                        <button type="submit" className="inline-flex items-center gap-1 rounded-xl bg-gray-900 px-3 text-xs font-bold text-white hover:bg-black"><UserPlusIcon className="h-4 w-4" /> Convidar</button>
                                     </form>
+                                    {route().has('viagens.show') && (
+                                        <Link href={route('viagens.show', v.id)} className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-orange-600 hover:underline">Abrir viagem <ArrowRightIcon className="h-3.5 w-3.5" /></Link>
+                                    )}
                                 </div>
                             ))}
                         </div>
-                    ) : (
-                        <p className="text-slate-400 text-sm font-semibold text-center py-6">
-                            Você não possui viagens planejadas no momento. Experimente criar uma acima!
-                        </p>
                     )}
                 </section>
             </div>
-
-            {/* Modal de Cadastro Completo (Overlay) */}
-            {exibirModalCadastro && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-md transition-all duration-300">
-                    <div className="bg-white rounded-2xl shadow-2xl border border-slate-100 p-6 max-w-md w-full mx-4 relative animate-scaleUp">
-                        {/* Botão de Fechar */}
-                        <button 
-                            onClick={() => setExibirModalCadastro(false)} 
-                            className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 transition"
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-5 h-5">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                        </button>
-
-                        <div className="space-y-4">
-                            <div>
-                                <h3 className="text-xl font-black text-slate-900">Novo Roteiro</h3>
-                                <p className="text-xs text-slate-400 font-medium mt-1">Configure os dados iniciais do seu planejamento rápido de viagem.</p>
-                            </div>
-
-                            <form onSubmit={handleCriarViagem} className="space-y-4">
-                                <div className="space-y-1.5">
-                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Título do Planejamento</label>
-                                    <input 
-                                        type="text" 
-                                        placeholder="Ex: Eurotrip de Férias 2026" 
-                                        value={tituloViagem}
-                                        onChange={(e) => setTituloViagem(e.target.value)}
-                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-orange-500 font-medium"
-                                        required
-                                    />
-                                </div>
-
-                                <div className="space-y-1.5">
-                                    <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Orçamento Máximo Recomendado (R$)</label>
-                                    <input 
-                                        type="number" 
-                                        placeholder="Ex: 10000" 
-                                        value={orcamentoLimite}
-                                        onChange={(e) => setOrcamentoLimite(e.target.value)}
-                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-orange-500 font-medium"
-                                    />
-                                </div>
-
-                                <button 
-                                    type="submit" 
-                                    className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-xl shadow-lg shadow-orange-600/20 transition duration-200"
-                                >
-                                    Salvar Planejamento
-                                </button>
-                            </form>
-                        </div>
-                    </div>
-                </div>
-            )}
-        </div>
+        </AuthenticatedLayout>
     );
 }

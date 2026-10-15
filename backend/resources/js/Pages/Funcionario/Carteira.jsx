@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import AtalhoNotasFiscais from '@/Components/AtalhoNotasFiscais';
 import { Head, usePage, useForm, router } from '@inertiajs/react';
 import axios from 'axios';
 import {
@@ -20,7 +21,7 @@ export default function Carteira({ papel, dadosFuncionario, dadosProprietario, d
             user={auth?.user} 
             header={<h2 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight">Financeiro / Carteira</h2>}
         >
-            <Head title="Carteira - WaitLess" />
+            <Head title="Carteira" />
             
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-24 mt-6 sm:mt-8 font-sans animate-in fade-in duration-500">
                 
@@ -41,6 +42,7 @@ export default function Carteira({ papel, dadosFuncionario, dadosProprietario, d
                 {/* Renderização Condicional */}
                 <div className="space-y-6 sm:space-y-8">
                     {(papel === 'gerente' || papel === 'atendente') && <ViewFuncionario data={dadosFuncionario || {}} />}
+                    {papel === 'socio' && <AtalhoNotasFiscais compacto />}
                     {papel === 'socio' && <ViewProprietario data={dadosProprietario || {}} />}
                     {papel === 'admin' && <ViewAdmin data={dadosAdmin || {}} />}
                     {papel === 'user' && <ViewCliente data={dadosCliente || {}} />}
@@ -179,14 +181,16 @@ function ViewProprietario({ data }) {
                             <WalletIcon className="w-10 h-10 text-indigo-600 -rotate-3" />
                         </div>
                         <h2 className="text-2xl sm:text-3xl font-black text-gray-900 tracking-tight mb-4">
-                            {asaas_status === 'PENDING' ? 'Carteira em Análise' : 'Ative sua Carteira Digital'}
+                            {asaas_status === 'PENDING' ? 'Carteira em Análise' : asaas_status === 'AGUARDANDO_LIBERACAO' ? 'Carteira aguardando liberação' : 'Ative sua Carteira Digital'}
                         </h2>
                         <p className="text-gray-500 font-medium mb-8 text-sm sm:text-base leading-relaxed max-w-lg mx-auto">
                             {asaas_status === 'PENDING'
                                 ? 'Seus dados já foram enviados e sua carteira está em análise pelo Asaas. Assim que for aprovada, você poderá receber e sacar seus repasses por aqui.'
-                                : 'Para receber os repasses dos seus agendamentos diretamente na sua conta bancária via Pix, configure sua carteira agora.'}
+                                : asaas_status === 'AGUARDANDO_LIBERACAO'
+                                    ? 'Seus dados estão salvos. O nosso parceiro de pagamentos está liberando novas carteiras e a sua será aberta automaticamente — você recebe um e-mail quando estiver ativa. Enquanto isso, use a Lokyva com pagamento no local.'
+                                    : 'Para receber os repasses dos seus agendamentos diretamente na sua conta bancária via Pix, configure sua carteira agora.'}
                         </p>
-                        {asaas_status !== 'PENDING' && (
+                        {asaas_status !== 'PENDING' && asaas_status !== 'AGUARDANDO_LIBERACAO' && (
                             <button onClick={() => setModalAberto(true)} className="bg-gray-900 hover:bg-gray-800 text-white px-6 sm:px-8 py-3.5 sm:py-4 rounded-xl font-semibold transition-all active:scale-95 shadow-md flex items-center justify-center gap-2 mx-auto w-full sm:w-auto">
                                 <PlusCircleIcon className="w-5 h-5" /> Configurar Carteira
                             </button>
@@ -329,7 +333,9 @@ function ModalCriarCarteira({ aberto, onFechar }) {
         setErro(null);
 
         try {
-            await axios.post(route('provider.store'), form);
+            const { data } = await axios.post(route('provider.store'), form);
+            // Asaas ainda sem liberar novas carteiras: o pedido ficou salvo e abre sozinho depois.
+            if (data?.aguardando_liberacao) window.alert(data.message);
             onFechar();
             setForm(FORM_CARTEIRA_INICIAL);
             router.reload();

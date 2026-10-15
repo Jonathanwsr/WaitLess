@@ -41,7 +41,7 @@ export default function AusenciasFuncionario({ auth, funcionarios, ausencias }) 
 
     return (
         <AuthenticatedLayout user={auth.user} header={<h2 className="text-2xl font-black text-gray-900 tracking-tight">Agenda e Horários</h2>}>
-            <Head title="Ausências - WaitLess" />
+            <Head title="Ausências" />
 
             <div className="space-y-6 max-w-5xl mx-auto px-4 sm:px-6 pb-24 mt-6 font-sans">
                 

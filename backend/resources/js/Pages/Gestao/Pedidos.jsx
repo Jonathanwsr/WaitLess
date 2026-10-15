@@ -1,7 +1,8 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import ComoFunciona from '@/Components/ComoFunciona';
 import { Head, usePage, router } from '@inertiajs/react';
 import { useMemo, useState } from 'react';
-import { ClipboardDocumentListIcon, MagnifyingGlassIcon, ArrowPathIcon, UserIcon } from '@heroicons/react/24/outline';
+import { ClipboardDocumentListIcon, MagnifyingGlassIcon, ArrowPathIcon, UserIcon, DocumentArrowDownIcon } from '@heroicons/react/24/outline';
 
 const brl = (v) => `R$ ${Number(v || 0).toFixed(2).replace('.', ',')}`;
 
@@ -17,7 +18,49 @@ const CLASSE_STATUS = {
     estornado: 'bg-zinc-100 text-zinc-600',
 };
 
+// Situações em que já existe pagamento confirmado: dá para baixar o comprovante do pagamento.
+const COM_PAGAMENTO = ['pago', 'aguardando_confirmacao', 'concluido', 'confirmado', 'em_andamento', 'finalizado', 'estornado'];
+
 const quando = (iso) => (iso ? new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short', timeZone: 'America/Sao_Paulo' }) : '-');
+
+const hojeISO = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+
+/** Histórico em PDF de todos os serviços e reservas de um dia ou de um mês. */
+function HistoricoPdf({ local }) {
+    const [periodo, setPeriodo] = useState('dia');
+    const [dia, setDia] = useState(hojeISO());
+    const [mes, setMes] = useState(hojeISO().slice(0, 7));
+
+    const parametros = { periodo, ...(periodo === 'dia' ? { data: dia } : { mes }), ...(local ? { estabelecimento_id: local } : {}) };
+    const valido = periodo === 'dia' ? !!dia : !!mes;
+
+    return (
+        <div className="bg-white rounded-3xl border border-zinc-100 shadow-sm p-5 flex flex-col lg:flex-row lg:items-end gap-4">
+            <div className="flex-1">
+                <p className="font-black text-zinc-900 flex items-center gap-2"><DocumentArrowDownIcon className="w-5 h-5 text-[#FF5A00]" /> Histórico em PDF</p>
+                <p className="text-sm text-zinc-500 mt-0.5">Todos os serviços e reservas do período: cliente, código, situação (concluídos, cancelados, em aberto), quem atendeu, valores e reembolsos.</p>
+            </div>
+            <div className="flex flex-wrap items-end gap-3">
+                <div className="flex bg-zinc-100 rounded-xl p-1">
+                    {[{ id: 'dia', r: 'Dia' }, { id: 'mes', r: 'Mês' }].map((o) => (
+                        <button key={o.id} type="button" onClick={() => setPeriodo(o.id)} className={`px-4 py-1.5 rounded-lg text-sm font-bold ${periodo === o.id ? 'bg-white text-zinc-900 shadow' : 'text-zinc-500'}`}>{o.r}</button>
+                    ))}
+                </div>
+                {periodo === 'dia' ? (
+                    <input type="date" value={dia} onChange={(e) => setDia(e.target.value)} className="rounded-xl border-zinc-200 text-sm" aria-label="Dia" />
+                ) : (
+                    <input type="month" value={mes} onChange={(e) => setMes(e.target.value)} className="rounded-xl border-zinc-200 text-sm" aria-label="Mês" />
+                )}
+                <a
+                    href={valido ? route('gestao.historico.pdf', parametros) : undefined}
+                    className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-zinc-900 text-white text-sm font-bold ${valido ? '' : 'opacity-40 pointer-events-none'}`}
+                >
+                    <DocumentArrowDownIcon className="w-4 h-4" /> Baixar PDF
+                </a>
+            </div>
+        </div>
+    );
+}
 
 function Contador({ titulo, valor, cor = 'text-zinc-900' }) {
     return (
@@ -72,7 +115,7 @@ export default function Pedidos({ pedidos = [], estabelecimentos = [], filtroEst
         <AuthenticatedLayout user={auth.user}>
             <Head title="Pedidos da gestão" />
 
-            <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-6">
+            <div className="max-w-6xl mx-auto px-4 sm:px-6 pb-8 space-y-5">
                 <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
                     <div>
                         <p className="text-xs font-bold uppercase tracking-widest text-[#FF5A00]">Gestão</p>
@@ -85,6 +128,23 @@ export default function Pedidos({ pedidos = [], estabelecimentos = [], filtroEst
                         <ArrowPathIcon className={`w-4 h-4 ${atualizando ? 'animate-spin' : ''}`} /> Atualizar
                     </button>
                 </header>
+                <ComoFunciona
+                    chave="gestao_pedidos"
+                    titulo="Como usar a tela de pedidos"
+                    passos={[
+                        { titulo: "Veja tudo num lugar", texto: "Produtos e reservas dos seus locais, com a situação de cada um." },
+                        { titulo: "Saiba quem atende", texto: "Cada pedido mostra quem da equipe está cuidando dele." },
+                        { titulo: "Filtre e busque", texto: "Por tipo, só os em aberto, ou pelo nome do cliente, do item ou do código." },
+                        { titulo: "Baixe o histórico", texto: "Gere o PDF de todos os serviços e reservas do dia ou do mês." },
+                    ]}
+                    dicas={[
+                        "Pedidos já pagos têm o botão \"Comprovante\" ao lado do valor.",
+                        "O histórico em PDF ganha quantas páginas precisar.",
+                    ]}
+                />
+
+
+                <HistoricoPdf local={local} />
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <Contador titulo="Em aberto" valor={resumo.em_aberto ?? 0} cor="text-blue-600" />
@@ -159,7 +219,19 @@ export default function Pedidos({ pedidos = [], estabelecimentos = [], filtroEst
                                                 <span className="text-zinc-400">Ninguém designado</span>
                                             )}
                                         </td>
-                                        <td className="px-4 py-3 text-right font-bold text-zinc-900 whitespace-nowrap">{brl(p.valor)}</td>
+                                        <td className="px-4 py-3 text-right font-bold text-zinc-900 whitespace-nowrap">
+                                            {brl(p.valor)}
+                                            {COM_PAGAMENTO.includes(p.status) && (
+                                                <a
+                                                    href={route('pagamentos.comprovante', p.tipo === 'produto' ? { pedido_entrega_id: p.id } : { aluguel_id: p.id })}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="mt-1 flex items-center justify-end gap-1 text-[11px] font-bold text-[#FF5A00] hover:underline"
+                                                >
+                                                    <DocumentArrowDownIcon className="w-3.5 h-3.5" /> Comprovante
+                                                </a>
+                                            )}
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>

@@ -1,4 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import ComoFunciona from '@/Components/ComoFunciona';
 import { Head, Link } from '@inertiajs/react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
@@ -228,6 +229,118 @@ function ModalHistoricoCompleto({ onClose }) {
     );
 }
 
+const hojeISO = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+const inicioDoMesISO = () => hojeISO().slice(0, 8) + '01';
+
+/** Cliente com um ou mais pagamentos no período: baixa um, escolhe alguns ou baixa todos num PDF só. */
+function ClienteRecebido({ grupo }) {
+    const [aberto, setAberto] = useState(false);
+    const [marcados, setMarcados] = useState([]);
+    const lote = (ids) => route('pagamentos.comprovantes.lote', { ids });
+    const alternar = (id) => setMarcados((m) => (m.includes(id) ? m.filter((x) => x !== id) : [...m, id]));
+    const unico = grupo.quantidade === 1 ? grupo.pagamentos[0] : null;
+    const botao = 'text-xs font-bold px-3 py-2 rounded-xl border border-gray-200 text-gray-700 hover:bg-gray-50 whitespace-nowrap';
+
+    return (
+        <li className="py-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="min-w-0">
+                    <p className="font-bold text-gray-900 truncate">{grupo.cliente}</p>
+                    <p className="text-xs text-gray-500">
+                        {unico ? `${unico.descricao} · ${fmtDataHora(unico.data)}` : `${grupo.quantidade} pagamentos`} · {fmt(grupo.total)}
+                    </p>
+                </div>
+                {unico ? (
+                    <a href={lote([unico.id])} target="_blank" rel="noopener noreferrer" className={botao}>Baixar comprovante</a>
+                ) : (
+                    <div className="flex gap-2">
+                        <button type="button" onClick={() => setAberto((v) => !v)} className={botao}>{aberto ? 'Fechar' : 'Escolher'}</button>
+                        <a href={lote(grupo.pagamentos.map((p) => p.id))} target="_blank" rel="noopener noreferrer" className={`${botao} !border-orange-200 !text-orange-700`}>
+                            Baixar todos ({grupo.quantidade})
+                        </a>
+                    </div>
+                )}
+            </div>
+            {aberto && !unico && (
+                <div className="mt-3 rounded-2xl bg-gray-50 p-3 space-y-2">
+                    {grupo.pagamentos.map((p) => (
+                        <label key={p.id} className="flex items-center gap-3 text-sm cursor-pointer">
+                            <input type="checkbox" checked={marcados.includes(p.id)} onChange={() => alternar(p.id)} className="rounded border-gray-300 text-orange-500 focus:ring-orange-500" />
+                            <span className="flex-1 min-w-0 truncate">{p.descricao}</span>
+                            <span className="text-xs text-gray-500 whitespace-nowrap">{fmtDataHora(p.data)}</span>
+                            <span className="font-bold whitespace-nowrap">{fmt(p.valor)}</span>
+                        </label>
+                    ))}
+                    <a
+                        href={marcados.length ? lote(marcados) : undefined}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        aria-disabled={!marcados.length}
+                        className={`inline-block mt-1 text-xs font-bold px-4 py-2 rounded-xl text-white ${marcados.length ? 'bg-orange-500 hover:bg-orange-600' : 'bg-gray-300 pointer-events-none'}`}
+                    >
+                        Baixar selecionados ({marcados.length})
+                    </a>
+                </div>
+            )}
+        </li>
+    );
+}
+
+/**
+ * Comprovantes de recebimento: o sócio escolhe o período (e, se quiser, o cliente), busca e baixa.
+ * Nada é listado antes da busca, para a tela não encher.
+ */
+function PagamentosRecebidos() {
+    const [de, setDe] = useState(inicioDoMesISO());
+    const [ate, setAte] = useState(hojeISO());
+    const [busca, setBusca] = useState('');
+    const [clientes, setClientes] = useState(null);
+    const [carregando, setCarregando] = useState(false);
+    const [erro, setErro] = useState(null);
+
+    const buscar = async (e) => {
+        e.preventDefault();
+        setCarregando(true);
+        setErro(null);
+        try {
+            const r = await axios.get(route('pagamentos.recebidos'), { params: { de, ate, busca: busca || undefined } });
+            setClientes(r.data.clientes || []);
+        } catch (err) {
+            setErro(err.response?.data?.message || 'Não foi possível buscar agora.');
+        } finally {
+            setCarregando(false);
+        }
+    };
+
+    const campo = 'rounded-xl border-gray-200 text-sm focus:border-orange-500 focus:ring-orange-500';
+
+    return (
+        <section className="bg-white rounded-3xl border border-gray-100 shadow-sm p-6">
+            <h3 className="font-bold text-gray-900">Comprovantes de recebimento</h3>
+            <p className="text-xs text-gray-500 mb-4">Escolha o período, busque e baixe o comprovante de quem você quiser.</p>
+            <form onSubmit={buscar} className="flex flex-wrap items-end gap-3">
+                <label className="text-xs font-bold text-gray-600">De<input type="date" value={de} max={ate} onChange={(e) => setDe(e.target.value)} className={`block mt-1 ${campo}`} required /></label>
+                <label className="text-xs font-bold text-gray-600">Até<input type="date" value={ate} min={de} onChange={(e) => setAte(e.target.value)} className={`block mt-1 ${campo}`} required /></label>
+                <label className="text-xs font-bold text-gray-600 flex-1 min-w-[160px]">Cliente (opcional)<input type="text" value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Nome ou e-mail" className={`block w-full mt-1 ${campo}`} /></label>
+                <button type="submit" disabled={carregando} className="px-5 py-2.5 rounded-xl bg-orange-500 hover:bg-orange-600 disabled:opacity-60 text-white text-sm font-bold">
+                    {carregando ? 'Buscando…' : 'Buscar'}
+                </button>
+            </form>
+
+            {erro && <p className="text-sm text-red-600 mt-3">{erro}</p>}
+            {clientes !== null && (
+                clientes.length === 0 ? (
+                    <p className="text-sm text-gray-500 mt-4">Nenhum pagamento online recebido nesse período.</p>
+                ) : (
+                    <ul className="divide-y divide-gray-100 mt-4">
+                        {clientes.map((g) => <ClienteRecebido key={g.cliente_id} grupo={g} />)}
+                    </ul>
+                )
+            )}
+        </section>
+    );
+}
+
 export default function Carteira({ painelInicial }) {
     const [painel, setPainel] = useState(painelInicial);
     const [aviso, setAviso] = useState(null); // { tipo: 'ok' | 'erro', texto }
@@ -302,6 +415,23 @@ export default function Carteira({ painelInicial }) {
             <Head title="Carteira" />
 
             <div className="max-w-6xl mx-auto space-y-6">
+                <ComoFunciona
+                    chave="carteira"
+                    titulo="Como funciona a sua carteira"
+                    passos={[
+                        { titulo: "O cliente paga online", texto: "O valor fica protegido até o atendimento ou a reserva acontecer." },
+                        { titulo: "O valor é liberado", texto: "Depois do atendimento, sai a taxa da plataforma e o restante entra no seu saldo." },
+                        { titulo: "Repasse toda semana", texto: "O saldo vai para a sua conta bancária automaticamente, toda segunda-feira." },
+                        { titulo: "Ou saque antes", texto: "Precisa antes? Faça um saque antecipado para uma conta já validada." },
+                    ]}
+                    dicas={[
+                        "Carteira e pagamento online são para quem tem CNPJ (MEI serve).",
+                        "Cadastre a conta de destino uma vez; validamos com uma transferência de R$ 0,01.",
+                        "Em \"Comprovantes de recebimento\" você baixa o comprovante de qualquer cliente por data.",
+                        "Estornos e cancelamentos aparecem no histórico com o valor devolvido.",
+                    ]}
+                />
+
                 {aviso && (
                     <div className={`rounded-2xl border px-4 py-3 text-sm font-semibold flex items-start justify-between gap-3 ${aviso.tipo === 'ok' ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
                         <span>{aviso.texto}</span>
@@ -590,6 +720,8 @@ export default function Carteira({ painelInicial }) {
                         </ul>
                     )}
                 </section>
+
+                <PagamentosRecebidos />
 
                 {/* EXTRATO ASAAS */}
                 {liberado && painel.extrato_asaas.length > 0 && (

@@ -112,6 +112,7 @@ Route::post('/assinaturas/nova', [App\Http\Controllers\Api\AssinaturaController:
     Route::post('/minhas-locacoes', [App\Http\Controllers\Api\LocacaoAvulsaController::class, 'store'])->name('locacoes.avulsas.store');
     Route::post('/minhas-locacoes/{item}', [App\Http\Controllers\Api\LocacaoAvulsaController::class, 'update'])->name('locacoes.avulsas.update');
     Route::delete('/minhas-locacoes/{item}', [App\Http\Controllers\Api\LocacaoAvulsaController::class, 'destroy'])->name('locacoes.avulsas.destroy');
+    Route::post('/minhas-locacoes/reservas/{aluguel}/cancelar', [App\Http\Controllers\Api\LocacaoAvulsaController::class, 'cancelarReserva'])->name('locacoes.avulsas.reservas.cancelar');
 
 
 
@@ -241,6 +242,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/viagens', [$viagens, 'index'])->name('viagens.index');
     Route::get('/viagens/nova', [$viagens, 'nova'])->name('viagens.nova');
     Route::post('/viagens/roteiro/previa', [$viagens, 'previa'])->name('viagens.previa');
+    Route::get('/viagens/mala/catalogo', [$viagens, 'catalogoMala'])->middleware('throttle:60,1')->name('viagens.mala.catalogo');
     Route::post('/viagens', [$viagens, 'store'])->name('viagens.store');
     Route::get('/viagens/convite/{codigo}', [$viagens, 'entrarPorCodigo'])->name('viagens.convite');
     Route::post('/viagens/convite/{codigo}', [$viagens, 'confirmarEntrada'])->name('viagens.convite.entrar');
@@ -325,7 +327,20 @@ Route::middleware(['auth'])->group(function () {
     Route::delete('/entregas/carrinho/{item}', [\App\Http\Controllers\Api\CarrinhoEntregaController::class, 'destroy'])->name('entregas.carrinho.destroy');
 
     // Painel de pedidos da gestão: sócio e gerente acompanham cada pedido e quem está atendendo.
+    // Central de relatórios do sócio/gerente: todos os relatórios num lugar só.
+    Route::get('/gestao/relatorios', fn () => \Inertia\Inertia::render('Gestao/Relatorios'))->name('gestao.relatorios');
     Route::get('/gestao/pedidos', [\App\Http\Controllers\Api\GestaoPedidosController::class, 'index'])->name('gestao.pedidos.index');
+    // Histórico em PDF de serviços e reservas (dia ou mês) para sócio e gerente.
+    Route::get('/gestao/historico-pdf', [\App\Http\Controllers\Api\HistoricoAtendimentosController::class, 'pdf'])->name('gestao.historico.pdf');
+    Route::get('/gestao/historico-resumo', [\App\Http\Controllers\Api\HistoricoAtendimentosController::class, 'resumo'])->name('gestao.historico.resumo');
+    // Comprovante de pagamento em PDF (quem pagou, quem recebeu ou admin).
+    Route::get('/comprovante-pagamento', [\App\Http\Controllers\Api\ComprovantePagamentoController::class, 'pdf'])->name('pagamentos.comprovante');
+    Route::get('/api/pagamentos-recebidos', [\App\Http\Controllers\Api\ComprovantePagamentoController::class, 'recebidos'])->name('pagamentos.recebidos');
+    Route::get('/comprovantes-recebimento', [\App\Http\Controllers\Api\ComprovantePagamentoController::class, 'lote'])->middleware('throttle:20,1')->name('pagamentos.comprovantes.lote');
+    // Flash Deals: oferta relâmpago para vagas ociosas, avisada a quem está na cidade.
+    Route::get('/gestao/flash-deals', [\App\Http\Controllers\Api\FlashDealController::class, 'index'])->name('gestao.flash-deals.index');
+    Route::post('/gestao/flash-deals', [\App\Http\Controllers\Api\FlashDealController::class, 'store'])->middleware('throttle:10,1')->name('gestao.flash-deals.store');
+    Route::post('/gestao/flash-deals/{flashDeal}/cancelar', [\App\Http\Controllers\Api\FlashDealController::class, 'cancelar'])->name('gestao.flash-deals.cancelar');
 
     // Cobranças parceladas: sócio monta e acompanha; cliente aceita ou recusa.
     Route::get('/cobrancas', [\App\Http\Controllers\Api\CobrancaController::class, 'index'])->name('cobrancas.index');
@@ -501,6 +516,7 @@ Route::get('/estabelecimentos/{estabelecimento}/fila/painel/dados', [App\Http\Co
     // Notas fiscais (benefício Sócio Premium)
     Route::get('/notas-fiscais', [App\Http\Controllers\Api\NotaFiscalWebController::class, 'index'])->name('notas-fiscais.index');
     Route::post('/notas-fiscais/{notaFiscal}/tentar-novamente', [App\Http\Controllers\Api\NotaFiscalWebController::class, 'tentarNovamente'])->name('notas-fiscais.tentar-novamente');
+    Route::post('/notas-fiscais/configuracao', [App\Http\Controllers\Api\NotaFiscalWebController::class, 'salvarConfiguracao'])->name('notas-fiscais.configuracao');
 
     // Agendamentos
     Route::put('/agendamentos/{agendamento}/status', [AgendamentoController::class, 'updateStatus'])->name('agendamentos.status.update');
@@ -516,6 +532,8 @@ Route::get('/estabelecimentos/{estabelecimento}/fila/painel/dados', [App\Http\Co
 
     // Ação de cancelamento seguro (Mantém benefícios até o fim do ciclo)
     Route::post('/minha-assinatura/cancelar', [AssinaturaController::class, 'cancelar'])->name('assinaturas.cancelar');
+    // Cobrança em aberto da assinatura (QR code do Pix quando está perto de vencer)
+    Route::get('/minha-assinatura/cobranca', [AssinaturaController::class, 'cobrancaEmAberto'])->middleware('throttle:30,1')->name('assinaturas.cobranca');
 
     Route::post('/minha-assinatura/mudar-plano', [AssinaturaController::class, 'mudarPlano'])->name('assinaturas.mudar_plano');
 
@@ -711,6 +729,9 @@ Route::post('/webhooks/d4sign', [AgendamentoController::class, 'webhookD4Sign'])
 
     // --- Rotas da Visão do CLIENTE ---
     // Acessar a página da loja para agendar
+    // Detalhes de um serviço (fotos, horários, pagamento e pontos) antes de ir para o checkout.
+    Route::get('/servicos/{servico}/detalhes', [\App\Http\Controllers\Api\ServicoDetalheController::class, 'show'])->name('cliente.servicos.show');
+    Route::get('/servicos/{servico}/disponibilidade', [\App\Http\Controllers\Api\ServicoDetalheController::class, 'disponibilidade'])->middleware('throttle:60,1')->name('cliente.servicos.disponibilidade');
     Route::get('/agendar/{estabelecimento}', [ClienteAgendamentoController::class, 'show'])->name('cliente.agendar');
 
     // Confirmar o agendamento
@@ -889,3 +910,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/entregas/painel-de-vendas', fn () => \Inertia\Inertia::render('Estabelecimentos/PainelVendasEntregas'))->name('entregas.painel-vendas.page');
     Route::get('/entregas/minhas-assinaturas', fn () => \Inertia\Inertia::render('Entregas/Assinaturas'))->name('entregas.assinaturas.page');
 });
+
+// Conferência pública do código de autenticação dos comprovantes de pagamento.
+Route::get('/comprovantes/verificar', [\App\Http\Controllers\Api\ComprovantePagamentoController::class, 'verificar'])->middleware('throttle:30,1')->name('comprovantes.verificar');

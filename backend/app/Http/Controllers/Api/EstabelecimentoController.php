@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Api;
 
+use Illuminate\Support\Facades\DB;
+
 use App\Http\Controllers\Controller;
 use App\Models\Estabelecimento;
 use Illuminate\Http\Request;
@@ -96,6 +98,10 @@ class EstabelecimentoController extends Controller
     public function update(Request $request, Estabelecimento $estabelecimento)
     {
         $this->garantirQueGerencia($request, $estabelecimento);
+
+        if ($request->filled('site') && !preg_match('#^https?://#i', trim((string) $request->input('site')))) {
+            $request->merge(['site' => 'https://' . ltrim(trim((string) $request->input('site')), '/')]);
+        }
 
         $validated = $request->validate([
             'nome'              => 'required|string|max:255',
@@ -285,9 +291,24 @@ class EstabelecimentoController extends Controller
             }])
             ->paginate(12);
 
+        // Reservas cadastradas neste local (hospedagens, veículos, equipamentos, espaços).
+        $reservas = \App\Models\ItemAluguel::catalogo()->doLocal($estabelecimento->id)
+            ->where('ativo', true)->orderBy('nome')->get()
+            ->map(fn ($i) => [
+                'id' => $i->id,
+                'nome' => $i->nome,
+                'categoria' => $i->categoria,
+                'foto' => $i->foto_principal,
+                'valor_diaria' => (float) $i->valor_diaria,
+                'preco_final' => app(\App\Services\PrecificacaoService::class)->comPromocao((float) $i->valor_diaria, (bool) $i->tem_promocao, $i->tipo_desconto, $i->valor_desconto),
+                'capacidade_pessoas' => $i->capacidade_pessoas,
+                'unidade' => in_array($i->categoria, \App\Services\Viagem\CrossSellViagemService::CATEGORIAS_HOSPEDAGEM, true) ? 'noite' : 'dia',
+            ]);
+
         return Inertia::render('Estabelecimentos/Loja', [
             'estabelecimento' => $estabelecimento,
             'servicosPaginados' => $servicos,
+            'reservas' => $reservas,
             'statusFuncionamento' => \App\Support\StatusFuncionamento::de($estabelecimento->horariosFuncionamento()->get()),
             'produtosVendidos' => $estabelecimento->produtosVendidos(),
         ]);
@@ -301,7 +322,7 @@ class EstabelecimentoController extends Controller
             'estabelecimento' => $estabelecimento,
             'cupons' => $cupons,
             'servicos' => $estabelecimento->servicos()->where('ativo', true)->orderBy('nome')->get(['id', 'nome']),
-            'reservas' => \App\Models\ItemAluguel::catalogo()->where('estabelecimento_id', \Illuminate\Support\Facades\Auth::id())->orderBy('nome')->get(['id', 'nome']),
+            'reservas' => \App\Models\ItemAluguel::catalogo()->doLocal($estabelecimento->id)->orderBy('nome')->get(['id', 'nome']),
         ]);
     }
 
@@ -323,43 +344,93 @@ class EstabelecimentoController extends Controller
             }
 
             $todasLojas = $query->get();
+            $ids = $todasLojas->pluck('id');
 
-            $metricas = [
-                'ativos'                  => $todasLojas->where('ativo', true)->count(),
-                'faturamento'             => 'R$ ' . number_format((float) $todasLojas->sum('arrecadacao_total'), 2, ',', '.'),
-                'crescimento_faturamento' => '+0%',
-                'aguardando'              => $todasLojas->sum('clientes_aguardando'),
-                'funcionarios_ativos'     => 0
-            ];
+            // Números reais de hoje e de ontem por local (faturamento, fila e equipe).
+            $fuso = 'America/Sao_Paulo';
+            $hoje = now($fuso)->toDateString();
+            $ontem = now($fuso)->subDay()->toDateString();
+            $faturamentoDoDia = function (string $dia) use ($ids) {
+                $online = DB::table('pagamentos')
+                    ->whereIn('estabelecimento_id', $ids)
+                    ->whereIn('status', ['pago', 'confirmado'])
+                    ->whereRaw('DATE(COALESCE(data_pagamento, created_at)) = ?', [$dia])
+                    ->selectRaw('estabelecimento_id, SUM(COALESCE(NULLIF(valor_total, 0), valor)) as total')
+                    ->groupBy('estabelecimento_id')
+                    ->pluck('total', 'estabelecimento_id');
+                $noLocal = DB::table('agendamentos')
+                    ->whereIn('estabelecimento_id', $ids)
+                    ->where('status', 'finalizado')
+                    ->whereIn('status_pagamento', ['presencial', 'local', 'pago_presencial'])
+                    ->whereDate('data_agendamento', $dia)
+                    ->selectRaw('estabelecimento_id, SUM(valor_final) as total')
+                    ->groupBy('estabelecimento_id')
+                    ->pluck('total', 'estabelecimento_id');
 
-            $estabelecimentos = $query->paginate(10)->through(function ($loja) {
-                $enderecoPartes = array_filter([$loja->rua, $loja->numero, $loja->bairro, $loja->cidade, $loja->estado]);
-                $enderecoFormatado = !empty($enderecoPartes) ? implode(', ', $enderecoPartes) : 'Endereço não informado';
+                return $ids->mapWithKeys(fn ($id) => [$id => (float) ($online[$id] ?? 0) + (float) ($noLocal[$id] ?? 0)]);
+            };
+            $fatHoje = $faturamentoDoDia($hoje);
+            $fatOntem = $faturamentoDoDia($ontem);
+            $aguardando = DB::table('agendamentos')
+                ->whereIn('estabelecimento_id', $ids)
+                ->whereDate('data_agendamento', $hoje)
+                ->whereIn('status', ['pendente', 'confirmado'])
+                ->selectRaw('estabelecimento_id, COUNT(*) as total')
+                ->groupBy('estabelecimento_id')
+                ->pluck('total', 'estabelecimento_id');
+            $equipe = DB::table('funcionarios')
+                ->whereIn('estabelecimento_id', $ids)
+                ->selectRaw('estabelecimento_id, COUNT(*) as total, SUM(CASE WHEN ativo THEN 1 ELSE 0 END) as ativos')
+                ->groupBy('estabelecimento_id')
+                ->get()->keyBy('estabelecimento_id');
+            $diaSemana = now($fuso)->dayOfWeek;
+            $horarios = DB::table('horarios_funcionamento')
+                ->whereIn('estabelecimento_id', $ids)
+                ->where('dia_semana', $diaSemana)
+                ->get()->keyBy('estabelecimento_id');
 
-                $totalFuncionarios = 0;
-                try {
-                    $totalFuncionarios = $loja->funcionarios()->count();
-                } catch (\Exception $e) {
-                    $totalFuncionarios = 0;
+            $variacao = function (float $atual, float $anterior): ?float {
+                if ($anterior <= 0) {
+                    return $atual > 0 ? null : 0.0;
                 }
 
-                // Aplica o ImageKit aqui também para a lista
-                $imageKitBaseUrl = env('IMAGEKIT_URL', 'https://ik.imagekit.io/seu_id');
-                $fotoPerfilUrl = !empty($loja->foto_perfil) ? rtrim($imageKitBaseUrl, '/') . '/' . ltrim($loja->foto_perfil, '/') : null;
+                return round(($atual - $anterior) / $anterior * 100, 1);
+            };
+            $brl = fn (float $v) => 'R$ ' . number_format($v, 2, ',', '.');
+
+            $totalHoje = (float) $fatHoje->sum();
+            $metricas = [
+                'ativos'                  => $todasLojas->where('ativo', true)->count(),
+                'total'                   => $todasLojas->count(),
+                'faturamento'             => $brl($totalHoje),
+                'variacao_faturamento'    => $variacao($totalHoje, (float) $fatOntem->sum()),
+                'aguardando'              => (int) $aguardando->sum(),
+                'funcionarios_ativos'     => (int) $equipe->sum('ativos'),
+            ];
+
+            $estabelecimentos = $query->paginate(10)->through(function ($loja) use ($fatHoje, $fatOntem, $aguardando, $equipe, $horarios, $variacao, $brl) {
+                $enderecoPartes = array_filter([$loja->rua, $loja->numero, $loja->bairro, $loja->cidade, $loja->estado]);
+                $enderecoFormatado = !empty($enderecoPartes) ? implode(', ', $enderecoPartes) : 'Endereço não informado';
+                $horario = $horarios[$loja->id] ?? null;
+                $hoje = (float) ($fatHoje[$loja->id] ?? 0);
 
                 return [
-                    'id'          => $loja->id,
-                    'nome'        => $loja->nome,
-                    'foto_perfil' => $loja->foto_perfil,
-                    'foto_perfil_url' => $fotoPerfilUrl,
-                    'endereco'    => $enderecoFormatado,
-                    'status'      => $loja->ativo ? 'Ativo' : 'Inativo',
-                    'horario'     => '08:00 - 18:00',
-                    'faturamento' => 'R$ ' . number_format((float) ($loja->arrecadacao_total ?? 0), 2, ',', '.'),
-                    'aguardando'  => $loja->clientes_aguardando ?? 0,
-                    'funcionarios'=> $totalFuncionarios,
-                    'funcionarios_ativos'      => $totalFuncionarios,
-                    'funcionarios_trabalhando' => $totalFuncionarios,
+                    'id'                  => $loja->id,
+                    'nome'                => $loja->nome,
+                    'foto_perfil'         => $loja->foto_perfil,
+                    'ramo_atuacao'        => $loja->ramo_atuacao,
+                    'endereco'            => $enderecoFormatado,
+                    'rua'                 => $loja->rua,
+                    'numero'              => $loja->numero,
+                    'ativo'               => (bool) $loja->ativo,
+                    'status'              => $loja->ativo ? 'Ativo' : 'Inativo',
+                    'horario_hoje'        => !$horario || $horario->fechado ? null : substr((string) $horario->hora_fechamento, 0, 5),
+                    'fechado_hoje'        => $horario ? (bool) $horario->fechado : null,
+                    'faturamento_hoje'    => $brl($hoje),
+                    'variacao_hoje'       => $variacao($hoje, (float) ($fatOntem[$loja->id] ?? 0)),
+                    'aguardando'          => (int) ($aguardando[$loja->id] ?? 0),
+                    'funcionarios'        => (int) ($equipe[$loja->id]->total ?? 0),
+                    'funcionarios_ativos' => (int) ($equipe[$loja->id]->ativos ?? 0),
                 ];
             });
 

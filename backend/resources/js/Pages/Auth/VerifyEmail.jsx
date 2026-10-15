@@ -11,7 +11,7 @@ export default function VerifyEmail({ status }) {
     return (
         // Fundo externo cinza claro para manter o padrão de card destacado
         <div className="min-h-screen bg-[#f3f4f6] flex items-center justify-center p-4 sm:p-6 lg:p-8 font-sans antialiased">
-            <Head title="Verificação de E-mail - Waitless" />
+            <Head title="Verificação de E-mail" />
 
             {/* CARD PRINCIPAL CENTRALIZADO */}
             <div className="w-full max-w-6xl bg-white rounded-[24px] md:rounded-[32px] shadow-2xl flex flex-col lg:flex-row overflow-hidden min-h-[750px]">
@@ -20,7 +20,7 @@ export default function VerifyEmail({ status }) {
                 <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-gray-100 border-r border-gray-100">
                     <img 
                         src="/images/cadastro.png" 
-                        alt="Fundo de Verificação Waitless" 
+                        alt="Fundo de Verificação Lokyva" 
                         className="absolute inset-0 w-full h-full object-cover object-center"
                     />
                 </div>
@@ -29,7 +29,7 @@ export default function VerifyEmail({ status }) {
                 <div className="w-full lg:w-1/2 flex flex-col justify-center items-center px-6 py-10 sm:px-12 md:px-16 xl:px-20 bg-white overflow-y-auto">
                     <div className="max-w-md w-full space-y-6">
                         
-                        {/* Cabeçalho de Identidade (Logo Waitless) */}
+                        {/* Cabeçalho de Identidade (Logo Lokyva) */}
                         <div className="text-center space-y-2">
                             <div className="inline-flex items-center justify-center w-12 h-12 bg-slate-900 rounded-xl shadow-sm text-white font-black text-xl">
                                 <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -37,7 +37,7 @@ export default function VerifyEmail({ status }) {
                                 </svg>
                             </div>
                             <div className="space-y-0.5">
-                                <h2 className="text-lg font-black tracking-tight text-slate-900">Waitless</h2>
+                                <h2 className="text-lg font-black tracking-tight text-slate-900">Lokyva</h2>
                                 <p className="text-[10px] font-bold text-gray-400 tracking-wider uppercase">Simplifique. Agende. Conquiste.</p>
                             </div>
                         </div>
@@ -46,7 +46,7 @@ export default function VerifyEmail({ status }) {
                         <div className="text-center space-y-2">
                             <h3 className="text-xl font-extrabold text-slate-900 tracking-tight">Verifique seu e-mail</h3>
                             <p className="text-xs text-gray-500 font-medium leading-relaxed">
-                                Obrigado por se cadastrar no Waitless! Antes de começar, precisamos que você confirme seu endereço de e-mail clicando no link de ativação que enviamos para você.
+                                Obrigado por se cadastrar no Lokyva! Antes de começar, precisamos que você confirme seu endereço de e-mail clicando no link de ativação que enviamos para você.
                             </p>
                         </div>
 

@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import axios from 'axios';
 import Dropdown from '@/Components/Dropdown';
 import { Link, usePage, router } from '@inertiajs/react';
-import { CalendarDaysIcon, ShieldCheckIcon, BanknotesIcon, ClipboardDocumentListIcon, ArrowUturnLeftIcon, StarIcon, GlobeAltIcon, BellIcon, GiftIcon, UsersIcon, ChartBarIcon, WalletIcon, MapIcon, QueueListIcon, KeyIcon, ShoppingBagIcon, TicketIcon, DocumentTextIcon, Cog6ToothIcon, SparklesIcon, ArrowsRightLeftIcon, AcademicCapIcon, BuildingStorefrontIcon, LockClosedIcon, LightBulbIcon, TruckIcon, TvIcon } from '@heroicons/react/24/solid';
+import { CalendarDaysIcon, ShieldCheckIcon, BanknotesIcon, ClipboardDocumentListIcon, ArrowUturnLeftIcon, StarIcon, GlobeAltIcon, BellIcon, GiftIcon, UsersIcon, ChartBarIcon, WalletIcon, MapIcon, QueueListIcon, KeyIcon, ShoppingBagIcon, TicketIcon, DocumentTextIcon, Cog6ToothIcon, SparklesIcon, ArrowsRightLeftIcon, AcademicCapIcon, BuildingStorefrontIcon, LockClosedIcon, LightBulbIcon, TruckIcon, TvIcon, BoltIcon } from '@heroicons/react/24/solid';
 
 export default function AuthenticatedLayout({ header, children }) {
     const { auth, alertaCarteiraAsaas, menuEstabelecimentoId, menuPremium, menuPremiumSocio, avisosUsuario } = usePage().props;
@@ -23,6 +23,28 @@ export default function AuthenticatedLayout({ header, children }) {
         }
     };
     const user = auth.user;
+
+    // O layout é montado de novo a cada tela, e o menu voltava para o topo a cada clique (a pessoa se
+    // perdia). Guarda a rolagem do menu e devolve ao abrir a próxima tela; se o item ativo ficar fora
+    // da área visível, rola só o necessário para ele aparecer.
+    const menuRolagemRef = useRef(null);
+    const guardarRolagemMenu = (e) => {
+        try { sessionStorage.setItem('lokyva_menu_rolagem', String(e.currentTarget.scrollTop)); } catch { /* sem storage */ }
+    };
+    useLayoutEffect(() => {
+        const menu = menuRolagemRef.current;
+        if (!menu) return;
+        try {
+            const salvo = Number(sessionStorage.getItem('lokyva_menu_rolagem') || 0);
+            if (salvo > 0) menu.scrollTop = salvo;
+        } catch { /* sem storage */ }
+        const ativo = menu.querySelector('a.bg-white.text-gray-900');
+        if (ativo) {
+            const a = ativo.getBoundingClientRect();
+            const m = menu.getBoundingClientRect();
+            if (a.top < m.top || a.bottom > m.bottom) ativo.scrollIntoView({ block: 'nearest' });
+        }
+    }, []);
 
     // O estado do Menu Lateral no PC agora usa localStorage para "lembrar" se estava fechado ou aberto
     const [isSidebarExpanded, setIsSidebarExpanded] = useState(() => {
@@ -80,24 +102,24 @@ export default function AuthenticatedLayout({ header, children }) {
     // sócio vê — só assinatura (billing) fica exclusiva do sócio, que é quem
     // paga o plano. Os que dependem de um local só aparecem quando já existe um estabelecimento.
     const linksGestaoLocal = (isProprietario || isGerente) ? [
-        { nome: 'Tutoriais', rota: 'tutoriais.dono', icone: AcademicCapIcon },
-        { nome: 'Minha vitrine', rota: 'vitrine.dono', icone: BuildingStorefrontIcon },
-        { nome: 'Fila de espera', rota: 'fila.index', icone: QueueListIcon },
-        { nome: 'Painel da fila (TV)', rota: 'estabelecimentos.fila.painel', icone: TvIcon, local: true },
-        { nome: 'Locações', rota: 'locacoes.avulsas.index', icone: KeyIcon },
+        { nome: 'Relatórios', rota: 'gestao.relatorios', grupo: 'Gestão', icone: ChartBarIcon },
+        { nome: 'Tutoriais', rota: 'tutoriais.dono', grupo: 'Gestão', icone: AcademicCapIcon },
+        { nome: 'Minha vitrine', rota: 'vitrine.dono', grupo: 'Catálogo e vendas', icone: BuildingStorefrontIcon },
+        { nome: 'Fila de espera', rota: 'fila.index', grupo: 'Dia a dia', icone: QueueListIcon },
+        { nome: 'Painel da fila (TV)', rota: 'estabelecimentos.fila.painel', grupo: 'Dia a dia', icone: TvIcon, local: true },
+        { nome: 'Locações', rota: 'locacoes.avulsas.index', grupo: 'Catálogo e vendas', icone: KeyIcon },
         // Tela única: produtos com serviço/reserva e produtos para entrega/retirada, em abas.
-        { nome: 'Produtos', rota: 'produtos.meus', icone: ShoppingBagIcon },
-        { nome: 'Entregas', rota: 'entregas.gestao', icone: TruckIcon },
-        { nome: 'Avaliações recebidas', rota: 'anfitriao.avaliacoes.index', icone: StarIcon },
-        { nome: 'Cupons e marketing', rota: 'estabelecimentos.cupons', icone: TicketIcon, local: true },
-        { nome: 'Contratos', rota: 'estabelecimentos.contratos', icone: DocumentTextIcon, local: true, premium: true },
-        { nome: 'Notas fiscais', rota: 'notas-fiscais.index', icone: DocumentTextIcon, premiumSocio: true },
-        { nome: 'Cobranças', rota: 'cobrancas.index', icone: BanknotesIcon, premiumSocio: true },
-        { nome: 'Pedidos da gestão', rota: 'gestao.pedidos.index', icone: ClipboardDocumentListIcon },
-        { nome: 'Painel de vendas', rota: 'entregas.painel-vendas.page', icone: ChartBarIcon },
-        { nome: 'Configurações', rota: 'estabelecimentos.configuracoes', icone: Cog6ToothIcon, local: true },
+        { nome: 'Produtos', rota: 'produtos.meus', grupo: 'Catálogo e vendas', icone: ShoppingBagIcon },
+        { nome: 'Entregas', rota: 'entregas.gestao', grupo: 'Dia a dia', icone: TruckIcon },
+        { nome: 'Avaliações recebidas', rota: 'anfitriao.avaliacoes.index', grupo: 'Gestão', icone: StarIcon },
+        { nome: 'Cupons e marketing', rota: 'estabelecimentos.cupons', grupo: 'Catálogo e vendas', icone: TicketIcon, local: true },
+        { nome: 'Notas fiscais', rota: 'notas-fiscais.index', grupo: 'Gestão', icone: DocumentTextIcon },
+        { nome: 'Cobranças', rota: 'cobrancas.index', grupo: 'Catálogo e vendas', icone: BanknotesIcon, premiumSocio: true },
+        { nome: 'Pedidos da gestão', rota: 'gestao.pedidos.index', grupo: 'Dia a dia', icone: ClipboardDocumentListIcon },
+        { nome: 'Flash Deals', rota: 'gestao.flash-deals.index', grupo: 'Catálogo e vendas', icone: BoltIcon },
+        { nome: 'Configurações', rota: 'estabelecimentos.configuracoes', grupo: 'Gestão', icone: Cog6ToothIcon, local: true },
         // Assinatura é billing — só quem paga o plano (o sócio) administra.
-        ...(isProprietario ? [{ nome: 'Minha assinatura', rota: 'assinatura.status', icone: SparklesIcon }] : []),
+        ...(isProprietario ? [{ nome: 'Minha assinatura', rota: 'assinatura.status', grupo: 'Gestão', icone: SparklesIcon }] : []),
     ].filter((l) => route().has(l.rota) && (!l.local || menuEstabelecimentoId)) : [];
 
     // Formata o nome do papel para ser exibido dinamicamente no Dropdown
@@ -144,12 +166,30 @@ export default function AuthenticatedLayout({ header, children }) {
 
     // COMPONENTE DO TÍTULO DE SEÇÃO
     const SectionTitle = ({ title }) => (
-        <div className={`pt-6 pb-2 w-full text-center transition-all duration-300 ${isSidebarExpanded ? 'opacity-100 block' : 'opacity-0 h-0 hidden overflow-hidden'}`}>
-            <span className="text-xs font-extrabold uppercase text-gray-900 tracking-widest inline-block">
+        <div data-secao-menu className={`pt-5 pb-1 px-6 w-full transition-all duration-300 ${isSidebarExpanded ? 'opacity-100 block' : 'opacity-0 h-0 hidden overflow-hidden'}`}>
+            <span className="text-[11px] font-black uppercase text-white/70 tracking-widest">
                 {title}
             </span>
         </div>
     );
+
+    // Busca no menu: esconde os itens que não combinam com o texto digitado (inclusive os fixos).
+    const [buscaMenu, setBuscaMenu] = useState('');
+    const [semResultadoMenu, setSemResultadoMenu] = useState(false);
+    useEffect(() => {
+        const menu = menuRolagemRef.current;
+        if (!menu) return;
+        const termo = buscaMenu.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        let visiveis = 0;
+        menu.querySelectorAll('a[title], button[data-item-menu]').forEach((el) => {
+            const texto = `${el.getAttribute('title') || ''} ${el.textContent || ''}`.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            const mostra = !termo || texto.includes(termo);
+            el.style.display = mostra ? '' : 'none';
+            if (mostra) visiveis += 1;
+        });
+        menu.querySelectorAll('[data-secao-menu]').forEach((el) => { el.style.display = termo ? 'none' : ''; });
+        setSemResultadoMenu(Boolean(termo) && visiveis === 0);
+    }, [buscaMenu]);
 
     return (
         <div className="min-h-screen bg-gray-50 dark:bg-gray-900 font-sans flex flex-col relative">
@@ -187,10 +227,13 @@ export default function AuthenticatedLayout({ header, children }) {
                             }
                         }}
                         className="p-2 text-white/90 hover:text-white hover:bg-white/20 rounded-lg transition focus:outline-none shrink-0"
+                        title={isSidebarExpanded ? 'Recolher menu' : 'Abrir menu'}
+                        aria-label={isSidebarExpanded ? 'Recolher menu' : 'Abrir menu'}
                     >
-                        {isSidebarExpanded ? (
+                        {isSidebarExpanded || isMobileMenuOpen ? (
+                            // Menu aberto: seta "<" indicando que dá para recolher.
                             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 6h16M4 12h16M4 18h16"></path>
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M15 19l-7-7 7-7"></path>
                             </svg>
                         ) : (
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -200,13 +243,39 @@ export default function AuthenticatedLayout({ header, children }) {
                     </button>
                 </div>
                 
+                {/* BUSCA NO MENU */}
+                {(isSidebarExpanded || isMobileMenuOpen) && (
+                    <div className="px-4 pt-3 shrink-0">
+                        <div className="relative">
+                            <svg className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-white/70 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                            <input
+                                type="search"
+                                value={buscaMenu}
+                                onChange={(e) => setBuscaMenu(e.target.value)}
+                                onKeyDown={(e) => {
+                                    // Enter abre o primeiro item encontrado.
+                                    if (e.key === 'Enter') {
+                                        const primeiro = Array.from(menuRolagemRef.current?.querySelectorAll('a[title]') || []).find((a) => a.style.display !== 'none');
+                                        if (primeiro) primeiro.click();
+                                    }
+                                    if (e.key === 'Escape') setBuscaMenu('');
+                                }}
+                                placeholder="Buscar no menu…"
+                                aria-label="Buscar no menu"
+                                className="w-full rounded-xl border-0 bg-white/15 py-2 pl-9 pr-3 text-sm text-white placeholder:text-white/60 focus:bg-white/25 focus:ring-2 focus:ring-white/40"
+                            />
+                        </div>
+                        {semResultadoMenu && <p className="mt-2 px-1 text-xs text-white/80">Nada encontrado no menu.</p>}
+                    </div>
+                )}
+
                 {/* ÁREA DOS LINKS */}
-                <div className="menu-lateral-rolagem flex flex-col flex-1 min-h-0 overflow-y-auto space-y-2 pb-10">
+                <div ref={menuRolagemRef} onScroll={guardarRolagemMenu} className="menu-lateral-rolagem flex flex-col flex-1 min-h-0 overflow-y-auto space-y-2 pb-10">
                     
                     {/* LINKS DE GESTORES (Dono da Loja, Gerente) */}
                     {isGestor && (
                         <>
-                            <SectionTitle title="Admin Marketplace" />
+                            <SectionTitle title="Principal" />
                             
                             <Link href={route('dashboard')} title="Dashboard" className={`${baseLinkClass} ${estaAtivo('dashboard') ? activeLinkClass : inactiveLinkClass}`}>
                                 <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
@@ -260,26 +329,31 @@ export default function AuthenticatedLayout({ header, children }) {
                                 </Link>
                             )}
 
-                            {linksGestaoLocal.map(({ nome, rota, icone: Icone, local, premium, premiumSocio }) => (
-                                <Link
-                                    key={rota}
-                                    href={local ? route(rota, menuEstabelecimentoId) : route(rota)}
-                                    title={nome}
-                                    className={`${baseLinkClass} ${estaAtivo(rota, local ? menuEstabelecimentoId : undefined) ? activeLinkClass : inactiveLinkClass}`}
-                                >
-                                    <Icone className="w-6 h-6 shrink-0" />
-                                    <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>{nome}</span>
-                                    {premium && !menuPremium && (
-                                        <span className={`ml-auto inline-flex items-center gap-1 text-[10px] font-black bg-amber-400 text-zinc-900 px-2 py-0.5 rounded-full transition-all duration-300 ${textVisibilityClass}`}>
-                                            <LockClosedIcon className="w-3 h-3" /> PREMIUM
-                                        </span>
-                                    )}
-                                    {premiumSocio && !menuPremiumSocio && (
-                                        <span className={`ml-auto inline-flex items-center gap-1 text-[10px] font-black bg-amber-400 text-zinc-900 px-2 py-0.5 rounded-full transition-all duration-300 ${textVisibilityClass}`}>
-                                            <LockClosedIcon className="w-3 h-3" /> PREMIUM
-                                        </span>
-                                    )}
-                                </Link>
+                            {['Dia a dia', 'Catálogo e vendas', 'Gestão'].filter((grupo) => linksGestaoLocal.some((l) => l.grupo === grupo)).map((grupo) => (
+                                <div key={grupo} className="space-y-2">
+                                    <SectionTitle title={grupo} />
+                                    {linksGestaoLocal.filter((l) => l.grupo === grupo).map(({ nome, rota, icone: Icone, local, premium, premiumSocio }) => (
+                                        <Link
+                                            key={rota}
+                                            href={local ? route(rota, menuEstabelecimentoId) : route(rota)}
+                                            title={nome}
+                                            className={`${baseLinkClass} ${estaAtivo(rota, local ? menuEstabelecimentoId : undefined) ? activeLinkClass : inactiveLinkClass}`}
+                                        >
+                                            <Icone className="w-6 h-6 shrink-0" />
+                                            <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>{nome}</span>
+                                            {premium && !menuPremium && (
+                                                <span className={`ml-auto inline-flex items-center gap-1 text-[10px] font-black bg-amber-400 text-zinc-900 px-2 py-0.5 rounded-full transition-all duration-300 ${textVisibilityClass}`}>
+                                                    <LockClosedIcon className="w-3 h-3" /> PREMIUM
+                                                </span>
+                                            )}
+                                            {premiumSocio && !menuPremiumSocio && (
+                                                <span className={`ml-auto inline-flex items-center gap-1 text-[10px] font-black bg-amber-400 text-zinc-900 px-2 py-0.5 rounded-full transition-all duration-300 ${textVisibilityClass}`}>
+                                                    <LockClosedIcon className="w-3 h-3" /> PREMIUM
+                                                </span>
+                                            )}
+                                        </Link>
+                                    ))}
+                                </div>
                             ))}
 
                             <div className={`my-2 mx-4 border-t border-white/30 transition-all duration-300 ${isSidebarExpanded ? 'opacity-100 block' : 'opacity-0 hidden'}`}></div>
@@ -716,23 +790,23 @@ export default function AuthenticatedLayout({ header, children }) {
                 )}
 
                 {alertaCarteiraAsaas && (
-                    <div className="bg-red-50 border-b border-red-200">
+                    <div className={alertaCarteiraAsaas.informal ? 'bg-amber-50 border-b border-amber-200' : 'bg-red-50 border-b border-red-200'}>
                         <div className="mx-auto px-4 py-3 sm:px-6 lg:px-8 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                             <div>
-                                <p className="text-sm font-black text-red-800">{alertaCarteiraAsaas.mensagem}</p>
-                                <p className="text-xs text-red-700 mt-0.5">{alertaCarteiraAsaas.detalhe}</p>
+                                <p className={`text-sm font-black ${alertaCarteiraAsaas.informal ? 'text-amber-900' : 'text-red-800'}`}>{alertaCarteiraAsaas.mensagem}</p>
+                                <p className={`text-xs mt-0.5 ${alertaCarteiraAsaas.informal ? 'text-amber-800' : 'text-red-700'}`}>{alertaCarteiraAsaas.detalhe}</p>
                             </div>
                             <Link
                                 href={alertaCarteiraAsaas.rota}
-                                className="shrink-0 text-center px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-xl transition"
+                                className={`shrink-0 text-center px-5 py-2.5 text-white text-sm font-bold rounded-xl transition ${alertaCarteiraAsaas.informal ? 'bg-amber-600 hover:bg-amber-700' : 'bg-red-600 hover:bg-red-700'}`}
                             >
-                                Criar conta de recebimento
+                                {alertaCarteiraAsaas.informal ? 'Cadastrar CNPJ' : 'Criar conta de recebimento'}
                             </Link>
                         </div>
                     </div>
                 )}
 
-                <main className="flex-1 py-8 animate-in fade-in duration-500">
+                <main className="flex-1 py-5 animate-in fade-in duration-500">
                     <div className="mx-auto px-4 sm:px-6 lg:px-8">
                         {avisosUsuario?.length > 0 && (
                             <div className="space-y-3 mb-6">

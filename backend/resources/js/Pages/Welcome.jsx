@@ -291,7 +291,7 @@ export default function Welcome({
 
     return (
         <>
-            <Head title="Lokyva - Hotéis, Carros e Serviços Integrados" />
+            <Head title="Hotéis, Carros e Serviços Integrados" />
 
             <div className="relative min-h-screen bg-[#FAFAFA] text-gray-900 font-sans selection:bg-orange-500 selection:text-white">
                 

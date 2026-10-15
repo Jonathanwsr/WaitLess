@@ -848,6 +848,9 @@ public function pularProximo($id)
 
         $dadosTela = [
             'tipo' => 'agendamento',
+            'servico_id' => $agendamento->servico_id,
+            'estabelecimento_id' => $agendamento->estabelecimento_id,
+            'ramo' => $estabelecimento->ramo_atuacao ?? null,
             'id' => $agendamento->id,
             'titulo' => $agendamento->servico->nome ?? 'Serviço não especificado',
             'subtitulo' => $agendamento->funcionario ? $agendamento->funcionario->nome : 'Profissional não atribuído',
@@ -996,6 +999,8 @@ public function pularProximo($id)
                 'aluguel_id' => $aluguel->id,
             ],
             'cobranca' => null,
+            // Política de cancelamento (modelo Airbnb) e quanto volta se cancelar agora.
+            'cancelamento' => app(\App\Services\Locacao\PoliticaCancelamentoService::class)->resumoParaCliente($aluguel),
         ];
 
         return $dadosTela;
@@ -1162,6 +1167,10 @@ public function pularProximo($id)
 
         $item = ItemAluguel::findOrFail($validated['item_aluguel_id']);
         $user = Auth::user();
+
+        if ($validated['forma_pagamento'] === 'online' && !$pagamentoService->reservaAceitaPagamentoOnline($item)) {
+            return back()->withErrors(['forma_pagamento' => 'Este local ainda não recebe pagamentos online. Escolha pagar no local.']);
+        }
 
         $cotacao = app(\App\Services\Locacao\CotacaoAluguelService::class)->cotar($item, $user, $validated, $cupomService);
         $validated = $cotacao['validated'];
@@ -1406,7 +1415,7 @@ public function pularProximo($id)
             // verdade pelo Asaas. processarCancelamentoAluguel() cuida do
             // estorno real (ou devolve 100%/retém a taxa de cancelamento
             // tardio, conforme a antecedência) e do registro visível pro admin.
-            $resultado = $pagamentoService->processarCancelamentoAluguel($aluguel);
+            $resultado = $pagamentoService->processarCancelamentoAluguel($aluguel, Auth::id());
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
         }
@@ -1594,6 +1603,10 @@ public function pularProximo($id)
         $item = ItemAluguel::findOrFail($id);
         $user = Auth::user();
 
+        if ($validated['forma_pagamento'] === 'online' && !app(\App\Services\PagamentoService::class)->reservaAceitaPagamentoOnline($item)) {
+            return back()->withErrors(['forma_pagamento' => 'Este local ainda não recebe pagamentos online. Escolha pagar no local.']);
+        }
+
         $dataInicio = Carbon::parse($validated['data_inicio']);
         $dataFim = Carbon::parse($validated['data_fim']);
         $totalDias = max(1, $dataInicio->diffInDays($dataFim));
@@ -1665,8 +1678,8 @@ public function pularProximo($id)
     {
         $request->validate([
             'agendamento_id' => 'required|exists:agendamentos,id',
-            'lat'            => 'required|numeric',
-            'lng'            => 'required|numeric',
+            'lat'            => 'required|numeric|between:-90,90',
+            'lng'            => 'required|numeric|between:-180,180',
             'heading'        => 'nullable|numeric',
             'velocidade'     => 'nullable|numeric',
         ]);
@@ -1677,25 +1690,18 @@ public function pularProximo($id)
             abort(403, 'Você só pode transmitir localização do seu próprio agendamento.');
         }
 
-        $agendamento->forceFill([
-            'ultima_latitude' => $request->lat,
-            'ultima_longitude' => $request->lng,
-            'ultimo_heading' => $request->heading,
-            'ultima_velocidade' => $request->velocidade,
-            'ultima_localizacao_em' => now(),
-        ])->save();
-
-        broadcast(new \App\Events\LocationUpdated(
-            $agendamento->id,
-            $request->lat,
-            $request->lng,
-            $request->heading,
-            $request->velocidade
-        ));
+        // Salva a última posição (o mapa do dono lê dela) e avisa em tempo real quando o WebSocket está no ar.
+        app(\App\Services\Rastreamento\RastreamentoService::class)->registrar(
+            $agendamento,
+            (float) $request->lat,
+            (float) $request->lng,
+            $request->filled('heading') ? (float) $request->heading : null,
+            $request->filled('velocidade') ? (float) $request->velocidade : null,
+        );
 
         return response()->json([
             'status' => 'sucesso',
-            'message' => 'Coordenadas transmitidas ao estabelecimento.'
+            'message' => 'Coordenadas transmitidas ao estabelecimento.',
         ], 200);
     }
 
@@ -1707,10 +1713,12 @@ public function pularProximo($id)
             abort(403, 'Acesso Negado.');
         }
 
-        // Ver os clientes a caminho do local é um recurso Premium (o admin da plataforma sempre vê).
-        $premium = $user->papel === 'admin' || $user->isPremium();
-        if (!$premium) {
-            if (request()->wantsJson() && !request()->header('X-Inertia')) {
+        $rastreamento = app(\App\Services\Rastreamento\RastreamentoService::class);
+        $querJson = request()->wantsJson() && !request()->header('X-Inertia');
+
+        // Ver os clientes a caminho é Premium (do usuário ou do dono do local; o admin sempre vê).
+        if (!$rastreamento->podeVer($user)) {
+            if ($querJson) {
                 return response()->json([
                     'premium_necessario' => true,
                     'message' => 'Seja Premium para ver seus clientes a caminho do seu local.',
@@ -1723,38 +1731,15 @@ public function pularProximo($id)
             ]);
         }
 
-        $meusEstabelecimentosIds = $user->estabelecimentos()->pluck('estabelecimentos.id');
+        $ativos = $rastreamento->ativosDeHoje($user);
 
-        $agendamentosDeHoje = Agendamento::with(['usuario:id,name,foto_perfil', 'estabelecimento:id,nome,latitude,longitude', 'servico:id,nome'])
-            ->whereIn('estabelecimento_id', $meusEstabelecimentosIds)
-            ->whereDate('data_agendamento', now()->toDateString())
-            ->whereIn('status', ['pendente', 'confirmado', 'aguardando_pagamento'])
-            ->orderBy('hora_agendamento', 'asc')
-            ->get();
-
-        if (request()->wantsJson()) {
-            return response()->json([
-                'agendamentos_ativos' => $agendamentosDeHoje->map(fn (Agendamento $agendamento) => [
-                    'id' => $agendamento->id,
-                    'status' => $agendamento->status,
-                    'hora_agendamento' => $agendamento->hora_agendamento,
-                    'usuario' => [
-                        'name' => $agendamento->usuario?->name,
-                        'foto_perfil' => $agendamento->usuario?->foto_perfil,
-                    ],
-                    'estabelecimento' => [
-                        'id' => $agendamento->estabelecimento?->id,
-                        'nome' => $agendamento->estabelecimento?->nome,
-                        'latitude' => $agendamento->estabelecimento?->latitude,
-                        'longitude' => $agendamento->estabelecimento?->longitude,
-                    ],
-                    'servico' => $agendamento->servico?->nome,
-                ]),
-            ]);
+        // A tela consulta esta mesma rota a cada poucos segundos para atualizar a lista e as posições.
+        if ($querJson) {
+            return response()->json(['agendamentos_ativos' => $ativos, 'atualizado_em' => now()->toIso8601String()]);
         }
 
         return inertia('Estabelecimentos/MapaRastreamento', [
-            'agendamentosAtivos' => $agendamentosDeHoje
+            'agendamentosAtivos' => $ativos,
         ]);
     }
 
@@ -1779,7 +1764,8 @@ public function pularProximo($id)
         DB::beginTransaction();
         try {
             $servico = Servico::findOrFail($validated['servico_id']);
-            $valorTotal = $servico->valor;
+            // Valor com a promoção cadastrada no serviço.
+            $valorTotal = app(\App\Services\PrecificacaoService::class)->comPromocao((float) $servico->valor, (bool) ($servico->tem_promocao ?? false), $servico->tipo_desconto ?? null, $servico->valor_desconto ?? null);
 
             // 1. Cria o agendamento inicial (Carrinho)
             $agendamento = Agendamento::create([

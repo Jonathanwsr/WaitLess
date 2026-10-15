@@ -9,7 +9,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
-  Image,
   SafeAreaView,
   StatusBar,
 } from 'react-native';
@@ -46,6 +45,15 @@ const STEPS = [
   { title: 'Sobre Você', subtitle: 'Personalize seu perfil (opcional)' },
   { title: 'Endereço', subtitle: 'Pra localizar seus pedidos e repasses' },
   { title: 'Segurança', subtitle: 'Defina sua senha e aceite os termos' },
+];
+
+// Visual de cada etapa: nome curto no indicador e o aviso em cartão no topo da etapa.
+const ETAPAS_VISUAIS: { curto: string; titulo: string; texto: string; icone: React.ComponentProps<typeof Ionicons>['name'] }[] = [
+  { curto: 'Perfil', titulo: 'Bem-vindo à Lokyva', texto: 'Conte como você vai usar o app. Dá para mudar depois.', icone: 'sparkles-outline' },
+  { curto: 'Dados', titulo: 'Seus dados', texto: 'Usados para pagamentos, contratos e para falar com você.', icone: 'person-outline' },
+  { curto: 'Sobre', titulo: 'Sobre você', texto: 'Opcional: aparece no seu perfil e ajuda a te conhecer.', icone: 'chatbubble-ellipses-outline' },
+  { curto: 'Endereço', titulo: 'Seu endereço', texto: 'Digite o CEP e completamos o resto para você.', icone: 'location-outline' },
+  { curto: 'Senha', titulo: 'Quase lá', texto: 'Crie sua senha e aceite o termo para terminar.', icone: 'shield-checkmark-outline' },
 ];
 
 export default function Cadastro() {
@@ -314,63 +322,79 @@ export default function Cadastro() {
     }
   };
 
+  const etapa = ETAPAS_VISUAIS[step];
+  const ehProprietario = papel === 'proprietario';
+
+  // Campo com rótulo em cima e ícone à esquerda (padrão das telas novas do app).
+  const rotulo = (texto: string, opcional = false) => (
+    <Text style={styles.fieldLabel}>
+      {texto}
+      {opcional && <Text style={styles.fieldLabelOpcional}> (opcional)</Text>}
+    </Text>
+  );
+
   return (
     <View style={styles.background}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F7F8FA" />
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
       <SafeAreaView style={styles.safeArea}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
 
-          {/* HEADER */}
+          {/* HEADER: seta, título no centro e ajuda (mesmo padrão de "Contestar estorno") */}
           <View style={styles.header}>
-            <TouchableOpacity onPress={handleBack} style={styles.backButton}>
-              <Ionicons name="arrow-back" size={22} color="#000000" />
+            <TouchableOpacity onPress={handleBack} style={styles.headerBtn} hitSlop={10}>
+              <Ionicons name="arrow-back" size={24} color={AppColors.ink} />
             </TouchableOpacity>
-            <View style={styles.headerCenter}>
-              <Text style={styles.headerTitle}>Criar conta</Text>
-              <Text style={styles.headerSubtitle}>{STEPS[step].subtitle}</Text>
-            </View>
-            <View style={{ width: 44 }} />
+            <Text style={styles.headerTitle}>Criar conta</Text>
+            <TouchableOpacity
+              onPress={() => alertar('Precisa de ajuda?', 'Preencha uma etapa por vez. Você pode voltar e corrigir qualquer dado antes de criar a conta. Seus dados são usados só para sua conta, pagamentos e contratos.')}
+              style={styles.headerBtn}
+              hitSlop={10}
+            >
+              <Ionicons name="help-circle-outline" size={26} color={AppColors.ink} />
+            </TouchableOpacity>
           </View>
 
-          {/* STEPPER */}
-          <View style={styles.stepperContainer}>
-            <View style={styles.stepDotsRow}>
-              {STEPS.map((s, idx) => (
-                <React.Fragment key={s.title}>
-                  <View style={[styles.stepDot, idx <= step && styles.stepDotActive]}>
-                    {idx < step ? (
-                      <Ionicons name="checkmark" size={12} color="#FFFFFF" />
-                    ) : (
-                      <Text style={[styles.stepDotText, idx <= step && styles.stepDotTextActive]}>{idx + 1}</Text>
-                    )}
+          {/* ETAPAS: bolinhas com check e o nome embaixo (mesmo padrão da tela de Pagamento) */}
+          <View style={styles.stepper}>
+            {ETAPAS_VISUAIS.map((e, idx) => {
+              const feita = idx < step;
+              const atual = idx === step;
+              return (
+                <React.Fragment key={e.curto}>
+                  <View style={styles.stepItem}>
+                    <View style={[styles.stepDot, (feita || atual) && styles.stepDotActive]}>
+                      {feita ? (
+                        <Ionicons name="checkmark" size={14} color="#FFFFFF" />
+                      ) : (
+                        <Text style={[styles.stepDotText, atual && styles.stepDotTextActive]}>{idx + 1}</Text>
+                      )}
+                    </View>
+                    <Text style={[styles.stepLabel, (feita || atual) && styles.stepLabelActive]} numberOfLines={1}>{e.curto}</Text>
                   </View>
-                  {idx < STEPS.length - 1 && (
-                    <View style={[styles.stepConnector, idx < step && styles.stepConnectorActive]} />
-                  )}
+                  {idx < ETAPAS_VISUAIS.length - 1 && <View style={[styles.stepConnector, feita && styles.stepConnectorActive]} />}
                 </React.Fragment>
-              ))}
-            </View>
-            <View style={styles.progressBarTrack}>
-              <View style={[styles.progressBarFill, { width: `${((step + 1) / STEPS.length) * 100}%` }]} />
-            </View>
+              );
+            })}
           </View>
 
           <ScrollView ref={scrollRef} contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
 
-            {/* LOGO (só na primeira etapa) */}
-            {step === 0 && (
-              <View style={styles.logoContainer}>
-                <Image source={require('../assets/logo_lokyva.png')} style={styles.logo} resizeMode="contain" />
+            {/* AVISO DA ETAPA: cartão laranja-claro com ícone (padrão "Explique o que aconteceu") */}
+            <View style={styles.banner}>
+              <View style={styles.bannerIcon}>
+                <Ionicons name={etapa.icone} size={24} color={AppColors.primary} />
               </View>
-            )}
+              <View style={{ flex: 1 }}>
+                <Text style={styles.bannerTitle}>{etapa.titulo}</Text>
+                <Text style={styles.bannerText}>{etapa.texto}</Text>
+              </View>
+            </View>
 
-            <View style={styles.form}>
-
-              <Text style={styles.sectionTitle}>{STEPS[step].title}</Text>
-
-              {/* ETAPA 0 — PERFIL */}
-              {step === 0 && (
+            {/* ETAPA 0 — PERFIL */}
+            {step === 0 && (
+              <>
+                {rotulo('Como você vai usar a Lokyva')}
                 <View style={styles.profileCards}>
                   {PERFIS.map((item) => {
                     const isSelected = papel === item.value;
@@ -385,287 +409,283 @@ export default function Cadastro() {
                           <Ionicons name={item.icon} size={22} color={isSelected ? '#FFFFFF' : AppColors.primary} />
                         </View>
                         <View style={{ flex: 1 }}>
-                          <Text style={[styles.profileCardTitle, isSelected && styles.profileCardTitleSelected]}>{item.label}</Text>
+                          <Text style={styles.profileCardTitle}>{item.label}</Text>
                           <Text style={styles.profileCardDesc}>{item.desc}</Text>
                         </View>
                         <View style={[styles.radioOuter, isSelected && styles.radioOuterSelected]}>
-                          {isSelected && <View style={styles.radioInner} />}
+                          {isSelected && <Ionicons name="checkmark" size={13} color="#FFFFFF" />}
                         </View>
                       </TouchableOpacity>
                     );
                   })}
                 </View>
-              )}
 
-              {/* ETAPA 1 — DADOS PESSOAIS */}
-              {step === 1 && (
-                <>
-                  <View style={styles.inputContainer}>
-                    <Ionicons name="person-outline" size={20} color="#000000" style={styles.inputIcon} />
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Nome completo"
-                      placeholderTextColor="#888"
-                      value={name}
-                      onChangeText={(t) => setName(capitalizeFirst(t))}
-                      autoCapitalize="words"
-                    />
-                  </View>
-
-                  <View style={styles.inputContainer}>
-                    <Ionicons name="mail-outline" size={20} color="#000000" style={styles.inputIcon} />
-                    <TextInput style={styles.input} placeholder="E-mail" placeholderTextColor="#888" value={email} onChangeText={(t) => setEmail(sanitizeInput(t))} keyboardType="email-address" autoCapitalize="none" />
-                  </View>
-
-                  <View style={styles.rowInputs}>
-                    <View style={[styles.inputContainer, { flex: 1, marginRight: 10 }]}>
-                      <Ionicons name="id-card-outline" size={20} color="#000000" style={styles.inputIcon} />
-                      <TextInput style={styles.input} placeholder="CPF / CNPJ" placeholderTextColor="#888" value={cpfCnpj} onChangeText={(t) => setCpfCnpj(maskCPF(t))} keyboardType="number-pad" />
+                {ehProprietario && (
+                  <View style={styles.cnpjBox}>
+                    <Text style={styles.cnpjTitulo}>Tem CNPJ? Veja o que muda</Text>
+                    <View style={styles.cnpjItem}>
+                      <Ionicons name="storefront-outline" size={18} color={AppColors.primary} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.cnpjItemTitulo}>Sem CNPJ</Text>
+                        <Text style={styles.cnpjItemTexto}>Você usa a Lokyva normalmente. O cliente paga no local.</Text>
+                      </View>
                     </View>
-                    <View style={[styles.inputContainer, { flex: 1 }]}>
-                      <Ionicons name="call-outline" size={20} color="#000000" style={styles.inputIcon} />
-                      <TextInput style={styles.input} placeholder="Celular" placeholderTextColor="#888" value={mobilePhone} onChangeText={(t) => setMobilePhone(maskPhone(t))} keyboardType="phone-pad" />
+                    <View style={styles.cnpjItem}>
+                      <Ionicons name="card-outline" size={18} color={AppColors.primary} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.cnpjItemTitulo}>Com CNPJ (MEI serve)</Text>
+                        <Text style={styles.cnpjItemTexto}>Você recebe pagamento online (Pix, cartão e boleto), tem carteira e aparece antes nas buscas.</Text>
+                      </View>
                     </View>
+                    <Text style={styles.cnpjRodape}>Pode começar sem CNPJ e cadastrar depois.</Text>
                   </View>
-
-                  <View style={styles.rowInputs}>
-                    <View style={[styles.inputContainer, { flex: 1, marginRight: 10 }]}>
-                      <Ionicons name="call-outline" size={20} color="#000000" style={styles.inputIcon} />
-                      <TextInput style={styles.input} placeholder="Fixo (Opcional)" placeholderTextColor="#888" value={phone} onChangeText={(t) => setPhone(maskPhone(t))} keyboardType="phone-pad" />
-                    </View>
-                    <View style={[styles.inputContainer, { flex: 1 }]}>
-                      <Ionicons name="calendar-outline" size={20} color="#000000" style={styles.inputIcon} />
-                      <TextInput style={styles.input} placeholder="Nascimento" placeholderTextColor="#888" value={birthDate} onChangeText={(t) => setBirthDate(maskDate(t))} keyboardType="number-pad" />
-                    </View>
-                  </View>
-                </>
-              )}
-
-              {/* ETAPA 2 — SOBRE VOCÊ */}
-              {step === 2 && (
-                <>
-                  <Text style={styles.stepHint}>Esses dados são opcionais e só ajudam a personalizar sua experiência.</Text>
-
-                  <Text style={styles.fieldLabel}>Sua Profissão</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScrollView}>
-                    {OPCOES_PROFISSAO.map((item) => (
-                      <TouchableOpacity
-                        key={item}
-                        style={[styles.chip, profissao === item && styles.chipSelected]}
-                        onPress={() => setProfissao(item)}
-                      >
-                        <Text style={[styles.chipText, profissao === item && styles.chipTextSelected]}>{item}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                  <View style={styles.inputContainer}>
-                    <Ionicons name="briefcase-outline" size={20} color="#000000" style={styles.inputIcon} />
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Sua Profissão (ou digite aqui)"
-                      placeholderTextColor="#888"
-                      value={profissao}
-                      onChangeText={(t) => setProfissao(capitalizeFirst(t))}
-                      autoCapitalize="sentences"
-                    />
-                  </View>
-
-                  <Text style={styles.fieldLabel}>Onde Estudei</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScrollView}>
-                    {OPCOES_ONDE_ESTUDEI.map((item) => (
-                      <TouchableOpacity
-                        key={item}
-                        style={[styles.chip, ondeEstudei === item && styles.chipSelected]}
-                        onPress={() => setOndeEstudei(item)}
-                      >
-                        <Text style={[styles.chipText, ondeEstudei === item && styles.chipTextSelected]}>{item}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                  <View style={styles.inputContainer}>
-                    <Ionicons name="school-outline" size={20} color="#000000" style={styles.inputIcon} />
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Onde estudei (ou digite a instituição)"
-                      placeholderTextColor="#888"
-                      value={ondeEstudei}
-                      onChangeText={(t) => setOndeEstudei(capitalizeFirst(t))}
-                      autoCapitalize="sentences"
-                    />
-                  </View>
-
-                  <Text style={styles.fieldLabel}>Onde Moro</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScrollView}>
-                    {OPCOES_ONDE_MORO.map((item) => (
-                      <TouchableOpacity
-                        key={item}
-                        style={[styles.chip, ondeMoro === item && styles.chipSelected]}
-                        onPress={() => setOndeMoro(item)}
-                      >
-                        <Text style={[styles.chipText, ondeMoro === item && styles.chipTextSelected]}>{item}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                  <View style={styles.inputContainer}>
-                    <Ionicons name="home-outline" size={20} color="#000000" style={styles.inputIcon} />
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Onde moro (ou digite outro tipo)"
-                      placeholderTextColor="#888"
-                      value={ondeMoro}
-                      onChangeText={(t) => setOndeMoro(capitalizeFirst(t))}
-                      autoCapitalize="sentences"
-                    />
-                  </View>
-
-                  <View style={styles.inputContainer}>
-                    <Ionicons name="language-outline" size={20} color="#000000" style={styles.inputIcon} />
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Idiomas (ex: Português, Inglês)"
-                      placeholderTextColor="#888"
-                      value={idiomas}
-                      onChangeText={(t) => setIdiomas(capitalizeFirst(t))}
-                      autoCapitalize="sentences"
-                    />
-                  </View>
-
-                  <View style={[styles.inputContainer, styles.textAreaContainer]}>
-                    <Ionicons name="information-circle-outline" size={20} color="#000000" style={[styles.inputIcon, { marginTop: 12 }]} />
-                    <TextInput
-                      style={[styles.input, styles.textArea]}
-                      placeholder="Sobre mim (uma breve descrição)"
-                      placeholderTextColor="#888"
-                      value={sobreMim}
-                      onChangeText={(t) => setSobreMim(capitalizeFirst(t))}
-                      multiline
-                      numberOfLines={3}
-                      textAlignVertical="top"
-                      autoCapitalize="sentences"
-                    />
-                  </View>
-                </>
-              )}
-
-              {/* ETAPA 3 — ENDEREÇO */}
-              {step === 3 && (
-                <>
-                  <View style={styles.rowInputs}>
-                    <View style={[styles.inputContainer, { flex: 1, marginRight: 10 }]}>
-                      <Ionicons name="map-outline" size={20} color="#000000" style={styles.inputIcon} />
-                      <TextInput style={styles.input} placeholder="CEP" placeholderTextColor="#888" value={postalCode} onChangeText={handleCepChange} keyboardType="number-pad" />
-                      {buscandoCep && <ActivityIndicator size="small" color={AppColors.primary} style={{ position: 'absolute', right: 15 }} />}
-                    </View>
-                    <View style={[styles.inputContainer, { flex: 2, paddingLeft: 15 }]}>
-                      <TextInput style={styles.input} placeholder="Cidade / UF" placeholderTextColor="#888" value={city ? `${city} - ${stateUf}` : ''} editable={false} />
-                    </View>
-                  </View>
-
-                  <View style={styles.inputContainer}>
-                    <Ionicons name="location-outline" size={20} color="#000000" style={styles.inputIcon} />
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Rua / Avenida"
-                      placeholderTextColor="#888"
-                      value={address}
-                      onChangeText={(t) => setAddress(capitalizeFirst(t))}
-                      autoCapitalize="words"
-                    />
-                  </View>
-
-                  <View style={styles.rowInputs}>
-                    <View style={[styles.inputContainer, { flex: 1, marginRight: 10, paddingLeft: 15 }]}>
-                      <TextInput style={styles.input} placeholder="Número" placeholderTextColor="#888" value={addressNumber} onChangeText={(t) => setAddressNumber(sanitizeInput(t))} />
-                    </View>
-                    <View style={[styles.inputContainer, { flex: 1, paddingLeft: 15 }]}>
-                      <TextInput
-                        style={styles.input}
-                        placeholder="Bairro"
-                        placeholderTextColor="#888"
-                        value={province}
-                        onChangeText={(t) => setProvince(capitalizeFirst(t))}
-                        autoCapitalize="words"
-                      />
-                    </View>
-                  </View>
-
-                  <View style={styles.inputContainer}>
-                    <Ionicons name="add-circle-outline" size={20} color="#000000" style={styles.inputIcon} />
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Complemento (Opcional)"
-                      placeholderTextColor="#888"
-                      value={complement}
-                      onChangeText={(t) => setComplement(capitalizeFirst(t))}
-                      autoCapitalize="sentences"
-                    />
-                  </View>
-                </>
-              )}
-
-              {/* ETAPA 4 — SEGURANÇA */}
-              {step === 4 && (
-                <>
-                  <View style={styles.inputContainer}>
-                    <Ionicons name="lock-closed-outline" size={20} color="#000000" style={styles.inputIcon} />
-                    <TextInput style={styles.input} placeholder="Senha" placeholderTextColor="#888" value={password} onChangeText={(t) => setPassword(sanitizeInput(t))} secureTextEntry={!showPassword} />
-                    <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
-                      <Ionicons name={showPassword ? "eye-off-outline" : "eye-outline"} size={20} color="#888888" />
-                    </TouchableOpacity>
-                  </View>
-
-                  <View style={styles.inputContainer}>
-                    <Ionicons name="lock-closed-outline" size={20} color="#000000" style={styles.inputIcon} />
-                    <TextInput style={styles.input} placeholder="Confirmar senha" placeholderTextColor="#888" value={passwordConfirmation} onChangeText={(t) => setPasswordConfirmation(sanitizeInput(t))} secureTextEntry={!showPasswordConf} />
-                    <TouchableOpacity onPress={() => setShowPasswordConf(!showPasswordConf)} style={styles.eyeIcon}>
-                      <Ionicons name={showPasswordConf ? "eye-off-outline" : "eye-outline"} size={20} color="#888888" />
-                    </TouchableOpacity>
-                  </View>
-
-                  <View style={styles.inputContainer}>
-                    <Ionicons name="gift-outline" size={20} color="#000000" style={styles.inputIcon} />
-                    <TextInput style={styles.input} placeholder="Código de indicação (opcional)" placeholderTextColor="#888" value={codigoIndicacao} onChangeText={(t) => setCodigoIndicacao(t.toUpperCase().replace(/[^A-Z0-9]/g, ''))} autoCapitalize="characters" maxLength={12} />
-                  </View>
-
-                  <TouchableOpacity style={styles.checkboxContainer} onPress={() => setAceitoTermos(!aceitoTermos)}>
-                    <View style={[styles.checkbox, aceitoTermos && styles.checkboxChecked]}>
-                      {aceitoTermos && <Ionicons name="checkmark" size={14} color="#FFFFFF" />}
-                    </View>
-                    <Text style={styles.checkboxText}>
-                      Eu aceito o{' '}
-                      <Text style={styles.linkText} onPress={handleAbrirTermos}>Termo de Compromisso</Text>
-                    </Text>
-                  </TouchableOpacity>
-                </>
-              )}
-
-              {/* NAVEGAÇÃO ENTRE ETAPAS */}
-              <View style={styles.navRow}>
-                {step > 0 && (
-                  <TouchableOpacity style={styles.secondaryButton} onPress={handleBack} activeOpacity={0.85}>
-                    <Text style={styles.secondaryButtonText}>Voltar</Text>
-                  </TouchableOpacity>
                 )}
-                {step < STEPS.length - 1 ? (
-                  <TouchableOpacity style={[styles.button, styles.navButtonFlex]} onPress={handleNext} activeOpacity={0.88}>
-                    <Text style={styles.buttonText}>Continuar</Text>
-                    <Ionicons name="arrow-forward" size={18} color="#FFFFFF" style={{ marginLeft: 8 }} />
-                  </TouchableOpacity>
-                ) : (
-                  <TouchableOpacity style={[styles.button, styles.navButtonFlex]} onPress={handleCadastro} disabled={loading} activeOpacity={0.88}>
-                    {loading ? <ActivityIndicator color="#FFF" /> : <Text style={styles.buttonText}>Criar conta</Text>}
-                  </TouchableOpacity>
-                )}
-              </View>
+              </>
+            )}
 
-              {/* LINK LOGIN (só na primeira etapa) */}
-              {step === 0 && (
-                <TouchableOpacity style={styles.loginLink} onPress={() => router.replace('/')}>
-                  <Text style={styles.loginLinkTextDesc}>Já tem uma conta? <Text style={styles.loginLinkText}>Entrar</Text></Text>
+            {/* ETAPA 1 — DADOS PESSOAIS */}
+            {step === 1 && (
+              <>
+                {rotulo('Nome completo')}
+                <View style={styles.inputContainer}>
+                  <Ionicons name="person-outline" size={20} color={AppColors.textMuted} style={styles.inputIcon} />
+                  <TextInput style={styles.input} placeholder="Como está no seu documento" placeholderTextColor={AppColors.textFaint} value={name} onChangeText={(t) => setName(capitalizeFirst(t))} autoCapitalize="words" />
+                </View>
+
+                {rotulo('E-mail')}
+                <View style={styles.inputContainer}>
+                  <Ionicons name="mail-outline" size={20} color={AppColors.textMuted} style={styles.inputIcon} />
+                  <TextInput style={styles.input} placeholder="seu@email.com" placeholderTextColor={AppColors.textFaint} value={email} onChangeText={(t) => setEmail(sanitizeInput(t))} keyboardType="email-address" autoCapitalize="none" />
+                </View>
+
+                <View style={styles.rowInputs}>
+                  <View style={{ flex: 1 }}>
+                    {rotulo('CPF ou CNPJ')}
+                    <View style={styles.inputContainer}>
+                      <Ionicons name="id-card-outline" size={20} color={AppColors.textMuted} style={styles.inputIcon} />
+                      <TextInput style={styles.input} placeholder="Só números" placeholderTextColor={AppColors.textFaint} value={cpfCnpj} onChangeText={(t) => setCpfCnpj(maskCPF(t))} keyboardType="number-pad" />
+                    </View>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    {rotulo('Celular')}
+                    <View style={styles.inputContainer}>
+                      <Ionicons name="call-outline" size={20} color={AppColors.textMuted} style={styles.inputIcon} />
+                      <TextInput style={styles.input} placeholder="(00) 00000-0000" placeholderTextColor={AppColors.textFaint} value={mobilePhone} onChangeText={(t) => setMobilePhone(maskPhone(t))} keyboardType="phone-pad" />
+                    </View>
+                  </View>
+                </View>
+
+                <View style={styles.rowInputs}>
+                  <View style={{ flex: 1 }}>
+                    {rotulo('Telefone fixo', true)}
+                    <View style={styles.inputContainer}>
+                      <Ionicons name="call-outline" size={20} color={AppColors.textMuted} style={styles.inputIcon} />
+                      <TextInput style={styles.input} placeholder="(00) 0000-0000" placeholderTextColor={AppColors.textFaint} value={phone} onChangeText={(t) => setPhone(maskPhone(t))} keyboardType="phone-pad" />
+                    </View>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    {rotulo('Nascimento')}
+                    <View style={styles.inputContainer}>
+                      <Ionicons name="calendar-outline" size={20} color={AppColors.textMuted} style={styles.inputIcon} />
+                      <TextInput style={styles.input} placeholder="DD/MM/AAAA" placeholderTextColor={AppColors.textFaint} value={birthDate} onChangeText={(t) => setBirthDate(maskDate(t))} keyboardType="number-pad" />
+                    </View>
+                  </View>
+                </View>
+              </>
+            )}
+
+            {/* ETAPA 2 — SOBRE VOCÊ */}
+            {step === 2 && (
+              <>
+                {rotulo('Sua profissão', true)}
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScrollView}>
+                  {OPCOES_PROFISSAO.map((item) => (
+                    <TouchableOpacity key={item} style={[styles.chip, profissao === item && styles.chipSelected]} onPress={() => setProfissao(item)}>
+                      <Text style={[styles.chipText, profissao === item && styles.chipTextSelected]}>{item}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+                <View style={styles.inputContainer}>
+                  <Ionicons name="briefcase-outline" size={20} color={AppColors.textMuted} style={styles.inputIcon} />
+                  <TextInput style={styles.input} placeholder="Ou digite sua profissão" placeholderTextColor={AppColors.textFaint} value={profissao} onChangeText={(t) => setProfissao(capitalizeFirst(t))} autoCapitalize="sentences" />
+                </View>
+
+                {rotulo('Onde estudei', true)}
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScrollView}>
+                  {OPCOES_ONDE_ESTUDEI.map((item) => (
+                    <TouchableOpacity key={item} style={[styles.chip, ondeEstudei === item && styles.chipSelected]} onPress={() => setOndeEstudei(item)}>
+                      <Text style={[styles.chipText, ondeEstudei === item && styles.chipTextSelected]}>{item}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+                <View style={styles.inputContainer}>
+                  <Ionicons name="school-outline" size={20} color={AppColors.textMuted} style={styles.inputIcon} />
+                  <TextInput style={styles.input} placeholder="Ou digite a instituição" placeholderTextColor={AppColors.textFaint} value={ondeEstudei} onChangeText={(t) => setOndeEstudei(capitalizeFirst(t))} autoCapitalize="sentences" />
+                </View>
+
+                {rotulo('Onde moro', true)}
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScrollView}>
+                  {OPCOES_ONDE_MORO.map((item) => (
+                    <TouchableOpacity key={item} style={[styles.chip, ondeMoro === item && styles.chipSelected]} onPress={() => setOndeMoro(item)}>
+                      <Text style={[styles.chipText, ondeMoro === item && styles.chipTextSelected]}>{item}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+                <View style={styles.inputContainer}>
+                  <Ionicons name="home-outline" size={20} color={AppColors.textMuted} style={styles.inputIcon} />
+                  <TextInput style={styles.input} placeholder="Ou digite outro tipo" placeholderTextColor={AppColors.textFaint} value={ondeMoro} onChangeText={(t) => setOndeMoro(capitalizeFirst(t))} autoCapitalize="sentences" />
+                </View>
+
+                {rotulo('Idiomas', true)}
+                <View style={styles.inputContainer}>
+                  <Ionicons name="language-outline" size={20} color={AppColors.textMuted} style={styles.inputIcon} />
+                  <TextInput style={styles.input} placeholder="Ex: Português, Inglês" placeholderTextColor={AppColors.textFaint} value={idiomas} onChangeText={(t) => setIdiomas(capitalizeFirst(t))} autoCapitalize="sentences" />
+                </View>
+
+                {rotulo('Sobre mim', true)}
+                <View style={[styles.inputContainer, styles.textAreaContainer]}>
+                  <TextInput
+                    style={[styles.input, styles.textArea]}
+                    placeholder="Conte um pouco sobre você e seus interesses."
+                    placeholderTextColor={AppColors.textFaint}
+                    value={sobreMim}
+                    onChangeText={(t) => setSobreMim(capitalizeFirst(t).slice(0, 1000))}
+                    multiline
+                    numberOfLines={4}
+                    textAlignVertical="top"
+                    autoCapitalize="sentences"
+                  />
+                  <Text style={styles.contador}>{sobreMim.length}/1000</Text>
+                </View>
+              </>
+            )}
+
+            {/* ETAPA 3 — ENDEREÇO */}
+            {step === 3 && (
+              <>
+                <View style={styles.rowInputs}>
+                  <View style={{ flex: 1 }}>
+                    {rotulo('CEP')}
+                    <View style={styles.inputContainer}>
+                      <Ionicons name="map-outline" size={20} color={AppColors.textMuted} style={styles.inputIcon} />
+                      <TextInput style={styles.input} placeholder="00000-000" placeholderTextColor={AppColors.textFaint} value={postalCode} onChangeText={handleCepChange} keyboardType="number-pad" />
+                      {buscandoCep && <ActivityIndicator size="small" color={AppColors.primary} />}
+                    </View>
+                  </View>
+                  <View style={{ flex: 1.3 }}>
+                    {rotulo('Cidade / UF')}
+                    <View style={[styles.inputContainer, styles.inputBloqueado]}>
+                      <TextInput style={styles.input} placeholder="Preenche pelo CEP" placeholderTextColor={AppColors.textFaint} value={city ? `${city} - ${stateUf}` : ''} editable={false} />
+                    </View>
+                  </View>
+                </View>
+
+                {rotulo('Rua / avenida')}
+                <View style={styles.inputContainer}>
+                  <Ionicons name="location-outline" size={20} color={AppColors.textMuted} style={styles.inputIcon} />
+                  <TextInput style={styles.input} placeholder="Nome da rua" placeholderTextColor={AppColors.textFaint} value={address} onChangeText={(t) => setAddress(capitalizeFirst(t))} autoCapitalize="words" />
+                </View>
+
+                <View style={styles.rowInputs}>
+                  <View style={{ flex: 1 }}>
+                    {rotulo('Número')}
+                    <View style={styles.inputContainer}>
+                      <TextInput style={styles.input} placeholder="Nº" placeholderTextColor={AppColors.textFaint} value={addressNumber} onChangeText={(t) => setAddressNumber(sanitizeInput(t))} />
+                    </View>
+                  </View>
+                  <View style={{ flex: 1.3 }}>
+                    {rotulo('Bairro')}
+                    <View style={styles.inputContainer}>
+                      <TextInput style={styles.input} placeholder="Bairro" placeholderTextColor={AppColors.textFaint} value={province} onChangeText={(t) => setProvince(capitalizeFirst(t))} autoCapitalize="words" />
+                    </View>
+                  </View>
+                </View>
+
+                {rotulo('Complemento', true)}
+                <View style={styles.inputContainer}>
+                  <Ionicons name="add-circle-outline" size={20} color={AppColors.textMuted} style={styles.inputIcon} />
+                  <TextInput style={styles.input} placeholder="Apto, bloco, referência" placeholderTextColor={AppColors.textFaint} value={complement} onChangeText={(t) => setComplement(capitalizeFirst(t))} autoCapitalize="sentences" />
+                </View>
+              </>
+            )}
+
+            {/* ETAPA 4 — SEGURANÇA */}
+            {step === 4 && (
+              <>
+                {rotulo('Senha')}
+                <View style={styles.inputContainer}>
+                  <Ionicons name="lock-closed-outline" size={20} color={AppColors.textMuted} style={styles.inputIcon} />
+                  <TextInput style={styles.input} placeholder="Crie uma senha" placeholderTextColor={AppColors.textFaint} value={password} onChangeText={(t) => setPassword(sanitizeInput(t))} secureTextEntry={!showPassword} />
+                  <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeIcon}>
+                    <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={AppColors.textMuted} />
+                  </TouchableOpacity>
+                </View>
+
+                {rotulo('Confirmar senha')}
+                <View style={styles.inputContainer}>
+                  <Ionicons name="lock-closed-outline" size={20} color={AppColors.textMuted} style={styles.inputIcon} />
+                  <TextInput style={styles.input} placeholder="Repita a senha" placeholderTextColor={AppColors.textFaint} value={passwordConfirmation} onChangeText={(t) => setPasswordConfirmation(sanitizeInput(t))} secureTextEntry={!showPasswordConf} />
+                  <TouchableOpacity onPress={() => setShowPasswordConf(!showPasswordConf)} style={styles.eyeIcon}>
+                    <Ionicons name={showPasswordConf ? 'eye-off-outline' : 'eye-outline'} size={20} color={AppColors.textMuted} />
+                  </TouchableOpacity>
+                </View>
+                {!!passwordConfirmation && passwordConfirmation !== password && (
+                  <Text style={styles.erroCampo}>As senhas não são iguais.</Text>
+                )}
+
+                {rotulo('Código de indicação', true)}
+                <View style={styles.inputContainer}>
+                  <Ionicons name="gift-outline" size={20} color={AppColors.textMuted} style={styles.inputIcon} />
+                  <TextInput style={styles.input} placeholder="Código de um amigo: vocês ganham pontos" placeholderTextColor={AppColors.textFaint} value={codigoIndicacao} onChangeText={(t) => setCodigoIndicacao(t.toUpperCase().replace(/[^A-Z0-9]/g, ''))} autoCapitalize="characters" maxLength={12} />
+                </View>
+
+                <TouchableOpacity style={styles.checkboxContainer} onPress={() => setAceitoTermos(!aceitoTermos)} activeOpacity={0.8}>
+                  <View style={[styles.checkbox, aceitoTermos && styles.checkboxChecked]}>
+                    {aceitoTermos && <Ionicons name="checkmark" size={14} color="#FFFFFF" />}
+                  </View>
+                  <Text style={styles.checkboxText}>
+                    Li e aceito o{' '}
+                    <Text style={styles.linkText} onPress={handleAbrirTermos}>Termo de Compromisso</Text>
+                    {' '}da Lokyva.
+                  </Text>
                 </TouchableOpacity>
-              )}
+              </>
+            )}
 
+            {/* DADOS PROTEGIDOS (padrão "Seus dados estão protegidos") */}
+            <View style={styles.protegido}>
+              <Ionicons name="lock-closed-outline" size={22} color={AppColors.primary} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.protegidoTitulo}>Seus dados estão protegidos</Text>
+                <Text style={styles.protegidoTexto}>Usamos suas informações só para sua conta, pagamentos e contratos.</Text>
+              </View>
             </View>
+
+            {/* BOTÕES: principal cheio e secundário com contorno (padrão "Enviar" / "Cancelar") */}
+            {step < STEPS.length - 1 ? (
+              <TouchableOpacity style={styles.button} onPress={handleNext} activeOpacity={0.88}>
+                <Text style={styles.buttonText}>Continuar</Text>
+                <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity style={[styles.button, loading && { opacity: 0.7 }]} onPress={handleCadastro} disabled={loading} activeOpacity={0.88}>
+                {loading ? <ActivityIndicator color="#FFF" /> : (
+                  <>
+                    <Ionicons name="lock-closed" size={18} color="#FFFFFF" />
+                    <Text style={styles.buttonText}>Criar minha conta</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={styles.secondaryButton} onPress={handleBack} activeOpacity={0.85}>
+              <Text style={styles.secondaryButtonText}>{step === 0 ? 'Cancelar' : 'Voltar'}</Text>
+            </TouchableOpacity>
+
+            {step === 0 && (
+              <TouchableOpacity style={styles.loginLink} onPress={() => router.replace('/')}>
+                <Text style={styles.loginLinkTextDesc}>Já tem uma conta? <Text style={styles.loginLinkText}>Entrar</Text></Text>
+              </TouchableOpacity>
+            )}
           </ScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -674,235 +694,192 @@ export default function Cadastro() {
 }
 
 const styles = StyleSheet.create({
-  background: {
-    flex: 1,
-    backgroundColor: '#F7F8FA',
-  },
-  safeArea: {
-    flex: 1,
-  },
-  container: {
-    flex: 1,
-  },
-  scrollContainer: {
-    flexGrow: 1,
-    paddingHorizontal: 24,
-    paddingBottom: 40
-  },
+  background: { flex: 1, backgroundColor: '#FFFFFF' },
+  safeArea: { flex: 1 },
+  container: { flex: 1 },
+  scrollContainer: { flexGrow: 1, paddingHorizontal: 20, paddingBottom: 40 },
+
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 24,
-    marginTop: Platform.OS === 'android' ? 35 : 10,
-    marginBottom: 14
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    marginTop: Platform.OS === 'android' ? 35 : 6,
+    marginBottom: 14,
   },
-  backButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: '#FFFFFF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#EAEAEA',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-  },
-  headerCenter: { flex: 1, alignItems: 'center' },
-  headerTitle: { fontSize: 20, fontWeight: '800', color: '#111111' },
-  headerSubtitle: { fontSize: 13, color: '#666666', marginTop: 2 },
-  stepperContainer: { paddingHorizontal: 24, marginBottom: 6 },
-  stepDotsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 10 },
+  headerBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  headerTitle: { fontSize: 19, fontWeight: '800', color: AppColors.ink },
+
+  stepper: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 16, marginBottom: 16 },
+  stepItem: { alignItems: 'center', width: 58 },
   stepDot: {
     width: 26,
     height: 26,
     borderRadius: 13,
-    backgroundColor: '#EFEFEF',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: AppColors.line,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  stepDotActive: { backgroundColor: AppColors.primary },
-  stepDotText: { fontSize: 11, fontWeight: '700', color: '#999999' },
+  stepDotActive: { backgroundColor: AppColors.primary, borderColor: AppColors.primary },
+  stepDotText: { fontSize: 11, fontWeight: '800', color: AppColors.textFaint },
   stepDotTextActive: { color: '#FFFFFF' },
-  stepConnector: { flex: 1, height: 2, backgroundColor: '#EFEFEF', marginHorizontal: 4, maxWidth: 28 },
+  stepLabel: { fontSize: 11, color: AppColors.textFaint, marginTop: 6, fontWeight: '600' },
+  stepLabelActive: { color: AppColors.ink },
+  stepConnector: { flex: 1, height: 2, backgroundColor: AppColors.line, marginTop: 12, marginHorizontal: -10 },
   stepConnectorActive: { backgroundColor: AppColors.primary },
-  progressBarTrack: { height: 4, borderRadius: 2, backgroundColor: '#EFEFEF', overflow: 'hidden' },
-  progressBarFill: { height: '100%', backgroundColor: AppColors.primary, borderRadius: 2 },
-  logoContainer: { alignItems: 'center', marginBottom: 15, marginTop: 5 },
-  logo: { width: 140, height: 48 },
-  form: { flex: 1 },
-  sectionTitle: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: AppColors.primary,
-    textTransform: 'uppercase',
-    letterSpacing: 1.1,
-    marginBottom: 12,
-    marginTop: 8
-  },
-  stepHint: {
-    fontSize: 13,
-    color: '#888888',
-    marginBottom: 14,
-    marginTop: -4,
-    lineHeight: 18,
-  },
-  fieldLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#333333',
-    marginBottom: 6,
-    marginTop: 4,
-  },
-  chipScrollView: {
+
+  banner: {
     flexDirection: 'row',
-    marginBottom: 8,
+    alignItems: 'center',
+    gap: 14,
+    backgroundColor: '#FFF4EC',
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 20,
   },
+  bannerIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bannerTitle: { fontSize: 16, fontWeight: '800', color: AppColors.ink },
+  bannerText: { fontSize: 13, color: AppColors.textMuted, marginTop: 3, lineHeight: 18 },
+
+  fieldLabel: { fontSize: 14, fontWeight: '700', color: AppColors.ink, marginBottom: 8 },
+  fieldLabelOpcional: { fontWeight: '500', color: AppColors.textFaint },
+  chipScrollView: { flexDirection: 'row', marginBottom: 10 },
   chip: {
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 20,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#DDD',
+    borderColor: AppColors.line,
     marginRight: 8,
   },
-  chipSelected: {
-    backgroundColor: '#000000',
-    borderColor: '#000000',
-  },
-  chipText: {
-    fontSize: 13,
-    color: '#444',
-    fontWeight: '500',
-  },
-  chipTextSelected: {
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
-  profileCards: { gap: 12, marginTop: 4 },
+  chipSelected: { backgroundColor: AppColors.primaryLight, borderColor: AppColors.primary },
+  chipText: { fontSize: 13, color: AppColors.textMuted, fontWeight: '600' },
+  chipTextSelected: { color: AppColors.primary, fontWeight: '800' },
+
+  profileCards: { gap: 12, marginBottom: 16 },
   profileCard: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    borderWidth: 1.5,
-    borderColor: '#EAEAEA',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: AppColors.line,
     padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 4,
-    elevation: 1,
   },
-  profileCardSelected: {
-    borderColor: AppColors.primary,
-    backgroundColor: '#FFF8F4',
-    shadowColor: AppColors.primary,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 3,
-  },
+  profileCardSelected: { borderColor: AppColors.primary, backgroundColor: '#FFF8F3' },
   profileCardIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: '#FFF1E4',
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: AppColors.primaryLight,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 14,
   },
   profileCardIconSelected: { backgroundColor: AppColors.primary },
-  profileCardTitle: { fontSize: 15, fontWeight: '700', color: '#111111' },
-  profileCardTitleSelected: { color: AppColors.primary },
-  profileCardDesc: { fontSize: 12.5, color: '#888888', marginTop: 2 },
+  profileCardTitle: { fontSize: 15, fontWeight: '800', color: AppColors.ink },
+  profileCardDesc: { fontSize: 12.5, color: AppColors.textMuted, marginTop: 2 },
   radioOuter: {
     width: 22,
     height: 22,
     borderRadius: 11,
-    borderWidth: 2,
-    borderColor: '#DDDDDD',
+    borderWidth: 1.5,
+    borderColor: AppColors.line,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: 10,
   },
-  radioOuterSelected: { borderColor: AppColors.primary },
-  radioInner: { width: 11, height: 11, borderRadius: 6, backgroundColor: AppColors.primary },
-  rowInputs: { flexDirection: 'row', justifyContent: 'space-between' },
+  radioOuterSelected: { borderColor: AppColors.primary, backgroundColor: AppColors.primary },
+
+  cnpjBox: { backgroundColor: '#FFF4EC', borderRadius: 16, padding: 14, gap: 10, marginBottom: 8 },
+  cnpjTitulo: { fontSize: 14, fontWeight: '800', color: AppColors.ink },
+  cnpjItem: { flexDirection: 'row', gap: 10, backgroundColor: '#FFFFFF', borderRadius: 12, padding: 12 },
+  cnpjItemTitulo: { fontSize: 13, fontWeight: '800', color: AppColors.ink },
+  cnpjItemTexto: { fontSize: 12.5, color: AppColors.textMuted, lineHeight: 17, marginTop: 2 },
+  cnpjRodape: { fontSize: 12, color: AppColors.textMuted },
+
+  rowInputs: { flexDirection: 'row', gap: 12 },
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#E8E8E8',
-    borderRadius: 18,
-    height: 56,
-    paddingHorizontal: 16,
-    marginBottom: 14,
+    borderColor: AppColors.line,
+    borderRadius: 14,
+    height: 52,
+    paddingHorizontal: 14,
+    marginBottom: 16,
     backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.02,
-    shadowRadius: 2,
-    elevation: 1,
   },
-  textAreaContainer: {
-    height: 'auto',
-    minHeight: 100,
-    alignItems: 'flex-start',
-    paddingVertical: 10,
-  },
-  inputIcon: { marginRight: 12 },
-  input: { flex: 1, fontSize: 15, color: '#111111', height: '100%' },
-  textArea: {
-    height: 80,
-    textAlignVertical: 'top',
-  },
+  inputBloqueado: { backgroundColor: AppColors.canvas },
+  textAreaContainer: { height: 'auto', minHeight: 120, alignItems: 'flex-start', paddingVertical: 12, flexDirection: 'column' },
+  inputIcon: { marginRight: 10 },
+  input: { flex: 1, fontSize: 15, color: AppColors.ink, height: '100%' },
+  textArea: { width: '100%', minHeight: 80, textAlignVertical: 'top' },
+  contador: { alignSelf: 'flex-end', fontSize: 12, color: AppColors.textFaint },
   eyeIcon: { padding: 5 },
-  checkboxContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 12, marginBottom: 24 },
+  erroCampo: { color: '#DC2626', fontSize: 12, marginTop: -10, marginBottom: 12 },
+
+  checkboxContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 4, marginBottom: 8 },
   checkbox: {
     width: 22,
     height: 22,
     borderRadius: 7,
-    borderWidth: 1.8,
-    borderColor: '#CCCCCC',
+    borderWidth: 1.5,
+    borderColor: AppColors.line,
     marginRight: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FFFFFF'
+    backgroundColor: '#FFFFFF',
   },
   checkboxChecked: { backgroundColor: AppColors.primary, borderColor: AppColors.primary },
-  checkboxText: { fontSize: 14, color: '#444444' },
-  linkText: { color: AppColors.primary, fontWeight: 'bold', textDecorationLine: 'underline' },
-  navRow: { flexDirection: 'row', gap: 12, marginTop: 10, marginBottom: 10 },
+  checkboxText: { flex: 1, fontSize: 14, color: AppColors.inkSoft, lineHeight: 20 },
+  linkText: { color: AppColors.primary, fontWeight: '800' },
+
+  protegido: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#FFF8F3',
+    borderRadius: 16,
+    padding: 14,
+    marginTop: 12,
+    marginBottom: 20,
+  },
+  protegidoTitulo: { fontSize: 14, fontWeight: '800', color: AppColors.ink },
+  protegidoTexto: { fontSize: 12.5, color: AppColors.textMuted, marginTop: 2 },
+
+  button: {
+    backgroundColor: AppColors.primary,
+    borderRadius: 14,
+    height: 54,
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  buttonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
   secondaryButton: {
-    flex: 0.38,
-    height: 60,
-    borderRadius: 20,
+    height: 54,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: AppColors.primary,
     backgroundColor: '#FFFFFF',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3,
+    marginTop: 12,
   },
-  secondaryButtonText: { color: '#333333', fontSize: 16, fontWeight: '700' },
-  navButtonFlex: { flex: 1, flexDirection: 'row' },
-  button: {
-    backgroundColor: AppColors.primary,
-    borderRadius: 30,
-    height: 60,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: AppColors.primary,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    elevation: 6,
-  },
-  buttonText: { color: '#FFFFFF', fontSize: 18, fontWeight: '800', letterSpacing: 0.5 },
-  loginLink: { alignItems: 'center', paddingVertical: 10 },
-  loginLinkTextDesc: { color: '#666666', fontSize: 15 },
-  loginLinkText: { color: AppColors.primary, fontWeight: 'bold' },
+  secondaryButtonText: { color: AppColors.primary, fontSize: 16, fontWeight: '800' },
+  loginLink: { alignItems: 'center', paddingVertical: 16 },
+  loginLinkTextDesc: { color: AppColors.textMuted, fontSize: 15 },
+  loginLinkText: { color: AppColors.primary, fontWeight: '800' },
 });

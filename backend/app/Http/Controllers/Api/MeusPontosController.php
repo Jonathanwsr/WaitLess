@@ -61,7 +61,6 @@ class MeusPontosController extends Controller
             'premium' => [
                 'ativo' => $premium,
                 'plano' => $user->plano_assinatura,
-                'percentualSemAceite' => PontosService::percentualPremiumSemAceite(),
             ],
         ]);
     }

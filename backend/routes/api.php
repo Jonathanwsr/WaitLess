@@ -142,10 +142,12 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::delete('/servicos/{servico}', [ConfiguracoesMobileController::class, 'destroyServico']);
 
     // 4. Itens de Aluguel
-    Route::get('/itens-aluguel', [ConfiguracoesMobileController::class, 'indexItensAluguel']);
-    Route::post('/itens-aluguel', [ConfiguracoesMobileController::class, 'storeItemAluguel']);
-    Route::post('/itens-aluguel/{item}', [ConfiguracoesMobileController::class, 'updateItemAluguel']); // POST utilizado devido ao envio de imagens no multipart/form-data
-    Route::delete('/itens-aluguel/{item}', [ConfiguracoesMobileController::class, 'destroyItemAluguel']);
+    // A tela de Configurações do app cadastra a reserva NO LOCAL: o mesmo fluxo do catálogo do local
+    // (CriarServicosReservasController), que grava local_id + dono e confere a permissão em editar/excluir.
+    Route::get('/itens-aluguel', [CriarServicosReservasController::class, 'indexItens']);
+    Route::post('/itens-aluguel', [CriarServicosReservasController::class, 'storeItem']);
+    Route::post('/itens-aluguel/{id}', [CriarServicosReservasController::class, 'updateItem']); // POST utilizado devido ao envio de imagens no multipart/form-data
+    Route::delete('/itens-aluguel/{id}', [CriarServicosReservasController::class, 'destroyItem']);
 
     // 5. Aluguéis e Reservas
     Route::get('/alugueis', [ConfiguracoesMobileController::class, 'indexAlugueis']);
@@ -304,6 +306,16 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // --- ROTAS PREFIXADAS /MOBILE ---
     Route::prefix('mobile')->group(function () {
+        // Venda cruzada de viagem: chegada na cidade da hospedagem, ofertas ativas e clique.
+        Route::post('/viagem/chegada', [App\Http\Controllers\Api\Mobile\OfertasViagemMobileController::class, 'chegada'])->middleware('throttle:20,1');
+        Route::get('/ofertas-viagem', [App\Http\Controllers\Api\Mobile\OfertasViagemMobileController::class, 'index']);
+        Route::post('/ofertas-viagem/{id}/clique', [App\Http\Controllers\Api\Mobile\OfertasViagemMobileController::class, 'clique'])->whereNumber('id');
+        // Comprovante de pagamento em PDF
+        Route::get('/comprovante-pagamento', [App\Http\Controllers\Api\ComprovantePagamentoController::class, 'pdf']);
+        // Flash Deals perto do cliente ("caça ao tesouro")
+        Route::get('/flash-deals/perto', [App\Http\Controllers\Api\FlashDealController::class, 'perto'])->middleware('throttle:30,1');
+        Route::post('/flash-deals/{id}/clique', [App\Http\Controllers\Api\FlashDealController::class, 'clique'])->whereNumber('id');
+
         Route::get('/favoritos', [FavoritoMobileController::class, 'index']);
         Route::post('/favoritos/toggle', [FavoritoMobileController::class, 'toggleFavorito']);
 
@@ -333,6 +345,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // Painel de pedidos da gestão (sócio/gerente).
         Route::get('/gestao/pedidos', [App\Http\Controllers\Api\GestaoPedidosController::class, 'index']);
+        Route::get('/gestao/historico-pdf', [App\Http\Controllers\Api\HistoricoAtendimentosController::class, 'pdf']);
+        Route::get('/gestao/historico-resumo', [App\Http\Controllers\Api\HistoricoAtendimentosController::class, 'resumo']);
 
         // Cobranças parceladas: sócio monta e acompanha; cliente aceita, recusa e paga.
         Route::get('/cobrancas', [App\Http\Controllers\Api\CobrancaController::class, 'index']);
@@ -386,6 +400,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Rota para ver os detalhes de um serviço específico
     Route::get('/servicos/{id}', [CatalogoMobileController::class, 'detalhesServico']);
+    // Confere se o horário escolhido ainda tem vaga (e sugere outros quando já tem alguém).
+    Route::get('/servicos/{servico}/disponibilidade', [CatalogoMobileController::class, 'disponibilidade'])->middleware('throttle:60,1');
 
     // Rotas para o fluxo de Fila em Tempo Real
 // Aliases sob /mobile: gestão da fila pelo sócio/funcionário (listar do dia,
@@ -454,6 +470,18 @@ Route::post('/reservas/item/{id}/store', [ClienteAgendamentoMobileController::cl
         Route::middleware('auth:sanctum')->prefix('proprietario')->group(function () { // <-- Corrigido aqui de 'mobile/proprietario' para 'proprietario'
 
     Route::get('/dashboard', [ProprietarioDashboard::class, 'index']); // <-- ROTA DO DASHBOARD MOVIDA PARA CÁ
+
+    // Pagamentos recebidos, com o comprovante de recebimento de cada um
+    Route::get('/pagamentos-recebidos', [App\Http\Controllers\Api\ComprovantePagamentoController::class, 'recebidos']);
+    // Notas fiscais: vendas, comissão da Lokyva e assinatura (mesmas regras da tela web)
+    Route::get('/notas-fiscais', [App\Http\Controllers\Api\Mobile\Proprietario\NotaFiscalMobileController::class, 'index']);
+    Route::post('/notas-fiscais/configuracao', [App\Http\Controllers\Api\Mobile\Proprietario\NotaFiscalMobileController::class, 'salvarConfiguracao']);
+    Route::post('/notas-fiscais/{notaFiscal}/tentar-novamente', [App\Http\Controllers\Api\Mobile\Proprietario\NotaFiscalMobileController::class, 'tentarNovamente'])->middleware('throttle:10,1');
+    Route::get('/comprovantes-recebimento', [App\Http\Controllers\Api\ComprovantePagamentoController::class, 'lote'])->middleware('throttle:20,1');
+    // Flash Deals do sócio/gerente
+    Route::get('/flash-deals', [App\Http\Controllers\Api\FlashDealController::class, 'painelApp']);
+    Route::post('/flash-deals', [App\Http\Controllers\Api\FlashDealController::class, 'storeApp'])->middleware('throttle:10,1');
+    Route::post('/flash-deals/{id}/cancelar', [App\Http\Controllers\Api\FlashDealController::class, 'cancelarApp'])->whereNumber('id');
 
     // Gestão do sócio: financeiro, estornos, avaliações e clientes
     Route::get('/financeiro', [App\Http\Controllers\Api\Mobile\Proprietario\GestaoMobileController::class, 'financeiro']);
@@ -525,9 +553,10 @@ Route::post('/reservas/item/{id}/store', [ClienteAgendamentoMobileController::cl
     // ==========================================
     // Rota GET que você usa no React via fetch('/api/catalogo/itens')
     Route::get('/catalogo/itens', [ConfiguracoesMobileController::class, 'indexItensAluguel']);
-    Route::post('/itens-aluguel', [ConfiguracoesMobileController::class, 'storeItemAluguel']);
-    Route::put('/itens-aluguel/{item}', [ConfiguracoesMobileController::class, 'updateItemAluguel']);
-    Route::delete('/itens-aluguel/{item}', [ConfiguracoesMobileController::class, 'destroyItemAluguel']);
+    // Reserva cadastrada no local: mesmo fluxo do catálogo do local (local_id + dono + permissão).
+    Route::post('/itens-aluguel', [CriarServicosReservasController::class, 'storeItem']);
+    Route::put('/itens-aluguel/{id}', [CriarServicosReservasController::class, 'updateItem']);
+    Route::delete('/itens-aluguel/{id}', [CriarServicosReservasController::class, 'destroyItem']);
 
     // ==========================================
     // 4b. LOCAÇÕES AVULSAS (sem Estabelecimento — dono aluga direto)
@@ -536,6 +565,7 @@ Route::post('/reservas/item/{id}/store', [ClienteAgendamentoMobileController::cl
     Route::post('/locacoes-avulsas', [App\Http\Controllers\Api\Mobile\Proprietario\LocacaoAvulsaMobileController::class, 'store']);
     Route::post('/locacoes-avulsas/{item}', [App\Http\Controllers\Api\Mobile\Proprietario\LocacaoAvulsaMobileController::class, 'update']);
     Route::delete('/locacoes-avulsas/{item}', [App\Http\Controllers\Api\Mobile\Proprietario\LocacaoAvulsaMobileController::class, 'destroy']);
+    Route::post('/locacoes-avulsas/reservas/{aluguel}/cancelar', [App\Http\Controllers\Api\Mobile\Proprietario\LocacaoAvulsaMobileController::class, 'cancelarReserva']);
 });
 
 
@@ -569,6 +599,7 @@ Route::get('/assinatura/status', [AssinaturaMobileController::class, 'status']);
 Route::post('/assinatura/assinar', [AssinaturaMobileController::class, 'assinar']);
 Route::post('/assinatura/mudar-plano', [AssinaturaMobileController::class, 'mudarPlano']);
 Route::post('/assinatura/cancelar', [AssinaturaMobileController::class, 'cancelar']);
+Route::get('/assinatura/cobranca', [AssinaturaMobileController::class, 'cobrancaEmAberto'])->middleware('throttle:30,1');
 Route::put('/assinatura/dados-financeiros', [AssinaturaMobileController::class, 'atualizarDadosFinanceiros']);
 
 // --- RASTREAMENTO EM TEMPO REAL (equivalente mobile do mapa Uber-style do web) ---

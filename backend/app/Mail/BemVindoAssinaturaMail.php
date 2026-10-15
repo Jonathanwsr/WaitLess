@@ -24,7 +24,7 @@ class BemVindoAssinaturaMail extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: 'Bem-vindo ao WaitLess ' . $this->plano . '!',
+            subject: 'Bem-vindo ao Lokyva ' . $this->plano . '!',
         );
     }
 

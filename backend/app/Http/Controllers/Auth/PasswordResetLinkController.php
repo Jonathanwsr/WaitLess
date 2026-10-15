@@ -40,12 +40,13 @@ class PasswordResetLinkController extends Controller
             $request->only('email')
         );
 
-        if ($status == Password::RESET_LINK_SENT) {
-            return back()->with('status', __($status));
+        // Mesma resposta exista ou não a conta: assim ninguém descobre quais e-mails têm cadastro.
+        if ($status == Password::RESET_LINK_SENT || $status == Password::INVALID_USER) {
+            return back()->with('status', __('passwords.sent', [], 'pt_BR'));
         }
 
         throw ValidationException::withMessages([
-            'email' => [trans($status)],
+            'email' => [__($status, [], 'pt_BR')],
         ]);
     }
 }

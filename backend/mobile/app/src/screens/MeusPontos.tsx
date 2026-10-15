@@ -47,7 +47,7 @@ export default function MeusPontos() {
   const [historico, setHistorico] = useState<HistoricoItem[]>([]);
   const [valorEmReais, setValorEmReais] = useState(0);
   const [ganhosNoMes, setGanhosNoMes] = useState(0);
-  const [premium, setPremium] = useState<{ ativo: boolean; percentual: number }>({ ativo: false, percentual: 20 });
+  const [premium, setPremium] = useState<{ ativo: boolean }>({ ativo: false });
   const [porLocal, setPorLocal] = useState<{ estabelecimento_id: number; estabelecimento_nome: string; total_pontos: number; nivel?: string | null }[]>([]);
   const [filtro, setFiltro] = useState<'todos' | 'ganhos' | 'usados'>('todos');
 
@@ -66,7 +66,7 @@ export default function MeusPontos() {
       setHistorico(data.historico || []);
       setValorEmReais(Number(data.valor_em_reais) || 0);
       setGanhosNoMes(Number(data.ganhos_no_mes) || 0);
-      if (data.pontos_premium) setPremium({ ativo: !!data.pontos_premium.ativo, percentual: Number(data.pontos_premium.percentual) || 0 });
+      if (data.pontos_premium) setPremium({ ativo: !!data.pontos_premium.ativo });
       setPorLocal((data.saldos || []).filter((l: any) => Number(l.total_pontos) > 0));
     } catch (e) {
       // segue com lista vazia; não é crítico
@@ -127,7 +127,7 @@ export default function MeusPontos() {
             <View style={styles.usarLinha}>
               <Ionicons name={premium.ativo ? 'checkmark-circle' : 'lock-closed'} size={18} color={premium.ativo ? COLORS.success : COLORS.gray} />
               <Text style={[styles.usarTxt, !premium.ativo && { color: COLORS.gray }]}>
-                <Text style={{ fontWeight: '800' }}>Premium:</Text> em qualquer serviço ou reserva, mesmo onde o local não aceita pontos, pagando até {String(premium.percentual).replace('.', ',')}% do valor.
+                <Text style={{ fontWeight: '800' }}>Premium:</Text> use quantos pontos quiser em qualquer serviço ou reserva, mesmo onde o local não aceita pontos.
               </Text>
             </View>
             {!premium.ativo && (
@@ -228,9 +228,10 @@ export default function MeusPontos() {
                 <Text style={styles.planoNome}>{p.nome}</Text>
                 <Text style={styles.planoPreco}>R$ {p.preco}<Text style={styles.planoPrecoCiclo}>/{p.ciclo === 'mensal' ? 'mês' : 'ano'}</Text></Text>
                 <View style={{ gap: 8, marginTop: 14, marginBottom: 16 }}>
-                  {p.beneficios.slice(0, 4).map((b) => (
-                    <View key={b} style={styles.planoBeneficio}><Ionicons name="checkmark" size={14} color={COLORS.success} /><Text style={styles.planoBeneficioTxt}>{b}</Text></View>
-                  ))}
+                  {p.beneficios.slice(0, 4).map((b) => {
+                    const titulo = typeof b === 'string' ? b : b.titulo;
+                    return <View key={titulo} style={styles.planoBeneficio}><Ionicons name="checkmark" size={14} color={COLORS.success} /><Text style={styles.planoBeneficioTxt}>{titulo}</Text></View>;
+                  })}
                 </View>
                 <TouchableOpacity style={[styles.planoBtn, p.destaque && { backgroundColor: COLORS.primary }]} onPress={() => router.push('/assinatura' as never)} activeOpacity={0.85}>
                   <Text style={[styles.planoBtnTxt, p.destaque && { color: '#fff' }]}>Assinar plano</Text>

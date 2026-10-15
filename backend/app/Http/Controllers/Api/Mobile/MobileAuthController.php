@@ -80,6 +80,9 @@ class MobileAuthController extends Controller
                 'name' => $user->name,
                 'email' => $user->email,
                 'papel' => $papel,
+                // O app libera os recursos Premium por este campo (o plano vale até plano_expira_em).
+                'plano_assinatura' => $user->plano_assinatura ?? 'gratuito',
+                'premium' => $user->isPremium(),
             ],
             'destino' => $destino
         ], 200);
@@ -248,8 +251,9 @@ class MobileAuthController extends Controller
                 ]);
             }
 
-            // PASSO 3: Criar Subconta/Wallet (Apenas Proprietários/Sócios)
-            if (in_array($request->papel, ['admin', 'socio', 'proprietario'])) {
+            // PASSO 3: Criar Subconta/Wallet (Apenas Proprietários/Sócios com CNPJ).
+            // Sócio informal (sem CNPJ) entra sem carteira: usa a Lokyva com pagamento no local.
+            if (in_array($request->papel, ['admin', 'socio', 'proprietario']) && \App\Support\ContaFormal::podeAbrirCarteira($request->person_type, $cpfCnpjLimpo)) {
                 $responseAccount = Http::withHeaders([
                     'access_token' => $asaasKey,
                     'Content-Type' => 'application/json',
@@ -311,6 +315,8 @@ class MobileAuthController extends Controller
                     'name' => $user->name,
                     'email' => $user->email,
                     'papel' => $papel,
+                    'plano_assinatura' => $user->plano_assinatura ?? 'gratuito',
+                    'premium' => $user->isPremium(),
                 ],
                 'destino' => $destino
             ], 201);
@@ -414,6 +420,10 @@ class MobileAuthController extends Controller
                     // na tabela e sempre voltava null, fazendo o app mostrar
                     // "GRATUITO" pra qualquer usuário, mesmo assinantes Premium.
                     'plano_atual' => $user->plano_assinatura ?? 'gratuito',
+                    'plano_assinatura' => $user->plano_assinatura ?? 'gratuito',
+                    // Premium de verdade (plano pago ou em teste e dentro da validade): é o que o app usa para liberar recursos.
+                    'premium' => $user->isPremium(),
+                    'plano_expira_em' => optional($user->plano_expira_em)->toIso8601String(),
                     'assinatura' => $user->assinaturaAtiva ? [
                         'nome_plano' => $user->assinaturaAtiva->nome_plano,
                         'tipo_publico' => $user->assinaturaAtiva->tipo_publico,

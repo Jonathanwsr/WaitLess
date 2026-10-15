@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Api;
 
+use Illuminate\Support\Facades\DB;
+
 use App\Http\Controllers\Controller;
 use App\Models\Agendamento;
 use App\Models\Aluguel;
@@ -148,7 +150,9 @@ class DashboardController extends Controller
             ->with('servico:id,nome')
             ->get(['id', 'estabelecimento_id', 'servico_id', 'hora_agendamento', 'valor_final', 'status_pagamento']);
 
-        $alugueisHoje = Aluguel::whereIn('estabelecimento_id', $estabelecimentoIds)
+        // Reservas dos itens do catálogo destes locais (o item guarda o local em local_id).
+        $alugueisHoje = Aluguel::where(fn ($q) => $q->whereHas('item', fn ($i) => $i->whereIn('local_id', $estabelecimentoIds))
+                ->orWhereIn('estabelecimento_id', $estabelecimentoIds))
             ->whereDate('data_inicio', now()->toDateString())
             ->whereIn('status', ['confirmado', 'em_andamento', 'finalizado'])
             ->get(['id', 'estabelecimento_id', 'valor_total', 'forma_pagamento']);
@@ -195,20 +199,62 @@ class DashboardController extends Controller
     public function getNearby(Request $request)
     {
         $request->validate([
-            'lat' => 'required|numeric', 
-            'lng' => 'required|numeric', 
-            'radius' => 'nullable|integer|min:1|max:50', 
+            'lat' => 'nullable|numeric|between:-90,90',
+            'lng' => 'nullable|numeric|between:-180,180',
+            'radius' => 'nullable|integer|min:1|max:50',
+            'cidadeUf' => 'nullable|string|max:100',
+            'bairro' => 'nullable|string|max:100',
         ]);
 
-        $userLat = $request->input('lat');
-        $userLng = $request->input('lng');
-        $radius = $request->input('radius', 10); 
+        $lat = $request->input('lat');
+        $lng = $request->input('lng');
+        $radius = (int) $request->input('radius', 10);
 
-        $nearbyEstabelecimentos = Estabelecimento::withinDistance($userLat, $userLng, $radius)
-            ->with(['servicos:id,estabelecimento_id,nome,valor']) 
-            ->get();
+        // Com GPS: pelo raio. Sem GPS (endereço digitado): pela cidade informada ("Recife/PE").
+        if ($lat !== null && $lng !== null) {
+            $query = Estabelecimento::withinDistance($lat, $lng, $radius);
+        } elseif ($request->filled('cidadeUf')) {
+            $cidade = trim(explode('/', (string) $request->input('cidadeUf'))[0]);
+            $query = Estabelecimento::where('ativo', true)->whereRaw('lower(cidade) = ?', [mb_strtolower($cidade)]);
+        } else {
+            return response()->json([]);
+        }
 
-        return response()->json($nearbyEstabelecimentos);
+        $locais = $query->limit(60)->get();
+        $ids = $locais->pluck('id');
+        $hoje = now('America/Sao_Paulo')->toDateString();
+
+        $fila = DB::table('agendamentos')->whereIn('estabelecimento_id', $ids)->whereDate('data_agendamento', $hoje)
+            ->whereIn('status', ['pendente', 'confirmado'])
+            ->selectRaw('estabelecimento_id, COUNT(*) as total')->groupBy('estabelecimento_id')->pluck('total', 'estabelecimento_id');
+        $aPartirDe = DB::table('servicos')->whereIn('estabelecimento_id', $ids)->where('ativo', true)->whereNull('deleted_at')
+            ->selectRaw('estabelecimento_id, MIN(valor) as minimo')->groupBy('estabelecimento_id')->pluck('minimo', 'estabelecimento_id');
+
+        $destaque = app(\App\Services\DestaquePremiumService::class);
+        $foto = fn ($caminho) => !$caminho ? null : (str_starts_with($caminho, 'http') ? $caminho : '/storage/' . ltrim($caminho, '/'));
+
+        $lista = $locais
+            ->map(fn ($e) => [
+                'id' => $e->id,
+                'nome' => $e->nome,
+                'ramo_atuacao' => $e->ramo_atuacao,
+                'foto_perfil' => $foto($e->foto_perfil),
+                'foto_banner' => $foto($e->foto_banner),
+                'avaliacao_media' => $e->avaliacao_media ? round((float) $e->avaliacao_media, 1) : 0,
+                'total_avaliacoes' => (int) $e->total_avaliacoes,
+                'rua' => $e->rua, 'numero' => $e->numero, 'bairro' => $e->bairro, 'cidade' => $e->cidade,
+                'distancia' => isset($e->distancia) ? round((float) $e->distancia, 1) : null,
+                'fila' => (int) ($fila[$e->id] ?? 0),
+                'a_partir_de' => isset($aPartirDe[$e->id]) ? (float) $aPartirDe[$e->id] : null,
+                'premium' => $destaque->nivelDeDestaque((int) $e->id) === 0,
+                'nivel' => $destaque->nivelDeDestaque((int) $e->id),
+            ])
+            // Premium e quem aceita pontos/pagamento online primeiro; depois o mais perto.
+            ->sortBy(fn ($e) => [$e['nivel'], $e['distancia'] ?? PHP_INT_MAX])
+            ->take(24)
+            ->values();
+
+        return response()->json($lista);
     }
 
     public function showHome()

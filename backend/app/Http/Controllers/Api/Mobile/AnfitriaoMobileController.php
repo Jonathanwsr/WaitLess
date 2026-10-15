@@ -72,7 +72,8 @@ class AnfitriaoMobileController extends Controller
                 ->wherePivotIn('tipo', ['proprietario', 'socio'])
                 ->pluck('users.id');
 
-            $itensAluguel = ItemAluguel::whereIn('estabelecimento_id', $proprietarioIds)
+            // Só as reservas cadastradas neste local (as avulsas do dono e as de outros locais ficam de fora).
+            $itensAluguel = ItemAluguel::catalogo()->doLocal((int) $estabelecimento->id)
                 ->where('ativo', true)
                 ->get();
 

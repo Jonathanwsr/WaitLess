@@ -23,6 +23,8 @@ class AdminRelatorioController extends Controller
             'mes' => $mes,
             'resumo' => $this->service->resumoFinanceiro($mes),
             'vendasEntregas' => $this->service->resumoVendasEntregas($mes),
+            'vendaCruzada' => app(\App\Services\Viagem\CrossSellViagemService::class)->metricas($mes ? \Carbon\Carbon::createFromFormat('Y-m', $mes)->startOfMonth() : null),
+            'flashDeals' => app(\App\Services\FlashDealService::class)->metricas($mes ? \Carbon\Carbon::createFromFormat('Y-m', $mes)->startOfMonth() : null),
             'evolucaoMensal' => $this->service->evolucaoMensal(6),
             'repasses' => $this->service->repassesPorProprietario(),
             'estornos' => $this->service->resumoEstornos(),

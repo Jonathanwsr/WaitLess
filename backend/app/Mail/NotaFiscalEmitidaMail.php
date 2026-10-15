@@ -23,7 +23,11 @@ class NotaFiscalEmitidaMail extends Mailable
     public function envelope(): Envelope
     {
         return new Envelope(
-            subject: 'Sua nota fiscal Lokyva está disponível',
+            subject: match ($this->notaFiscal->tipo) {
+                'comissao' => 'Nota fiscal da comissão Lokyva',
+                'assinatura' => 'Nota fiscal da sua assinatura Lokyva',
+                default => 'Sua nota fiscal está disponível',
+            },
         );
     }
 

@@ -70,7 +70,7 @@ export default function CatalogoServicos({ auth, funcionarios }) {
     // 5. RENDERIZAÇÃO DA TELA
     return (
         <AuthenticatedLayout user={auth.user} header={<h2 className="text-2xl font-black text-gray-900 tracking-tight">Catálogo de Serviços</h2>}>
-            <Head title="Catálogo - WaitLess" />
+            <Head title="Catálogo" />
 
             <div className="bg-gray-50 min-h-screen pb-24 font-sans">
                 

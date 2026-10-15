@@ -14,6 +14,23 @@ class HiveAiServiceTest extends TestCase
         return UploadedFile::fake()->image('foto.jpg');
     }
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        // A moderação fica desligada no app; aqui ela é ligada para testar a estrutura guardada para o futuro.
+        config(['services.hive.ativo' => true, 'services.hive.key' => 'chave_teste']);
+    }
+
+    public function test_moderacao_desligada_aceita_a_imagem_sem_chamar_a_hive(): void
+    {
+        config(['services.hive.ativo' => false]);
+        Http::fake();
+
+        $this->assertTrue(HiveAiService::isSafe($this->imagem()));
+        $this->assertFalse(HiveAiService::bloqueada($this->imagem()));
+        Http::assertNothingSent();
+    }
+
     public function test_imagem_reprovada_pela_hive_e_bloqueada(): void
     {
         Http::fake(['*thehive.ai*' => Http::response([

@@ -300,7 +300,7 @@ class EstornoController extends Controller
                     'Content-Type' => 'application/json',
                 ])->post("{$asaasUrl}/payments/{$idTransacao}/refund", [
                     'value' => (float) $estorno->valor_estornado,
-                    'description' => 'Estorno aprovado via Plataforma WaitLess'
+                    'description' => 'Estorno aprovado via Plataforma Lokyva'
                 ]);
 
                 if ($asaasResponse->failed()) {

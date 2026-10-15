@@ -85,7 +85,7 @@ export default function Carteira({ auth, recompensas = [], meusCupons = [] }) {
 
     return (
         <AuthenticatedLayout header={<></>}>
-            <Head title={isGestor ? "Assinaturas - WaitLess" : "Minha Carteira - WaitLess"} />
+            <Head title={isGestor ? "Assinaturas" : "Minha Carteira"} />
 
             {/* Fundo aquecido off-white: #FCF9F6 */}
             <div className="min-h-screen bg-[#FCF9F6] font-sans pb-24">
@@ -163,7 +163,7 @@ export default function Carteira({ auth, recompensas = [], meusCupons = [] }) {
                                                 <ShieldCheckIcon className="w-7 h-7 text-white" />
                                             </div>
                                             <h3 className="text-3xl font-black text-gray-900 tracking-tight">
-                                                Plano {isPlus ? 'WaitLess Plus' : 'Gratuito'}
+                                                Plano {isPlus ? 'Lokyva Plus' : 'Gratuito'}
                                             </h3>
                                         </div>
                                         <span className={`px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-wider ${temPlanoAtivo ? 'bg-emerald-50 text-emerald-600' : 'bg-gray-100 text-gray-500'}`}>
@@ -337,7 +337,7 @@ export default function Carteira({ auth, recompensas = [], meusCupons = [] }) {
                                         <div className="bg-[#0F172A] p-2 rounded-xl">
                                             <StarIcon className="w-5 h-5 text-[#E05D36]" />
                                         </div>
-                                        <h3 className="text-2xl font-black text-gray-900 tracking-tight">WaitLess <span className="text-[#E05D36]">Plus</span></h3>
+                                        <h3 className="text-2xl font-black text-gray-900 tracking-tight">Lokyva <span className="text-[#E05D36]">Plus</span></h3>
                                     </div>
                                     
                                     <p className="text-sm font-medium text-gray-500 mb-6">

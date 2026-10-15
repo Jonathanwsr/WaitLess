@@ -24,7 +24,7 @@ export default function Index({ viagens, premium }) {
                 <div className="flex flex-wrap items-center justify-between gap-3">
                     <p className="text-gray-500">Roteiros, reservas e gastos do grupo em um só lugar.</p>
                     <Link href={route('viagens.nova')} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#FF5A00] hover:bg-[#C74B27] text-white font-black transition">
-                        {premium ? <PlusIcon className="w-5 h-5" /> : <LockClosedIcon className="w-4 h-4" />} Nova viagem
+                        <PlusIcon className="w-5 h-5" /> Nova viagem
                     </Link>
                 </div>
 

@@ -186,7 +186,7 @@ export default function Favoritos({ estabelecimentos = [], servicos = [], itensA
                                             )}
                                             <p className="text-gray-500 text-sm mt-3 flex-grow leading-relaxed line-clamp-2">{serv.descricao}</p>
                                             {serv.estabelecimento_id && (
-                                                <Link href={route('cliente.agendar', { estabelecimento: serv.estabelecimento_id, servico_id: serv.id })} className="mt-4 block text-center w-full bg-gray-900 text-white font-semibold py-2.5 rounded-xl hover:bg-black transition-colors">
+                                                <Link href={route('cliente.servicos.show', serv.id)} className="mt-4 block text-center w-full bg-gray-900 text-white font-semibold py-2.5 rounded-xl hover:bg-black transition-colors">
                                                     Agendar
                                                 </Link>
                                             )}

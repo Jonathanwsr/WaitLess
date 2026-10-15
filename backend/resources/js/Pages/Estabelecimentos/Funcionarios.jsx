@@ -1,4 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import ComoFunciona from '@/Components/ComoFunciona';
 import { Head, useForm, router } from '@inertiajs/react';
 import { useState, useEffect } from 'react';
 import {
@@ -152,49 +153,40 @@ export default function Funcionarios({ auth, funcionarios = [], meusEstabelecime
     };
 
     return (
-        <AuthenticatedLayout
-            header={<h2 className="text-xl font-bold leading-tight text-gray-800">Equipe e Desempenho</h2>}
-        >
-            <Head title="Funcionários - WaitLess" />
+        <AuthenticatedLayout>
+            <Head title="Funcionários" />
 
-            {/* --- ATIVIDADE DA EQUIPE EM TEMPO REAL --- */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden mb-6">
-                <div className="p-4 md:p-6 border-b border-gray-100 flex items-center gap-2">
-                    <BoltIcon className="w-5 h-5 text-amber-500" />
-                    <h3 className="font-bold text-gray-800">Atividade da equipe em tempo real</h3>
-                    <span className="ml-auto flex items-center gap-1.5 text-xs text-green-600 font-semibold">
-                        <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" /> ao vivo
-                    </span>
+            {/* --- CABEÇALHO: trilha, título e totais --- */}
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-5">
+                <div>
+                    <p className="text-xs text-gray-400">Funcionários <span className="mx-1">›</span> <span className="text-gray-700 font-semibold">Equipe</span></p>
+                    <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-gray-900 mt-1">Funcionários</h1>
+                    <p className="text-sm text-gray-500">Gerencie sua equipe, acompanhe atividades e monitore atendimentos.</p>
                 </div>
-                <div className="max-h-64 overflow-y-auto divide-y divide-gray-50">
-                    {atividades.length === 0 ? (
-                        <p className="p-6 text-center text-sm text-gray-400">Nenhuma atividade registrada ainda. As ações da equipe na fila (chamar, finalizar, cancelar...) vão aparecer aqui.</p>
-                    ) : (
-                        atividades.map((a) => (
-                            <div key={a.id} className="p-3 px-6 flex items-center gap-3 text-sm">
-                                <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-full shrink-0 ${ACAO_COR[a.acao] || 'text-gray-600 bg-gray-100'}`}>
-                                    {a.acao?.replace('_', ' ')}
-                                </span>
-                                <span className="text-gray-700 flex-1">{a.descricao}</span>
-                                <span className="text-xs text-gray-400 shrink-0">{formatarHora(a.created_at)}</span>
-                            </div>
-                        ))
-                    )}
+                <div className="flex shrink-0 divide-x divide-gray-100 rounded-2xl border border-gray-100 bg-white shadow-sm">
+                    <div className="px-5 py-3 text-center">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Total</p>
+                        <p className="text-2xl font-black text-gray-900">{funcionarios.length}</p>
+                    </div>
+                    <div className="px-5 py-3 text-center">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">Ativos</p>
+                        <p className="text-2xl font-black text-emerald-600">{funcionarios.filter((f) => f.ativo).length}</p>
+                    </div>
                 </div>
             </div>
 
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-6">
 
                 {/* --- TOOLBAR --- */}
-                <div className="p-4 md:p-6 border-b border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-4 bg-gray-50/50">
+                <div className="p-4 md:p-5 border-b border-gray-100 flex flex-col sm:flex-row justify-between items-center gap-4">
                     
                     <div className="w-full sm:w-auto flex flex-col sm:flex-row gap-2">
                         <button
                             onClick={abrirModalNovo}
-                            className="w-full sm:w-auto flex items-center justify-center gap-2 bg-green-600 text-white px-5 py-2.5 rounded-lg font-bold hover:bg-green-700 transition shadow-sm"
+                            className="w-full sm:w-auto flex items-center justify-center gap-2 bg-gray-900 text-white px-5 py-2.5 rounded-xl font-bold hover:bg-black transition shadow-sm"
                         >
                             <PlusIcon className="w-5 h-5" />
-                            Novo membro da equipe
+                            Novo funcionário
                         </button>
 
                         <button
@@ -212,8 +204,8 @@ export default function Funcionarios({ auth, funcionarios = [], meusEstabelecime
                         </div>
                         <input 
                             type="text" 
-                            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 transition shadow-sm text-sm"
-                            placeholder="Buscar por nome, e-mail ou loja..."
+                            className="w-full pl-10 pr-4 py-2.5 border-0 bg-gray-100 rounded-xl focus:ring-2 focus:ring-gray-300 transition text-sm"
+                            placeholder="Buscar por nome, e-mail ou local..."
                             value={busca}
                             onChange={(e) => setBusca(e.target.value)}
                         />
@@ -224,7 +216,7 @@ export default function Funcionarios({ auth, funcionarios = [], meusEstabelecime
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                         <thead>
-                            <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 text-xs font-bold uppercase tracking-wider">
+                            <tr className="border-b border-gray-100 text-gray-400 text-[11px] font-bold uppercase tracking-wider">
                                 <th className="p-4 whitespace-nowrap">Funcionário</th>
                                 <th className="p-4 whitespace-nowrap">Local & Cargo</th>
                                 <th className="p-4 whitespace-nowrap text-center">Atendimentos</th>
@@ -250,7 +242,7 @@ export default function Funcionarios({ auth, funcionarios = [], meusEstabelecime
                                             <div 
                                                 onClick={() => irParaTelaEditar(func.id)}
                                                 title="Clique para editar este funcionário"
-                                                className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold uppercase shrink-0 cursor-pointer hover:bg-indigo-200 hover:scale-105 transition-all shadow-sm"
+                                                className="w-10 h-10 rounded-full bg-emerald-50 text-emerald-700 flex items-center justify-center font-bold uppercase shrink-0 cursor-pointer hover:bg-emerald-100 hover:scale-105 transition-all"
                                             >
                                                 {func.nome ? func.nome.charAt(0) : 'F'}
                                             </div>
@@ -268,8 +260,8 @@ export default function Funcionarios({ auth, funcionarios = [], meusEstabelecime
 
                                         {/* Coluna 3: Atendimentos */}
                                         <td className="p-4 text-center">
-                                            <span className="inline-flex items-center justify-center bg-gray-100 text-gray-700 font-bold px-3 py-1 rounded-lg">
-                                                <BriefcaseIcon className="w-4 h-4 mr-1 text-gray-400" />
+                                            <span className="inline-flex items-center justify-center border border-gray-200 text-gray-700 font-bold px-3 py-1 rounded-lg">
+                                                <CalendarIcon className="w-4 h-4 mr-1 text-gray-400" />
                                                 {func.total_atendimentos || 0}
                                             </span>
                                         </td>
@@ -313,6 +305,53 @@ export default function Funcionarios({ auth, funcionarios = [], meusEstabelecime
                         </tbody>
                     </table>
                 </div>
+                <div className="px-5 py-3 border-t border-gray-100 text-right text-xs text-gray-400">
+                    Mostrando {funcionariosFiltrados.length} {funcionariosFiltrados.length === 1 ? 'resultado' : 'resultados'}
+                </div>
+            </div>
+
+            {/* --- ATIVIDADE DA EQUIPE EM TEMPO REAL --- */}
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden mb-6">
+                <div className="p-4 md:p-6 border-b border-gray-100 flex items-center gap-2">
+                    <BoltIcon className="w-5 h-5 text-amber-500" />
+                    <h3 className="font-bold text-gray-800">Atividade da equipe em tempo real</h3>
+                    <span className="ml-auto flex items-center gap-1.5 text-xs text-green-600 font-semibold">
+                        <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" /> ao vivo
+                    </span>
+                </div>
+                <div className="max-h-64 overflow-y-auto divide-y divide-gray-50">
+                    {atividades.length === 0 ? (
+                        <p className="p-6 text-center text-sm text-gray-400">Nenhuma atividade registrada ainda. As ações da equipe na fila (chamar, finalizar, cancelar...) vão aparecer aqui.</p>
+                    ) : (
+                        atividades.map((a) => (
+                            <div key={a.id} className="p-3 px-6 flex items-center gap-3 text-sm">
+                                <span className={`text-[10px] font-bold uppercase px-2 py-1 rounded-full shrink-0 ${ACAO_COR[a.acao] || 'text-gray-600 bg-gray-100'}`}>
+                                    {a.acao?.replace('_', ' ')}
+                                </span>
+                                <span className="text-gray-700 flex-1">{a.descricao}</span>
+                                <span className="text-xs text-gray-400 shrink-0">{formatarHora(a.created_at)}</span>
+                            </div>
+                        ))
+                    )}
+                </div>
+            </div>
+
+            <div className="mb-5">
+                <ComoFunciona
+                    chave="equipe"
+                    titulo="Como funciona a sua equipe"
+                    passos={[
+                        { titulo: "Cadastre a pessoa", texto: "Nome, e-mail e o que ela faz. Ela recebe o acesso e entra pelo app ou pelo site." },
+                        { titulo: "Defina o cargo", texto: "Ex.: barbeiro, recepção, entregador. Ajuda a organizar quem faz o quê." },
+                        { titulo: "Ela trabalha pelo painel", texto: "Cada funcionário vê a própria fila, chama clientes e finaliza atendimentos." },
+                        { titulo: "Acompanhe ao vivo", texto: "Tudo o que a equipe faz aparece em \"Atividade da equipe em tempo real\"." },
+                    ]}
+                    dicas={[
+                        "Folgas e ausências pedidas pela equipe chegam para você aprovar.",
+                        "Gerente ajuda a administrar o local, mas não mexe na carteira nem no dinheiro.",
+                        "A produção de cada profissional fica no painel dele.",
+                    ]}
+                />
             </div>
 
             {/* --- MODAL 1: DETALHES E DESEMPENHO --- */}

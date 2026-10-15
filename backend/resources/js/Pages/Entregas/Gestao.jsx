@@ -1,4 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import ComoFunciona from '@/Components/ComoFunciona';
 import { Head, usePage, router } from '@inertiajs/react';
 import { useState } from 'react';
 import axios from 'axios';
@@ -161,7 +162,7 @@ export default function Gestao({ pedidos = [], funcionarios = [], papel = 'gesto
         <AuthenticatedLayout user={auth.user}>
             <Head title="Entregas" />
 
-            <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-6">
+            <div className="max-w-6xl mx-auto px-4 sm:px-6 pb-8 space-y-5">
                 <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
                     <div>
                         <p className="text-xs font-bold uppercase tracking-widest text-[#FF5A00]">{papel === 'funcionario' ? 'Suas entregas' : 'Gestão de entregas'}</p>
@@ -182,6 +183,24 @@ export default function Gestao({ pedidos = [], funcionarios = [], papel = 'gesto
                         ))}
                     </div>
                 </header>
+                {papel !== 'funcionario' && (
+                    <ComoFunciona
+                        chave="entregas_gestao"
+                        titulo="Como funciona a gestão de entregas"
+                        passos={[
+                            { titulo: "Chega um pedido", texto: "Pedidos de produtos para entrega aparecem aqui assim que o cliente compra." },
+                            { titulo: "Escolha quem entrega", texto: "Designe alguém da equipe. A pessoa vê o pedido e os dados do cliente no app." },
+                            { titulo: "Em rota", texto: "Quem entrega marca a saída e o cliente acompanha a posição no mapa." },
+                            { titulo: "Finalize com o código", texto: "O cliente mostra o código de confirmação e o pedido é concluído." },
+                        ]}
+                        dicas={[
+                            "Pedido pago online só é liberado para você depois do código de confirmação.",
+                            "Se precisar cancelar um pedido pago, o cliente recebe o dinheiro de volta.",
+                            "Baixe o comprovante em PDF de cada pedido aqui mesmo.",
+                        ]}
+                    />
+                )}
+
 
                 {lista.length === 0 ? (
                     <div className="text-center py-24 bg-white rounded-3xl border border-zinc-100">

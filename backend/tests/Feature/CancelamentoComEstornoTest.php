@@ -114,7 +114,8 @@ class CancelamentoComEstornoTest extends TestCase
             'codigo_reserva' => 'RES-' . uniqid(), 'estabelecimento_id' => $socio->id, 'item_aluguel_id' => $item->id,
             'proprietario_id' => $socio->id, 'locatario_id' => $locatario->id,
             'tipo_periodo' => 'diaria', 'quantidade_periodos' => 1,
-            'data_inicio' => now()->addDays(5)->toDateString(), 'data_fim' => now()->addDays(6)->toDateString(),
+            // 6 dias: com folga acima do prazo de reembolso total da política padrão (moderada, 5 dias).
+            'data_inicio' => now()->addDays(6)->toDateString(), 'data_fim' => now()->addDays(7)->toDateString(),
             'valor_unitario' => 200, 'valor_total' => 200, 'forma_pagamento' => 'online', 'status' => 'confirmado',
         ]);
         $pagamento = Pagamento::create([
@@ -133,7 +134,7 @@ class CancelamentoComEstornoTest extends TestCase
         $estorno = Estorno::where('pagamento_id', $pagamento->id)->first();
         $this->assertNotNull($estorno, 'Cancelar a locação deveria ter gerado um estorno de verdade, não só mudado o status.');
         $this->assertSame('ALUGUEL', $estorno->categoria);
-        $this->assertSame(200.0, (float) $estorno->valor_estornado, 'Cancelado com 5 dias de antecedência (> 24h): deveria estornar 100%.');
+        $this->assertSame(200.0, (float) $estorno->valor_estornado, 'Cancelado com 6 dias de antecedência (política moderada): deveria estornar 100%.');
     }
 
     public function test_endpoint_mobile_de_cancelar_locacao_funciona(): void

@@ -636,6 +636,18 @@ class CobrancaParceladaService
 
         $parcela->update($dados);
         $this->atualizarQuitacao($parcela->cobranca);
+
+        // Nota fiscal da comissão Lokyva (paga online) ou cancelamento dela (estorno).
+        try {
+            $notas = app(\App\Services\NotaFiscalService::class);
+            if ($novo === CobrancaParcela::PAGO) {
+                $notas->emitirComissaoDaParcela($parcela->fresh());
+            } elseif ($novo === CobrancaParcela::ESTORNADO) {
+                $notas->cancelarNotasDaParcela($parcela);
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Falha nas notas fiscais da parcela: ' . $e->getMessage());
+        }
     }
 
     private function taxaDaParcela(Cobranca $cobranca, CobrancaParcela $parcela): float

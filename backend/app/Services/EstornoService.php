@@ -306,7 +306,7 @@ class EstornoService
                 $asaasKey = config('services.asaas.key');
                 $asaasUrl = rtrim(config('services.asaas.url'), '/');
 
-                $payloadRefund = ['description' => 'Estorno aprovado via Plataforma WaitLess'];
+                $payloadRefund = ['description' => 'Estorno aprovado via Plataforma Lokyva'];
                 if ($estorno->tipo_estorno === 'PARCIAL' && $estorno->valor_estornado < $estorno->valor_pago) {
                     $payloadRefund['value'] = (float) $estorno->valor_estornado;
                 }
@@ -315,7 +315,7 @@ class EstornoService
                     'access_token' => $asaasKey,
                     'Content-Type' => 'application/json',
                     'Accept' => 'application/json',
-                    'User-Agent' => 'WaitLessPlatform/1.0'
+                    'User-Agent' => 'LokyvaPlatform/1.0'
                 ])->post("{$asaasUrl}/payments/{$idTransacao}/refund", $payloadRefund);
 
                 if ($asaasResponse->failed()) {
@@ -439,47 +439,10 @@ class EstornoService
         );
     }
 
-    /**
-     * INTEGRAÇÃO HIVE AI (MODERAÇÃO DE IMAGENS)
-     */
+    /** Moderação de imagem centralizada no HiveAiService (desligada por padrão). True = imagem aceita. */
     private function analisarImagemHive(UploadedFile $imagem): bool
     {
-        if (!env('HIVE_API_KEY')) return true;
-
-        try {
-            $response = Http::withHeaders([
-                'authorization' => 'token ' . env('HIVE_API_KEY'),
-            ])->attach(
-                'media', file_get_contents($imagem->getRealPath()), $imagem->getClientOriginalName()
-            )->post('https://api.thehive.ai/api/v2/task/sync', [
-                'classes' => 'general_nsfw,gore,weapons,drugs,hate_symbols,child_safety'
-            ]);
-
-            if ($response->successful()) {
-                $statusList = $response->json('status');
-                
-                $classesProibidas = [
-                    'general_nsfw', 'yes_female_nudity', 'yes_male_nudity', 'yes_sexual_activity', 
-                    'yes_sexual_intent', 'yes_child_abuse', 'yes_drugs', 'yes_pills', 'yes_marijuana',
-                    'yes_weapon_in_hand', 'yes_gore', 'very_gory', 'yes_nazi', 'yes_kkk', 
-                    'yes_terrorist', 'yes_animal_abuse'
-                ];
-
-                if (!empty($statusList[0]['response']['output'][0]['classes'])) {
-                    foreach ($statusList[0]['response']['output'][0]['classes'] as $classe) {
-                        if (in_array($classe['class'], $classesProibidas) && $classe['score'] > 0.8) {
-                            Log::warning("Hive AI bloqueou a imagem. Categoria: [{$classe['class']}] | Score: [{$classe['score']}]");
-                            return false; 
-                        }
-                    }
-                }
-                return true;
-            }
-            return true; 
-        } catch (Exception $e) {
-            Log::error('Erro na conexão com a Hive AI: ' . $e->getMessage());
-            return true; 
-        }
+        return \App\Services\HiveAiService::isSafe($imagem);
     }
 
     /**
@@ -490,7 +453,7 @@ class EstornoService
         try {
             $cliente = $estorno->cliente;
             $prestador = $estorno->prestador;
-            $estabelecimentoNome = DB::table('estabelecimentos')->where('id', $estorno->estabelecimento_id)->value('nome') ?? 'WaitLess';
+            $estabelecimentoNome = DB::table('estabelecimentos')->where('id', $estorno->estabelecimento_id)->value('nome') ?? 'Lokyva';
             $valorStr = number_format($estorno->valor_pago, 2, ',', '.');
             
             $assuntoCliente = "";
@@ -503,17 +466,17 @@ class EstornoService
                 case 'SOLICITADO':
                     // Para o Cliente
                     $assuntoCliente = "Recebemos sua solicitação de estorno - {$estabelecimentoNome}";
-                    $mensagemCliente = "Olá, {$cliente->name}!\n\nRecebemos o seu pedido de estorno no valor de R$ {$valorStr} referente ao estabelecimento {$estabelecimentoNome}.\n\nAguarde, nossa equipe e o estabelecimento analisarão o caso em até 48 horas. Você será notificado sobre a decisão.\n\nEquipe WaitLess";
+                    $mensagemCliente = "Olá, {$cliente->name}!\n\nRecebemos o seu pedido de estorno no valor de R$ {$valorStr} referente ao estabelecimento {$estabelecimentoNome}.\n\nAguarde, nossa equipe e o estabelecimento analisarão o caso em até 48 horas. Você será notificado sobre a decisão.\n\nEquipe Lokyva";
                     
                     // Para o Dono
                     $assuntoDono = "Disputa Aberta: Solicitação de Estorno";
-                    $mensagemDono = "Olá, {$prestador->name}.\n\nO cliente {$cliente->name} abriu uma solicitação de estorno no valor de R$ {$valorStr}.\n\nMotivo alegado: {$estorno->motivo}\n\nO valor foi temporariamente retido por segurança. Acesse seu painel administrativo WaitLess em até 48 horas para enviar sua contestação e provas.";
+                    $mensagemDono = "Olá, {$prestador->name}.\n\nO cliente {$cliente->name} abriu uma solicitação de estorno no valor de R$ {$valorStr}.\n\nMotivo alegado: {$estorno->motivo}\n\nO valor foi temporariamente retido por segurança. Acesse seu painel administrativo Lokyva em até 48 horas para enviar sua contestação e provas.";
                     break;
 
                 case 'APROVADO':
                     // Para o Cliente
                     $assuntoCliente = "Seu Estorno foi Aprovado!";
-                    $mensagemCliente = "Boa notícia, {$cliente->name}!\n\nO seu pedido de estorno no valor de R$ {$valorStr} (Referente a: {$estabelecimentoNome}) foi APROVADO.\n\nO valor já foi processado e será devolvido automaticamente para a mesma conta bancária ou cartão de crédito utilizado na compra.\n\nEquipe WaitLess";
+                    $mensagemCliente = "Boa notícia, {$cliente->name}!\n\nO seu pedido de estorno no valor de R$ {$valorStr} (Referente a: {$estabelecimentoNome}) foi APROVADO.\n\nO valor já foi processado e será devolvido automaticamente para a mesma conta bancária ou cartão de crédito utilizado na compra.\n\nEquipe Lokyva";
                     
                     // Para o Dono
                     $assuntoDono = "Resolução de Disputa: Estorno Aprovado";
@@ -523,7 +486,7 @@ class EstornoService
                 case 'REPROVADO':
                     // Para o Cliente
                     $assuntoCliente = "Atualização sobre sua solicitação de estorno";
-                    $mensagemCliente = "Olá, {$cliente->name}.\n\nApós análise das evidências, a sua solicitação de estorno no valor de R$ {$valorStr} foi REPROVADA.\n\nParecer da administração:\n\"{$estorno->descricao_admin}\"\n\nEquipe WaitLess";
+                    $mensagemCliente = "Olá, {$cliente->name}.\n\nApós análise das evidências, a sua solicitação de estorno no valor de R$ {$valorStr} foi REPROVADA.\n\nParecer da administração:\n\"{$estorno->descricao_admin}\"\n\nEquipe Lokyva";
                     
                     // Para o Dono
                     $assuntoDono = "Disputa Vencida: Estorno Reprovado";

@@ -66,6 +66,8 @@ class ClienteAgendamentoController extends Controller
             'estabelecimento' => $estabelecimento->only(['id', 'nome', 'foto_perfil', 'bairro', 'cidade', 'estado', 'telefone']),
             'servicos' => $estabelecimento->servicos()->where('ativo', true)->get(),
             'pedidoProdutoPendente' => $pedidoProdutoPendente,
+            // Sócio sem carteira Asaas: só pagamento no local.
+            'aceitaPagamentoOnline' => app(\App\Services\PagamentoService::class)->estabelecimentoTemCarteiraAsaas($estabelecimento->id),
             'funcionarios' => \App\Models\Funcionario::where('estabelecimento_id', $estabelecimento->id)->where('ativo', true)->orderBy('nome')->get(['id', 'nome', 'cargo']),
             'cuponsRecomendados' => $this->cupomService->recomendados(Auth::user(), $estabelecimento->id, $estabelecimento->servicos()->where('ativo', true)->pluck('id')->all()),
         ]);
@@ -91,6 +93,9 @@ class ClienteAgendamentoController extends Controller
         if ($dataHoraAgendada->isPast()) return back()->withErrors(['hora_agendamento' => 'Não é possível agendar no passado!']);
 
         $servico = $estabelecimento->servicos()->findOrFail($validated['servico_id']);
+        if ($servico->horarioACombinar()) {
+            return back()->withErrors(['hora_agendamento' => 'Este serviço é com horário a combinar: fale com o proprietário pelo chat ou telefone para marcar.']);
+        }
 
         $configuracoes = is_string($servico->configuracoes) ? json_decode($servico->configuracoes, true) : ($servico->configuracoes ?? []);
         $funcionarioId = $configuracoes['funcionario_padrao'] ?? null;
@@ -104,7 +109,12 @@ class ClienteAgendamentoController extends Controller
             }
             $funcionarioId = $escolhido->id;
         }
-        $tipoPagamentoServico = $configuracoes['tipo_pagamento'] ?? 'hibrido';
+        $aceitaOnline = app(\App\Services\PagamentoService::class)->estabelecimentoTemCarteiraAsaas($estabelecimento->id);
+        $tipoPagamentoServico = app(\App\Services\PagamentoService::class)->tipoPagamentoEfetivo($configuracoes['tipo_pagamento'] ?? null, $aceitaOnline);
+
+        if ($validated['forma_pagamento'] !== 'presencial' && !$aceitaOnline) {
+            return back()->withErrors(['forma_pagamento' => 'Este local ainda não recebe pagamentos online. Escolha pagar no local.']);
+        }
 
         if ($validated['forma_pagamento'] === 'presencial' && $tipoPagamentoServico === 'online') {
             return back()->withErrors(['forma_pagamento' => 'Este serviço aceita apenas pagamento online.']);
@@ -122,7 +132,8 @@ class ClienteAgendamentoController extends Controller
             $formaEscolhida = $validated['forma_pagamento'];
             $isPresencial = ($formaEscolhida === 'presencial');
 
-            $valorTotal = $servico->valor;
+            // Valor com a promoção cadastrada no serviço (a tela mostra o mesmo).
+            $valorTotal = app(\App\Services\PrecificacaoService::class)->comPromocao((float) $servico->valor, (bool) ($servico->tem_promocao ?? false), $servico->tipo_desconto ?? null, $servico->valor_desconto ?? null);
             $pontosNecessarios = 0;
 
             if ($request->filled('desconto_id')) {
@@ -428,7 +439,7 @@ class ClienteAgendamentoController extends Controller
         if ($aluguel->status === 'cancelado') return back()->with('warning', 'Esta locação já está cancelada.');
 
         try {
-            $resultado = $this->pagamentoService->processarCancelamentoAluguel($aluguel);
+            $resultado = $this->pagamentoService->processarCancelamentoAluguel($aluguel, Auth::id());
         } catch (Exception $e) {
             Log::error("Erro ao cancelar o aluguel #{$id}: " . $e->getMessage());
             return back()->with('error', $e->getMessage() ?: 'Ocorreu um erro ao cancelar. Tente novamente.');

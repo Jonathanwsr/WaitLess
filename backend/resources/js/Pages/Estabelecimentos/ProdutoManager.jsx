@@ -33,6 +33,20 @@ import {
  * Sozinha, a tela usa o layout completo. Embutida na tela única "Produtos", mostra só o cabeçalho
  * (com seus botões) numa faixa, sem repetir menu e título da página.
  */
+/** O servidor manda `fotos` como lista; registros antigos podem vir como texto JSON. */
+function listaDeFotos(fotos) {
+  if (Array.isArray(fotos)) return fotos.filter((f) => typeof f === 'string' && f);
+  if (typeof fotos === 'string' && fotos) {
+    try {
+      const lista = JSON.parse(fotos);
+      return Array.isArray(lista) ? lista.filter((f) => typeof f === 'string' && f) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 function Moldura({ embutido, header, children, ...resto }) {
     if (!embutido) {
         return <AuthenticatedLayout header={header} {...resto}>{children}</AuthenticatedLayout>;
@@ -190,12 +204,7 @@ export default function ProdutoManager({ auth, estabelecimentoId, estabeleciment
     setIsEditingProduto(true);
     setShowForm(true);
 
-    let parsedFotos = [];
-    try {
-      parsedFotos = produto.fotos ? JSON.parse(produto.fotos) : [];
-    } catch (e) {
-      parsedFotos = [];
-    }
+    const parsedFotos = listaDeFotos(produto.fotos);
 
     const newQuadrados = [null, null, null, null, null];
     parsedFotos.forEach((url, i) => { if (i < 5) newQuadrados[i] = url; });
@@ -827,18 +836,8 @@ export default function ProdutoManager({ auth, estabelecimentoId, estabeleciment
               </div>
             ) : (
               currentItems.map(produto => {
-                let fotoUrl = null;
-                if (produto.fotos) {
-                  try {
-                    const parsed = JSON.parse(produto.fotos);
-                    if (Array.isArray(parsed) && parsed.length > 0) {
-                      const primeiraFoto = parsed[0];
-                      fotoUrl = primeiraFoto.startsWith('http') ? primeiraFoto : `/storage/${primeiraFoto}`;
-                    }
-                  } catch (e) {
-                    fotoUrl = null;
-                  }
-                }
+                const primeiraFoto = listaDeFotos(produto.fotos)[0];
+                const fotoUrl = primeiraFoto ? (primeiraFoto.startsWith('http') ? primeiraFoto : `/storage/${primeiraFoto}`) : null;
 
                 // Identifica a que serviço e/ou reserva o produto está atrelado
                 const servicoVinculado = servicoDoProduto(produto);

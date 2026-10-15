@@ -119,51 +119,23 @@ class DashboardController extends Controller
     {
         $user = $request->user();
 
-        if (!in_array($user->papel, ['admin', 'socio', 'gerente'])) {
+        if (!in_array($user->papel, ['admin', 'socio', 'proprietario', 'gerente'])) {
             return response()->json(['error' => 'Acesso não autorizado para o papel: ' . $user->papel], 403);
         }
 
+        $rastreamento = app(\App\Services\Rastreamento\RastreamentoService::class);
+
         // Ver os clientes a caminho do local é um recurso Premium (mesma regra do web).
-        if (!($user->papel === 'admin' || $user->isPremium())) {
+        if (!$rastreamento->podeVer($user)) {
             return response()->json([
                 'error' => 'Seja Premium para ver seus clientes a caminho do seu local.',
                 'premium_necessario' => true,
             ], 403);
         }
 
-        $meusEstabelecimentosIds = $user->estabelecimentos()->pluck('estabelecimentos.id');
-
-        $agendamentosDeHoje = Agendamento::with(['usuario:id,name,foto_perfil', 'estabelecimento:id,nome,latitude,longitude', 'servico:id,nome'])
-            ->whereIn('estabelecimento_id', $meusEstabelecimentosIds)
-            ->whereDate('data_agendamento', now()->toDateString())
-            ->whereIn('status', ['pendente', 'confirmado', 'aguardando_pagamento'])
-            ->orderBy('hora_agendamento', 'asc')
-            ->get();
-
         return response()->json([
-            'agendamentos_ativos' => $agendamentosDeHoje->map(fn (Agendamento $agendamento) => [
-                'id' => $agendamento->id,
-                'status' => $agendamento->status,
-                'hora_agendamento' => $agendamento->hora_agendamento,
-                'usuario' => [
-                    'name' => $agendamento->usuario?->name,
-                    'foto_perfil' => $agendamento->usuario?->foto_perfil,
-                ],
-                'estabelecimento' => [
-                    'id' => $agendamento->estabelecimento?->id,
-                    'nome' => $agendamento->estabelecimento?->nome,
-                    'latitude' => $agendamento->estabelecimento?->latitude,
-                    'longitude' => $agendamento->estabelecimento?->longitude,
-                ],
-                'servico' => $agendamento->servico?->nome,
-                'ultima_localizacao' => $agendamento->ultima_localizacao_em ? [
-                    'latitude' => (float) $agendamento->ultima_latitude,
-                    'longitude' => (float) $agendamento->ultima_longitude,
-                    'heading' => $agendamento->ultimo_heading !== null ? (float) $agendamento->ultimo_heading : null,
-                    'velocidade' => $agendamento->ultima_velocidade !== null ? (float) $agendamento->ultima_velocidade : null,
-                    'atualizado_em' => $agendamento->ultima_localizacao_em->toIso8601String(),
-                ] : null,
-            ]),
+            'agendamentos_ativos' => $rastreamento->ativosDeHoje($user),
+            'atualizado_em' => now()->toIso8601String(),
         ]);
     }
 }

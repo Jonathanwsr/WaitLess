@@ -39,11 +39,15 @@ class HandleInertiaRequests extends Middleware
             'alertaCarteiraAsaas' => fn () => $this->alertaCarteiraAsaas($request),
             'menuEstabelecimentoId' => fn () => $this->menuEstabelecimentoId($request),
             'taxaPlataforma' => \App\Support\Taxas::percentual(),
+            // Mensagens de retorno (back()->with('success'|'error')) para todas as páginas.
+            'flash' => fn () => [
+                'success' => $request->session()->get('success'),
+                'error' => $request->session()->get('error'),
+            ],
             'menuPremium' => fn () => $request->user() ? ($request->user()->papel === 'admin' || $request->user()->isPremium()) : false,
-            // Premium usa pontos até este % do pedido mesmo onde o local não aceita pontos (PontosService::limiteDePontos).
+            // Premium usa pontos à vontade em qualquer serviço ou reserva (PontosService::limiteDePontos).
             'pontosPremium' => fn () => [
                 'ativo' => (bool) $request->user()?->isPremium(),
-                'percentual' => \App\Services\PontosService::percentualPremiumSemAceite(),
             ],
             'avisosUsuario' => fn () => $request->user()
                 ? \App\Models\NotificacaoUsuario::where('usuario_id', $request->user()->id)
@@ -72,6 +76,15 @@ class HandleInertiaRequests extends Middleware
 
         if ($estabelecimentos->isEmpty()) {
             return null;
+        }
+
+        if (\App\Support\ContaFormal::ehInformal($user)) {
+            return [
+                'informal' => true,
+                'mensagem' => 'Conta informal (sem CNPJ): seus clientes pagam no local',
+                'detalhe' => 'A carteira Lokyva e os pagamentos online são liberados para quem tem CNPJ (MEI serve). Cadastre seu CNPJ para receber online e aparecer antes nas buscas.',
+                'rota' => route('carteira.asaas'),
+            ];
         }
 
         return [

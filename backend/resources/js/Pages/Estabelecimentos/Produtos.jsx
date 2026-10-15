@@ -1,4 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import ComoFunciona from '@/Components/ComoFunciona';
 import { Head, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 import { ShoppingBagIcon, TruckIcon, LinkIcon, CheckIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
@@ -62,7 +63,7 @@ export default function Produtos({ aba = 'vinculados', podeEntrega = false, vinc
         <AuthenticatedLayout user={auth?.user}>
             <Head title="Produtos" />
 
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="flex items-center gap-3">
                     <ShoppingBagIcon className="w-8 h-8 text-[#FF5A00]" />
                     <div>
@@ -105,6 +106,43 @@ export default function Produtos({ aba = 'vinculados', podeEntrega = false, vinc
                                 </div>
                             ))}
                         </div>
+                    )}
+                </div>
+
+                {/* PASSO A PASSO DA ABA ESCOLHIDA */}
+                <div className="mt-4">
+                    {ativa === 'entrega' ? (
+                        <ComoFunciona
+                            chave="produtos_entrega"
+                            titulo="Como vender produtos para entrega ou retirada"
+                            passos={[
+                                { titulo: 'Cadastre o produto', texto: 'Fotos, preço, estoque e se aceita entrega, retirada ou os dois.' },
+                                { titulo: 'O cliente compra', texto: 'Ele paga online ou no local. Cada pessoa pode fazer 1 compra por minuto, para evitar robôs.' },
+                                { titulo: 'Separe e entregue', texto: 'Em "Entregas" você escolhe quem leva e o cliente acompanha. Na retirada, ele mostra o código.' },
+                                { titulo: 'Conclua e receba', texto: 'Com o código de confirmação o pedido é concluído e o valor online é liberado para você.' },
+                            ]}
+                            dicas={[
+                                'Os pontos do cliente são proporcionais ao valor do produto.',
+                                'Se você cancelar um pedido pago, o cliente recebe o dinheiro de volta.',
+                                'Promoção e vendedor Premium aparecem antes no catálogo.',
+                                'Pagamento online só para quem tem CNPJ (MEI serve). Sem CNPJ, o cliente paga no local.',
+                            ]}
+                        />
+                    ) : (
+                        <ComoFunciona
+                            chave="produtos_vinculados"
+                            titulo="Como funcionam os produtos com serviço ou reserva"
+                            passos={[
+                                { titulo: 'Cadastre o produto', texto: 'Ex.: pomada na barbearia, café da manhã na pousada, cadeirinha no aluguel de carro.' },
+                                { titulo: 'Ligue ao serviço ou reserva', texto: 'Escolha em qual serviço ou item ele aparece. Use o filtro para ver os de cada um.' },
+                                { titulo: 'O cliente adiciona', texto: 'Na hora de agendar ou reservar, ele marca o produto e o valor entra no mesmo pagamento.' },
+                                { titulo: 'Você entrega no atendimento', texto: 'O produto aparece junto do agendamento ou da reserva para a equipe não esquecer.' },
+                            ]}
+                            dicas={[
+                                'Bom para aumentar o valor de cada atendimento sem criar um pedido separado.',
+                                'Produto inativo some para o cliente, mas os pedidos já feitos continuam valendo.',
+                            ]}
+                        />
                     )}
                 </div>
 

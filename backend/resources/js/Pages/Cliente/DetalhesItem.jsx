@@ -7,10 +7,46 @@ import {
     ImageOff, ChevronRight, CheckCircle2, ChevronDown, Calendar,
     Award, ShieldCheck, Map, Clock, Ban, Dog, Star, Car, Tv,
     Coffee, Flame, Fan, CreditCard, QrCode, FileText, Store,
-    Tag, X
+    Tag, X, Gauge, Fuel, Settings2, Ruler, Package, Info, ScrollText, Phone, Building2
 } from 'lucide-react';
 
-export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, media: null, criterios: {}, previa: [] }, anfitriao = {}, cuponsRecomendados = [] }) {
+const ICONES_REGRA = { clock: Clock, calendar: Calendar, users: Users, doc: ScrollText, shield: ShieldCheck, pet: Dog, star: Award };
+
+/** Ficha técnica: tudo o que o sócio preencheu (marca, ano, quartos, voltagem...), em grade. */
+function FichaTecnica({ itens, titulo }) {
+    if (!itens?.length) return null;
+    return (
+        <div className="py-8 border-b border-gray-200">
+            <h3 className="text-xl font-bold text-gray-900 mb-4">{titulo}</h3>
+            <dl className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {itens.map((e) => (
+                    <div key={e.rotulo} className="rounded-2xl bg-gray-50 px-4 py-3">
+                        <dt className="text-[11px] font-bold uppercase tracking-wide text-gray-400">{e.rotulo}</dt>
+                        <dd className="mt-0.5 text-sm font-bold text-gray-900">{e.valor}</dd>
+                    </div>
+                ))}
+            </dl>
+        </div>
+    );
+}
+
+function PoliticaCancelamentoCard({ politica }) {
+    if (!politica) return null;
+    return (
+        <div className="bg-white border border-gray-200 rounded-3xl p-6 shadow-sm">
+            <h4 className="font-bold text-gray-900 text-sm">Política de cancelamento: {politica.nome}</h4>
+            <p className="text-xs text-gray-600 mt-1 leading-relaxed">{politica.resumo}</p>
+            <p className="text-[11px] text-gray-500 mt-2 leading-relaxed">{politica.longa_duracao}</p>
+            <p className="text-[11px] text-gray-500 mt-2">A caução sempre volta inteira. Se o responsável cancelar, você recebe tudo de volta, sem pedir estorno.</p>
+        </div>
+    );
+}
+
+export default function DetalhesItem({ auth, item, ficha = null, avaliacoes = { total: 0, media: null, criterios: {}, previa: [] }, anfitriao = {}, cuponsRecomendados = [], politicaCancelamento = null }) {
+    // Textos certos para cada tipo: "noite/hóspedes" numa pousada, "dia/passageiros" num carro.
+    const T = ficha?.textos || { unidade: 'dia', unidades: 'dias', inicio: 'Início', fim: 'Fim', pessoa: 'pessoa', pessoas: 'pessoas', sobre: 'Sobre', quem: 'Responsável' };
+    const enderecoFicha = ficha?.endereco || null;
+    const cidadeTitulo = enderecoFicha?.cidade || item.cidade || null;
     const [isSaved, setIsSaved] = useState(false);
     const [descricaoExpandida, setDescricaoExpandida] = useState(false);
     const descricaoLonga = (item.descricao || '').length > 320;
@@ -123,11 +159,15 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
     // 1000 pontos = R$ 1,00 (mesma taxa do servidor, PontosService::PONTOS_POR_REAL).
     const pontosNecessarios10Porcento = Math.floor(desconto10Porcento * 1000);
     const pontosUsuario = auth.user?.pontos_saldo || 0;
-    // Pontos liberados quando o item aceita, ou para cliente premium (os 10% cabem no limite do benefício).
+    // Pontos liberados quando o item aceita (sugestão de 10%), ou para cliente premium,
+    // que usa todo o saldo que quiser, até o valor da reserva.
     const { pontosPremium = {} } = usePage().props;
-    const pontosPeloPremium = !item.aceita_pontos && !!pontosPremium.ativo;
+    const pontosPeloPremium = !!pontosPremium.ativo;
     const itemAceitaPontos = !!item.aceita_pontos || pontosPeloPremium;
-    const podeUsarPontos = pontosUsuario >= pontosNecessarios10Porcento && itemAceitaPontos;
+    const pontosDoPremium = Math.min(pontosUsuario, Math.floor(precoSubtotal * 1000));
+    const pontosParaUsar = pontosPeloPremium ? pontosDoPremium : pontosNecessarios10Porcento;
+    const descontoComPontos = pontosParaUsar / 1000;
+    const podeUsarPontos = itemAceitaPontos && (pontosPeloPremium ? pontosDoPremium > 0 : pontosUsuario >= pontosNecessarios10Porcento);
 
     // Prévia do desconto do cupom — o valor final e autoritativo é sempre
     // recalculado no servidor em AgendamentoController::storeAluguel.
@@ -141,12 +181,8 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
     const precoTotalFormatado = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(precoSubtotal);
     const descontoCupomFormatado = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(descontoCupomPreview);
     const precoComCupomFormatado = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(precoComCupom);
-    const enderecoCompleto = `${item.endereco}, ${item.numero} ${item.complemento ? '- ' + item.complemento : ''}, ${item.bairro} - ${item.cidade}, ${item.estado} - CEP: ${item.cep}`;
-
-    // --- LÓGICA DO MAPA ---
-    const googleMapsUrl = item.latitude && item.longitude
-        ? `https://www.google.com/maps/dir/?api=1&destination=${item.latitude},${item.longitude}`
-        : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${item.endereco}, ${item.numero}, ${item.cidade} - ${item.estado}`)}`;
+    // --- LÓGICA DO MAPA (endereço do item ou, sem ele, do local onde é alugado) ---
+    const googleMapsUrl = enderecoFicha?.mapa || null;
 
     // --- LÓGICA DE FOTOS (FALLBACK PARA SEM IMAGEM) ---
     const fotos = item.fotos && item.fotos.length > 0 ? item.fotos : [];
@@ -170,7 +206,7 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
         transform((d) => ({
             ...d,
             metodo_pagamento: online ? d.metodo_pagamento : null,
-            pontos_utilizados: usarPontos && podeUsarPontos ? pontosNecessarios10Porcento : 0,
+            pontos_utilizados: usarPontos && podeUsarPontos ? pontosParaUsar : 0,
             // Com pontos o total muda: o servidor recalcula, então volta pra 1x.
             parcelas: cartaoPayload && !usarPontos ? d.parcelas : 1,
             cartao: cartaoPayload,
@@ -232,7 +268,7 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
 
     return (
         <AuthenticatedLayout user={auth.user}>
-            <Head title={`${item.nome} em ${item.cidade} - WaitLess`} />
+            <Head title={cidadeTitulo ? `${item.nome} em ${cidadeTitulo}` : item.nome} />
 
             <div className="bg-white min-h-screen pb-24 font-sans text-gray-900">
 
@@ -243,9 +279,8 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
                         <ChevronRight className="w-4 h-4 mx-2" />
                         <Link href={route('cliente.explorar')} className="hover:underline">Destinos</Link>
                         <ChevronRight className="w-4 h-4 mx-2" />
-                        <span className="hover:underline cursor-pointer">{item.cidade}</span>
-                        <ChevronRight className="w-4 h-4 mx-2" />
-                        <span className="text-gray-900">{item.tipo}</span>
+                        {cidadeTitulo && <><span className="hover:underline cursor-pointer">{cidadeTitulo}</span><ChevronRight className="w-4 h-4 mx-2" /></>}
+                        <span className="text-gray-900">{item.nome}</span>
                     </div>
                 </div>
 
@@ -323,10 +358,10 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
                             <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-6">
                                 <div>
                                     <h1 className="text-3xl font-black text-gray-900 leading-tight mb-2">
-                                        {item.nome} em {item.cidade}
+                                        {item.nome}{cidadeTitulo ? ` em ${cidadeTitulo}` : ''}
                                     </h1>
                                     <p className="text-gray-600 font-medium">
-                                        {item.cidade}, {item.estado}
+                                        {[ficha?.local?.nome, [enderecoFicha?.cidade, enderecoFicha?.estado].filter(Boolean).join(', ')].filter(Boolean).join(' · ') || 'Endereço combinado com o responsável'}
                                     </p>
                                 </div>
                                 <div className="flex items-center gap-3 shrink-0">
@@ -353,7 +388,8 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
                                         )}
                                     </div>
                                     <div>
-                                        <p className="font-bold text-gray-900">Anfitrião: {anfitriao.nome}</p>
+                                        <p className="font-bold text-gray-900">{T.quem}: {ficha?.local?.nome || anfitriao.nome}</p>
+                                        {ficha?.local?.nome && ficha.local.nome !== anfitriao.nome && <p className="text-xs text-gray-500">Responsável: {anfitriao.nome}</p>}
                                         <p className="text-sm text-gray-500 flex items-center gap-2 flex-wrap">
                                             {anfitriao.superanfitriao && <span className="inline-flex items-center gap-1 text-[#00A699] font-bold"><Award className="w-4 h-4" /> Superanfitrião</span>}
                                             {anfitriao.desde && <span>No Lokyva desde {anfitriao.desde}</span>}
@@ -364,7 +400,8 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
 
                             {/* Ficha Rápida — só o que o anfitrião realmente cadastrou */}
                             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-gray-700 font-medium pb-8 border-b border-gray-200">
-                                <span className="flex items-center gap-1.5"><Users className="w-4 h-4" /> Até {item.capacidade_pessoas || item.lugares || 1} {(item.capacidade_pessoas || item.lugares || 1) === 1 ? 'pessoa' : 'pessoas'}</span>
+                                <span className="flex items-center gap-1.5"><Users className="w-4 h-4" /> Até {item.capacidade_pessoas || item.lugares || 1} {(item.capacidade_pessoas || item.lugares || 1) === 1 ? T.pessoa : T.pessoas}</span>
+                                {(ficha?.especificacoes || []).slice(0, 3).map((e) => <span key={e.rotulo} className="flex items-center gap-1.5"><span>•</span>{e.valor}</span>)}
                                 {item.numero_quartos > 0 && <><span>•</span><span className="flex items-center gap-1.5"><BedDouble className="w-4 h-4" /> {item.numero_quartos} {item.numero_quartos === 1 ? 'quarto' : 'quartos'}</span></>}
                                 {item.numero_banheiros > 0 && <><span>•</span><span className="flex items-center gap-1.5"><Bath className="w-4 h-4" /> {item.numero_banheiros} {item.numero_banheiros === 1 ? 'banheiro' : 'banheiros'}</span></>}
                                 {item.possui_wifi && <><span>•</span><span className="flex items-center gap-1.5"><Wifi className="w-4 h-4" /> Wi-Fi</span></>}
@@ -373,9 +410,9 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
 
                             {/* Sobre o espaço */}
                             <div className="py-8 border-b border-gray-200">
-                                <h3 className="text-xl font-bold text-gray-900 mb-4">Sobre o espaço</h3>
+                                <h3 className="text-xl font-bold text-gray-900 mb-4">{T.sobre}</h3>
                                 <p className="text-gray-600 leading-relaxed mb-4 whitespace-pre-line">
-                                    {descricaoExpandida || !descricaoLonga ? item.descricao || 'O anfitrião ainda não adicionou uma descrição para este espaço.' : `${item.descricao.slice(0, 280)}…`}
+                                    {descricaoExpandida || !descricaoLonga ? item.descricao || 'O responsável ainda não escreveu uma descrição. Veja abaixo a ficha com os detalhes cadastrados.' : `${item.descricao.slice(0, 280)}…`}
                                 </p>
                                 {descricaoLonga && (
                                     <button type="button" onClick={() => setDescricaoExpandida(!descricaoExpandida)} className="text-[#FF5A00] font-bold text-sm hover:underline flex items-center gap-1">
@@ -396,16 +433,53 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
                                 )}
                             </div>
 
+                            <FichaTecnica titulo={ficha?.perfil === 'veiculo' ? 'Ficha do veículo' : ficha?.perfil === 'hospedagem' ? 'Detalhes da hospedagem' : 'Ficha técnica'} itens={ficha?.especificacoes} />
+
+                            {(ficha?.especificacoes_texto || ficha?.acessorios?.length > 0 || ficha?.observacoes || ficha?.observacoes_disponibilidade) && (
+                                <div className="py-8 border-b border-gray-200 space-y-6">
+                                    {ficha.especificacoes_texto && (
+                                        <div>
+                                            <h4 className="font-bold text-gray-900 mb-2 flex items-center gap-2"><Settings2 className="w-5 h-5 text-gray-500" /> Especificações</h4>
+                                            <p className="text-gray-600 text-sm leading-relaxed whitespace-pre-line">{ficha.especificacoes_texto}</p>
+                                        </div>
+                                    )}
+                                    {ficha.acessorios?.length > 0 && (
+                                        <div>
+                                            <h4 className="font-bold text-gray-900 mb-3 flex items-center gap-2"><Package className="w-5 h-5 text-gray-500" /> O que vem junto</h4>
+                                            <div className="flex flex-wrap gap-2">
+                                                {ficha.acessorios.map((a) => <span key={a} className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-3 py-1.5 text-sm font-medium text-gray-700"><CheckCircle2 className="w-4 h-4 text-emerald-500" /> {a}</span>)}
+                                            </div>
+                                        </div>
+                                    )}
+                                    {(ficha.observacoes || ficha.observacoes_disponibilidade) && (
+                                        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                                            <h4 className="font-bold text-amber-900 mb-1 flex items-center gap-2"><Info className="w-5 h-5" /> Informações importantes</h4>
+                                            {ficha.observacoes && <p className="text-sm text-amber-900 whitespace-pre-line">{ficha.observacoes}</p>}
+                                            {ficha.observacoes_disponibilidade && <p className="text-sm text-amber-900 whitespace-pre-line mt-2">{ficha.observacoes_disponibilidade}</p>}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
                             {/* Localização com Mapa */}
                             <div className="py-8 border-b border-gray-200">
                                 <h3 className="text-xl font-bold text-gray-900 mb-4">Localização</h3>
                                 <div className="flex flex-col md:flex-row gap-6">
                                     <div className="flex-1">
-                                        <p className="text-gray-800 font-medium">{item.endereco}, {item.numero}</p>
-                                        <p className="text-gray-500 text-sm mb-4">{item.cidade} - {item.estado}, {item.cep}</p>
+                                        {enderecoFicha ? (
+                                            <>
+                                                {enderecoFicha.linha1 && <p className="text-gray-800 font-medium">{enderecoFicha.linha1}</p>}
+                                                <p className="text-gray-500 text-sm">{[enderecoFicha.linha2, enderecoFicha.cep ? `CEP ${enderecoFicha.cep}` : null].filter(Boolean).join(' · ')}</p>
+                                                {enderecoFicha.do_local && ficha?.local?.nome && <p className="text-xs text-gray-400 mt-1 flex items-center gap-1"><Building2 className="w-3.5 h-3.5" /> Endereço de {ficha.local.nome}</p>}
+                                            </>
+                                        ) : (
+                                            <p className="text-gray-500 text-sm">O endereço é combinado com o responsável depois da reserva.</p>
+                                        )}
+                                        {ficha?.local?.telefone && <p className="text-sm text-gray-600 mt-2 flex items-center gap-1.5"><Phone className="w-4 h-4" /> {ficha.local.telefone}</p>}
+                                        <div className="mb-4" />
 
                                         {/* Redirecionamento Dinâmico para Maps/Waze */}
-                                        <a href={googleMapsUrl} target="_blank" rel="noreferrer" className="block relative w-full h-48 bg-blue-50 rounded-2xl overflow-hidden border border-gray-200 group">
+                                        {googleMapsUrl && <a href={googleMapsUrl} target="_blank" rel="noreferrer" className="block relative w-full h-48 bg-blue-50 rounded-2xl overflow-hidden border border-gray-200 group">
                                             <div className="absolute inset-0 opacity-40" style={{ backgroundImage: 'url("data:image/svg+xml,%3Csvg width=\'20\' height=\'20\' viewBox=\'0 0 20 20\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'%239C92AC\' fill-opacity=\'0.4\' fill-rule=\'evenodd\'%3E%3Ccircle cx=\'3\' cy=\'3\' r=\'3\'/%3E%3Ccircle cx=\'13\' cy=\'13\' r=\'3\'/%3E%3C/g%3E%3C/svg%3E")' }}></div>
                                             <div className="absolute inset-0 flex items-center justify-center">
                                                 <MapPin className="w-10 h-10 text-[#FF5A00] drop-shadow-md group-hover:scale-110 transition-transform" />
@@ -415,15 +489,16 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
                                                     <Map className="w-4 h-4" /> Ver no mapa
                                                 </button>
                                             </div>
-                                        </a>
+                                        </a>}
                                     </div>
 
                                 </div>
                             </div>
 
                             {/* Comodidades */}
+                            {(ficha?.perfil === 'hospedagem' || ficha?.perfil === 'espaco' || item.recursos_oferecidos?.length > 0) && (
                             <div className="py-8 border-b border-gray-200">
-                                <h3 className="text-xl font-bold text-gray-900 mb-6">Comodidades</h3>
+                                <h3 className="text-xl font-bold text-gray-900 mb-6">{ficha?.perfil === 'hospedagem' || ficha?.perfil === 'espaco' ? 'Comodidades' : 'Recursos'}</h3>
                                 <div className="grid grid-cols-2 md:grid-cols-3 gap-y-4 gap-x-2">
                                     {item.recursos_oferecidos && item.recursos_oferecidos.length > 0 ? (
                                         item.recursos_oferecidos.map((recurso, idx) => (
@@ -437,12 +512,13 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
                                     )}
                                 </div>
                             </div>
+                            )}
 
                             {/* Avaliações (reais) */}
                             <div className="py-8">
                                 <div className="flex justify-between items-end mb-6">
                                     <div>
-                                        <h3 className="text-xl font-bold text-gray-900 mb-2">Avaliações dos hóspedes</h3>
+                                        <h3 className="text-xl font-bold text-gray-900 mb-2">{ficha?.perfil === 'hospedagem' ? 'Avaliações dos hóspedes' : 'Avaliações dos clientes'}</h3>
                                         {avaliacoes?.total > 0 ? (
                                             <div className="flex items-end gap-3">
                                                 <span className="text-5xl font-black text-gray-900 tracking-tighter">{String(avaliacoes.media).replace('.', ',')}</span>
@@ -456,7 +532,7 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
                                                 </div>
                                             </div>
                                         ) : (
-                                            <p className="text-sm text-gray-500">Este anfitrião ainda não recebeu avaliações. Seja o primeiro a se hospedar e avaliar.</p>
+                                            <p className="text-sm text-gray-500">Ainda sem avaliações. Seja o primeiro a reservar e avaliar.</p>
                                         )}
                                     </div>
                                     {avaliacoes?.total > 0 && (
@@ -515,7 +591,14 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
                                 <div className="bg-white border border-gray-200 shadow-[0_8px_30px_rgb(0,0,0,0.08)] rounded-3xl p-6">
                                     <div className="mb-6">
                                         <span className="text-2xl font-black text-gray-900">{precoFormatado}</span>
-                                        <span className="text-gray-500 font-medium"> / {item.periodo_faturamento_padrao === 'diaria' ? 'noite' : 'período'}</span>
+                                        <span className="text-gray-500 font-medium"> / {T.unidade}</span>
+                                        {(ficha?.precos || []).filter((p) => p.rotulo !== 'Diária').length > 0 && (
+                                            <div className="mt-3 flex flex-wrap gap-2">
+                                                {ficha.precos.filter((p) => p.rotulo !== 'Diária').map((p) => (
+                                                    <span key={p.rotulo} className="rounded-lg bg-gray-50 px-2.5 py-1 text-xs text-gray-600"><b className="text-gray-900">{brl(p.valor)}</b> · {p.rotulo}</span>
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
 
                                     {/* Banner de Desconto com Pontos dinâmico */}
@@ -525,9 +608,9 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
                                                 <Award className="w-4 h-4 text-emerald-600" />
                                             </div>
                                             <div>
-                                                <h4 className="text-sm font-bold text-[#D04A02]">10% de desconto com pontos{pontosPeloPremium ? ' · benefício premium' : ''}</h4>
+                                                <h4 className="text-sm font-bold text-[#D04A02]">{pontosPeloPremium ? 'Premium: use seus pontos à vontade' : '10% de desconto com pontos'}</h4>
                                                 <p className="text-xs text-gray-600 mt-0.5">
-                                                    Use {pontosNecessarios10Porcento} pts e economize R$ {desconto10Porcento.toFixed(2).replace('.', ',')}
+                                                    Use {pontosParaUsar.toLocaleString('pt-BR')} pts e economize R$ {descontoComPontos.toFixed(2).replace('.', ',')}
                                                 </p>
                                             </div>
                                         </div>
@@ -537,7 +620,7 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
                                     <div className="border border-gray-300 rounded-xl overflow-hidden mb-4 focus-within:border-gray-400 focus-within:ring-1 focus-within:ring-gray-400 transition-all">
                                         <div className="flex border-b border-gray-300">
                                             <div className="flex-1 p-3 border-r border-gray-300 bg-white hover:bg-gray-50 transition-colors relative">
-                                                <label className="block text-[10px] font-bold text-gray-800 uppercase mb-0.5">Check-in</label>
+                                                <label className="block text-[10px] font-bold text-gray-800 uppercase mb-0.5">{T.inicio}</label>
                                                 <input
                                                     type="date"
                                                     value={data.data_inicio}
@@ -548,7 +631,7 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
                                                 {errors.data_inicio && <span className="text-red-500 text-xs">{errors.data_inicio}</span>}
                                             </div>
                                             <div className="flex-1 p-3 bg-white hover:bg-gray-50 transition-colors relative">
-                                                <label className="block text-[10px] font-bold text-gray-800 uppercase mb-0.5">Check-out</label>
+                                                <label className="block text-[10px] font-bold text-gray-800 uppercase mb-0.5">{T.fim}</label>
                                                 <input
                                                     type="date"
                                                     value={data.data_fim}
@@ -561,7 +644,7 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
                                         </div>
 
                                         <div className="p-3 bg-white hover:bg-gray-50 transition-colors relative">
-                                            <label className="block text-[10px] font-bold text-gray-800 uppercase mb-0.5">Hóspedes</label>
+                                            <label className="block text-[10px] font-bold text-gray-800 uppercase mb-0.5">{T.pessoas.charAt(0).toUpperCase() + T.pessoas.slice(1)}</label>
                                             <div className="flex justify-between items-center text-sm text-gray-900 font-medium">
                                                 <select
                                                     value={data.pessoas}
@@ -569,7 +652,7 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
                                                     className="w-full border-0 p-0 focus:ring-0 cursor-pointer bg-transparent appearance-none"
                                                 >
                                                     {[...Array(item.capacidade_pessoas || item.lugares || 5)].map((_, i) => (
-                                                        <option key={i+1} value={i+1}>{i+1} {i > 0 ? 'hóspedes' : 'hóspede'}</option>
+                                                        <option key={i+1} value={i+1}>{i+1} {i > 0 ? T.pessoas : T.pessoa}</option>
                                                     ))}
                                                 </select>
                                                 <ChevronDown className="w-4 h-4 text-gray-400 pointer-events-none absolute right-3" />
@@ -766,14 +849,14 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
                                         <div className="flex justify-between items-center text-gray-600 font-medium">
                                             <span className="underline cursor-help">
                                                 {ehPorPessoa
-                                                    ? `${precoFormatado} x ${data.pessoas} pessoa${data.pessoas > 1 ? 's' : ''} x ${totalDiasCalculado} noite${totalDiasCalculado > 1 ? 's' : ''}`
-                                                    : `${precoFormatado} x ${totalDiasCalculado} noite${totalDiasCalculado > 1 ? 's' : ''}`}
+                                                    ? `${precoFormatado} x ${data.pessoas} ${data.pessoas > 1 ? T.pessoas : T.pessoa} x ${totalDiasCalculado} ${totalDiasCalculado > 1 ? T.unidades : T.unidade}`
+                                                    : `${precoFormatado} x ${totalDiasCalculado} ${totalDiasCalculado > 1 ? T.unidades : T.unidade}`}
                                             </span>
                                             <span>{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valorDiaria * (ehPorPessoa ? data.pessoas : 1) * totalDiasCalculado)}</span>
                                         </div>
                                         {!ehPorPessoa && pessoasExtras > 0 && (
                                             <div className="flex justify-between items-center text-gray-600 font-medium mt-2">
-                                                <span>{pessoasExtras} pessoa{pessoasExtras > 1 ? 's' : ''} extra x R$ {valorPessoaExtra.toFixed(2).replace('.', ',')} x {totalDiasCalculado} noite{totalDiasCalculado > 1 ? 's' : ''}</span>
+                                                <span>{pessoasExtras} pessoa{pessoasExtras > 1 ? 's' : ''} extra x R$ {valorPessoaExtra.toFixed(2).replace('.', ',')} x {totalDiasCalculado} {totalDiasCalculado > 1 ? T.unidades : T.unidade}</span>
                                                 <span>{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(pessoasExtras * valorPessoaExtra * totalDiasCalculado)}</span>
                                             </div>
                                         )}
@@ -823,12 +906,14 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
                                     </p>
                                 </div>
 
+                                <PoliticaCancelamentoCard politica={politicaCancelamento} />
+
                                 {/* BOX: Acumule pontos */}
                                 <div className="bg-white border border-gray-200 rounded-3xl p-6 shadow-sm flex items-center justify-between">
                                     <div>
                                         <h4 className="font-bold text-gray-900 mb-1 text-sm">Acumule pontos nesta reserva</h4>
                                         <p className="font-black text-base text-gray-900">Você ganha {Math.floor(precoSubtotal)} pts</p>
-                                        <p className="text-xs text-gray-500 mt-1">Ao completar sua estadia</p>
+                                        <p className="text-xs text-gray-500 mt-1">Ao concluir a reserva</p>
                                     </div>
                                     <div className="w-12 h-12 bg-[#FFF0E5] rounded-full flex items-center justify-center shrink-0">
                                         <Award className="w-6 h-6 text-[#FF5A00]" />
@@ -838,7 +923,7 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
                                 {/* BOX: Destaques das avaliações (só com base nas notas reais) */}
                                 {Object.entries(avaliacoes?.criterios || {}).filter(([, nota]) => nota >= 4.5).length > 0 && (
                                     <div className="bg-white border border-gray-200 rounded-3xl p-6 shadow-sm">
-                                        <h4 className="font-bold text-gray-900 mb-5">Por que os hóspedes gostam</h4>
+                                        <h4 className="font-bold text-gray-900 mb-5">Por que os clientes gostam</h4>
                                         <div className="space-y-4">
                                             {Object.entries(avaliacoes.criterios).filter(([, nota]) => nota >= 4.5).slice(0, 3).map(([nome, nota]) => (
                                                 <div key={nome} className="flex gap-3">
@@ -886,20 +971,30 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
 
                                 {/* BOX: Políticas / Retirada e devolução (local de retirada e entrega só existe p/ itens e veículos) */}
                                 <div className="bg-white border border-gray-200 rounded-3xl p-6 shadow-sm">
-                                    <h4 className="font-bold text-gray-900 mb-5">{item.permite_entrega ? 'Retirada e devolução' : 'Políticas da propriedade'}</h4>
+                                    <h4 className="font-bold text-gray-900 mb-5">{ficha?.retirada ? 'Retirada, devolução e regras' : 'Regras e horários'}</h4>
                                     <div className="space-y-3 text-sm text-gray-700 font-medium">
-                                        {item.permite_entrega ? (
+                                        {ficha?.retirada && (
                                             <>
                                                 <div className="flex items-start gap-3">
                                                     <MapPin className="w-4 h-4 text-[#FF5A00] shrink-0 mt-0.5" />
-                                                    <span>Retirada: {item.local_retirada || 'combinar com o anfitrião'}{item.horario_retirada ? ` às ${item.horario_retirada}` : ''}</span>
+                                                    <span><b>Retirada:</b> {ficha.retirada.endereco || 'combinar com o responsável'}{ficha.retirada.horario ? ` · a partir das ${ficha.retirada.horario}` : ''}</span>
                                                 </div>
                                                 <div className="flex items-start gap-3">
                                                     <MapPin className="w-4 h-4 text-[#FF5A00] shrink-0 mt-0.5" />
-                                                    <span>Devolução: {item.local_entrega || item.local_retirada || 'combinar com o anfitrião'}{item.horario_entrega ? ` até ${item.horario_entrega}` : ''}</span>
+                                                    <span><b>Devolução:</b> {ficha.devolucao?.endereco || ficha.retirada.endereco || 'combinar com o responsável'}{ficha.devolucao?.horario ? ` · até ${ficha.devolucao.horario}` : ''}</span>
                                                 </div>
                                             </>
-                                        ) : (
+                                        )}
+                                        {(ficha?.regras || []).map((regra) => {
+                                            const Icone = ICONES_REGRA[regra.icone] || CheckCircle2;
+                                            return (
+                                                <div key={regra.texto} className="flex items-start gap-3">
+                                                    <Icone className="w-4 h-4 text-[#FF5A00] shrink-0 mt-0.5" />
+                                                    <span>{regra.texto}</span>
+                                                </div>
+                                            );
+                                        })}
+                                        {!ficha && (item.permite_entrega ? null : (
                                             <>
                                                 <div className="flex items-center gap-3">
                                                     <Clock className="w-4 h-4 text-[#FF5A00]" /> Chegada: {item.horario_retirada || '14h às 22h'}
@@ -912,7 +1007,7 @@ export default function DetalhesItem({ auth, item, avaliacoes = { total: 0, medi
                                                     {item.aceita_pet ? 'Pets são bem-vindos' : 'Pets não permitidos'}
                                                 </div>
                                             </>
-                                        )}
+                                        ))}
                                     </div>
                                     {item.informacoes_extras && (
                                         <p className="mt-4 text-sm text-gray-600 whitespace-pre-line border-t border-gray-100 pt-4">{item.informacoes_extras}</p>

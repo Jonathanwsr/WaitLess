@@ -161,6 +161,30 @@ class PagamentoService
             ->exists();
     }
 
+    /** Dono (users.id) com carteira Asaas aberta — sem ela o split não tem para onde ir. */
+    public function donoTemCarteiraAsaas($userId): bool
+    {
+        return DB::table('providers')
+            ->where('user_id', $userId)
+            ->whereNotNull('asaas_wallet_id')
+            ->exists();
+    }
+
+    /** Reserva (itens_aluguel): `estabelecimento_id` guarda o dono; só aceita online se ele tem carteira. */
+    public function reservaAceitaPagamentoOnline(object $item): bool
+    {
+        return $this->donoTemCarteiraAsaas($item->estabelecimento_id);
+    }
+
+    /**
+     * Forma de pagamento que o cliente realmente pode escolher: sócio sem carteira só recebe no local,
+     * mesmo que o serviço tenha sido cadastrado como "online" ou "híbrido".
+     */
+    public function tipoPagamentoEfetivo(?string $configurado, bool $aceitaOnline): string
+    {
+        return $aceitaOnline ? ($configurado ?: 'hibrido') : 'presencial';
+    }
+
     /**
      * @param array|null $cartao  ['numero','titular','mes','ano','cvv'] — quando informado, o cartão é
      *                            cobrado na hora pelo Asaas (sem sair da página). Os dados do cartão
@@ -205,7 +229,7 @@ class PagamentoService
         $billingTypeAsaas = $billingTypeMap[$metodo];
 
         $nomeServico = $agendamento->servico->nome ?? (isset($agendamento->item_aluguel_id) ? 'Locação de Item' : 'Reserva');
-        $nomeEstabelecimento = DB::table('estabelecimentos')->where('id', $agendamento->estabelecimento_id)->value('nome') ?? 'WaitLess';
+        $nomeEstabelecimento = DB::table('estabelecimentos')->where('id', $agendamento->estabelecimento_id)->value('nome') ?? 'Lokyva';
         $descricaoProfissional = "Reserva: {$nomeServico} em {$nomeEstabelecimento}";
 
         $payloadAsaas = [
@@ -392,7 +416,7 @@ class PagamentoService
      * registra a saída no extrato do prestador. Centralizado aqui para que
      * web e mobile nunca apliquem regras diferentes.
      */
-    public function processarCancelamentoAgendamento(Agendamento $agendamento): array
+    public function processarCancelamentoAgendamento(Agendamento $agendamento, bool $peloDono = false): array
     {
         $pagamento = Pagamento::where('agendamento_id', $agendamento->id)->first();
         $mensagem = 'Agendamento cancelado com sucesso. Sua vaga foi liberada.';
@@ -400,7 +424,8 @@ class PagamentoService
         if (in_array($agendamento->status_pagamento, ['pago', 'pago_online']) && $pagamento && $pagamento->id_transacao_gateway) {
             $dataHoraServico = \Carbon\Carbon::parse($agendamento->data_agendamento . ' ' . $agendamento->hora_agendamento);
             $limiteGratis = $dataHoraServico->copy()->subMinutes(30);
-            $isCancelamentoGratis = now()->lessThanOrEqualTo($limiteGratis);
+            // Cancelado pelo local: o cliente sempre recebe tudo de volta, sem taxa.
+            $isCancelamentoGratis = $peloDono || now()->lessThanOrEqualTo($limiteGratis);
 
             $valorOriginal = $pagamento->valor;
             $valorEstorno = $valorOriginal;
@@ -411,7 +436,9 @@ class PagamentoService
                 $valorEstorno = $valorOriginal - $taxaCancelamento;
                 $mensagem = "Cancelamento efetuado! Como foi feito a menos de 30 minutos do horário marcado, uma taxa de " . \App\Support\Taxas::cancelamentoTardioPercentual() . "% (R$ " . number_format($taxaCancelamento, 2, ',', '.') . ") foi retida. O restante será devolvido para a forma de pagamento original.";
             } else {
-                $mensagem = 'Cancelamento gratuito efetuado com sucesso! O valor integral será devolvido para a forma de pagamento original.';
+                $mensagem = $peloDono
+                    ? 'Agendamento cancelado. O cliente recebe o valor integral de volta na forma de pagamento original.'
+                    : 'Cancelamento gratuito efetuado com sucesso! O valor integral será devolvido para a forma de pagamento original.';
             }
 
             try {
@@ -426,7 +453,8 @@ class PagamentoService
                     $pagamento,
                     'SERVIÇO',
                     $valorEstorno,
-                    $isCancelamentoGratis ? 'Cancelamento do cliente dentro do prazo gratuito.' : 'Cancelamento tardio do cliente (taxa retida).'
+                    $peloDono ? 'Agendamento cancelado pelo local: reembolso integral.' : ($isCancelamentoGratis ? 'Cancelamento do cliente dentro do prazo gratuito.' : 'Cancelamento tardio do cliente (taxa retida).'),
+                    $peloDono ? 'CANCELAMENTO_VENDEDOR' : 'CANCELAMENTO_CLIENTE'
                 ) : null;
 
                 if (!$estorno) {
@@ -458,66 +486,97 @@ class PagamentoService
     }
 
     /**
-     * 👉 CANCELAMENTO DE ALUGUEL (LOCAÇÃO) COM ESTORNO AUTOMÁTICO
-     *
-     * Mesma regra que a tela de serviços, só que com 24h de antecedência em
-     * vez de 30 minutos (faz mais sentido para locação): cancelar até 1 dia
-     * antes do início devolve 100%; depois disso, retém a taxa de
-     * cancelamento tardio e estorna o restante. Chamada tanto pelo endpoint
-     * web (DELETE /minhas-reservas/cancelar/{id}) quanto pelo mobile — antes
-     * disso esse endpoint só marcava a locação como cancelada e NUNCA
-     * devolvia o dinheiro ao cliente, mesmo quando o pagamento tinha sido
-     * feito online.
+     * Cancelamento de reserva (locação) com reembolso automático, no modelo do Airbnb
+     * (Locacao\PoliticaCancelamentoService): pelo cliente, devolve conforme a política do item, a
+     * antecedência e a duração (28+ dias = longa duração); pelo dono, devolve 100% e os pontos usados.
+     * A caução volta sempre inteira. O cliente nunca precisa pedir estorno.
      */
-    public function processarCancelamentoAluguel(Aluguel $aluguel): array
+    public function processarCancelamentoAluguel(Aluguel $aluguel, ?int $canceladoPorId = null, bool $peloDono = false): array
     {
         $pagamento = Pagamento::where('aluguel_id', $aluguel->id)->first();
-        $mensagem = 'Locação cancelada com sucesso.';
+        $politicas = app(\App\Services\Locacao\PoliticaCancelamentoService::class);
+        $aluguel->loadMissing('item');
+        $calculo = null;
+        $mensagem = $peloDono ? 'Reserva cancelada. O cliente foi avisado.' : 'Reserva cancelada com sucesso.';
 
-        if (in_array($aluguel->status, ['confirmado', 'em_andamento'], true) && $pagamento && $pagamento->status === 'pago' && $pagamento->id_transacao_gateway) {
-            $limiteGratis = \Carbon\Carbon::parse($aluguel->data_inicio)->subDay();
-            $isCancelamentoGratis = now()->lessThanOrEqualTo($limiteGratis);
+        $pago = $pagamento && $pagamento->status === 'pago' && $pagamento->id_transacao_gateway
+            && !in_array($aluguel->status, ['cancelado', 'finalizado', 'concluido'], true);
 
-            $valorOriginal = (float) ($pagamento->valor_total ?? $pagamento->valor);
-            $valorEstorno = $valorOriginal;
+        if ($pago) {
+            $valorPago = (float) ($pagamento->valor_total ?? $pagamento->valor);
+            $calculo = $politicas->calcular($aluguel, $valorPago, $peloDono);
+            $valorEstorno = $calculo['valor_reembolso'];
 
-            if (!$isCancelamentoGratis) {
-                $taxaCancelamento = round($valorOriginal * \App\Support\Taxas::cancelamentoTardioPercentual() / 100, 2);
-                $valorEstorno = $valorOriginal - $taxaCancelamento;
-                $mensagem = "Locação cancelada! Como foi feito a menos de 24h do início, uma taxa de " . \App\Support\Taxas::cancelamentoTardioPercentual() . "% (R$ " . number_format($taxaCancelamento, 2, ',', '.') . ") foi retida. O restante será devolvido para a forma de pagamento original.";
-            } else {
-                $mensagem = 'Cancelamento gratuito efetuado! O valor integral será devolvido para a forma de pagamento original.';
-            }
+            if ($valorEstorno > 0) {
+                try {
+                    $cliente = $aluguel->locatario ?? User::find($aluguel->locatario_id);
+                    $estorno = $cliente ? $this->estornoService->criarEEstornarPorCancelamento(
+                        $cliente,
+                        $pagamento,
+                        'ALUGUEL',
+                        $valorEstorno,
+                        ($peloDono ? 'Reserva cancelada pelo responsável. ' : 'Reserva cancelada pelo cliente. ') . $calculo['explicacao'],
+                        $peloDono ? 'CANCELAMENTO_VENDEDOR' : 'CANCELAMENTO_CLIENTE'
+                    ) : null;
 
-            try {
-                $cliente = $aluguel->locatario ?? User::find($aluguel->locatario_id);
-                $estorno = $cliente ? $this->estornoService->criarEEstornarPorCancelamento(
-                    $cliente,
-                    $pagamento,
-                    'ALUGUEL',
-                    $valorEstorno,
-                    $isCancelamentoGratis ? 'Cancelamento do cliente dentro do prazo gratuito.' : 'Cancelamento tardio do cliente (taxa retida).'
-                ) : null;
-
-                if (!$estorno) {
-                    $this->estornarPagamento($pagamento->id_transacao_gateway, $valorEstorno);
-                    $pagamento->update(['status' => 'estornado', 'valor_liquido' => 0]);
+                    if (!$estorno) {
+                        $this->estornarPagamento($pagamento->id_transacao_gateway, $valorEstorno);
+                        $pagamento->update(['status' => 'estornado', 'valor_liquido' => 0]);
+                    }
+                } catch (\Exception $e) {
+                    Log::error('Falha ao estornar cancelamento de aluguel #' . $aluguel->id . ': ' . $e->getMessage());
+                    throw new \Exception('Não foi possível processar a devolução do valor agora. Tente novamente em alguns minutos ou fale com o suporte.');
                 }
-            } catch (\Exception $e) {
-                Log::error('Falha ao estornar cancelamento de aluguel #' . $aluguel->id . ': ' . $e->getMessage());
-                throw new \Exception('Não foi possível processar a devolução do valor agora. Tente novamente em alguns minutos ou fale com o suporte.');
+                $pagamento->refresh();
             }
 
-            $pagamento->refresh();
+            // O que a política reteve fica com o dono: libera da custódia do Asaas (best-effort).
+            if ($calculo['valor_retido'] > 0 && $pagamento->id_transacao_gateway) {
+                if ($this->liberarCustodiaAsaas($pagamento->id_transacao_gateway)) {
+                    $pagamento->update(['status_repasse' => 'liberado', 'data_liberacao_repasse' => now()->toDateString()]);
+                }
+            }
+
+            $valorTexto = 'R$ ' . number_format($valorEstorno, 2, ',', '.');
+            $mensagem = $peloDono
+                ? "Reserva cancelada. O cliente recebe {$valorTexto} de volta na forma de pagamento original."
+                : ($valorEstorno > 0
+                    ? "Reserva cancelada! Você recebe {$valorTexto} de volta na forma de pagamento original. {$calculo['explicacao']}"
+                    : "Reserva cancelada. {$calculo['explicacao']}");
         }
 
-        $aluguel->update(['status' => 'cancelado']);
-
-        if ($pagamento && $pagamento->status !== 'estornado') {
-            $pagamento->update(['status' => 'cancelado']);
+        // Cancelado pelo dono: os pontos usados voltam para o cliente.
+        if ($peloDono && (int) $aluguel->pontos_utilizados > 0) {
+            User::whereKey($aluguel->locatario_id)->increment('pontos_saldo', (int) $aluguel->pontos_utilizados);
         }
 
-        return ['message' => $mensagem, 'estornado' => (bool) ($pagamento && $pagamento->status === 'estornado')];
+        $aluguel->update([
+            'status' => 'cancelado',
+            'cancelado_por_usuario_id' => $canceladoPorId,
+            'valor_reembolsado' => $calculo['valor_reembolso'] ?? null,
+            'politica_aplicada' => $calculo['politica'] ?? $politicas->politicaDa($aluguel),
+        ]);
+
+        // Sem reembolso nenhum, o pagamento continua "pago" (o valor ficou com o dono).
+        if ($pagamento && !in_array($pagamento->status, ['estornado'], true)) {
+            $semReembolso = $pago && ($calculo['valor_reembolso'] ?? 0) <= 0;
+            $pagamento->update(['status' => $semReembolso ? 'pago' : ($pago ? 'estornado' : 'cancelado')]);
+        }
+
+        if ($peloDono) {
+            \App\Models\NotificacaoUsuario::avisar(
+                $aluguel->locatario_id,
+                'Reserva cancelada pelo responsável',
+                'Sua reserva ' . ($aluguel->codigo_reserva ?: '#' . $aluguel->id) . ' foi cancelada pelo responsável.'
+                . ($pago ? ' O valor pago volta inteiro na forma de pagamento original, sem você precisar pedir.' : '')
+            );
+        }
+
+        return [
+            'message' => $mensagem,
+            'estornado' => (bool) ($pagamento && $pagamento->fresh()?->status === 'estornado'),
+            'reembolso' => $calculo,
+        ];
     }
 
     /**
@@ -804,7 +863,7 @@ class PagamentoService
         $cliente = DB::table('users')->where('id', $isAgendamento ? $agendamento->usuario_id : $agendamento->locatario_id)->first();
         if (!$cliente || !$cliente->email) return;
 
-        $estabelecimentoNome = DB::table('estabelecimentos')->where('id', $agendamento->estabelecimento_id)->value('nome') ?? 'WaitLess';
+        $estabelecimentoNome = DB::table('estabelecimentos')->where('id', $agendamento->estabelecimento_id)->value('nome') ?? 'Lokyva';
         
         $dono = DB::table('estabelecimento_usuario')
             ->join('users', 'estabelecimento_usuario.usuario_id', '=', 'users.id')
@@ -872,13 +931,13 @@ class PagamentoService
                 if ($pinSeguranca) $mensagemCliente .= "Seu PIN de atendimento é: {$pinSeguranca}\n\n";
                 break;
         }
-        $mensagemCliente .= "Equipe WaitLess";
+        $mensagemCliente .= "Equipe Lokyva";
 
         $assuntoDono = "";
         $mensagemDono = "";
 
         if ($dono && in_array($statusPagamento, ['local', 'pago'])) {
-            $mensagemDono = "Olá, {$dono->name}. O sistema WaitLess tem uma nova atualização para você:\n\n";
+            $mensagemDono = "Olá, {$dono->name}. O sistema Lokyva tem uma nova atualização para você:\n\n";
 
             if ($statusPagamento === 'local') {
                 $assuntoDono = "💸 Nova Reserva (Pagar no Balcão) - {$dataStr}";

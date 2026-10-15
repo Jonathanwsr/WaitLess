@@ -1,5 +1,9 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link } from '@inertiajs/react';
+import { useState } from 'react';
+
+// Locais por página na home do sócio: a paginação só aparece quando passa disso.
+const LOCAIS_POR_PAGINA = 4;
 import {
     UsersIcon,
     CurrencyDollarIcon,
@@ -18,6 +22,8 @@ import {
     CommandLineIcon,
     ArrowUturnLeftIcon,
     KeyIcon,
+    CubeIcon,
+    TagIcon,
     EyeIcon,
     ClockIcon,
     FireIcon,
@@ -28,6 +34,10 @@ import {
 const formatarMoeda = (valor) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(valor || 0);
 
 export default function Dashboard({ auth, estabelecimentos = [], metricas = {}, fechamentoDia = {} }) {
+    const [paginaLocais, setPaginaLocais] = useState(1);
+    const totalPaginas = Math.max(1, Math.ceil(estabelecimentos.length / LOCAIS_POR_PAGINA));
+    const paginaAtual = Math.min(paginaLocais, totalPaginas);
+    const locaisDaPagina = estabelecimentos.slice((paginaAtual - 1) * LOCAIS_POR_PAGINA, paginaAtual * LOCAIS_POR_PAGINA);
     const fechamento = {
         valor_total: 0,
         atendimentos: 0,
@@ -49,7 +59,7 @@ export default function Dashboard({ auth, estabelecimentos = [], metricas = {}, 
                 </div>
             }
         >
-            <Head title="Dashboard - WaitLess" />
+            <Head title="Dashboard" />
 
             {/* Container Principal com a cor de fundo customizada FBF9F9 */}
             <div className="bg-[#FBF9F9] dark:bg-gray-900 min-h-screen -m-4 sm:-m-8 p-4 sm:p-8 space-y-8 animate-fadeIn">
@@ -252,22 +262,23 @@ export default function Dashboard({ auth, estabelecimentos = [], metricas = {}, 
                         {/* 👉 NOVO BOTÃO ADICIONADO AQUI CONFORME SOLICITADO */}
                         <Link
                             href="/meus-produtos"
-                            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 border border-transparent text-sm font-semibold text-white rounded-xl hover:bg-blue-700 transition shadow-sm"
+                            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2 bg-slate-700 border border-transparent text-sm font-semibold text-white rounded-xl hover:bg-slate-800 transition shadow-sm"
                         >
+                            <CubeIcon className="w-4 h-4" />
                             Criar produtos
                         </Link>
 
                         <Link
                             href={route('locacoes.avulsas.index')}
-                            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2 bg-[#FF5A00] border border-transparent text-sm font-semibold text-white rounded-xl hover:bg-orange-600 transition shadow-sm"
+                            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2 bg-orange-100 border border-orange-200 text-sm font-semibold text-orange-700 rounded-xl hover:bg-orange-200 transition shadow-sm"
                         >
-                            <KeyIcon className="w-4 h-4" />
+                            <TagIcon className="w-4 h-4" />
                             Locações Avulsas
                         </Link>
 
                         <Link
                             href={route('estabelecimentos.create')}
-                            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-[#006837] text-white text-sm font-semibold rounded-xl hover:bg-[#00522b] transition shadow-sm"
+                            className="flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-4 py-2 bg-emerald-600 text-white text-sm font-semibold rounded-xl hover:bg-emerald-700 transition shadow-sm"
                         >
                             <PlusIcon className="w-4 h-4 stroke-[3]" />
                             Novo Local
@@ -295,7 +306,7 @@ export default function Dashboard({ auth, estabelecimentos = [], metricas = {}, 
                 ) : (
                     /* CARDS LIST */
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        {estabelecimentos.map((local) => (
+                        {locaisDaPagina.map((local) => (
                             <div
                                 key={local.id}
                                 className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-2xl p-5 shadow-sm hover:shadow-md transition flex flex-col justify-between"
@@ -401,26 +412,37 @@ export default function Dashboard({ auth, estabelecimentos = [], metricas = {}, 
                     </div>
                 )}
 
-                {/* --- SEÇÃO 4: Componente de Paginação --- */}
-                {estabelecimentos.length > 0 && (
+                {/* --- SEÇÃO 4: Paginação (só com mais de 4 locais) --- */}
+                {totalPaginas > 1 && (
                     <div className="flex items-center justify-center gap-1.5 pt-6 pb-4">
-                        <button className="w-9 h-9 flex items-center justify-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 rounded-lg hover:bg-gray-50 transition shadow-xs">
+                        <button
+                            type="button"
+                            onClick={() => setPaginaLocais(Math.max(1, paginaAtual - 1))}
+                            disabled={paginaAtual === 1}
+                            aria-label="Página anterior"
+                            className="w-9 h-9 flex items-center justify-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 rounded-lg hover:bg-gray-50 transition shadow-xs disabled:opacity-40"
+                        >
                             <ChevronLeftIcon className="w-4 h-4" />
                         </button>
 
-                        <button className="w-9 h-9 flex items-center justify-center bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 font-bold text-sm rounded-lg transition shadow-xs">
-                            1
-                        </button>
+                        {Array.from({ length: totalPaginas }, (_, i) => i + 1).map((n) => (
+                            <button
+                                key={n}
+                                type="button"
+                                onClick={() => setPaginaLocais(n)}
+                                className={`w-9 h-9 flex items-center justify-center font-bold text-sm rounded-lg transition shadow-xs ${n === paginaAtual ? 'bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900' : 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50'}`}
+                            >
+                                {n}
+                            </button>
+                        ))}
 
-                        <button className="w-9 h-9 flex items-center justify-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 font-semibold text-sm rounded-lg hover:bg-gray-50 transition shadow-xs">
-                            2
-                        </button>
-
-                        <button className="w-9 h-9 flex items-center justify-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 font-semibold text-sm rounded-lg hover:bg-gray-50 transition shadow-xs">
-                            3
-                        </button>
-
-                        <button className="w-9 h-9 flex items-center justify-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 rounded-lg hover:bg-gray-50 transition shadow-xs">
+                        <button
+                            type="button"
+                            onClick={() => setPaginaLocais(Math.min(totalPaginas, paginaAtual + 1))}
+                            disabled={paginaAtual === totalPaginas}
+                            aria-label="Próxima página"
+                            className="w-9 h-9 flex items-center justify-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 rounded-lg hover:bg-gray-50 transition shadow-xs disabled:opacity-40"
+                        >
                             <ChevronRightIcon className="w-4 h-4" />
                         </button>
                     </div>

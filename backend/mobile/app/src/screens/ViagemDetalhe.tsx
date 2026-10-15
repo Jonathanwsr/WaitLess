@@ -2,7 +2,9 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, SafeAreaView, ActivityIndicator, RefreshControl, Modal, TextInput, StatusBar, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import { T } from '../../../constants/ClientTheme';
+import { Avatares, contagem, gradienteDoDestino } from '../../../components/viagem/visual';
 import ItemViagem, { ItemRoteiro } from '../../../components/viagem/ItemViagem';
 import GastosViagem from '../../../components/viagem/GastosViagem';
 import ChatViagem from '../../../components/viagem/ChatViagem';
@@ -67,6 +69,8 @@ function FormItem({ viagem, onFechar, onSalvo }: { viagem: any; onFechar: () => 
     </Modal>
   );
 }
+
+const TOPO = Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 8 : 54;
 
 export default function ViagemDetalhe() {
   const router = useRouter();
@@ -147,17 +151,26 @@ export default function ViagemDetalhe() {
         <View>
           {viagem.posso_editar && (
             <View style={s.acoes}>
-              <TouchableOpacity style={s.acao} onPress={() => setNovoItem(true)}><Ionicons name="add" size={16} color={T.ink} /><Text style={s.acaoTxt}> Adicionar</Text></TouchableOpacity>
-              <TouchableOpacity style={s.acao} onPress={regenerar}><Ionicons name="refresh" size={16} color={T.ink} /><Text style={s.acaoTxt}> Refazer sugestões</Text></TouchableOpacity>
-              {viagem.sou_criador && <TouchableOpacity style={[s.acao, { borderColor: '#FECACA' }]} onPress={excluir}><Ionicons name="trash-outline" size={16} color={T.danger} /></TouchableOpacity>}
+              <TouchableOpacity style={[s.acao, s.acaoPrimaria]} onPress={() => setNovoItem(true)} activeOpacity={0.85}><Ionicons name="add-circle" size={17} color="#fff" /><Text style={[s.acaoTxt, { color: '#fff' }]}> Adicionar</Text></TouchableOpacity>
+              <TouchableOpacity style={s.acao} onPress={regenerar} activeOpacity={0.85}><Ionicons name="sparkles-outline" size={16} color={T.primary} /><Text style={s.acaoTxt}> Refazer sugestões</Text></TouchableOpacity>
+              {viagem.sou_criador && <TouchableOpacity style={[s.acao, { marginLeft: 'auto', backgroundColor: '#FEF2F2' }]} onPress={excluir} activeOpacity={0.85}><Ionicons name="trash-outline" size={16} color={T.danger} /></TouchableOpacity>}
             </View>
           )}
-          {itens.length === 0 && <Text style={s.vazio}>Nenhum item ainda. Adicione compromissos ou refaça as sugestões.</Text>}
+          {itens.length === 0 && (
+            <View style={s.vazioBox}>
+              <View style={s.vazioIcone}><Ionicons name="map-outline" size={30} color={T.primary} /></View>
+              <Text style={s.vazioTitulo}>Roteiro em branco</Text>
+              <Text style={s.vazio}>Adicione compromissos ou peça novas sugestões.</Text>
+            </View>
+          )}
           {agrupado.fixos.length > 0 && <Text style={s.diaTitulo}>Durante toda a viagem</Text>}
           {agrupado.fixos.map((i: any) => <ItemViagem key={i.id} item={i} {...itemProps} />)}
-          {agrupado.dias.map(({ dia: d, itens: lista }: any) => (
+          {agrupado.dias.map(({ dia: d, itens: lista }: any, idx: number) => (
             <View key={d}>
-              <Text style={s.diaTitulo}>{d === 'sem-data' ? 'Sem data' : diaLongo(d)}</Text>
+              <View style={s.diaLinha}>
+                {d !== 'sem-data' && <View style={s.diaBadge}><Text style={s.diaBadgeTxt}>Dia {idx + 1}</Text></View>}
+                <Text style={s.diaTitulo}>{d === 'sem-data' ? 'Sem data' : diaLongo(d)}</Text>
+              </View>
               {lista.map((i: any) => <ItemViagem key={i.id} item={i} {...itemProps} />)}
             </View>
           ))}
@@ -221,35 +234,58 @@ export default function ViagemDetalhe() {
     </>
   );
 
-  return (
-    <SafeAreaView style={s.safe}>
-      <StatusBar barStyle="light-content" />
-      <View style={s.hero}>
-        <View style={s.heroTopo}>
-          <TouchableOpacity onPress={() => router.back()} style={s.voltar}><Ionicons name="chevron-back" size={22} color="#fff" /></TouchableOpacity>
-          <Text style={s.heroStatus}>{viagem.status}</Text>
-        </View>
-        <Text style={s.heroDestino}><Ionicons name="location-outline" size={13} color="rgba(255,255,255,0.7)" /> {viagem.destino}</Text>
-        <Text style={s.heroTitulo} numberOfLines={2}>{viagem.titulo}</Text>
-        <Text style={s.heroMeta}>{dia(viagem.data_inicio)} a {dia(viagem.data_fim)} · {viagem.total_dias} {viagem.total_dias === 1 ? 'dia' : 'dias'} · {confirmados}/{painel.membros.length} confirmados</Text>
-        <View style={s.heroValores}>
-          <Text style={s.heroPreco}>{brl(painel.custos.estimado)}</Text>
-          {orc != null && <Text style={s.heroOrc}> de {brl(orc)}</Text>}
-        </View>
-        {uso != null && <View style={s.barra}><View style={[s.barraFill, { width: `${uso}%`, backgroundColor: painel.custos.estimado > (orc as number) ? '#F87171' : T.primary }]} /></View>}
-      </View>
+  const cor = gradienteDoDestino(viagem.destino);
+  const cont = contagem(viagem.data_inicio, viagem.data_fim);
+  const nomes: string[] = painel.membros.map((m: any) => m.nome || m.name || '?');
 
-      <View>
+  return (
+    <View style={s.safe}>
+      <StatusBar barStyle="light-content" />
+      <LinearGradient colors={[cor[0], cor[1], '#1F1A17']} locations={[0, 0.55, 1]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[s.hero, { paddingTop: TOPO }]}>
+        <Ionicons name="airplane" size={150} color="rgba(255,255,255,0.08)" style={s.heroAviao} />
+        <View style={s.heroTopo}>
+          <TouchableOpacity onPress={() => router.back()} style={s.voltar} hitSlop={10}><Ionicons name="chevron-back" size={22} color="#fff" /></TouchableOpacity>
+          {!!cont.texto && <View style={[s.heroSelo, { backgroundColor: cont.bg }]}><Text style={[s.heroSeloTxt, { color: cont.cor }]}>{cont.texto}</Text></View>}
+        </View>
+        <Text style={s.heroDestino}><Ionicons name="location" size={13} color="rgba(255,255,255,0.85)" /> {viagem.destino}</Text>
+        <Text style={s.heroTitulo} numberOfLines={2}>{viagem.titulo}</Text>
+
+        <View style={s.heroPills}>
+          <View style={s.heroPill}><Ionicons name="calendar-outline" size={13} color="#fff" /><Text style={s.heroPillTxt}> {dia(viagem.data_inicio)} – {dia(viagem.data_fim)}</Text></View>
+          <View style={s.heroPill}><Ionicons name="sunny-outline" size={13} color="#fff" /><Text style={s.heroPillTxt}> {viagem.total_dias} {viagem.total_dias === 1 ? 'dia' : 'dias'}</Text></View>
+        </View>
+
+        <View style={s.heroRodape}>
+          <View style={{ flex: 1 }}>
+            <Text style={s.heroRotulo}>Custo estimado</Text>
+            <View style={s.heroValores}>
+              <Text style={s.heroPreco}>{brl(painel.custos.estimado)}</Text>
+              {orc != null && <Text style={s.heroOrc}> de {brl(orc)}</Text>}
+            </View>
+          </View>
+          <View style={{ alignItems: 'flex-end' }}>
+            <Avatares nomes={nomes} tamanho={30} borda="rgba(255,255,255,0.9)" />
+            <Text style={s.heroGrupo}>{confirmados}/{painel.membros.length} confirmados</Text>
+          </View>
+        </View>
+        {uso != null && <View style={s.barra}><View style={[s.barraFill, { width: `${uso}%`, backgroundColor: painel.custos.estimado > (orc as number) ? '#F87171' : '#34D399' }]} /></View>}
+      </LinearGradient>
+
+      <View style={s.abasFundo}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.abas}>
-          {ABAS.map(([k, nome, icone]) => (
-            <TouchableOpacity key={k} style={[s.aba, aba === k && s.abaOn]} onPress={() => setAba(k)} activeOpacity={0.8}>
-              <Ionicons name={icone} size={16} color={aba === k ? '#fff' : T.muted} /><Text style={[s.abaTxt, aba === k && { color: '#fff' }]}> {nome}</Text>
-            </TouchableOpacity>
-          ))}
+          {ABAS.map(([k, nome, icone]) => {
+            const on = aba === k;
+            return (
+              <TouchableOpacity key={k} style={[s.aba, on && s.abaOn]} onPress={() => setAba(k)} activeOpacity={0.8}>
+                <Ionicons name={icone} size={16} color={on ? '#fff' : T.muted} />
+                <Text style={[s.abaTxt, on && { color: '#fff' }]}> {nome}</Text>
+              </TouchableOpacity>
+            );
+          })}
         </ScrollView>
       </View>
 
-      {!!aviso && <View style={s.aviso}><Text style={s.avisoTxt}>{aviso}</Text></View>}
+      {!!aviso && <View style={s.aviso}><Ionicons name="checkmark-circle" size={16} color="#15803D" /><Text style={s.avisoTxt}>{aviso}</Text></View>}
 
       {aba === 'chat' ? (
         <View style={{ flex: 1, padding: 16, paddingBottom: Platform.OS === 'ios' ? 8 : 16 }}><ChatViagem painel={{ ...painel, mensagens: painel.mensagens }} /></View>
@@ -260,7 +296,7 @@ export default function ViagemDetalhe() {
       )}
 
       {novoItem && <FormItem viagem={viagem} onFechar={() => setNovoItem(false)} onSalvo={() => { setNovoItem(false); carregar(); }} />}
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -268,33 +304,48 @@ const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: T.cream },
   centro: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 30, gap: 12 },
   erroTxt: { fontSize: 14, color: T.muted, textAlign: 'center' },
-  hero: { backgroundColor: '#1F1A17', paddingHorizontal: 20, paddingTop: Platform.OS === 'android' ? 34 : 6, paddingBottom: 18, borderBottomLeftRadius: 28, borderBottomRightRadius: 28 },
+  hero: { paddingHorizontal: 20, paddingBottom: 20, borderBottomLeftRadius: 32, borderBottomRightRadius: 32, overflow: 'hidden' },
+  heroAviao: { position: 'absolute', right: -24, top: 40, transform: [{ rotate: '-18deg' }] },
   heroTopo: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  voltar: { width: 36, height: 36, marginLeft: -8, alignItems: 'center', justifyContent: 'center' },
-  heroStatus: { color: 'rgba(255,255,255,0.7)', fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
-  heroDestino: { color: 'rgba(255,255,255,0.7)', fontSize: 13, marginTop: 4 },
-  heroTitulo: { color: '#fff', fontSize: 24, fontWeight: '800', marginTop: 2, letterSpacing: -0.4 },
-  heroMeta: { color: 'rgba(255,255,255,0.7)', fontSize: 12, marginTop: 6 },
-  heroValores: { flexDirection: 'row', alignItems: 'baseline', marginTop: 12 },
-  heroPreco: { color: '#fff', fontSize: 26, fontWeight: '800' },
-  heroOrc: { color: 'rgba(255,255,255,0.6)', fontSize: 12 },
-  barra: { height: 6, borderRadius: 3, backgroundColor: 'rgba(255,255,255,0.18)', marginTop: 10, overflow: 'hidden' },
-  barraFill: { height: '100%', borderRadius: 3 },
+  voltar: { width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
+  heroSelo: { borderRadius: 12, paddingHorizontal: 10, paddingVertical: 5 },
+  heroSeloTxt: { fontSize: 11, fontWeight: '900' },
+  heroDestino: { color: 'rgba(255,255,255,0.9)', fontSize: 13, fontWeight: '700', marginTop: 16 },
+  heroTitulo: { color: '#fff', fontSize: 27, fontWeight: '900', marginTop: 2, letterSpacing: -0.7 },
+  heroPills: { flexDirection: 'row', gap: 6, marginTop: 10, flexWrap: 'wrap' },
+  heroPill: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 5 },
+  heroPillTxt: { color: '#fff', fontSize: 12, fontWeight: '800' },
+  heroRodape: { flexDirection: 'row', alignItems: 'flex-end', marginTop: 16, gap: 10 },
+  heroRotulo: { color: 'rgba(255,255,255,0.6)', fontSize: 10, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.8 },
+  heroValores: { flexDirection: 'row', alignItems: 'baseline', marginTop: 2 },
+  heroPreco: { color: '#fff', fontSize: 26, fontWeight: '900', letterSpacing: -0.5 },
+  heroOrc: { color: 'rgba(255,255,255,0.65)', fontSize: 12, fontWeight: '700' },
+  heroGrupo: { color: 'rgba(255,255,255,0.8)', fontSize: 11, fontWeight: '700', marginTop: 5 },
+  barra: { height: 7, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.18)', marginTop: 12, overflow: 'hidden' },
+  barraFill: { height: '100%', borderRadius: 4 },
+  abasFundo: { marginTop: -2 },
   abas: { paddingHorizontal: 16, paddingVertical: 12, gap: 8 },
-  aba: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 9, borderRadius: 18, backgroundColor: '#fff', borderWidth: 1, borderColor: T.line },
-  abaOn: { backgroundColor: T.primary, borderColor: T.primary },
+  aba: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 15, paddingVertical: 10, borderRadius: 20, backgroundColor: '#fff', shadowColor: '#1F1A17', shadowOpacity: 0.05, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 2 },
+  abaOn: { backgroundColor: T.ink },
   abaTxt: { fontSize: 13, fontWeight: '800', color: T.muted },
-  aviso: { marginHorizontal: 16, marginBottom: 4, backgroundColor: T.successBg, borderRadius: 12, padding: 10 },
-  avisoTxt: { color: '#15803D', fontWeight: '700', fontSize: 13 },
+  aviso: { flexDirection: 'row', alignItems: 'center', gap: 6, marginHorizontal: 16, marginBottom: 4, backgroundColor: T.successBg, borderRadius: 14, padding: 11 },
+  avisoTxt: { flex: 1, color: '#15803D', fontWeight: '700', fontSize: 13 },
   scroll: { padding: 16, paddingBottom: 60 },
-  acoes: { flexDirection: 'row', gap: 8, marginBottom: 10, flexWrap: 'wrap' },
-  acao: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 9, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  acoes: { flexDirection: 'row', gap: 8, marginBottom: 12, flexWrap: 'wrap' },
+  acaoPrimaria: { backgroundColor: T.primary },
+  vazioBox: { alignItems: 'center', paddingVertical: 30, gap: 4 },
+  vazioIcone: { width: 64, height: 64, borderRadius: 32, backgroundColor: T.primarySoft, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
+  vazioTitulo: { fontSize: 16, fontWeight: '900', color: T.ink },
+  diaLinha: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },
+  diaBadge: { backgroundColor: T.ink, borderRadius: 10, paddingHorizontal: 9, paddingVertical: 4 },
+  diaBadgeTxt: { color: '#fff', fontSize: 11, fontWeight: '900' },
+  acao: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
   acaoTxt: { fontSize: 13, fontWeight: '800', color: T.ink },
-  vazio: { textAlign: 'center', color: T.muted, marginVertical: 30, fontSize: 13 },
-  diaTitulo: { fontSize: 15, fontWeight: '800', color: T.ink, textTransform: 'capitalize', marginVertical: 8 },
-  card: { backgroundColor: T.card, borderRadius: 20, padding: 16, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
-  destaque: { backgroundColor: T.primarySoft, borderRadius: 20, padding: 16 },
-  cardTitulo: { fontSize: 15, fontWeight: '800', color: T.ink },
+  vazio: { textAlign: 'center', color: T.muted, fontSize: 13 },
+  diaTitulo: { fontSize: 15, fontWeight: '900', color: T.ink, textTransform: 'capitalize', marginVertical: 10 },
+  card: { backgroundColor: T.card, borderRadius: 24, padding: 16, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
+  destaque: { backgroundColor: T.primarySoft, borderRadius: 24, padding: 16, borderWidth: 1.5, borderColor: '#FFD9B8' },
+  cardTitulo: { fontSize: 16, fontWeight: '900', color: T.ink },
   cardSub: { fontSize: 12, color: T.muted, marginTop: 3, marginBottom: 8, lineHeight: 17 },
   reservaCard: { backgroundColor: '#fff', borderRadius: 16, padding: 12, marginTop: 8, gap: 4 },
   reservaNome: { fontSize: 14, fontWeight: '800', color: T.ink },

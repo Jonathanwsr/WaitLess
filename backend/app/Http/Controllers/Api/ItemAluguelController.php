@@ -39,17 +39,23 @@ class ItemAluguelController extends Controller
     {
         $user = Auth::user();
 
-        // Pega o ID do estabelecimento atual do usuário
-        $estabelecimentoId = $user->estabelecimentos()->first()->id ?? null;
+        // Locais que o usuário gerencia (o item guarda o local em local_id e o dono em estabelecimento_id).
+        $locais = $user->estabelecimentos()->pluck('estabelecimentos.id');
+        // A tela de Configurações de um local pede só as reservas dele.
+        if ($request->filled('estabelecimento_id')) {
+            $locais = $locais->intersect([(int) $request->query('estabelecimento_id')])->values();
+        }
 
-        if (!$estabelecimentoId) {
+        if ($locais->isEmpty()) {
             return response()->json([]);
         }
 
-        $itens = ItemAluguel::where('estabelecimento_id', $estabelecimentoId)
+        $itens = ItemAluguel::where(fn ($q) => $q->whereIn('local_id', $locais)
+                ->orWhere(fn ($legado) => $legado->whereNull('local_id')->whereIn('estabelecimento_id', $locais)))
             ->orderBy('created_at', 'desc')
             ->get()
             ->map(function ($item) {
+                $item->paraTelaDoDono();
                 $item->fotos = json_decode($item->fotos) ?? [];
                 $item->recursos_oferecidos = json_decode($item->recursos_oferecidos) ?? [];
                 $item->acessorios = json_decode($item->acessorios) ?? [];
@@ -229,6 +235,7 @@ class ItemAluguelController extends Controller
             'valor_desconto'           => 'nullable|numeric|min:0',
             'aceita_pontos'            => 'boolean',
             'maximo_pontos_permitidos' => 'nullable|integer|min:0',
+            'politica_cancelamento'    => 'nullable|in:flexivel,moderada,firme,rigorosa',
             'exige_contrato'           => 'boolean',
 
             'somente_premium'          => 'boolean',
@@ -295,13 +302,19 @@ class ItemAluguelController extends Controller
         $dados['aceita_pontos'] = $request->boolean('aceita_pontos', false);
         $dados['exige_contrato'] = $request->boolean('exige_contrato', false);
         $dados['somente_premium'] = $request->boolean('somente_premium', false);
+        $dados['politica_cancelamento'] = \App\Services\Locacao\PoliticaCancelamentoService::valida($request->input('politica_cancelamento'));
 
         $produtosVinculados = $dados['produtos_vinculados'] ?? [];
         unset($dados['produtos_vinculados']);
 
+        // O formulário manda o LOCAL; o item guarda o local em local_id e o DONO em estabelecimento_id
+        // (é pelo dono que o Explorar mostra a reserva ao cliente e que o pagamento cai na carteira certa).
+        $dados['local_id'] = (int) $dados['estabelecimento_id'];
+        $dados['estabelecimento_id'] = ItemAluguel::donoDoLocal($dados['local_id']);
+
         $item = ItemAluguel::create($dados);
 
-        $this->vincularProdutosExistentes($produtosVinculados, $item->id, $item->estabelecimento_id);
+        $this->vincularProdutosExistentes($produtosVinculados, $item->id, $item->local_id);
 
         return redirect()->back()->with('success', 'Produto / Locação salvo com sucesso no catálogo!');
     }
@@ -309,10 +322,12 @@ class ItemAluguelController extends Controller
     public function update(Request $request, $id)
     {
         $item = ItemAluguel::findOrFail($id);
-        $this->garantirQueGerenciaEstabelecimento((int) $item->estabelecimento_id);
+        $this->garantirQueGerenciaEstabelecimento($item->localId());
 
         $dados = $request->validate($this->regrasValidacao());
         $this->garantirQueGerenciaEstabelecimento((int) $dados['estabelecimento_id']);
+        $dados['local_id'] = (int) $dados['estabelecimento_id'];
+        $dados['estabelecimento_id'] = ItemAluguel::donoDoLocal($dados['local_id']);
 
         $fotosCaminhos = [];
         if ($request->has('fotos') && is_array($request->fotos)) {
@@ -357,13 +372,14 @@ class ItemAluguelController extends Controller
         $dados['aceita_pontos'] = $request->boolean('aceita_pontos', false);
         $dados['exige_contrato'] = $request->boolean('exige_contrato', false);
         $dados['somente_premium'] = $request->boolean('somente_premium', false);
+        $dados['politica_cancelamento'] = \App\Services\Locacao\PoliticaCancelamentoService::valida($request->input('politica_cancelamento'));
 
         $produtosVinculados = $dados['produtos_vinculados'] ?? [];
         unset($dados['produtos_vinculados']);
 
         $item->update($dados);
 
-        $this->vincularProdutosExistentes($produtosVinculados, $item->id, $item->estabelecimento_id);
+        $this->vincularProdutosExistentes($produtosVinculados, $item->id, $item->localId());
 
         return redirect()->back()->with('success', 'Produto atualizado com sucesso!');
     }
@@ -371,7 +387,7 @@ class ItemAluguelController extends Controller
     public function destroy($id)
     {
         $item = ItemAluguel::findOrFail($id);
-        $this->garantirQueGerenciaEstabelecimento((int) $item->estabelecimento_id);
+        $this->garantirQueGerenciaEstabelecimento($item->localId());
 
         $fotos = json_decode($item->fotos, true) ?? [];
         foreach ($fotos as $fotoUrl) {
@@ -497,7 +513,7 @@ class ItemAluguelController extends Controller
 
         // 6. Reputação REAL do anfitrião (nada de nota/avaliação inventada na tela).
         $baseAvaliacoes = \Illuminate\Support\Facades\DB::table('avaliacoes')
-            ->where('estabelecimento_id', $item->estabelecimento_id)
+            ->where('estabelecimento_id', $item->localId())
             ->where('publica', true);
 
         $stats = (clone $baseAvaliacoes)->selectRaw(
@@ -545,11 +561,19 @@ class ItemAluguelController extends Controller
             'superanfitriao' => $total >= 10 && $media !== null && $media >= 4.8,
         ];
 
+        // Dono sem carteira Asaas: o cliente só pode pagar no local.
+        if (!app(\App\Services\PagamentoService::class)->reservaAceitaPagamentoOnline($item)) {
+            $item->permitir_pagamento = 'presencial';
+        }
+
         return Inertia::render('Cliente/DetalhesItem', [
             'item' => $item,
+            // Tudo o que o sócio cadastrou, organizado por tipo (veículo, hospedagem, equipamento, espaço).
+            'ficha' => app(\App\Services\Locacao\FichaDoItemService::class)->montar($item),
+            'politicaCancelamento' => \App\Services\Locacao\PoliticaCancelamentoService::infoDoItem($item->politica_cancelamento),
             'avaliacoes' => $avaliacoes,
             'anfitriao' => $anfitriao,
-            'cuponsRecomendados' => app(\App\Services\CupomService::class)->recomendados(Auth::user(), $item->estabelecimento_id, null, $item->id),
+            'cuponsRecomendados' => app(\App\Services\CupomService::class)->recomendados(Auth::user(), $item->localId(), null, $item->id),
         ]);
     }
 }

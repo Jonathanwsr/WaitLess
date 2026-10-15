@@ -1,11 +1,14 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import ComoFunciona from '@/Components/ComoFunciona';
 import InputError from '@/Components/InputError';
 import InputLabel from '@/Components/InputLabel';
 import PrimaryButton from '@/Components/PrimaryButton';
 import TextInput from '@/Components/TextInput';
 import { Head, useForm, Link, usePage, router } from '@inertiajs/react';
 import { useState } from 'react';
-import { GiftIcon, StarIcon, TicketIcon, TrashIcon, PencilSquareIcon, CheckBadgeIcon } from '@heroicons/react/24/solid';
+import { GiftIcon, StarIcon, TicketIcon, TrashIcon, PencilSquareIcon, CheckBadgeIcon, ArrowRightIcon, LightBulbIcon, ArrowLeftIcon } from '@heroicons/react/24/solid';
+
+const PONTOS_POR_REAL = 1000; // mesma conversão do backend (PontosService)
 
 export default function Cupons({ auth, estabelecimento, cupons = [], servicos = [], reservas = [] }) {
     const { flash = {} } = usePage().props;
@@ -98,26 +101,33 @@ export default function Cupons({ auth, estabelecimento, cupons = [], servicos = 
     };
 
     return (
-        <AuthenticatedLayout
-            header={
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                        <Link href={route('estabelecimentos.configuracoes', estabelecimento.id)} className="bg-gray-100 hover:bg-gray-200 text-gray-700 w-10 h-10 rounded-full flex items-center justify-center transition shadow-sm font-bold">
-                            ←
+        <AuthenticatedLayout>
+            <Head title={`Marketing - ${estabelecimento.nome}`} />
+
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-20">
+                <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex items-start gap-3">
+                        <Link href={route('estabelecimentos.configuracoes', estabelecimento.id)} className="mt-1 flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 hover:bg-gray-50" aria-label="Voltar">
+                            <ArrowLeftIcon className="h-4 w-4" />
                         </Link>
                         <div>
-                            <h2 className="text-2xl font-bold leading-tight text-gray-900 dark:text-white flex items-center gap-2">
-                                Marketing & Fidelização
-                            </h2>
-                            <p className="text-sm text-gray-500">{estabelecimento.nome}</p>
+                            <h1 className="text-2xl font-black tracking-tight text-gray-900 sm:text-[28px]">Marketing &amp; Fidelização</h1>
+                            <p className="text-sm text-gray-500">Área de cupons e recompensas · {estabelecimento.nome}</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-4 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4">
+                        <span className="flex h-11 w-11 items-center justify-center rounded-xl bg-indigo-600 text-white"><StarIcon className="h-6 w-6" /></span>
+                        <div>
+                            <p className="text-xs text-gray-500">Recompensas ativas</p>
+                            <p className="text-xl font-black text-gray-900">{cupons.filter((c) => c.ativo).length} <span className="text-sm font-semibold text-gray-500">de {cupons.length}</span></p>
+                        </div>
+                        <div className="border-l border-indigo-100 pl-4 text-right">
+                            <p className="text-[11px] text-gray-500">Conversão</p>
+                            <p className="text-xs font-bold text-gray-800">1.000 pontos = R$ 1,00</p>
                         </div>
                     </div>
                 </div>
-            }
-        >
-            <Head title={`Marketing - ${estabelecimento.nome}`} />
 
-            <div className="max-w-7xl mx-auto mt-6 px-4 sm:px-6 lg:px-8 pb-20">
                 
                 {flash?.success && (
                     <div className="mb-6 p-4 bg-green-100 border border-green-200 text-green-800 font-bold rounded-xl shadow-sm animate-in fade-in flex items-center gap-2">
@@ -137,11 +147,12 @@ export default function Cupons({ auth, estabelecimento, cupons = [], servicos = 
                     {/* ========================================================== */}
                     <div className="w-full lg:w-1/3 shrink-0">
                         <div className={`bg-white dark:bg-gray-800 p-6 rounded-3xl shadow-sm border dark:border-gray-700 sticky top-24 transition-colors duration-300 ${isEditing ? 'border-orange-300 shadow-orange-100 ring-4 ring-orange-50' : 'border-gray-200'}`}>
-                            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-6 flex items-center gap-2">
+                            <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-1 flex items-center gap-2">
                                 <GiftIcon className={`w-6 h-6 ${isEditing ? 'text-orange-500' : 'text-indigo-500'}`} />
-                                {isEditing ? 'Editando Recompensa' : 'Criar Nova Recompensa'}
+                                {isEditing ? 'Editando cupom' : 'Criar novo cupom'}
                             </h3>
                             
+                            <p className="text-xs text-gray-500 mb-5">Defina as regras e o desconto da sua promoção.</p>
                             <form onSubmit={submit} className="space-y-5">
                                 <div>
                                     <div className="flex justify-between items-end mb-1">
@@ -189,6 +200,22 @@ export default function Cupons({ auth, estabelecimento, cupons = [], servicos = 
                                         </div>
                                         {descontoAcimaDoLimite && <p className="text-[10px] text-red-600 font-bold mt-1">Um desconto percentual não pode passar de 100%.</p>}
                                         <InputError message={errors.valor_desconto} />
+                                    </div>
+                                </div>
+
+                                {/* PRÉVIA DO QUE O CLIENTE VÊ */}
+                                <div className="flex items-center justify-between gap-3 rounded-xl bg-indigo-50 p-4">
+                                    <div>
+                                        <p className="text-[11px] text-indigo-500">Desconto oferecido</p>
+                                        <p className="text-xl font-black text-indigo-700">
+                                            {data.valor_desconto ? (data.tipo_desconto === 'percentual' ? `${Number(data.valor_desconto)}%` : `R$ ${Number(data.valor_desconto).toFixed(2).replace('.', ',')}`) : '—'}
+                                        </p>
+                                    </div>
+                                    <ArrowRightIcon className="h-5 w-5 text-indigo-300" />
+                                    <div className="text-right">
+                                        <p className="text-[11px] text-indigo-500">Custa em pontos</p>
+                                        <p className="text-xl font-black text-indigo-700">{Number(data.pontos_custo) > 0 ? `${Number(data.pontos_custo).toLocaleString('pt-BR')} pts` : 'Grátis'}</p>
+                                        {Number(data.pontos_custo) > 0 && <p className="text-[10px] text-indigo-400">≈ R$ {(Number(data.pontos_custo) / PONTOS_POR_REAL).toFixed(2).replace('.', ',')} em pontos</p>}
                                     </div>
                                 </div>
 
@@ -291,8 +318,8 @@ export default function Cupons({ auth, estabelecimento, cupons = [], servicos = 
                                             Cancelar
                                         </button>
                                     )}
-                                    <PrimaryButton className={`w-full justify-center py-3 rounded-xl text-sm font-bold shadow-md transition ${isEditing ? 'bg-green-600 hover:bg-green-700' : 'bg-green-600 hover:bg-green-700'}`} disabled={processing || descontoAcimaDoLimite}>
-                                        {processing ? 'A processar...' : (isEditing ? 'Salvar Alterações' : 'Criar Recompensa')}
+                                    <PrimaryButton className="w-full justify-center py-3 rounded-xl text-sm font-bold shadow-md transition !bg-[#F59E0B] hover:!bg-[#D97706]" disabled={processing || descontoAcimaDoLimite}>
+                                        {processing ? 'Salvando...' : (isEditing ? 'Salvar alterações' : 'Criar cupom')}
                                     </PrimaryButton>
                                 </div>
                             </form>
@@ -305,9 +332,9 @@ export default function Cupons({ auth, estabelecimento, cupons = [], servicos = 
                     <div className="flex-1">
                         <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 sm:p-8">
                             <div className="flex items-center gap-3 mb-6 border-b border-gray-100 dark:border-gray-700 pb-4">
-                                <TicketIcon className="w-8 h-8 text-indigo-500" />
-                                <h3 className="text-xl font-bold text-gray-900 dark:text-white">
-                                    Suas Recompensas Ativas ({cupons.length})
+                                <TicketIcon className="w-6 h-6 text-indigo-500" />
+                                <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                                    Suas recompensas ({cupons.length})
                                 </h3>
                             </div>
 
@@ -342,9 +369,9 @@ export default function Cupons({ auth, estabelecimento, cupons = [], servicos = 
                                                                     <CheckBadgeIcon className="w-3 h-3" /> VIP Plus
                                                                 </span>
                                                             )}
-                                                            {!cupom.ativo && (
-                                                                <span className="text-[9px] font-black bg-red-100 text-red-700 px-2 py-1 rounded uppercase tracking-wider">Inativo</span>
-                                                            )}
+                                                            <span className={`text-[9px] font-black px-2 py-1 rounded uppercase tracking-wider ${cupom.ativo ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                                                                {cupom.ativo ? '● Ativo' : 'Inativo'}
+                                                            </span>
                                                             {isGratis && cupom.ativo && (
                                                                 <span className="text-[9px] font-black bg-indigo-100 text-indigo-700 px-2 py-1 rounded uppercase tracking-wider">Cupom Público</span>
                                                             )}
@@ -400,6 +427,29 @@ export default function Cupons({ auth, estabelecimento, cupons = [], servicos = 
                             )}
                         </div>
                     </div>
+                </div>
+
+                <div className="mt-6 flex items-center gap-3 rounded-2xl border border-indigo-100 bg-indigo-50/60 px-5 py-4 text-sm text-gray-700">
+                    <LightBulbIcon className="h-5 w-5 shrink-0 text-indigo-500" />
+                    <p><b>Dica:</b> cupons com validade curta e benefícios exclusivos geram mais engajamento e trazem o cliente de volta.</p>
+                </div>
+
+                <div className="mt-6">
+                <ComoFunciona
+                    chave="cupons"
+                    titulo="Como funcionam os cupons"
+                    passos={[
+                        { titulo: "Crie o cupom", texto: "Escolha o código, o desconto (em % ou em reais) e até quando ele vale." },
+                        { titulo: "Divulgue", texto: "Mande o código para seus clientes ou deixe visível no seu local." },
+                        { titulo: "O cliente aplica", texto: "Ele digita o código ao agendar ou reservar e o desconto entra na hora." },
+                        { titulo: "Controle", texto: "Desative o cupom quando quiser. Ele some na hora para os clientes." },
+                    ]}
+                    dicas={[
+                        "O desconto do cupom sai do valor do seu serviço.",
+                        "Cupom vencido para de funcionar sozinho.",
+                        "Junto com os pontos, cupons ajudam a trazer o cliente de volta.",
+                    ]}
+                />
                 </div>
             </div>
         </AuthenticatedLayout>

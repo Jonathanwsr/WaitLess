@@ -48,6 +48,11 @@ class Aluguel extends Model
         'longitude_entrega' => 'decimal:7',
     ];
 
+    public function pagamento(): BelongsTo
+    {
+        return $this->belongsTo(Pagamento::class, 'pagamento_id');
+    }
+
     public function item(): BelongsTo
     {
         return $this->belongsTo(ItemAluguel::class, 'item_aluguel_id');

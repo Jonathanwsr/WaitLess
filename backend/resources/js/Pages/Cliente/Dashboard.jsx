@@ -136,7 +136,7 @@ export default function ClienteDashboard({ auth, agendamentos = [], historico = 
 
     return (
         <AuthenticatedLayout user={auth.user} header={<></>}>
-            <Head title="Minhas Reservas - Lokyva" />
+            <Head title="Minhas Reservas" />
 
             <div className="min-h-screen bg-[#FCF9F6] font-sans pb-24">
                 <div className="max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-12 pt-8 md:pt-12">
@@ -267,7 +267,12 @@ export default function ClienteDashboard({ auth, agendamentos = [], historico = 
                                                     </button>
                                                     {!isCancelado && (
                                                         <a href={`/alugueis/${aluguel.id}/comprovante-pdf`} target="_blank" rel="noopener noreferrer" className="w-full flex justify-center items-center gap-2 py-3 bg-gray-50 border border-gray-200 text-gray-900 rounded-2xl text-sm font-bold hover:bg-gray-100 transition-all">
-                                                            <DocumentArrowDownIcon className="w-4 h-4" /> Baixar Comprovante
+                                                            <DocumentArrowDownIcon className="w-4 h-4" /> Comprovante da reserva
+                                                        </a>
+                                                    )}
+                                                    {isFinalizado && aluguel.forma_pagamento !== 'presencial' && (
+                                                        <a href={route('pagamentos.comprovante', { aluguel_id: aluguel.id })} target="_blank" rel="noopener noreferrer" className="w-full flex justify-center items-center gap-2 py-3 bg-gray-50 border border-gray-200 text-gray-900 rounded-2xl text-sm font-bold hover:bg-gray-100 transition-all">
+                                                            <DocumentArrowDownIcon className="w-4 h-4" /> Comprovante do pagamento
                                                         </a>
                                                     )}
                                                 </div>
@@ -422,8 +427,18 @@ export default function ClienteDashboard({ auth, agendamentos = [], historico = 
                                                                 rel="noopener noreferrer"
                                                                 className="w-full flex justify-center items-center gap-2 py-3 bg-gray-50 border border-gray-200 text-gray-900 rounded-2xl text-sm font-bold hover:bg-gray-100 transition-all"
                                                             >
-                                                                <DocumentArrowDownIcon className="w-4 h-4" /> Baixar Comprovante
+                                                                <DocumentArrowDownIcon className="w-4 h-4" /> Comprovante da reserva
                                                             </a>
+                                                            {['pago', 'pago_online'].includes(agendamento.status_pagamento) && (
+                                                                <a
+                                                                    href={route('pagamentos.comprovante', { agendamento_id: agendamento.id })}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="w-full flex justify-center items-center gap-2 py-3 bg-gray-50 border border-gray-200 text-gray-900 rounded-2xl text-sm font-bold hover:bg-gray-100 transition-all"
+                                                                >
+                                                                    <DocumentArrowDownIcon className="w-4 h-4" /> Comprovante do pagamento
+                                                                </a>
+                                                            )}
                                                             <Link href={`/estabelecimentos/${agendamento.estabelecimento_id}`} className="w-full flex justify-center items-center gap-2 py-3 bg-indigo-50 text-indigo-600 rounded-2xl text-sm font-bold hover:bg-indigo-100 transition-all">
                                                                 <ArrowPathIcon className="w-4 h-4" /> Reagendar Serviço
                                                             </Link>

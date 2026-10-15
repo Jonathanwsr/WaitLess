@@ -42,12 +42,13 @@ const FORM_VAZIO = {
   somente_premium: false, fotos: [] as string[],
 };
 
-const primeiraFoto = (fotos: Produto['fotos']) => {
+/** Fotos do produto (o servidor manda lista; registros antigos podem vir como texto JSON). */
+const listaDeFotos = (fotos: Produto['fotos']): string[] => {
   let lista: any = fotos;
   if (typeof lista === 'string') { try { lista = JSON.parse(lista); } catch { lista = [lista]; } }
-  const f = Array.isArray(lista) && lista[0] ? String(lista[0]) : null;
-  return f && !f.startsWith('http') ? null : f;
+  return Array.isArray(lista) ? lista.filter((f) => typeof f === 'string' && f.startsWith('http')) : [];
 };
+const primeiraFoto = (fotos: Produto['fotos']) => listaDeFotos(fotos)[0] ?? null;
 const numero = (v: string) => v.replace(',', '.').replace(/[^0-9.]/g, '');
 
 export default function Produtos() {
@@ -89,7 +90,7 @@ export default function Produtos() {
     valor_normal: String(p.valor_normal ?? ''), valor_promocional: p.valor_promocional ? String(p.valor_promocional) : '',
     is_promocao: !!Number(p.is_promocao), estoque_disponivel: String(p.estoque_disponivel ?? ''),
     estabelecimento_id: p.estabelecimento_id, servico_id: p.servico_id ?? null, aluguel_id: p.aluguel_id ?? null,
-    somente_premium: !!Number(p.somente_premium), fotos: [],
+    somente_premium: !!Number(p.somente_premium), fotos: listaDeFotos(p.fotos).slice(0, 5),
   });
 
   const escolherFotos = async () => {
@@ -117,8 +118,10 @@ export default function Produtos() {
         servico_id: form.servico_id ? String(form.servico_id) : '', aluguel_id: form.aluguel_id ? String(form.aluguel_id) : '',
       };
       Object.entries(campos).forEach(([k, v]) => corpo.append(k, v));
-      // Fotos só no cadastro (a edição do servidor altera os dados, não as fotos).
-      if (!form.id) form.fotos.forEach((uri, i) => corpo.append('fotos[]', { uri, name: `foto${i}.jpg`, type: 'image/jpeg' } as any));
+      // Fotos: as que já estavam no produto vão como "mantidas"; as escolhidas agora são enviadas.
+      const novas = form.fotos.filter((uri) => !uri.startsWith('http'));
+      novas.forEach((uri, i) => corpo.append('fotos[]', { uri, name: `foto${i}.jpg`, type: 'image/jpeg' } as any));
+      if (form.id) corpo.append('fotos_existentes', JSON.stringify(form.fotos.filter((uri) => uri.startsWith('http'))));
 
       const token = await tokenDoUsuario();
       const res = await fetch(`${BASE}/produtos${form.id ? `/${form.id}` : ''}`, {
@@ -315,9 +318,9 @@ export default function Produtos() {
               </View>
               <Text style={s.meta}>Vinculado, o produto aparece como adicional na hora de agendar ou reservar. Sem vínculo, é uma venda avulsa.</Text>
 
-              {!form.id && (
+              {(
                 <>
-                  <Rotulo>Fotos (até 5)</Rotulo>
+                  <Rotulo>Fotos (até 5) · toque numa foto para remover</Rotulo>
                   <View style={s.chipsWrap}>
                     {form.fotos.map((uri) => (
                       <TouchableOpacity key={uri} onPress={() => setForm({ ...form, fotos: form.fotos.filter((f) => f !== uri) })}>

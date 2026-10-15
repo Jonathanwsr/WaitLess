@@ -251,7 +251,7 @@ class CarteiraController extends Controller
                 'value' => $saldoReal,
                 'pixAddressKey' => $provider->pix_key, 
                 'pixAddressKeyType' => $provider->pix_key_type, 
-                'description' => 'Saque via WaitLess',
+                'description' => 'Saque via Lokyva',
             ]);
 
         if ($responseTransfer->failed()) return redirect()->back()->with('error', 'Falha ao processar o saque junto ao banco.');

@@ -77,13 +77,14 @@ class ClienteAgendamentoMobileController extends Controller
             return response()->json(['error' => 'Item de reserva indisponível ou não localizado.'], 404);
         }
 
-        $estabelecimento = Estabelecimento::where('id', $item->estabelecimento_id)
+        // O item guarda o DONO em estabelecimento_id e o local em local_id (itens antigos: o local estava em estabelecimento_id).
+        $estabelecimento = Estabelecimento::where('id', $item->local_id ?: $item->estabelecimento_id)
             ->select('id', 'nome', 'foto_perfil', 'avaliacao_media', 'total_avaliacoes', 'cidade', 'estado', 'created_at')
             ->first();
 
         $avaliacoes = DB::table('avaliacoes')
             ->join('users', 'users.id', '=', 'avaliacoes.usuario_id')
-            ->where('avaliacoes.estabelecimento_id', $item->estabelecimento_id)
+            ->where('avaliacoes.estabelecimento_id', $item->local_id ?: $item->estabelecimento_id)
             ->where('avaliacoes.publica', true)
             ->latest('avaliacoes.created_at')
             ->take(3)
@@ -103,6 +104,10 @@ class ClienteAgendamentoMobileController extends Controller
 
         return response()->json([
             'item' => $item,
+            // Dono sem carteira Asaas: só pagamento no local.
+            'aceita_pagamento_online' => app(\App\Services\PagamentoService::class)->reservaAceitaPagamentoOnline($item),
+            // Tudo o que o sócio cadastrou, organizado por tipo (veículo, hospedagem, equipamento, espaço).
+            'ficha' => $itemModelo ? app(\App\Services\Locacao\FichaDoItemService::class)->montar($itemModelo) : null,
             'estabelecimento' => $estabelecimento,
             'avaliacoes_previa' => $avaliacoes,
             'reputacao' => $reputacao['avaliacoes'],
@@ -146,6 +151,13 @@ class ClienteAgendamentoMobileController extends Controller
         if (!$servico) {
             return response()->json(['error' => 'Serviço não pertence a este estabelecimento.'], 404);
         }
+        $configServico = json_decode((string) $servico->configuracoes, true);
+        if (is_string($configServico)) {
+            $configServico = json_decode($configServico, true);
+        }
+        if (!empty($configServico['horario_a_combinar'])) {
+            return response()->json(['error' => 'Este serviço é com horário a combinar: fale com o proprietário pelo chat ou telefone para marcar.', 'horario_a_combinar' => true], 422);
+        }
 
         // 🚫 VAGAS: até `servicos.vagas_por_horario` clientes no mesmo dia+horário (ver VagasServicoService).
         $vagasServico = app(\App\Services\Agendamento\VagasServicoService::class);
@@ -171,7 +183,12 @@ class ClienteAgendamentoMobileController extends Controller
             }
             $funcionarioId = $escolhido->id;
         }
-        $tipoPagamentoServico = $configuracoes['tipo_pagamento'] ?? 'hibrido';
+        $aceitaOnline = app(\App\Services\PagamentoService::class)->estabelecimentoTemCarteiraAsaas($estabelecimento->id);
+        $tipoPagamentoServico = app(\App\Services\PagamentoService::class)->tipoPagamentoEfetivo($configuracoes['tipo_pagamento'] ?? null, $aceitaOnline);
+
+        if ($validated['forma_pagamento'] !== 'presencial' && !$aceitaOnline) {
+            return response()->json(['error' => 'Este local ainda não recebe pagamentos online. Escolha pagar no local.', 'somente_local' => true], 422);
+        }
 
         if ($validated['forma_pagamento'] === 'presencial' && $tipoPagamentoServico === 'online') {
             return response()->json(['error' => 'Este serviço aceita apenas pagamento online.'], 422);
@@ -183,7 +200,8 @@ class ClienteAgendamentoMobileController extends Controller
             $formaEscolhida = $validated['forma_pagamento'];
             $isPresencial = ($formaEscolhida === 'presencial');
 
-            $valorTotal = $servico->valor;
+            // Valor com a promoção cadastrada no serviço.
+            $valorTotal = app(\App\Services\PrecificacaoService::class)->comPromocao((float) $servico->valor, (bool) ($servico->tem_promocao ?? false), $servico->tipo_desconto ?? null, $servico->valor_desconto ?? null);
             $user = Auth::user();
 
             // Pontos de fidelidade (saldo GLOBAL, users.pontos_saldo).
@@ -429,6 +447,10 @@ class ClienteAgendamentoMobileController extends Controller
             return response()->json(['error' => 'Este item não está disponível para locação.'], 422);
         }
 
+        if ($validated['forma_pagamento'] !== 'presencial' && !app(\App\Services\PagamentoService::class)->reservaAceitaPagamentoOnline($item)) {
+            return response()->json(['error' => 'Este local ainda não recebe pagamentos online. Escolha pagar no local.', 'somente_local' => true], 422);
+        }
+
         $dataInicio = Carbon::parse($validated['data_inicio']);
         $dataFim = $dataInicio->copy();
 
@@ -441,6 +463,11 @@ class ClienteAgendamentoMobileController extends Controller
         } else {
             $dataFim->addMonths($validated['quantidade_periodos']);
             $valorUnitario = $item->valor_mensal ?? ($item->valor_diaria * 30);
+        }
+
+        // Promoção cadastrada na reserva vale também no app.
+        if ($valorUnitario) {
+            $valorUnitario = app(\App\Services\PrecificacaoService::class)->comPromocao((float) $valorUnitario, (bool) ($item->tem_promocao ?? false), $item->tipo_desconto ?? null, $item->valor_desconto ?? null);
         }
 
         if (!$valorUnitario) {

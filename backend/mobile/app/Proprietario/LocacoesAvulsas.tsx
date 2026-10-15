@@ -36,6 +36,7 @@ interface ItemLocacao {
   valor_desconto: string | number | null;
   aceita_pontos: boolean;
   maximo_pontos_permitidos: number | null;
+  politica_cancelamento?: string | null;
   ativo: boolean;
   fotos: string[] | null;
   local_retirada: string | null;
@@ -72,6 +73,19 @@ const COMODIDADES_FIXAS: { campo: 'possui_wifi' | 'possui_ar_condicionado' | 'mo
 const ROTULOS_COMODIDADES_FIXAS = new Set(COMODIDADES_FIXAS.map((c) => c.rotulo));
 const DIAS_SEMANA = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
+interface ProximaReserva {
+  id: number;
+  codigo: string;
+  item_nome: string;
+  locatario: string;
+  data_inicio: string;
+  data_fim: string;
+  valor: number;
+  pago: boolean;
+}
+
+interface Politica { id: string; nome: string; resumo: string }
+
 interface EmUso {
   id: number;
   item_nome: string;
@@ -94,6 +108,7 @@ const FORM_INICIAL = {
   valor_desconto: '',
   aceita_pontos: false,
   maximo_pontos_permitidos: '',
+  politica_cancelamento: 'moderada',
   ativo: true,
   local_retirada: '',
   local_entrega: '',
@@ -131,6 +146,8 @@ export default function LocacoesAvulsas() {
   const router = useRouter();
   const [itens, setItens] = useState<ItemLocacao[]>([]);
   const [emUsoAgora, setEmUsoAgora] = useState<EmUso[]>([]);
+  const [proximasReservas, setProximasReservas] = useState<ProximaReserva[]>([]);
+  const [politicas, setPoliticas] = useState<Politica[]>([]);
   const [categorias, setCategorias] = useState<Categorias>({});
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
@@ -189,6 +206,8 @@ export default function LocacoesAvulsas() {
 
       setItens(json.itens || []);
       setEmUsoAgora(json.em_uso_agora || []);
+      setProximasReservas(json.proximas_reservas || []);
+      setPoliticas(json.politicas || []);
       setCategorias(json.categorias || {});
     } catch (e) {
       setErro('Não foi possível carregar suas locações agora.');
@@ -224,6 +243,7 @@ export default function LocacoesAvulsas() {
       valor_desconto: item.valor_desconto ? String(item.valor_desconto) : '',
       aceita_pontos: !!item.aceita_pontos,
       maximo_pontos_permitidos: item.maximo_pontos_permitidos ? String(item.maximo_pontos_permitidos) : '',
+      politica_cancelamento: item.politica_cancelamento || 'moderada',
       ativo: item.ativo,
       local_retirada: item.local_retirada || '',
       local_entrega: item.local_entrega || '',
@@ -297,6 +317,7 @@ export default function LocacoesAvulsas() {
       formData.append('valor_desconto', form.valor_desconto || '0');
       formData.append('aceita_pontos', form.aceita_pontos ? '1' : '0');
       formData.append('maximo_pontos_permitidos', form.maximo_pontos_permitidos || '0');
+      formData.append('politica_cancelamento', form.politica_cancelamento || 'moderada');
       formData.append('ativo', form.ativo ? '1' : '0');
       formData.append('local_retirada', form.local_retirada);
       formData.append('local_entrega', form.local_entrega);
@@ -350,6 +371,32 @@ export default function LocacoesAvulsas() {
     } finally {
       setSalvando(false);
     }
+  };
+
+  const cancelarReserva = (reserva: ProximaReserva) => {
+    const aviso = reserva.pago ? ' O cliente recebe o valor inteiro de volta automaticamente.' : '';
+    alertar('Cancelar reserva', `Cancelar a reserva ${reserva.codigo} de ${reserva.locatario}?${aviso}`, [
+      { text: 'Voltar', style: 'cancel' },
+      {
+        text: 'Cancelar reserva',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            const token = await getToken();
+            const response = await fetch(`${API_URL}/reservas/${reserva.id}/cancelar`, {
+              method: 'POST',
+              headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+            });
+            const json = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(json.error || json.message || 'Não foi possível cancelar.');
+            alertar('Reserva cancelada', json.message || 'O cliente foi avisado.');
+            carregar();
+          } catch (e: any) {
+            alertar('Erro', e?.message || 'Não foi possível cancelar a reserva.');
+          }
+        },
+      },
+    ]);
   };
 
   const excluir = (item: ItemLocacao) => {
@@ -413,6 +460,27 @@ export default function LocacoesAvulsas() {
               <View key={u.id} style={styles.emUsoCard}>
                 <Text style={styles.emUsoNome}>{u.item_nome}</Text>
                 <Text style={styles.emUsoLocatario}>com {u.locatario}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {proximasReservas.length > 0 && (
+          <View style={styles.emUsoSection}>
+            <Text style={styles.emUsoTitulo}>
+              <Feather name="calendar" size={14} color="#282828" /> Próximas reservas
+            </Text>
+            <Text style={styles.reservaAviso}>Se você cancelar uma reserva já paga, o cliente recebe o valor inteiro de volta automaticamente.</Text>
+            {proximasReservas.map((r) => (
+              <View key={r.id} style={styles.emUsoCard}>
+                <Text style={styles.emUsoNome}>{r.item_nome} · {r.codigo}</Text>
+                <Text style={styles.emUsoLocatario}>
+                  {r.locatario} · {String(r.data_inicio).slice(0, 10).split('-').reverse().join('/')} até {String(r.data_fim).slice(0, 10).split('-').reverse().join('/')}
+                </Text>
+                <Text style={styles.emUsoLocatario}>R$ {Number(r.valor || 0).toFixed(2).replace('.', ',')} · {r.pago ? 'pago' : 'não pago'}</Text>
+                <TouchableOpacity onPress={() => cancelarReserva(r)} style={styles.reservaCancelar}>
+                  <Text style={styles.reservaCancelarTxt}>Cancelar reserva</Text>
+                </TouchableOpacity>
               </View>
             ))}
           </View>
@@ -824,6 +892,22 @@ export default function LocacoesAvulsas() {
               </>
             )}
 
+            {politicas.length > 0 && (
+              <>
+                <Text style={styles.label}>Política de cancelamento</Text>
+                {politicas.map((p) => {
+                  const ativa = form.politica_cancelamento === p.id;
+                  return (
+                    <TouchableOpacity key={p.id} onPress={() => setForm((f) => ({ ...f, politica_cancelamento: p.id }))} style={[styles.politicaOpcao, ativa && styles.politicaOpcaoAtiva]}>
+                      <Text style={styles.politicaNome}>{p.nome}</Text>
+                      <Text style={styles.politicaResumo}>{p.resumo}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+                <Text style={styles.politicaResumo}>Reservas de 28 dias ou mais usam a política de longa duração. A caução sempre volta inteira.</Text>
+              </>
+            )}
+
             <View style={styles.switchRow}>
               <Text style={styles.switchLabel}>Ativo (visível para clientes)</Text>
               <Switch
@@ -979,4 +1063,11 @@ const styles = StyleSheet.create({
   diaBtnAtivo: { backgroundColor: '#FF7A00', borderColor: '#FF7A00' },
   diaBtnText: { fontSize: 11, fontWeight: '700', color: '#6A6C72' },
   diaBtnTextAtivo: { color: '#FFFFFF' },
+  reservaAviso: { fontSize: 12, color: '#6A6C72', marginBottom: 10 },
+  reservaCancelar: { alignSelf: 'flex-start', marginTop: 8, backgroundColor: '#FEF2F2', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7 },
+  reservaCancelarTxt: { color: '#DC2626', fontWeight: '800', fontSize: 12 },
+  politicaOpcao: { borderWidth: 1, borderColor: '#E6E7E9', borderRadius: 12, padding: 10, marginBottom: 8, backgroundColor: '#FFFFFF' },
+  politicaOpcaoAtiva: { borderColor: '#FF7A00', borderWidth: 2 },
+  politicaNome: { fontSize: 13, fontWeight: '800', color: '#282828' },
+  politicaResumo: { fontSize: 11, color: '#6A6C72', marginTop: 2, lineHeight: 15 },
 });

@@ -14,46 +14,47 @@ export interface Plano {
   destaque: boolean;
   badge?: string;
   gradiente?: [string, string];
-  beneficios: string[];
+  // Do servidor vêm explicados ({ titulo, texto }); a lista local antiga ainda é texto simples.
+  beneficios: (string | { titulo: string; texto: string })[];
 }
 
 export const PLANOS_SOCIO: Plano[] = [
   {
     id: 'premium', nome: 'Premium', preco: '15,00', ciclo: 'mensal', destaque: false,
     desc: 'Ideal para iniciar e ganhar visibilidade na plataforma.',
-    beneficios: ['Taxas reduzidas', 'Suporte padrão', 'Painel de métricas básico'],
+    beneficios: ['Taxa 50% menor nos pagamentos no local', 'Destaque no Explorar', 'Relatório avançado', 'Clientes a caminho, ao vivo', 'Resumo financeiro semanal por e-mail', '50 pontos de bônus todo mês'],
   },
   {
     id: 'premium-socio', nome: 'Premium Sócio', preco: '30,00', ciclo: 'mensal', destaque: true,
     badge: 'Máximo Retorno', gradiente: ['#14B8A6', '#00A868'],
     desc: 'Destaque máximo e isenção de taxas presenciais.',
-    beneficios: ['Isenção da taxa da plataforma no balcão', 'Destaque no app', 'Suporte VIP 24/7', 'Métricas avançadas', 'Crie gerentes e convide sócios ilimitados'],
+    beneficios: ['Isenção total da taxa no balcão', 'Nota fiscal automática de cada venda', 'Equipe sem limite', 'Destaque máximo no Explorar', 'Relatório avançado', '300 pontos de bônus todo mês'],
   },
   {
     id: 'premium-anual', nome: 'Premium Anual', preco: '126,00', precoOriginal: '180,00', ciclo: 'anual', destaque: false,
     badge: '30% OFF',
     desc: '1 ano inteiro de visibilidade com 30% de desconto.',
-    beneficios: ['Equivale a apenas R$ 10,50/mês', 'Ganha 600 pontos na hora', 'Taxas reduzidas', 'Suporte padrão'],
+    beneficios: ['600 pontos na ativação', '30% mais barato que o mensal', 'Taxa 50% menor nos pagamentos no local', 'Destaque no Explorar', 'Relatório avançado'],
   },
   {
     id: 'premium-socio-anual', nome: 'Sócio Anual', preco: '252,00', precoOriginal: '360,00', ciclo: 'anual', destaque: true,
     badge: 'Melhor Custo-Benefício', gradiente: ['#2563EB', '#4338CA'],
     desc: 'O pacote definitivo de 1 ano com isenção total de taxas e 30% OFF.',
-    beneficios: ['Equivale a apenas R$ 21,00/mês', 'Ganha 3600 pontos na hora', 'Isenção da taxa da plataforma', 'Suporte VIP 24/7', 'Crie gerentes e convide sócios ilimitados'],
+    beneficios: ['3.600 pontos na ativação', '30% mais barato que o mensal', 'Isenção total da taxa no balcão', 'Nota fiscal automática de cada venda', 'Equipe sem limite'],
   },
 ];
 
 export const PLANOS_CLIENTE: Plano[] = [
   {
     id: 'premium', nome: 'Premium', preco: '8,00', ciclo: 'mensal', destaque: false,
-    desc: 'Ideal para quem quer começar a economizar e pontuar.',
-    beneficios: ['Ganhe 1 ponto a cada R$ 1', 'Acesso a promoções', 'Até 5% de desconto nas lojas'],
+    desc: 'Para economizar com pontos e ter acesso a ofertas exclusivas.',
+    beneficios: ['Use pontos em qualquer serviço ou reserva', '50 pontos de bônus todo mês', 'Ofertas e serviços exclusivos', 'Cupons exclusivos para assinantes', 'Pontos em dobro ao avaliar'],
   },
   {
     id: 'premium-plus', nome: 'Premium Plus', preco: '14,00', ciclo: 'mensal', destaque: true,
     badge: 'Mais Vantagens', gradiente: ['#C026D3', '#7E22CE'],
-    desc: 'A experiência completa com atendimento VIP e retornos altos.',
-    beneficios: ['Ganhe 3 pontos a cada R$ 1', 'Descontos de 15% a 30%', 'Promoções secretas', 'Consultoria personalizada'],
+    desc: 'A experiência completa: mais pontos e as ofertas mais exclusivas.',
+    beneficios: ['150 pontos de bônus todo mês', '3 pontos a cada R$ 1 em produtos', 'Ofertas do nível Plus', 'Use pontos em qualquer serviço ou reserva', 'Cupons exclusivos para assinantes'],
   },
 ];
 

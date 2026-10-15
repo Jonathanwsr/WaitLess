@@ -48,9 +48,9 @@ class ConfiguracoesMobileController extends Controller
                 'meusEstabelecimentos' => $request->user()->estabelecimentos,
                 'funcionarios' => $estabelecimento ? $estabelecimento->funcionarios : [],
                 'servicos' => $estabelecimento ? $estabelecimento->servicos : [],
-                'itens_aluguel' => $estabelecimento ? $estabelecimento->itensAluguel : [],
+                'itens_aluguel' => $estabelecimento ? $estabelecimento->itensAluguel->each->paraTelaDoDono() : [],
                 'produtos' => $estabelecimento ? $estabelecimento->produtos : [],
-                'alugueis' => $estabelecimento ? Aluguel::where('estabelecimento_id', $estabelecimento->id)->get() : [],
+                'alugueis' => $estabelecimento ? $this->alugueisDoLocal($estabelecimento->id) : [],
                 'podeGerenciarEquipeAvancada' => $request->user()->podeGerenciarEquipeAvancada(),
             ]);
         } catch (Exception $e) {
@@ -93,9 +93,9 @@ class ConfiguracoesMobileController extends Controller
                 'meusEstabelecimentos' => $request->user()->estabelecimentos,
                 'funcionarios' => $estabelecimento->funcionarios,
                 'servicos' => $estabelecimento->servicos,
-                'itens_aluguel' => $estabelecimento->itensAluguel,
+                'itens_aluguel' => $estabelecimento->itensAluguel->each->paraTelaDoDono(),
                 'produtos' => $estabelecimento->produtos,
-                'alugueis' => Aluguel::where('estabelecimento_id', $estabelecimento->id)->get(),
+                'alugueis' => $this->alugueisDoLocal($estabelecimento->id),
                 'podeGerenciarEquipeAvancada' => $request->user()->podeGerenciarEquipeAvancada(),
                 'atividadesRecentes' => $atividadesRecentes,
             ]);
@@ -151,11 +151,17 @@ class ConfiguracoesMobileController extends Controller
 
     public function updateEstabelecimento(Request $request, Estabelecimento $estabelecimento)
     {
+        // Site digitado sem "https://" (ex.: www.loja.com.br) vira um link que abre no navegador.
+        if ($request->filled('site') && !preg_match('#^https?://#i', trim((string) $request->input('site')))) {
+            $request->merge(['site' => 'https://' . ltrim(trim((string) $request->input('site')), '/')]);
+        }
+
         $validated = $request->validate([
             'nome' => 'required|string|max:255',
             'cnpj' => ['required', 'string', 'max:20', 'regex:/^[0-9.\-\/\s]+$/', 'unique:estabelecimentos,cnpj,' . $estabelecimento->id],
             'razao_social' => 'nullable|string|max:255',
-            'site' => 'nullable|string|max:255',
+            'site' => 'nullable|url|max:255',
+            'bio' => 'nullable|string|max:1000',
             'ramo_atuacao' => 'nullable|string|max:255',
             'telefone' => 'nullable|string|max:20|regex:/^[0-9()\-\s]+$/',
             'cep' => 'nullable|string|max:10|regex:/^[0-9\-\s]+$/',
@@ -418,7 +424,9 @@ class ConfiguracoesMobileController extends Controller
             'tipo_desconto_cupom' => $request->input('tipo_desconto_cupom', 'percentual'),
             'valor_cupom' => $request->input('valor_cupom'),
             'codigo_cupom' => $request->input('codigo_cupom'),
-            'fotos' => $fotosUrls
+            'fotos' => $fotosUrls,
+            // Sem horários fixos: o cliente combina o horário direto com o dono.
+            'horario_a_combinar' => $request->boolean('horario_a_combinar'),
         ];
 
         $servico = Servico::create([
@@ -461,6 +469,13 @@ class ConfiguracoesMobileController extends Controller
             'tipo_servico.in' => 'Escolha uma categoria válida da lista.',
         ]);
 
+        // "Horário a combinar" fica nas configurações do serviço (junto de dias e forma de pagamento).
+        if ($request->has('horario_a_combinar')) {
+            $cfg = is_array($servico->configuracoes) ? $servico->configuracoes : (json_decode((string) $servico->configuracoes, true) ?: []);
+            $cfg['horario_a_combinar'] = $request->boolean('horario_a_combinar');
+            $validated['configuracoes'] = json_encode($cfg);
+        }
+
         try {
             $servico->update($validated);
             return response()->json(['message' => 'Serviço atualizado com sucesso!', 'servico' => $servico]);
@@ -481,7 +496,7 @@ class ConfiguracoesMobileController extends Controller
 
         foreach ($agendamentosAfetados as $agendamento) {
             try {
-                $pagamentoService->processarCancelamentoAgendamento($agendamento);
+                $pagamentoService->processarCancelamentoAgendamento($agendamento, true);
             } catch (Exception $e) {
                 Log::error("Falha ao cancelar/estornar agendamento {$agendamento->id} ao apagar serviço {$servico->id}: " . $e->getMessage());
             }
@@ -501,6 +516,12 @@ class ConfiguracoesMobileController extends Controller
         ]);
     }
 
+    /** Aluguéis das reservas deste local (o aluguel guarda o dono; o local está no item). */
+    private function alugueisDoLocal(int $localId)
+    {
+        return Aluguel::whereHas('item', fn ($q) => $q->where('local_id', $localId))->get();
+    }
+
     // ==========================================
     // 4. ITENS DE ALUGUEL / LOCAÇÃO
     // ==========================================
@@ -508,6 +529,9 @@ class ConfiguracoesMobileController extends Controller
     {
         $estabelecimento = $request->user()->estabelecimentoAtual();
         $itens = $estabelecimento ? $estabelecimento->itensAluguel()->paginate(10) : [];
+        if ($estabelecimento) {
+            $itens->getCollection()->each->paraTelaDoDono();
+        }
         return response()->json($itens);
     }
 
@@ -612,7 +636,7 @@ class ConfiguracoesMobileController extends Controller
 
         $alugueis = Aluguel::with(['item', 'locatario', 'proprietario'])
             ->when($estabelecimento, function ($query) use ($estabelecimento) {
-                $query->where('estabelecimento_id', $estabelecimento->id);
+                $query->whereHas('item', fn ($i) => $i->where('local_id', $estabelecimento->id));
             })
             ->orderBy('created_at', 'desc')
             ->paginate(15);
@@ -688,8 +712,12 @@ class ConfiguracoesMobileController extends Controller
         ], 201);
     }
 
-    public function showAluguel(Aluguel $aluguel)
+    public function showAluguel(Request $request, Aluguel $aluguel)
     {
+        if (!$this->podeGerenciarAluguel($request->user(), $aluguel)) {
+            return response()->json(['status' => 'error', 'message' => 'Você não tem permissão para ver esta reserva.'], 403);
+        }
+
         return response()->json($aluguel->load(['item', 'locatario', 'proprietario', 'contratoDocumento']));
     }
 
@@ -726,6 +754,11 @@ class ConfiguracoesMobileController extends Controller
             'data_fim'              => 'sometimes|date|after_or_equal:data_inicio',
             'observacoes'           => 'nullable|string',
         ]);
+
+        // Cancelar pela edição segue o mesmo fluxo do botão cancelar: o cliente recebe tudo de volta.
+        if (($validated['status'] ?? null) === 'cancelado' && $aluguel->status !== 'cancelado') {
+            return $this->cancelarAluguel($request, $aluguel, app(PagamentoService::class));
+        }
 
         try {
             $aluguel->update($validated);
@@ -781,9 +814,31 @@ class ConfiguracoesMobileController extends Controller
         return response()->json(['message' => 'Funcionário atualizado com sucesso.', 'aluguel' => $aluguel]);
     }
 
-    public function destroyAluguel(Aluguel $aluguel)
+    /**
+     * Antes isto apagava o registro sem devolver o dinheiro e sem conferir o dono. Agora cancela a
+     * reserva: se já foi paga, o cliente recebe 100% de volta automaticamente (sem pedir estorno).
+     */
+    public function destroyAluguel(Request $request, Aluguel $aluguel)
     {
-        $aluguel->delete();
-        return response()->json(['message' => 'Registro de aluguel removido com sucesso!']);
+        return $this->cancelarAluguel($request, $aluguel, app(PagamentoService::class));
+    }
+
+    public function cancelarAluguel(Request $request, Aluguel $aluguel, PagamentoService $pagamentoService)
+    {
+        if (!$this->podeGerenciarAluguel($request->user(), $aluguel)) {
+            return response()->json(['status' => 'error', 'message' => 'Você não tem permissão para cancelar esta reserva.'], 403);
+        }
+
+        if (in_array($aluguel->status, ['cancelado', 'finalizado', 'concluido'], true)) {
+            return response()->json(['status' => 'error', 'message' => 'Esta reserva não pode mais ser cancelada.'], 409);
+        }
+
+        try {
+            $resultado = $pagamentoService->processarCancelamentoAluguel($aluguel, $request->user()->id, true);
+        } catch (\Exception $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 422);
+        }
+
+        return response()->json(['message' => $resultado['message'], 'reembolso' => $resultado['reembolso']]);
     }
 }

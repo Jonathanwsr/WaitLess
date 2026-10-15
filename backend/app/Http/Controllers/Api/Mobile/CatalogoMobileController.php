@@ -18,7 +18,7 @@ class CatalogoMobileController extends Controller
         try {
             // Puxa o serviço e os dados vitais do estabelecimento dono dele
             $servico = Servico::with(['estabelecimento' => function($q) {
-                $q->select('id', 'nome', 'foto_perfil', 'avaliacao_media', 'total_avaliacoes', 'cidade', 'estado', 'created_at');
+                $q->select('id', 'nome', 'foto_perfil', 'avaliacao_media', 'total_avaliacoes', 'cidade', 'estado', 'created_at', 'telefone');
             }])->findOrFail($id);
 
             // Calcula os anos de parceria baseado na coluna created_at da tabela estabelecimentos
@@ -32,10 +32,26 @@ class CatalogoMobileController extends Controller
                 ->take(3)
                 ->get();
 
+            // Mesmas regras da página web (DetalheServicoService): avaliações, horários lotados e outros serviços.
+            $detalhe = app(\App\Services\Servico\DetalheServicoService::class);
+            $user = request()->user();
+            $valor = (float) $servico->valor;
+
             return response()->json([
                 'servico' => $servico,
                 'avaliacoes_previa' => $avaliacoes,
                 'funcionarios' => \App\Models\Funcionario::where('estabelecimento_id', $servico->estabelecimento_id)->where('ativo', true)->orderBy('nome')->get(['id', 'nome', 'cargo']),
+                'avaliacoes' => $detalhe->avaliacoes($servico, (int) $servico->estabelecimento_id),
+                'ocupados' => $detalhe->horariosOcupados($servico),
+                'horarios' => $detalhe->listaDeHorarios($servico->horarios_disponiveis),
+                // Sem horários fixos: o cliente combina com o dono (chat ou telefone).
+                'horario_a_combinar' => $servico->horarioACombinar(),
+                'vagas_por_horario' => $detalhe->capacidade($servico),
+                'valor_com_promocao' => round($detalhe->comPromocao($valor, $servico), 2),
+                'outros_servicos' => $detalhe->outros($servico, (int) $servico->estabelecimento_id),
+                'favorito' => $user ? \App\Models\Favorito::where('usuario_id', $user->id)->where('servico_id', $servico->id)->exists() : false,
+                // Sócio sem carteira Asaas: só pagamento no local.
+                'aceita_pagamento_online' => app(\App\Services\PagamentoService::class)->estabelecimentoTemCarteiraAsaas($servico->estabelecimento_id),
             ], 200);
 
         } catch (\Exception $e) {
@@ -43,6 +59,17 @@ class CatalogoMobileController extends Controller
             \Log::error('Erro ao buscar detalhes do serviço: ' . $e->getMessage());
             return response()->json(['error' => 'Serviço não encontrado.'], 404);
         }
+    }
+
+    /** Confere se o horário ainda tem vaga; quando já tem alguém, devolve o motivo e horários livres. */
+    public function disponibilidade(\Illuminate\Http\Request $request, Servico $servico)
+    {
+        $dados = $request->validate([
+            'data' => 'required|date_format:Y-m-d',
+            'hora' => 'required|date_format:H:i',
+        ]);
+
+        return response()->json(app(\App\Services\Servico\DetalheServicoService::class)->disponibilidade($servico, $dados['data'], $dados['hora']));
     }
 
     public function perfilEstabelecimento($id)
@@ -56,9 +83,10 @@ class CatalogoMobileController extends Controller
                 ->get();
 
             // 2. Busca os itens de aluguel ativos e disponíveis
-            $itensAluguel = ItemAluguel::where('estabelecimento_id', $id)
+            $itensAluguel = ItemAluguel::catalogo()->doLocal((int) $id)
                 ->where('ativo', true)
-                ->get();
+                ->get()
+                ->each(fn ($i) => $i->setAttribute('foto_principal', $i->foto_principal));
 
             // 3. Busca as avaliações
             $avaliacoes = Avaliacao::with('usuario:id,name,foto_perfil')

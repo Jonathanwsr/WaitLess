@@ -31,6 +31,18 @@ class Provider extends Model
         'asaas_wallet_id',
         'asaas_api_key',
         'asaas_status',
+        // Configuração fiscal das notas de venda do sócio.
+        'nfse_servico_id',
+        'nfse_servico_codigo',
+        'nfse_servico_nome',
+        'nfse_iss',
+        'nfse_retem_iss',
+        'nfse_pis',
+        'nfse_cofins',
+        'nfse_csll',
+        'nfse_ir',
+        'nfse_inss',
+        'nfse_observacoes',
     ];
 
     public function user()

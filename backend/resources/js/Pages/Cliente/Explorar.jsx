@@ -233,7 +233,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, promoc
 
     return (
         <AuthenticatedLayout user={auth.user}>
-            <Head title="Explorar - Lokyva" />
+            <Head title="Explorar" />
 
             <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 relative">
                 
@@ -252,32 +252,38 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, promoc
                     )}
                 </AnimatePresence>
 
-                {/* HERO */}
-                <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    className="bg-gradient-to-br from-zinc-900 via-zinc-950 to-black text-white pt-16 pb-12"
-                >
-                    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                        <motion.div
-                            initial={{ y: 30, opacity: 0 }}
-                            animate={{ y: 0, opacity: 1 }}
-                            transition={{ duration: 0.6 }}
-                            className="max-w-2xl"
-                        >
-                            <h1 className="text-5xl md:text-6xl font-bold tracking-tighter mb-4">
-                                Encontre o que<br />você precisa<span className="text-[#FF5A00]">.</span>
-                            </h1>
-                            <p className="text-zinc-400 text-lg">
-                                Profissionais, serviços e aluguéis com agendamento rápido na sua região.
-                            </p>
-                        </motion.div>
-                    </div>
-                </motion.div>
+                {/* HERO: banner da Lokyva (o texto e o botão fazem parte da imagem) */}
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+                    <motion.div
+                        initial={{ y: 20, opacity: 0 }}
+                        animate={{ y: 0, opacity: 1 }}
+                        transition={{ duration: 0.5 }}
+                        className="relative overflow-hidden rounded-3xl shadow-xl"
+                    >
+                        <img
+                            src="/images/explorar_banner.png"
+                            alt="Sua próxima experiência começa aqui. Hospedagens, aluguel de veículos e serviços em um só lugar."
+                            className="block h-auto w-full min-h-[150px] object-cover object-left"
+                        />
+                        {/* Área clicável sobre o botão "Explorar opções" desenhado na imagem */}
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const campo = document.querySelector('#busca-explorar input');
+                                campo?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                setTimeout(() => campo?.focus(), 400);
+                            }}
+                            aria-label="Explorar opções"
+                            className="absolute rounded-full focus:outline-none focus-visible:ring-4 focus-visible:ring-white/70"
+                            style={{ left: '5.3%', top: '80%', width: '14%', height: '15%' }}
+                        />
+                    </motion.div>
+                </div>
 
                 {/* SEARCH BAR */}
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-8 relative z-10">
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-5 relative z-10">
                     <motion.form
+                        id="busca-explorar"
                         initial={{ y: 20, opacity: 0 }}
                         animate={{ y: 0, opacity: 1 }}
                         transition={{ delay: 0.2 }}
@@ -543,7 +549,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, promoc
                                             : (isEstabelecimentos
                                                 ? route('estabelecimentos.loja', item.id)
                                                 : tipoItem === 'servico'
-                                                    ? route('cliente.agendar', { estabelecimento: item.estabelecimento_id, servico_id: item.id })
+                                                    ? route('cliente.servicos.show', item.id)
                                                     : route('itens.detalhes', item.id));
 
                                         // ✅ AQUI LIGAMOS AS AVALIAÇÕES PARA SEREM VISTAS DO EXPLORAR!

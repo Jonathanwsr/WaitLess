@@ -52,7 +52,8 @@ class ProviderMobileController extends Controller
         $validated = $request->validate([
             // Dados do Provedor
             'name'             => ['required', 'string', 'max:255', 'regex:/^[a-zA-ZÀ-ÿ\s]+$/'],
-            'email'            => 'required|email|unique:providers,email',
+            // Quem já deixou o pedido "aguardando liberação" pode reenviar com o mesmo e-mail.
+            'email'            => ['required', 'email', \Illuminate\Validation\Rule::unique('providers', 'email')->ignore(app(\App\Services\Carteira\AberturaCarteiraService::class)->pendenteDe($user->id)?->id)],
             'person_type'      => 'required|in:FISICA,JURIDICA',
             'document'         => ['required', 'string', 'regex:/^[0-9.\-\/\s]+$/'],
             'birth_date'       => 'required|date',
@@ -87,6 +88,11 @@ class ProviderMobileController extends Controller
             'ativo'            => 'nullable|boolean'
         ]);
 
+        // Sócio informal (sem CNPJ) não abre carteira: sem carteira não há pagamento online.
+        if (!\App\Support\ContaFormal::podeAbrirCarteira($validated['person_type'], $validated['document'])) {
+            return response()->json(\App\Support\ContaFormal::resposta(), 422);
+        }
+
         // 2. Limpeza de Strings
         $cleanDocument     = preg_replace('/[^0-9]/', '', $validated['document']);
         $cleanPostalCode   = preg_replace('/[^0-9]/', '', $validated['postal_code']);
@@ -118,6 +124,27 @@ class ProviderMobileController extends Controller
             $asaasPayload['companyType'] = $validated['company_type'];
         }
 
+        // Dados guardados no sistema (usados também se o Asaas ainda não liberar a abertura).
+        $dadosLocais = [
+            'name' => $validated['name'],
+            'email' => $validated['email'],
+            'person_type' => $validated['person_type'],
+            'document' => $cleanDocument,
+            'birth_date' => $formattedBirthDate,
+            'income_value' => $cleanIncome,
+            'mobile_phone' => $cleanMobilePhone,
+            'postal_code' => $cleanPostalCode,
+            'address' => $validated['address'],
+            'address_number' => $validated['address_number'],
+            'complement' => $validated['complement'] ?? null,
+            'province' => $validated['province'],
+            'company_type' => $validated['company_type'] ?? null,
+            'responsible_name' => $validated['responsible_name'] ?? null,
+            'responsible_cpf' => $cleanRespCpf,
+            'pix_key_type' => $validated['pix_key_type'],
+            'pix_key' => trim($validated['pix_key']),
+        ];
+
         try {
             // 4. Integrar com Asaas
             $response = Http::withoutRedirecting()
@@ -144,10 +171,17 @@ class ProviderMobileController extends Controller
                 // Limite de contas de teste do ambiente sandbox do Asaas — não é um
                 // erro nos dados informados, retentar não resolve. Avisa claramente
                 // em vez de "erro desconhecido".
-                if ($errorCode === 'baas_trial_limit_child_account_creation_reached') {
+                // O Asaas ainda não libera novas carteiras (homologação pendente da conta Lokyva):
+                // o pedido fica salvo e o comando carteira:abrir-pendentes abre sozinho quando liberar.
+                if ($errorCode === \App\Services\Carteira\AberturaCarteiraService::CODIGO_LIMITE) {
+                    $provider = app(\App\Services\Carteira\AberturaCarteiraService::class)->salvarPendente($user, $dadosLocais);
+
                     return response()->json([
-                        'error' => 'O ambiente de testes do nosso parceiro de pagamentos atingiu o limite de contas criadas. Isso não é um problema com os seus dados — é preciso concluir a homologação do gateway para liberar novas contas. Nossa equipe já foi notificada.'
-                    ], 503);
+                        'status' => 'success',
+                        'message' => \App\Services\Carteira\AberturaCarteiraService::MENSAGEM_AGUARDANDO,
+                        'aguardando_liberacao' => true,
+                        'provider' => $provider,
+                    ], 202);
                 }
 
                 if (stripos($errorDescription, 'email') !== false && stripos($errorDescription, 'já está em uso') !== false) {

@@ -58,7 +58,7 @@ class FilaController extends Controller
             'per_page' => $request->input('per_page', 10),
         ];
 
-        $query = Agendamento::with(['usuario', 'servico', 'pagamento', 'estabelecimento:id,nome'])
+        $query = Agendamento::with(['usuario:id,name,foto_perfil,birth_date,mobile_phone,cpf_cnpj', 'servico', 'pagamento', 'estabelecimento:id,nome'])
             ->whereIn('estabelecimento_id', $estabelecimentosIds)
             ->whereBetween('data_agendamento', [$filtros['data_inicio'], $filtros['data_fim']]);
 
@@ -112,7 +112,7 @@ class FilaController extends Controller
 
         $funcionarios = $estabelecimento->funcionarios()->where('ativo', true)->get(['id', 'nome', 'cargo']);
 
-        $query = Agendamento::with(['usuario', 'servico', 'pagamento'])
+        $query = Agendamento::with(['usuario:id,name,foto_perfil,birth_date,mobile_phone,cpf_cnpj', 'servico', 'pagamento'])
             ->where('estabelecimento_id', $estabelecimento->id);
 
         $dataInicio = $request->get('data_inicio', Carbon::today()->toDateString());
@@ -164,8 +164,17 @@ class FilaController extends Controller
     {
         $this->garantirAcessoAoLocal($request->user(), $estabelecimento);
 
+        // Locais que esta pessoa pode exibir no painel (para trocar sem sair da tela).
+        $user = $request->user();
+        $locais = $user->papel === 'admin'
+            ? Estabelecimento::orderBy('nome')->limit(200)->get(['id', 'nome'])
+            : (in_array($user->papel, ['atendente', 'funcionario'], true)
+                ? Estabelecimento::whereIn('id', \App\Models\Funcionario::where('usuario_id', $user->id)->pluck('estabelecimento_id'))->orderBy('nome')->get(['id', 'nome'])
+                : $user->estabelecimentos()->orderBy('nome')->get(['estabelecimentos.id', 'estabelecimentos.nome']));
+
         return Inertia::render('Estabelecimentos/FilaPainel', [
             'estabelecimento' => $estabelecimento->only('id', 'nome', 'foto_perfil'),
+            'locais' => $locais->map(fn ($l) => ['id' => $l->id, 'nome' => $l->nome])->values(),
         ]);
     }
 

@@ -152,8 +152,27 @@ function MapaRastreamentoConteudo() {
   useFocusEffect(
     useCallback(() => {
       carregarAgendamentos();
+
+      // Atualização automática a cada 10 s: a lista e a última posição salva de cada cliente.
+      // Funciona mesmo sem WebSocket (com ele, o movimento chega na hora pelo canal em tempo real).
+      const intervalo = setInterval(async () => {
+        try {
+          const token = await pegarToken();
+          const res = await fetch(`${API_URL}/proprietario/rastreamento`, {
+            headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+          });
+          if (!res.ok) return;
+          const json = await res.json();
+          setAgendamentos(json.agendamentos_ativos || []);
+        } catch (e) {
+          // sem rede agora: tenta de novo no próximo ciclo
+        }
+      }, 10000);
+
+      return () => clearInterval(intervalo);
     }, [carregarAgendamentos])
   );
+
 
   // Animação suave: desliza o marcador da posição atual até a nova posição
   // recebida (GPS ou WebSocket), estilo Uber, em vez de "pular" de um ponto
@@ -188,6 +207,23 @@ function MapaRastreamentoConteudo() {
     };
     passo();
   }, []);
+
+  // Posição nova do cliente selecionado vinda da atualização automática: move o marcador.
+  const ultimaPosicaoMostradaRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!selecionado) return;
+    const atual = agendamentos.find((a) => a.id === selecionado.id);
+    const pos = atual?.ultima_localizacao;
+    if (!pos || pos.atualizado_em === ultimaPosicaoMostradaRef.current) return;
+    ultimaPosicaoMostradaRef.current = pos.atualizado_em;
+    const novaPosicao = { latitude: pos.latitude, longitude: pos.longitude };
+    setPosicaoCliente(novaPosicao);
+    animarPara(novaPosicao);
+    if (pos.heading !== null && pos.heading !== undefined) setHeadingCliente(pos.heading);
+    const minutos = (Date.now() - new Date(pos.atualizado_em).getTime()) / 60000;
+    setStatusConexao(minutos <= 2 ? 'Sinal GPS ativo — cliente se movendo' : `Última posição às ${new Date(pos.atualizado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`);
+    setUltimaAtualizacao(new Date(pos.atualizado_em));
+  }, [agendamentos, selecionado, animarPara]);
 
   useEffect(() => {
     if (!selecionado) return undefined;

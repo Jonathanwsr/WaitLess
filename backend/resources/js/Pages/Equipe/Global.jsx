@@ -38,7 +38,7 @@ export default function EquipeGlobal({ auth, funcionarios }) {
                 </div>
             }
         >
-            <Head title="Minha Equipa Global - WaitLess" />
+            <Head title="Minha Equipa Global" />
 
             <div className="max-w-7xl mx-auto mt-8 px-4 sm:px-6 lg:px-8 pb-12">
                 

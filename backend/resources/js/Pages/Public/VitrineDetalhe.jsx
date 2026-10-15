@@ -115,7 +115,7 @@ function Pilula({ icon: Icone, children }) {
 export default function VitrineDetalhe({ item, avaliacoes = [], canRegister = true }) {
     return (
         <>
-            <Head title={`${item.nome} - Lokyva`} />
+            <Head title={`${item.nome}`} />
 
             <div className="min-h-screen bg-[#FFF9F5] text-gray-900 font-sans selection:bg-orange-500 selection:text-white">
                 <nav className="sticky top-0 z-30 backdrop-blur-xl bg-[#FFF9F5]/80 border-b border-orange-100/60">

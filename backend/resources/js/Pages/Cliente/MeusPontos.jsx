@@ -22,7 +22,6 @@ export default function MeusPontos({ saldo = 0, valorEmReais = 0, pontosPorReal 
     const [filtro, setFiltro] = useState('todos');
 
     const lista = useMemo(() => historico.filter((h) => filtro === 'todos' || (filtro === 'entradas' ? h.entrada : !h.entrada)), [historico, filtro]);
-    const pct = String(premium.percentualSemAceite ?? 20).replace('.', ',');
 
     return (
         <AuthenticatedLayout user={auth.user}>
@@ -62,7 +61,7 @@ export default function MeusPontos({ saldo = 0, valorEmReais = 0, pontosPorReal 
                             <li className="flex gap-2"><CheckCircleIcon className="w-5 h-5 text-emerald-600 shrink-0" /> Para trocar por cupons e recompensas na sua carteira.</li>
                             <li className={`flex gap-2 ${premium.ativo ? '' : 'text-zinc-400'}`}>
                                 {premium.ativo ? <CheckCircleIcon className="w-5 h-5 text-emerald-600 shrink-0" /> : <LockClosedIcon className="w-5 h-5 shrink-0" />}
-                                <span><b>Premium:</b> em qualquer serviço ou reserva, mesmo onde o local não aceita pontos, pagando até {pct}% do valor.</span>
+                                <span><b>Premium:</b> use quantos pontos quiser em qualquer serviço ou reserva, mesmo onde o local não aceita pontos.</span>
                             </li>
                         </ul>
                         <div className="mt-4 flex flex-wrap gap-2">

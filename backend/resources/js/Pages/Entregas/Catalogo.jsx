@@ -102,8 +102,10 @@ export default function Catalogo({ categorias = [] }) {
                 <div className="mb-5"><AbasCliente ativa="produtos" /></div>
 
                 {/* HERO */}
-                <div className="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-zinc-900 via-zinc-800 to-[#FF5A00] p-7 sm:p-10 text-white shadow-xl">
-                    <div className="absolute -right-16 -top-16 w-64 h-64 rounded-full bg-white/10 blur-2xl" />
+                <div className="relative overflow-hidden rounded-[2rem] bg-zinc-900 p-7 sm:p-10 text-white shadow-xl">
+                    <img src="/images/explorar_produtos.png" alt="" aria-hidden="true" className="absolute inset-0 h-full w-full object-cover object-right" />
+                    {/* Escurece o lado do texto para a leitura, deixando a foto aparecer à direita */}
+                    <div className="absolute inset-0 bg-gradient-to-r from-zinc-950/90 via-zinc-950/70 to-zinc-950/10" />
                     <div className="relative max-w-2xl">
                         <p className="inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest bg-white/15 px-3 py-1.5 rounded-full">
                             <TruckIcon className="w-4 h-4" /> Entrega ou retirada

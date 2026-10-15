@@ -19,7 +19,7 @@ export default function Login({ status, canResetPassword }) {
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-gray-50/50 lg:p-4 xl:p-8 font-sans selection:bg-[#F26522] selection:text-white">
-            <Head title="Entrar - Lokyva" />
+            <Head title="Entrar" />
 
             {/* Container Principal - Responsividade corrigida para mobile e desktop */}
             <div className="w-full h-full min-h-screen lg:min-h-[650px] lg:h-[85vh] lg:max-h-[800px] max-w-[1200px] bg-white lg:rounded-[2rem] lg:shadow-[0_20px_50px_-12px_rgba(0,0,0,0.1)] flex flex-col lg:flex-row overflow-hidden lg:border lg:border-gray-100 relative">

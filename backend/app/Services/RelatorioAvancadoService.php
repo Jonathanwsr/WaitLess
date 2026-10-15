@@ -75,7 +75,7 @@ class RelatorioAvancadoService
 
         $agendamentosDoMes = Agendamento::whereIn('estabelecimento_id', $estabelecimentoIds)
             ->whereBetween('data_agendamento', [$inicioMes, $fimMes])
-            ->get(['id', 'usuario_id', 'servico_id', 'funcionario_id', 'hora_agendamento', 'status', 'valor_final']);
+            ->get(['id', 'usuario_id', 'estabelecimento_id', 'servico_id', 'funcionario_id', 'data_agendamento', 'hora_agendamento', 'status', 'valor_final', 'nota']);
 
         $finalizadosDoMes = $agendamentosDoMes->where('status', 'finalizado');
         $canceladosDoMes = $agendamentosDoMes->where('status', 'cancelado');
@@ -134,8 +134,47 @@ class RelatorioAvancadoService
         })->count();
         $clientesRecorrentes = max(0, $clientesDoMes->count() - $clientesNovos);
 
+        // Distribuições da receita do mês (por local, por hora e por dia da semana) e desempenho por local.
+        $locais = \App\Models\Estabelecimento::whereIn('id', $estabelecimentoIds)->get(['id', 'nome', 'avaliacao_media'])->keyBy('id');
+        $receitaMes = (float) $finalizadosDoMes->sum('valor_final');
+        $receitaPorEstabelecimento = $finalizadosDoMes->groupBy('estabelecimento_id')
+            ->map(fn ($g, $id) => [
+                'nome' => $locais[$id]->nome ?? 'Local',
+                'valor' => round((float) $g->sum('valor_final'), 2),
+                'percentual' => $receitaMes > 0 ? round((float) $g->sum('valor_final') / $receitaMes * 100, 1) : 0,
+            ])
+            ->sortByDesc('valor')->values();
+        $receitaPorHora = $finalizadosDoMes
+            ->groupBy(fn ($a) => substr((string) $a->hora_agendamento, 0, 2))
+            ->map(fn ($g, $h) => ['hora' => $h . 'h', 'valor' => round((float) $g->sum('valor_final'), 2)])
+            ->sortBy('hora')->values();
+        $diasSemana = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+        $porDia = $finalizadosDoMes->groupBy(fn ($a) => Carbon::parse($a->data_agendamento)->dayOfWeek);
+        $receitaPorDiaSemana = collect(range(0, 6))->map(fn ($d) => [
+            'dia' => $diasSemana[$d],
+            'valor' => round((float) ($porDia[$d] ?? collect())->sum('valor_final'), 2),
+        ])->values();
+        $desempenhoEstabelecimentos = $locais->map(function ($local) use ($agendamentosDoMes) {
+            $doLocal = $agendamentosDoMes->where('estabelecimento_id', $local->id);
+            $feitos = $doLocal->where('status', 'finalizado');
+            return [
+                'nome' => $local->nome,
+                'atendimentos' => $feitos->count(),
+                'receita' => round((float) $feitos->sum('valor_final'), 2),
+                'ticket_medio' => $feitos->count() ? round((float) $feitos->sum('valor_final') / $feitos->count(), 2) : 0,
+                'cancelamento' => $doLocal->count() ? round($doLocal->where('status', 'cancelado')->count() / $doLocal->count() * 100, 1) : 0,
+                'clientes' => $doLocal->pluck('usuario_id')->unique()->count(),
+                'avaliacao' => $local->avaliacao_media ? round((float) $local->avaliacao_media, 1) : null,
+            ];
+        })->sortByDesc('receita')->values();
+        $notas = $finalizadosDoMes->whereNotNull('nota');
+
         return [
             'bloqueado' => false,
+            'receita_por_estabelecimento' => $receitaPorEstabelecimento,
+            'receita_por_hora' => $receitaPorHora,
+            'receita_por_dia_semana' => $receitaPorDiaSemana,
+            'desempenho_estabelecimentos' => $desempenhoEstabelecimentos,
             'faturamento_por_mes' => $faturamentoPorMes,
             'resumo' => [
                 'faturamento_mes_atual' => $faturamentoMesAtual,
@@ -145,6 +184,9 @@ class RelatorioAvancadoService
                 'atendimentos_mes' => $finalizadosDoMes->count(),
                 'clientes_novos' => $clientesNovos,
                 'clientes_recorrentes' => $clientesRecorrentes,
+                'agendamentos_mes' => $agendamentosDoMes->count(),
+                'avaliacao_media' => $notas->count() ? round((float) $notas->avg('nota'), 1) : null,
+                'avaliacoes_mes' => $notas->count(),
             ],
             'ranking_funcionarios' => $rankingFuncionarios,
             'servicos_mais_vendidos' => $servicosMaisVendidos,

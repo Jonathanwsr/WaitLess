@@ -262,7 +262,6 @@ class MobileHomeController extends Controller
             // Premium usa pontos até este % do pedido mesmo onde o local não aceita (PontosService::limiteDePontos).
             'pontos_premium' => [
                 'ativo' => $user->isPremium(),
-                'percentual' => \App\Services\PontosService::percentualPremiumSemAceite(),
             ],
             'nivel' => \App\Support\NiveisFidelidade::para($pontosGanhos),
             'saldos' => $saldos,

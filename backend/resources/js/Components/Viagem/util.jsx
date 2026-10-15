@@ -1,5 +1,5 @@
 import {
-    HomeModernIcon, TruckIcon, SparklesIcon, MapPinIcon, ClockIcon, StarIcon,
+    HomeModernIcon, TruckIcon, SparklesIcon, MapPinIcon, ClockIcon, StarIcon, ShoppingBagIcon,
 } from '@heroicons/react/24/solid';
 
 export const fmt = (v) => `R$ ${Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -17,6 +17,7 @@ export const TIPOS = {
     atracao: { nome: 'Passeio', icone: MapPinIcon, cor: 'bg-emerald-50 text-emerald-600' },
     livre: { nome: 'Tempo livre', icone: ClockIcon, cor: 'bg-gray-100 text-gray-500' },
     personalizado: { nome: 'Compromisso', icone: StarIcon, cor: 'bg-amber-50 text-amber-600' },
+    produto: { nome: 'Produto', icone: ShoppingBagIcon, cor: 'bg-pink-50 text-pink-600' },
 };
 
 export const STATUS_ITEM = {

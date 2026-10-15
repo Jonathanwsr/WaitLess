@@ -8,11 +8,11 @@ use Illuminate\Database\Eloquent\Model;
 class Servico extends Model
 {
 
-      use SoftDeletes; 
-      
+      use SoftDeletes;
+
     protected $guarded = ['id'];
-     
-   
+
+
     protected $casts = [
         'configuracoes' => 'array',
         'ativo' => 'boolean',
@@ -27,6 +27,17 @@ class Servico extends Model
     public function estabelecimento()
     {
         return $this->belongsTo(Estabelecimento::class);
+    }
+
+    /** Sem horários fixos: o cliente combina o horário direto com o dono (chat ou telefone). */
+    public function horarioACombinar(): bool
+    {
+        $cfg = $this->configuracoes;
+        if (is_string($cfg)) {
+            $cfg = json_decode($cfg, true);
+        }
+
+        return is_array($cfg) && !empty($cfg['horario_a_combinar']);
     }
 
     public function agendamentos()

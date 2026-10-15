@@ -121,7 +121,8 @@ class EstabelecimentoCatalogoMobileController extends Controller
 
             $user = Auth::user();
             $servico = Servico::findOrFail($request->servico_id);
-            $valorFinal = $servico->valor;
+            // Valor com a promoção cadastrada no serviço.
+            $valorFinal = app(\App\Services\PrecificacaoService::class)->comPromocao((float) $servico->valor, (bool) ($servico->tem_promocao ?? false), $servico->tipo_desconto ?? null, $servico->valor_desconto ?? null);
 
             $cupomAplicado = null;
             $valorDescontoCupom = 0.0;

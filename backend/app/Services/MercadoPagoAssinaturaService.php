@@ -22,7 +22,7 @@ class MercadoPagoAssinaturaService
         }
 
         $response = Http::withToken($token)->post('https://api.mercadopago.com/preapproval', [
-            'reason' => 'WaitLess - Plano ' . ucfirst($assinatura->nome_plano),
+            'reason' => 'Lokyva - Plano ' . ucfirst($assinatura->nome_plano),
             'auto_recurring' => [
                 'frequency' => 1,
                 'frequency_type' => 'months',

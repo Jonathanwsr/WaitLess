@@ -39,6 +39,12 @@ class TravelAssistantController extends Controller
         $pessoas = (int) $request->input('pessoas', 1);
         $orcamentoLimite = $request->filled('orcamento_limite') ? (float) $request->input('orcamento_limite') : null;
 
+        // Abrir a página sem destino: mostra a tela de busca na hora, sem consultar Wikipédia/Unsplash à toa.
+        $ehAjax = ($request->ajax() || $request->wantsJson()) && !$request->header('X-Inertia');
+        if (!$ehAjax && !$busca && !($lat && $lng)) {
+            return Inertia::render('Cliente/TravelAssistant');
+        }
+
         $destinoNome = $busca ?? 'Sua Localização';
 
         // 1. Buscar Estabelecimentos e Serviços Locais no Banco de Dados
@@ -72,8 +78,12 @@ class TravelAssistantController extends Controller
             $reservasUsuario = $this->buscarReservasUsuario(Auth::id(), $destinoNome);
         }
 
-        return Inertia::render('Cliente/TravelAssistant', [
+        // Estabelecimentos do destino (lojas, restaurantes, serviços) para a seção "Lugares no destino".
+        $estabelecimentosLocais = $this->estabelecimentosDoDestino($busca, $lat, $lng, $raio);
+
+        $dados = [
             'destino_detectado' => (string) $destinoNome,
+            'estabelecimentos_locais' => $estabelecimentosLocais,
             'coordenadas_pesquisadas' => ($lat && $lng) ? ['lat' => (float)$lat, 'lng' => (float)$lng] : null,
             'resumo_wikipedia' => $wikiInfo,
             'galeria_unsplash' => $imagens,
@@ -86,7 +96,43 @@ class TravelAssistantController extends Controller
                 'pessoas' => $pessoas,
                 'orcamento_limite' => $orcamentoLimite
             ]
-        ]);
+        ];
+
+        // A tela do assistente busca por AJAX: devolve JSON (antes devolvia a página inteira em HTML
+        // e os resultados nunca apareciam). Navegação normal continua abrindo a página.
+        if (($request->ajax() || $request->wantsJson()) && !$request->header('X-Inertia')) {
+            return response()->json($dados);
+        }
+
+        return Inertia::render('Cliente/TravelAssistant', $dados);
+    }
+
+    /** Lojas, restaurantes e serviços ativos no destino (pela cidade/nome digitado ou perto das coordenadas). */
+    private function estabelecimentosDoDestino(?string $busca, $lat, $lng, int $raio)
+    {
+        if ($lat && $lng) {
+            $query = \App\Models\Estabelecimento::withinDistance($lat, $lng, $raio);
+        } elseif ($busca) {
+            $termo = '%' . trim($busca) . '%';
+            $query = \App\Models\Estabelecimento::where('ativo', true)
+                ->where(fn ($q) => $q->where('cidade', 'ilike', $termo)->orWhere('estado', 'ilike', $termo)
+                    ->orWhere('bairro', 'ilike', $termo)->orWhere('nome', 'ilike', $termo)->orWhere('ramo_atuacao', 'ilike', $termo));
+        } else {
+            return collect();
+        }
+
+        $foto = fn ($c) => !$c ? null : (str_starts_with($c, 'http') ? $c : '/storage/' . ltrim($c, '/'));
+
+        return $query->limit(12)->get()->map(fn ($e) => [
+            'id' => $e->id,
+            'nome' => $e->nome,
+            'ramo' => $e->ramo_atuacao,
+            'cidade' => $e->cidade,
+            'bairro' => $e->bairro,
+            'foto' => $foto($e->foto_banner) ?? $foto($e->foto_perfil),
+            'avaliacao' => $e->avaliacao_media ? round((float) $e->avaliacao_media, 1) : null,
+            'distancia' => isset($e->distancia) ? round((float) $e->distancia, 1) : null,
+        ])->values();
     }
 
     /**
@@ -301,13 +347,13 @@ class TravelAssistantController extends Controller
         return ItemAluguel::with('estabelecimento:id,name,endereco,cidade,estado,latitude,longitude,foto_perfil')
             ->where('ativo', true)
             ->where(function ($query) use ($likeTermo) {
-                $query->where('nome', 'like', $likeTermo)
-                      ->orWhere('categoria', 'like', $likeTermo)
+                $query->where('nome', 'ilike', $likeTermo)
+                      ->orWhere('categoria', 'ilike', $likeTermo)
                       ->orWhereHas('estabelecimento', function ($q) use ($likeTermo) {
-                          $q->where('cidade', 'like', $likeTermo)
-                            ->orWhere('estado', 'like', $likeTermo)
-                            ->orWhere('name', 'like', $likeTermo)
-                            ->orWhere('bairro', 'like', $likeTermo);
+                          $q->where('cidade', 'ilike', $likeTermo)
+                            ->orWhere('estado', 'ilike', $likeTermo)
+                            ->orWhere('name', 'ilike', $likeTermo)
+                            ->orWhere('bairro', 'ilike', $likeTermo);
                       });
             })
             ->take(15)
@@ -323,32 +369,38 @@ class TravelAssistantController extends Controller
         if (!$accessKey) {
             return [[
                 'url' => 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1200',
-                'descricao' => 'Praia Padrão (Configure sua UNSPLASH_ACCESS_KEY no .env)',
-                'autor' => 'Inertia System'
+                'descricao' => 'Imagem ilustrativa',
+                'autor' => 'Unsplash'
             ]];
         }
 
-        $response = Http::get("https://api.unsplash.com/search/photos", [
-            'query' => $local . ' turismo',
-            'client_id' => $accessKey,
-            'per_page' => 6,
-            'orientation' => 'landscape'
-        ]);
+        // Serviço externo: se cair, demorar ou responder fora do formato, usa a imagem padrão.
+        try {
+            $response = Http::timeout(6)->get("https://api.unsplash.com/search/photos", [
+                'query' => $local . ' turismo',
+                'client_id' => $accessKey,
+                'per_page' => 6,
+                'orientation' => 'landscape'
+            ]);
+            $resultados = $response->successful() ? ($response->json('results') ?? []) : [];
+        } catch (\Throwable $e) {
+            $resultados = [];
+        }
 
-        if ($response->successful() && count($response->json()['results']) > 0) {
-            return collect($response->json()['results'])->map(function ($img) {
+        if (is_array($resultados) && count($resultados) > 0) {
+            return collect($resultados)->filter(fn ($img) => isset($img['urls']['regular']))->map(function ($img) {
                 return [
                     'url' => (string) $img['urls']['regular'],
-                    'descricao' => (string) ($img['alt_description'] ?? 'Foto de ' . $img['user']['name']),
-                    'autor' => (string) $img['user']['name']
+                    'descricao' => (string) ($img['alt_description'] ?? 'Foto do destino'),
+                    'autor' => (string) ($img['user']['name'] ?? 'Unsplash')
                 ];
-            })->all();
+            })->values()->all();
         }
 
         return [[
             'url' => 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1200',
-            'descricao' => 'Nenhuma imagem específica encontrada para ' . $local,
-            'autor' => 'Unsplash Fallback'
+            'descricao' => 'Imagem ilustrativa',
+            'autor' => 'Unsplash'
         ]];
     }
 
@@ -357,11 +409,15 @@ class TravelAssistantController extends Controller
      */
     private function buscarInfoWikipedia($local)
     {
-        $response = Http::withHeaders([
-            'User-Agent' => 'WaitlessApp/1.0 (contato@seusite.com)'
-        ])->get("https://pt.wikipedia.org/api/rest_v1/page/summary/" . urlencode($local));
+        try {
+            $response = Http::timeout(6)->withHeaders([
+                'User-Agent' => 'LokyvaApp/1.0 (contato@seusite.com)'
+            ])->get("https://pt.wikipedia.org/api/rest_v1/page/summary/" . urlencode($local));
+        } catch (\Throwable $e) {
+            $response = null;
+        }
 
-        if ($response->successful()) {
+        if ($response && $response->successful() && is_array($response->json())) {
             $data = $response->json();
             return [
                 'titulo' => (string) ($data['title'] ?? $local),

@@ -124,13 +124,16 @@ class ContaPontosTest extends TestCase
         $this->assertSame(100000, PontosService::limiteDePontos($user, $this->servico(true), 100));
     }
 
-    public function test_sem_aceite_so_premium_usa_pontos_com_limite_de_20_por_cento(): void
+    public function test_premium_usa_pontos_sem_limite_em_qualquer_servico(): void
     {
-        $servico = $this->servico(false);
+        $semAceite = $this->servico(false);
+        $comLimite = $this->servico(true, 5000);
+        $premium = $this->usuario('user', 'premium');
 
-        $this->assertNull(PontosService::limiteDePontos($this->usuario(), $servico, 100));
-        // 20% de R$ 100 = R$ 20 = 20.000 pontos
-        $this->assertSame(20000, PontosService::limiteDePontos($this->usuario('user', 'premium'), $servico, 100));
+        $this->assertNull(PontosService::limiteDePontos($this->usuario(), $semAceite, 100));
+        // R$ 100 = 100.000 pontos: o pedido inteiro, mesmo sem aceite e acima do limite do local.
+        $this->assertSame(100000, PontosService::limiteDePontos($premium, $semAceite, 100));
+        $this->assertSame(100000, PontosService::limiteDePontos($premium, $comLimite, 100));
     }
 
     public function test_pontos_para_pedido_respeita_saldo_e_limite_premium(): void
@@ -139,7 +142,8 @@ class ContaPontosTest extends TestCase
         $premium->update(['pontos_saldo' => 50000]);
         $servico = $this->servico(false);
 
-        $this->assertSame(20000, PontosService::pontosParaPedido($premium->fresh(), $servico, 50000, 100));
+        // Premium usa todo o saldo pedido (50.000), limitado só ao valor do pedido.
+        $this->assertSame(50000, PontosService::pontosParaPedido($premium->fresh(), $servico, 50000, 100));
         $this->assertSame(0, PontosService::pontosParaPedido($this->usuario(), $servico, 50000, 100));
     }
 

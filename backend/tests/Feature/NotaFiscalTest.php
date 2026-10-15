@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Services\NotaFiscalService;
 use App\Services\PagamentoService;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
@@ -23,7 +24,13 @@ class NotaFiscalTest extends TestCase
 {
     use DatabaseTransactions;
 
-    private function criarSocioComProvider(string $plano = 'premium-socio', bool $expirado = false): array
+    protected function setUp(): void
+    {
+        parent::setUp();
+        config(['services.asaas.key' => 'chave_master', 'notas_fiscais.comissao_ativa' => true, 'notas_fiscais.servico_codigo' => '10.05']);
+    }
+
+    private function criarSocioComProvider(string $plano = 'premium-socio', bool $expirado = false, bool $configurado = true): array
     {
         $socio = User::create([
             'name' => 'Socio NF', 'email' => 'nf' . uniqid() . '@x.com', 'password' => Hash::make('senha-teste-123'),
@@ -36,165 +43,245 @@ class NotaFiscalTest extends TestCase
 
         $provider = Provider::create([
             'user_id' => $socio->id, 'name' => $socio->name, 'email' => $socio->email,
-            'document' => (string) random_int(10000000000, 99999999999), 'pix_key_type' => 'CPF', 'pix_key' => '123',
-            'person_type' => 'FISICA', 'mobile_phone' => '11999998888',
+            'document' => '11222333000181', 'pix_key_type' => 'CNPJ', 'pix_key' => '123',
+            'person_type' => 'JURIDICA', 'mobile_phone' => '11999998888',
             'postal_code' => '01000000', 'address' => 'Rua Teste', 'address_number' => '100', 'province' => 'Centro',
-            'asaas_api_key' => 'provider_key_' . uniqid(),
+            'asaas_api_key' => 'chave_socio_' . uniqid(), 'asaas_wallet_id' => 'wal_' . uniqid(),
         ]);
+
+        if ($configurado) {
+            $provider->update(['nfse_servico_codigo' => '06.01', 'nfse_servico_nome' => 'Barbearia', 'nfse_iss' => 2]);
+        }
 
         return [$socio, $estabelecimento, $provider];
     }
 
-    private function criarPagamento(Estabelecimento $estabelecimento): Pagamento
+    private function criarCliente(): User
     {
-        $cliente = User::create(['name' => 'Cliente NF', 'email' => 'cli' . uniqid() . '@x.com', 'password' => Hash::make('senha-teste-123'), 'papel' => 'user']);
+        return User::create([
+            'name' => 'Cliente NF', 'email' => 'cli' . uniqid() . '@x.com', 'password' => Hash::make('senha-teste-123'),
+            'papel' => 'user', 'cpf_cnpj' => '52998224725',
+        ]);
+    }
 
+    private function criarPagamento(Estabelecimento $estabelecimento, string $status = 'pago'): Pagamento
+    {
         return Pagamento::create([
-            'usuario_id' => $cliente->id, 'estabelecimento_id' => $estabelecimento->id,
-            'valor' => 100, 'valor_total' => 100, 'valor_liquido' => 99, 'metodo_pagamento' => 'pix',
-            'status' => 'pago', 'id_transacao_gateway' => 'pay_' . uniqid(),
+            'usuario_id' => $this->criarCliente()->id, 'estabelecimento_id' => $estabelecimento->id,
+            'valor' => 100, 'valor_total' => 100, 'taxa' => 6, 'valor_liquido' => 94, 'metodo_pagamento' => 'pix',
+            'status' => $status, 'id_transacao_gateway' => 'pay_' . uniqid(),
         ]);
     }
 
-    public function test_emite_nota_fiscal_com_sucesso_para_socio_premium(): void
+    private function fakeAsaas(array $invoice = ['status' => 'SCHEDULED']): void
     {
-        [, $estabelecimento] = $this->criarSocioComProvider('premium-socio');
-        $pagamento = $this->criarPagamento($estabelecimento);
-
-        Http::fake([
-            '*/invoices' => Http::response(['id' => 'inv_123', 'status' => 'SCHEDULED', 'pdfUrl' => null], 200),
-        ]);
-
-        $nota = app(NotaFiscalService::class)->emitirParaPagamento($pagamento);
-
-        $this->assertNotNull($nota);
-        $this->assertSame('AGENDADA', $nota->status);
-        $this->assertSame('inv_123', $nota->asaas_invoice_id);
-        $this->assertSame($pagamento->id, $nota->pagamento_id);
+        // Cada nota recebe um id próprio no Asaas.
+        Http::fake(fn (Request $r) => match (true) {
+            str_ends_with($r->url(), '/cancel') => Http::response(['status' => 'CANCELED'], 200),
+            str_contains($r->url(), '/customers') => Http::response(['data' => [], 'id' => 'cus_' . uniqid()], 200),
+            default => Http::response(['id' => 'inv_' . uniqid('', true)] + $invoice, 200),
+        });
     }
 
-    public function test_nao_emite_para_socio_fora_do_plano_premium_socio(): void
+    private function notas(Pagamento $p): array
     {
-        [, $estabelecimento] = $this->criarSocioComProvider('premium-anual'); // premium base, não "sócio"
-        $pagamento = $this->criarPagamento($estabelecimento);
-
-        Http::fake(['*/invoices' => Http::response(['id' => 'inv_999'], 200)]);
-
-        $nota = app(NotaFiscalService::class)->emitirParaPagamento($pagamento);
-
-        $this->assertNull($nota);
-        $this->assertDatabaseCount('notas_fiscais', 0);
-        Http::assertNothingSent();
+        return NotaFiscal::where('pagamento_id', $p->id)->get()->keyBy('tipo')->all();
     }
 
-    public function test_nao_emite_quando_plano_socio_premium_esta_expirado(): void
+    public function test_pagamento_gera_nota_da_venda_pelo_socio_e_nota_da_comissao_pela_lokyva(): void
+    {
+        [, $estabelecimento, $provider] = $this->criarSocioComProvider();
+        $pagamento = $this->criarPagamento($estabelecimento);
+        $this->fakeAsaas();
+
+        $venda = app(NotaFiscalService::class)->emitirParaPagamento($pagamento);
+
+        $notas = $this->notas($pagamento);
+        $this->assertSame('venda', $venda->tipo);
+        $this->assertEquals(100, $notas['venda']->valor);
+        $this->assertSame('AGENDADA', $notas['venda']->status);
+
+        $this->assertEquals(6, $notas['comissao']->valor);
+        $this->assertEquals(100, $notas['comissao']->valor_operacao);
+        $this->assertEquals(6, $notas['comissao']->percentual);
+        $this->assertSame($provider->user_id, $notas['comissao']->usuario_id);
+        $this->assertNotNull($provider->fresh()->asaas_cliente_plataforma_id);
+
+        // A venda sai pela subconta do sócio, com o cliente da subconta e a configuração fiscal dele.
+        Http::assertSent(fn (Request $r) => str_ends_with($r->url(), '/invoices')
+            && $r->header('access_token')[0] === $provider->asaas_api_key
+            && $r['value'] == 100 && isset($r['customer']) && !isset($r['payment'])
+            && $r['municipalServiceCode'] === '06.01' && $r['taxes']['iss'] == 2);
+
+        // A comissão sai pela conta principal, só pelo valor da taxa.
+        Http::assertSent(fn (Request $r) => str_ends_with($r->url(), '/invoices')
+            && $r->header('access_token')[0] === 'chave_master'
+            && $r['value'] == 6 && $r['municipalServiceCode'] === '10.05');
+    }
+
+    public function test_socio_fora_do_premium_recebe_so_a_nota_da_comissao(): void
+    {
+        [, $estabelecimento] = $this->criarSocioComProvider('premium-anual');
+        $pagamento = $this->criarPagamento($estabelecimento);
+        $this->fakeAsaas();
+
+        $this->assertNull(app(NotaFiscalService::class)->emitirParaPagamento($pagamento));
+        $this->assertSame(['comissao'], array_keys($this->notas($pagamento)));
+    }
+
+    public function test_premium_expirado_tambem_recebe_so_a_comissao(): void
     {
         [, $estabelecimento] = $this->criarSocioComProvider('premium-socio', expirado: true);
         $pagamento = $this->criarPagamento($estabelecimento);
+        $this->fakeAsaas();
 
-        $nota = app(NotaFiscalService::class)->emitirParaPagamento($pagamento);
-
-        $this->assertNull($nota);
+        $this->assertNull(app(NotaFiscalService::class)->emitirParaPagamento($pagamento));
+        $this->assertSame(['comissao'], array_keys($this->notas($pagamento)));
     }
 
-    public function test_falha_por_falta_de_configuracao_fiscal_fica_registrada_graciosamente(): void
+    public function test_sem_configuracao_fiscal_a_venda_fica_pendente_sem_chamar_o_asaas(): void
     {
-        [, $estabelecimento] = $this->criarSocioComProvider('premium-socio-anual');
+        [, $estabelecimento, $provider] = $this->criarSocioComProvider(configurado: false);
         $pagamento = $this->criarPagamento($estabelecimento);
+        $this->fakeAsaas();
 
+        $venda = app(NotaFiscalService::class)->emitirParaPagamento($pagamento);
+
+        $this->assertSame('NAO_CONFIGURADO', $venda->status);
+        $this->assertStringContainsString('configuração fiscal', $venda->mensagem_erro);
+        Http::assertNotSent(fn (Request $r) => str_ends_with($r->url(), '/invoices') && $r->header('access_token')[0] === $provider->asaas_api_key);
+        $this->assertSame('AGENDADA', $this->notas($pagamento)['comissao']->status);
+    }
+
+    public function test_recusa_do_asaas_por_falta_de_cadastro_fiscal_fica_registrada(): void
+    {
+        [, $estabelecimento] = $this->criarSocioComProvider();
+        $pagamento = $this->criarPagamento($estabelecimento);
         Http::fake([
+            '*/customers*' => Http::response(['data' => [['id' => 'cus_existente']]], 200),
             '*/invoices' => Http::response(['errors' => [['description' => 'Município não configurado para emissão de notas fiscais.']]], 400),
         ]);
 
-        $nota = app(NotaFiscalService::class)->emitirParaPagamento($pagamento);
+        $venda = app(NotaFiscalService::class)->emitirParaPagamento($pagamento);
 
-        $this->assertNotNull($nota);
-        $this->assertSame('NAO_CONFIGURADO', $nota->status);
-        $this->assertStringContainsString('Município', $nota->mensagem_erro);
+        $this->assertSame('NAO_CONFIGURADO', $venda->status);
+        $this->assertStringContainsString('Município', $venda->mensagem_erro);
     }
 
-    public function test_nao_tenta_emitir_duas_vezes_para_o_mesmo_pagamento(): void
+    public function test_nao_emite_duas_vezes_para_o_mesmo_pagamento(): void
     {
-        [, $estabelecimento] = $this->criarSocioComProvider('premium-socio');
+        [, $estabelecimento] = $this->criarSocioComProvider();
         $pagamento = $this->criarPagamento($estabelecimento);
+        $this->fakeAsaas();
 
-        Http::fake(['*/invoices' => Http::response(['id' => 'inv_1'], 200)]);
         app(NotaFiscalService::class)->emitirParaPagamento($pagamento);
+        $this->assertNull(app(NotaFiscalService::class)->emitirParaPagamento($pagamento));
 
-        Http::fake(['*/invoices' => Http::response(['id' => 'inv_2'], 200)]);
-        $segunda = app(NotaFiscalService::class)->emitirParaPagamento($pagamento);
-
-        $this->assertNull($segunda);
-        $this->assertDatabaseCount('notas_fiscais', 1);
+        $this->assertSame(2, NotaFiscal::where('pagamento_id', $pagamento->id)->count());
     }
 
-    public function test_tentar_novamente_substitui_a_nota_com_erro_por_uma_bem_sucedida(): void
+    public function test_tentar_novamente_substitui_a_nota_com_erro(): void
     {
-        [, $estabelecimento] = $this->criarSocioComProvider('premium-socio');
+        [, $estabelecimento] = $this->criarSocioComProvider();
         $pagamento = $this->criarPagamento($estabelecimento);
-
-        Http::fakeSequence('*/invoices')
-            ->push(['errors' => [['description' => 'Erro genérico de validação.']]], 400)
-            ->push(['id' => 'inv_retry', 'status' => 'SCHEDULED'], 200);
-
-        $notaComErro = app(NotaFiscalService::class)->emitirParaPagamento($pagamento);
-        $this->assertSame('ERRO', $notaComErro->status);
-
-        $notaCorrigida = app(NotaFiscalService::class)->tentarNovamente($notaComErro);
-
-        $this->assertSame('AGENDADA', $notaCorrigida->status);
-        $this->assertSame('inv_retry', $notaCorrigida->asaas_invoice_id);
-        $this->assertDatabaseCount('notas_fiscais', 1);
-    }
-
-    public function test_webhook_asaas_aciona_a_emissao_automatica_ao_confirmar_pagamento(): void
-    {
-        [, $estabelecimento] = $this->criarSocioComProvider('premium-socio');
-        $pagamento = Pagamento::create([
-            'usuario_id' => User::create(['name' => 'Cliente WH', 'email' => 'cliwh' . uniqid() . '@x.com', 'password' => Hash::make('senha-teste-123'), 'papel' => 'user'])->id,
-            'estabelecimento_id' => $estabelecimento->id,
-            'valor' => 80, 'valor_total' => 80, 'valor_liquido' => 79.2, 'metodo_pagamento' => 'pix',
-            'status' => 'pendente', 'id_transacao_gateway' => 'pay_wh_' . uniqid(),
+        Http::fake([
+            '*/customers*' => Http::response(['data' => [['id' => 'cus_existente']]], 200),
+            '*/invoices' => Http::sequence()
+                ->push(['id' => 'inv_comissao', 'status' => 'SCHEDULED'], 200)
+                ->push(['errors' => [['description' => 'Erro genérico de validação.']]], 400)
+                ->push(['id' => 'inv_retry', 'status' => 'SCHEDULED'], 200),
         ]);
 
-        Http::fake(['*/invoices' => Http::response(['id' => 'inv_wh', 'status' => 'SCHEDULED'], 200)]);
+        $comErro = app(NotaFiscalService::class)->emitirParaPagamento($pagamento);
+        $this->assertSame('ERRO', $comErro->status);
 
-        $response = $this->postJson('/api/webhook/asaas', [
+        $corrigida = app(NotaFiscalService::class)->tentarNovamente($comErro);
+
+        $this->assertSame('AGENDADA', $corrigida->status);
+        $this->assertSame('inv_retry', $corrigida->asaas_invoice_id);
+        $this->assertSame(2, NotaFiscal::where('pagamento_id', $pagamento->id)->count());
+    }
+
+    public function test_webhook_de_pagamento_confirmado_emite_as_notas(): void
+    {
+        [, $estabelecimento] = $this->criarSocioComProvider();
+        $pagamento = $this->criarPagamento($estabelecimento, 'pendente');
+        $this->fakeAsaas();
+
+        $this->postJson('/api/webhook/asaas', [
             'event' => 'PAYMENT_CONFIRMED',
             'payment' => ['id' => $pagamento->id_transacao_gateway],
-        ]);
+        ])->assertOk();
 
-        $response->assertOk();
-        $nota = NotaFiscal::where('pagamento_id', $pagamento->id)->first();
-        $this->assertNotNull($nota);
-        $this->assertSame('AGENDADA', $nota->status);
+        $this->assertEqualsCanonicalizing(['venda', 'comissao'], array_keys($this->notas($pagamento)));
     }
 
-    public function test_emite_email_com_a_nota_fiscal_para_o_cliente(): void
+    public function test_email_sai_quando_a_prefeitura_autoriza_a_nota(): void
     {
         Mail::fake();
-        [, $estabelecimento] = $this->criarSocioComProvider('premium-socio');
+        [, $estabelecimento] = $this->criarSocioComProvider();
         $pagamento = $this->criarPagamento($estabelecimento);
+        $this->fakeAsaas();
 
-        Http::fake(['*/invoices' => Http::response(['id' => 'inv_mail', 'status' => 'SCHEDULED'], 200)]);
-        $nota = app(NotaFiscalService::class)->emitirParaPagamento($pagamento);
+        $venda = app(NotaFiscalService::class)->emitirParaPagamento($pagamento);
+        Mail::assertNothingQueued();
 
-        Mail::assertQueued(NotaFiscalEmitidaMail::class, function ($mail) use ($nota) {
-            return $mail->notaFiscal->id === $nota->id;
-        });
+        $this->postJson('/api/webhook/asaas', [
+            'event' => 'INVOICE_AUTHORIZED',
+            'invoice' => ['id' => $venda->asaas_invoice_id, 'status' => 'AUTHORIZED', 'number' => '123', 'pdfUrl' => 'https://asaas.test/nf.pdf', 'xmlUrl' => 'https://asaas.test/nf.xml'],
+        ])->assertOk();
+
+        $venda->refresh();
+        $this->assertSame('AUTORIZADA', $venda->status);
+        $this->assertSame('123', $venda->numero);
+        $this->assertSame('https://asaas.test/nf.xml', $venda->xml_url);
+        $this->assertNotNull($venda->emitida_em);
+        Mail::assertQueued(NotaFiscalEmitidaMail::class, fn ($m) => $m->notaFiscal->id === $venda->id && $m->hasTo($pagamento->usuario->email));
         Mail::assertQueued(NotaFiscalEmitidaMail::class, 1);
     }
 
-    public function test_pagamento_com_cartao_aprovado_na_hora_tambem_aciona_nota_fiscal_de_entrega(): void
+    public function test_sincronizacao_atualiza_notas_agendadas(): void
+    {
+        [, $estabelecimento] = $this->criarSocioComProvider();
+        $pagamento = $this->criarPagamento($estabelecimento);
+        // POST cria a nota agendada; o GET de sincronização devolve a mesma nota já autorizada.
+        Http::fake(fn (Request $r) => match (true) {
+            str_contains($r->url(), '/customers') => Http::response(['data' => [['id' => 'cus_existente']]], 200),
+            $r->method() === 'GET' => Http::response(['id' => basename($r->url()), 'status' => 'AUTHORIZED', 'pdfUrl' => 'https://asaas.test/x.pdf'], 200),
+            default => Http::response(['id' => 'inv_' . uniqid('', true), 'status' => 'SCHEDULED'], 200),
+        });
+        app(NotaFiscalService::class)->emitirParaPagamento($pagamento);
+
+        $this->artisan('notas:sincronizar')->assertSuccessful();
+
+        $this->assertSame(['AUTORIZADA'], NotaFiscal::where('pagamento_id', $pagamento->id)->pluck('status')->unique()->values()->all());
+    }
+
+    public function test_estorno_cancela_as_notas_da_venda_e_da_comissao(): void
+    {
+        [, $estabelecimento] = $this->criarSocioComProvider();
+        $pagamento = $this->criarPagamento($estabelecimento);
+        $this->fakeAsaas();
+        app(NotaFiscalService::class)->emitirParaPagamento($pagamento);
+
+        $this->postJson('/api/webhook/asaas', [
+            'event' => 'PAYMENT_REFUNDED',
+            'payment' => ['id' => $pagamento->id_transacao_gateway],
+        ])->assertOk();
+
+        $this->assertSame(['CANCELADA'], NotaFiscal::where('pagamento_id', $pagamento->id)->pluck('status')->unique()->values()->all());
+        Http::assertSent(fn (Request $r) => str_ends_with($r->url(), '/cancel'));
+    }
+
+    public function test_pagamento_com_cartao_aprovado_na_hora_tambem_aciona_as_notas_de_entrega(): void
     {
         [$socio, $estabelecimento] = $this->criarSocioComProvider('premium-socio-anual');
-        $this->criarProviderComWalletAsaas($socio);
 
         $produto = ProdutoEntrega::create([
             'usuario_id' => $socio->id, 'nome' => 'Botijão de Gás P13', 'valor' => 50,
             'estoque_disponivel' => 10, 'ativo' => true,
         ]);
-        $cliente = User::create(['name' => 'Cliente Cartao', 'email' => 'cartao' . uniqid() . '@x.com', 'password' => Hash::make('senha-teste-123'), 'papel' => 'user']);
+        $cliente = $this->criarCliente();
 
         $pedido = PedidoEntrega::create([
             'codigo_pedido' => 'ENT-NF-' . uniqid(), 'cliente_id' => $cliente->id, 'produto_entrega_id' => $produto->id,
@@ -205,6 +292,7 @@ class NotaFiscalTest extends TestCase
 
         Http::fake([
             '*/payments' => Http::response(['id' => 'pay_cartao_' . uniqid(), 'status' => 'CONFIRMED', 'invoiceUrl' => 'https://asaas.test/invoice', 'pixQrCode' => null], 200),
+            '*/customers*' => Http::response(['data' => [['id' => 'cus_existente']]], 200),
             '*/invoices' => Http::response(['id' => 'inv_cartao', 'status' => 'SCHEDULED'], 200),
         ]);
 
@@ -216,14 +304,12 @@ class NotaFiscalTest extends TestCase
 
         $this->assertTrue($resultado['aprovado']);
         $pagamento = Pagamento::where('pedido_entrega_id', $pedido->id)->first();
-        $this->assertSame('pago', $pagamento->status);
-
-        $nota = NotaFiscal::where('pagamento_id', $pagamento->id)->first();
-        $this->assertNotNull($nota, 'Pagamento com cartão aprovado na hora deveria acionar a emissão de nota fiscal, sem depender do webhook.');
-        $this->assertSame('venda', $nota->tipo);
+        $notas = $this->notas($pagamento);
+        $this->assertEqualsCanonicalizing(['venda', 'comissao'], array_keys($notas));
+        $this->assertEquals(0.5, $notas['comissao']->valor); // 1% de R$ 50
     }
 
-    public function test_emite_nota_fiscal_da_propria_plataforma_para_assinatura_de_socio_ou_cliente(): void
+    public function test_emite_nota_da_propria_plataforma_para_assinatura(): void
     {
         Mail::fake();
         $assinante = User::create([
@@ -236,21 +322,18 @@ class NotaFiscalTest extends TestCase
             'data_inicio' => now(), 'data_vencimento' => now()->addYear(), 'fatura_id' => 'pay_assinatura_' . uniqid(),
         ]);
 
-        Http::fake(['*/invoices' => Http::response(['id' => 'inv_assinatura', 'status' => 'SCHEDULED'], 200)]);
+        Http::fake(['*/invoices' => Http::response(['id' => 'inv_assinatura', 'status' => 'AUTHORIZED', 'pdfUrl' => 'https://asaas.test/a.pdf'], 200)]);
 
         $nota = app(NotaFiscalService::class)->emitirParaAssinatura($assinatura, $assinante);
 
-        $this->assertNotNull($nota);
         $this->assertSame('assinatura', $nota->tipo);
-        $this->assertSame($assinatura->id, $nota->assinatura_id);
-        $this->assertSame($assinante->id, $nota->usuario_id);
+        $this->assertSame('AUTORIZADA', $nota->status);
         $this->assertSame($assinatura->fatura_id, $nota->referencia_cobranca);
         Mail::assertQueued(NotaFiscalEmitidaMail::class);
+        Http::assertSent(fn (Request $r) => $r['payment'] === $assinatura->fatura_id && $r->header('access_token')[0] === 'chave_master');
 
-        // Mesma fatura não gera uma segunda nota (idempotência de renovação).
-        $segunda = app(NotaFiscalService::class)->emitirParaAssinatura($assinatura, $assinante);
-        $this->assertNull($segunda);
-        $this->assertDatabaseCount('notas_fiscais', 1);
+        $this->assertNull(app(NotaFiscalService::class)->emitirParaAssinatura($assinatura, $assinante));
+        $this->assertSame(1, NotaFiscal::where('assinatura_id', $assinatura->id)->count());
     }
 
     public function test_webhook_de_renovacao_de_assinatura_tambem_aciona_nota_fiscal_da_plataforma(): void
@@ -268,23 +351,38 @@ class NotaFiscalTest extends TestCase
 
         Http::fake(['*/invoices' => Http::response(['id' => 'inv_webhook_ass', 'status' => 'SCHEDULED'], 200)]);
 
-        $response = $this->postJson('/api/webhook/asaas', [
+        $this->postJson('/api/webhook/asaas', [
             'event' => 'PAYMENT_CONFIRMED',
             'payment' => ['id' => 'pay_cli_1', 'subscription' => $assinatura->gateway_assinatura_id],
-        ]);
+        ])->assertOk();
 
-        $response->assertOk();
         $nota = NotaFiscal::where('assinatura_id', $assinatura->id)->first();
-        $this->assertNotNull($nota);
         $this->assertSame('assinatura', $nota->tipo);
         $this->assertSame('pay_cli_1', $nota->referencia_cobranca);
     }
 
-    private function criarProviderComWalletAsaas(User $socio): Provider
+    public function test_socio_salva_a_configuracao_fiscal_e_ve_o_resumo(): void
     {
-        $provider = Provider::where('user_id', $socio->id)->first();
-        $provider->update(['asaas_wallet_id' => 'wal_' . uniqid()]);
+        [$socio, , $provider] = $this->criarSocioComProvider(configurado: false);
 
-        return $provider;
+        $this->actingAs($socio)->post(route('notas-fiscais.configuracao'), [
+            'nfse_servico_codigo' => '06.01', 'nfse_servico_nome' => 'Cabeleireiros', 'nfse_iss' => 3, 'nfse_retem_iss' => false,
+        ])->assertSessionHasNoErrors()->assertRedirect();
+
+        $provider->refresh();
+        $this->assertSame('06.01', $provider->nfse_servico_codigo);
+        $this->assertEquals(3, $provider->nfse_iss);
+
+        $this->actingAs($socio)->get(route('notas-fiscais.index', ['tipo' => 'comissao']))
+            ->assertOk()
+            ->assertInertia(fn ($p) => $p->component('Estabelecimentos/NotasFiscais')
+                ->where('ehSocio', true)
+                ->where('filtro', 'comissao')
+                ->where('configuracao.configurada', true)
+                ->has('resumo.comissoes_mes')
+                ->where('taxas.reservas', fn ($v) => (float) $v === 6.0));
+
+        $this->actingAs($socio)->post(route('notas-fiscais.configuracao'), ['nfse_iss' => 2])
+            ->assertSessionHasErrors(['nfse_servico_codigo', 'nfse_servico_nome']);
     }
 }

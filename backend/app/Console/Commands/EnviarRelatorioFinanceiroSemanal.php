@@ -33,12 +33,14 @@ class EnviarRelatorioFinanceiroSemanal extends Command
         // garante isso, porque não é rebaixado na hora do cancelamento (só no
         // fim do ciclo pago); asaas_subscription_status = CANCELLED é o sinal
         // imediato de que a pessoa já cancelou e não deve receber mais nada.
-        $usuariosPremium = User::where('plano_assinatura', 'premium')
+        // Todos os planos Premium de sócio (mensal, anual e Sócio Premium) — antes só o "premium" básico recebia.
+        $usuariosPremium = User::where('plano_assinatura', 'like', 'premium%')
             ->where(function ($q) {
                 $q->whereNull('asaas_subscription_status')
                     ->orWhere('asaas_subscription_status', '!=', 'CANCELLED');
             })
-            ->get();
+            ->get()
+            ->filter(fn (User $u) => $u->isPremium());
 
         $totalEnviados = 0;
         $totalFalhas = 0;

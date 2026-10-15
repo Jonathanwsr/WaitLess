@@ -105,8 +105,8 @@ class QaPagamentoAsaasTest extends TestCase
 
     public function test_reserva_online_tenta_gerar_cobranca_asaas_e_falha_de_forma_amigavel_sem_carteira(): void
     {
-        // O dono não tem carteira Asaas: o fluxo chega ao PagamentoService e falha com mensagem
-        // amigável, sem erro 500 e sem deixar a reserva no banco (rollback).
+        // O dono não tem carteira Asaas: o pagamento online é recusado logo na entrada, com mensagem
+        // amigável pedindo para pagar no local, sem erro 500 e sem deixar a reserva no banco.
         Http::fake();
         [$dono] = $this->local();
         $cliente = $this->usuario('user', 'Cliente');
@@ -120,7 +120,7 @@ class QaPagamentoAsaasTest extends TestCase
             'metodo_pagamento' => 'pix',
         ]);
 
-        $response->assertSessionHasErrors('error');
+        $response->assertSessionHasErrors('forma_pagamento');
         $this->assertEquals(0, Aluguel::where('item_aluguel_id', $item->id)->count(), 'Reserva deveria ter sido desfeita (rollback) apos falha no Asaas');
     }
 

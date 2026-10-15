@@ -32,7 +32,7 @@ class AsaasService
                 'value' => $amount,
                 'pixAddressKey' => $provider->pix_key,
                 'pixAddressKeyType' => $provider->pix_key_type,
-                'description' => "Repasse WaitLess - Serviço #{$serviceId}"
+                'description' => "Repasse Lokyva - Serviço #{$serviceId}"
             ]);
 
             if ($response->failed()) {

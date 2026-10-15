@@ -104,6 +104,42 @@ class ItemAluguel extends Model
         return self::categoriaPermiteEntrega($this->categoria);
     }
 
+    /**
+     * Local (estabelecimento) a que a reserva pertence, quando cadastrada no catálogo de um local.
+     * `estabelecimento_id` continua sendo SEMPRE o dono (users.id), como no Explorar e no pagamento.
+     */
+    public function local(): BelongsTo
+    {
+        return $this->belongsTo(Estabelecimento::class, 'local_id');
+    }
+
+    /** Dono (users.id) de um local: o sócio/proprietário vinculado; sem vínculo, quem está cadastrando. */
+    public static function donoDoLocal(int $localId): int
+    {
+        $dono = \Illuminate\Support\Facades\DB::table('estabelecimento_usuario')
+            ->where('estabelecimento_id', $localId)
+            ->orderByRaw("CASE WHEN tipo IN ('socio','proprietario') THEN 0 ELSE 1 END")
+            ->orderBy('id')
+            ->value('usuario_id');
+
+        return (int) ($dono ?: \Illuminate\Support\Facades\Auth::id());
+    }
+
+    /** Local do item para as telas do dono (itens antigos, sem local_id, guardavam o local em estabelecimento_id). */
+    public function localId(): int
+    {
+        return (int) ($this->local_id ?: $this->estabelecimento_id);
+    }
+
+    /** Nas telas de gestão o formulário trabalha com o id do LOCAL no campo estabelecimento_id. */
+    public function paraTelaDoDono(): static
+    {
+        $this->setAttribute('dono_id', $this->estabelecimento_id);
+        $this->setAttribute('estabelecimento_id', $this->localId());
+
+        return $this;
+    }
+
     public function estabelecimento(): BelongsTo
     {
         return $this->belongsTo(User::class, 'estabelecimento_id');
@@ -124,6 +160,45 @@ class ItemAluguel extends Model
      * a um agendamento — ver AgendamentoController::storeCarrinho). Esse escopo
      * filtra só os itens de catálogo de verdade (locações), excluindo essas linhas.
      */
+    /**
+     * Reservas cadastradas no catálogo de um local (vitrine/loja do estabelecimento).
+     * Itens antigos, de antes do local_id, guardavam o id do local em estabelecimento_id.
+     */
+    public function scopeDoLocal($query, int $localId)
+    {
+        return $query->where(fn ($q) => $q->where('local_id', $localId)
+            ->orWhere(fn ($legado) => $legado->whereNull('local_id')->where('estabelecimento_id', $localId)));
+    }
+
+    /** Primeira foto pronta para exibir (aceita o JSON gravado duas vezes dos cadastros antigos). */
+    public function getFotoPrincipalAttribute(): ?string
+    {
+        $fotos = $this->fotos;
+        if (is_string($fotos)) {
+            $fotos = json_decode($fotos, true);
+        }
+        if (is_string($fotos)) {
+            $fotos = json_decode($fotos, true);
+        }
+        $foto = is_array($fotos) ? ($fotos[0] ?? null) : null;
+        if (!is_string($foto) || $foto === '') {
+            return null;
+        }
+
+        // Endereço completo: o app não sabe montar o caminho relativo (/storage/...) sozinho.
+        if (str_starts_with($foto, 'http')) {
+            return $foto;
+        }
+
+        return url(str_starts_with($foto, '/') ? $foto : '/storage/' . $foto);
+    }
+
+    /** Locações avulsas: do dono direto, sem estabelecimento (as do catálogo de um local têm local_id). */
+    public function scopeAvulsas($query)
+    {
+        return $query->whereNull('local_id');
+    }
+
     public function scopeCatalogo($query)
     {
         return $query->whereNull('agendamento_id')

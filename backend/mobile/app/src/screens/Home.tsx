@@ -24,6 +24,8 @@ import * as Location from 'expo-location';
 import { T } from '../../../constants/ClientTheme';
 import { FavoriteButton, HeaderCliente } from '../../../components/client/ui';
 import AvisosUsuario from '../../../components/client/AvisosUsuario';
+import OfertasViagem from '../../../components/client/OfertasViagem';
+import FlashDealsPerto from '../../../components/client/FlashDealsPerto';
 import { alternarFavoritoRemoto } from '../../../services/favoritos';
 
 // Planos de cliente considerados Premium (mesmo catálogo usado no backend,
@@ -307,14 +309,37 @@ export default function Home() {
   const requisicao = useRef(0);
 
   const carregarUsuario = useCallback(async () => {
+    let usuarioCache: any = {};
     try {
       const userDataString = await SecureStore.getItemAsync('userData');
       if (userDataString) {
-        const usuario = JSON.parse(userDataString);
-        setIsPremium(PLANOS_PREMIUM_CLIENTE.includes(String(usuario.plano_assinatura || '').toLowerCase()));
+        usuarioCache = JSON.parse(userDataString);
+        // Primeiro o cache, para a tela não piscar; logo abaixo o servidor confirma.
+        setIsPremium(typeof usuarioCache.premium === 'boolean'
+          ? usuarioCache.premium
+          : PLANOS_PREMIUM_CLIENTE.includes(String(usuarioCache.plano_assinatura || '').toLowerCase()));
       }
     } catch (e) {
       // segue sem dados, não é crítico
+    }
+
+    // O servidor é quem sabe se o plano vale agora (inclui o período de teste depois de assinar).
+    try {
+      const token = await pegarToken();
+      if (!token) return;
+      const res = await fetch(`${API_URL}/me`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+      if (!res.ok) return;
+      const json = await res.json();
+      const u = json?.user;
+      if (!u) return;
+      setIsPremium(!!u.premium);
+      await SecureStore.setItemAsync('userData', JSON.stringify({
+        ...usuarioCache,
+        plano_assinatura: u.plano_assinatura || u.plano_atual,
+        premium: !!u.premium,
+      }));
+    } catch (e) {
+      // sem rede: fica com o cache
     }
   }, []);
 
@@ -616,6 +641,9 @@ export default function Home() {
           </View>
 
           <AvisosUsuario />
+
+          <FlashDealsPerto coordenadas={coordenadas} cidade={cidadeAtual} />
+          <OfertasViagem coordenadas={coordenadas} cidade={cidadeAtual} />
 
           {/* BUSCA */}
           <View style={s.busca}>

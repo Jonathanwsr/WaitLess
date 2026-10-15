@@ -271,32 +271,38 @@ class TravelAssistantController extends Controller
         if (!$accessKey) {
             return [[
                 'url' => 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1200',
-                'descricao' => 'Praia Padrão (Configure sua UNSPLASH_ACCESS_KEY no .env)',
-                'autor' => 'Inertia System'
+                'descricao' => 'Imagem ilustrativa',
+                'autor' => 'Unsplash'
             ]];
         }
 
-        $response = Http::get("https://api.unsplash.com/search/photos", [
-            'query' => $local . ' turismo',
-            'client_id' => $accessKey,
-            'per_page' => 6,
-            'orientation' => 'landscape'
-        ]);
+        // Serviço externo: se cair, demorar ou responder fora do formato, usa a imagem padrão.
+        try {
+            $response = Http::timeout(6)->get("https://api.unsplash.com/search/photos", [
+                'query' => $local . ' turismo',
+                'client_id' => $accessKey,
+                'per_page' => 6,
+                'orientation' => 'landscape'
+            ]);
+            $resultados = $response->successful() ? ($response->json('results') ?? []) : [];
+        } catch (\Throwable $e) {
+            $resultados = [];
+        }
 
-        if ($response->successful() && count($response->json()['results']) > 0) {
-            return collect($response->json()['results'])->map(function ($img) {
+        if (is_array($resultados) && count($resultados) > 0) {
+            return collect($resultados)->filter(fn ($img) => isset($img['urls']['regular']))->map(function ($img) {
                 return [
                     'url' => (string) $img['urls']['regular'],
-                    'descricao' => (string) ($img['alt_description'] ?? 'Foto de ' . $img['user']['name']),
-                    'autor' => (string) $img['user']['name']
+                    'descricao' => (string) ($img['alt_description'] ?? 'Foto do destino'),
+                    'autor' => (string) ($img['user']['name'] ?? 'Unsplash')
                 ];
-            })->all();
+            })->values()->all();
         }
 
         return [[
             'url' => 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=1200',
-            'descricao' => 'Nenhuma imagem específica encontrada para ' . $local,
-            'autor' => 'Unsplash Fallback'
+            'descricao' => 'Imagem ilustrativa',
+            'autor' => 'Unsplash'
         ]];
     }
 
@@ -305,11 +311,15 @@ class TravelAssistantController extends Controller
      */
     private function buscarInfoWikipedia($local)
     {
-        $response = Http::withHeaders([
-            'User-Agent' => 'WaitlessApp/1.0 (contato@seusite.com)'
-        ])->get("https://pt.wikipedia.org/api/rest_v1/page/summary/" . urlencode($local));
+        try {
+            $response = Http::timeout(6)->withHeaders([
+                'User-Agent' => 'LokyvaApp/1.0 (contato@seusite.com)'
+            ])->get("https://pt.wikipedia.org/api/rest_v1/page/summary/" . urlencode($local));
+        } catch (\Throwable $e) {
+            $response = null;
+        }
 
-        if ($response->successful()) {
+        if ($response && $response->successful() && is_array($response->json())) {
             $data = $response->json();
             return [
                 'titulo' => (string) ($data['title'] ?? $local),

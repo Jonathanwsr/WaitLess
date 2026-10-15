@@ -103,6 +103,13 @@ class PagamentoController extends Controller
         $event = $request->input('event');
         $paymentData = $request->input('payment');
 
+        // Eventos de nota fiscal (INVOICE_*): atualizam status, número, PDF e XML da nota.
+        if (is_array($request->input('invoice')) && str_starts_with((string) $event, 'INVOICE_')) {
+            app(\App\Services\NotaFiscalService::class)->atualizarPeloAsaas($request->input('invoice'));
+
+            return response()->json(['message' => 'Nota fiscal atualizada.'], 200);
+        }
+
         // 👉 CORREÇÃO AQUI: Verifica se o payload realmente tem os dados de 'payment'.
         // Webhooks de assinaturas (como SUBSCRIPTION_CREATED) vêm com 'subscription' em vez de 'payment'.
         // Retornar 200 limpa o erro no Asaas e faz ele parar de tentar reenviar esse payload.
@@ -256,7 +263,7 @@ class PagamentoController extends Controller
                                 );
                             }
 
-                            // 4. Nota fiscal automática — benefício exclusivo do Sócio Premium.
+                            // 4. Notas fiscais: comissão da Lokyva para o sócio e, no Sócio Premium, a venda para o cliente.
                             // Nunca deve derrubar a confirmação de pagamento: qualquer falha fica
                             // registrada na própria nota fiscal, não propaga exceção pro webhook.
                             try {
@@ -331,6 +338,13 @@ class PagamentoController extends Controller
 
                             // 👉 Retira os pontos ganhos nesta transação
                             $this->reverterPontosDeFidelidadeWebhook($pagamento);
+
+                            // Venda desfeita: cancela as notas da venda e da comissão Lokyva.
+                            try {
+                                app(\App\Services\NotaFiscalService::class)->cancelarNotasDoPagamento($pagamento);
+                            } catch (\Throwable $e) {
+                                Log::error('Falha ao cancelar notas fiscais do estorno: ' . $e->getMessage());
+                            }
 
                             $provider = DB::table('providers')
                                 ->join('users', 'providers.user_id', '=', 'users.id')
@@ -470,8 +484,13 @@ class PagamentoController extends Controller
      */
     private function reverterPontosDeFidelidadeWebhook($pagamento)
     {
-        $colunaFiltro = $pagamento->agendamento_id ? 'agendamento_id' : 'aluguel_id';
-        $origemId = $pagamento->agendamento_id ?? $pagamento->aluguel_id;
+        // historico_pontos só se liga a agendamentos (não tem coluna aluguel_id): consultar outra
+        // coluna derrubava o estorno inteiro de locações e pedidos de entrega com erro de banco.
+        if (!$pagamento->agendamento_id) {
+            return;
+        }
+        $colunaFiltro = 'agendamento_id';
+        $origemId = $pagamento->agendamento_id;
 
         $pontosGanhosNessaTransacao = DB::table('historico_pontos')
             ->where($colunaFiltro, $origemId)

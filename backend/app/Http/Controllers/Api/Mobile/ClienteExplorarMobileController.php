@@ -212,12 +212,13 @@ class ClienteExplorarMobileController extends Controller
             'avaliacao' => $lista->sortByDesc(fn ($i) => (float) $i['avaliacao_media']),
             'distancia' => $lista->sortBy(fn ($i) => $i['distancia'] ?? PHP_INT_MAX),
             'recentes' => $lista->sortByDesc(fn ($i) => $i['created_at'] ?? ''),
-            // Relevância: donos premium primeiro, depois quem aceita pontos (mais itens com pontos antes),
-            // depois nota e volume de avaliações. Mesma regra do Explorar da web.
+            // Relevância: donos premium primeiro, depois quem aceita pontos, depois quem aceita pagamento
+            // online (e, em cada grupo, online antes), depois nota e volume de avaliações. Mesma regra da web.
             default => $lista->sort(function ($a, $b) {
                 $chave = fn ($i) => [
                     (int) !empty($i['destaque_premium']),
                     (int) (($i['destaque_pontos'] ?? 0) > 0),
+                    (int) !empty($i['aceita_pagamento_online']),
                     (int) ($i['destaque_pontos'] ?? 0),
                     (float) $i['avaliacao_media'],
                     (int) ($i['total_avaliacoes'] ?? 0),
@@ -312,17 +313,33 @@ class ClienteExplorarMobileController extends Controller
         return round(6371 * 2 * atan2(sqrt($a), sqrt(1 - $a)), 1);
     }
 
+    /** Coluna em minúsculas e sem acento, para "salao" achar "Salão". */
+    private static function semAcento(string $coluna): string
+    {
+        return "translate(lower(coalesce({$coluna}, '')), 'áàâãäéèêëíìîïóòôõöúùûüç', 'aaaaaeeeeiiiiooooouuuuc') like ?";
+    }
+
+    private static function termoSemAcento(string $busca): string
+    {
+        $termo = mb_strtolower($busca);
+        $termo = strtr($termo, ['á' => 'a', 'à' => 'a', 'â' => 'a', 'ã' => 'a', 'ä' => 'a', 'é' => 'e', 'è' => 'e', 'ê' => 'e', 'ë' => 'e',
+            'í' => 'i', 'ì' => 'i', 'î' => 'i', 'ï' => 'i', 'ó' => 'o', 'ò' => 'o', 'ô' => 'o', 'õ' => 'o', 'ö' => 'o',
+            'ú' => 'u', 'ù' => 'u', 'û' => 'u', 'ü' => 'u', 'ç' => 'c']);
+
+        return '%' . addcslashes($termo, '%_') . '%';
+    }
+
     private function listarEstabelecimentos(DestaquePremiumService $premium, ?string $busca, ?string $categoria, ?float $lat, ?float $lng)
     {
         $query = Estabelecimento::where('ativo', true);
 
         if ($busca) {
-            $termo = "%{$busca}%";
+            $termo = self::termoSemAcento($busca);
             $query->where(function ($q) use ($termo) {
-                $q->where('nome', 'ilike', $termo)
-                  ->orWhere('cidade', 'ilike', $termo)
-                  ->orWhere('estado', 'ilike', $termo)
-                  ->orWhere('ramo_atuacao', 'ilike', $termo);
+                $q->whereRaw(self::semAcento('nome'), [$termo])
+                  ->orWhereRaw(self::semAcento('cidade'), [$termo])
+                  ->orWhereRaw(self::semAcento('estado'), [$termo])
+                  ->orWhereRaw(self::semAcento('ramo_atuacao'), [$termo]);
             });
         }
         if ($categoria) $query->where('ramo_atuacao', 'ilike', "%{$categoria}%");
@@ -341,7 +358,7 @@ class ClienteExplorarMobileController extends Controller
             ->selectRaw('estabelecimento_id, COUNT(*) as c')
             ->groupBy('estabelecimento_id')->pluck('c', 'estabelecimento_id');
 
-        return $query->with('horariosFuncionamento')->get()->map(function ($est) use ($premiumIds, $pontosPorLocal, $servicos, $filas, $lat, $lng) {
+        return $query->with('horariosFuncionamento')->get()->map(function ($est) use ($premium, $premiumIds, $pontosPorLocal, $servicos, $filas, $lat, $lng) {
             $resumo = $servicos->get($est->id);
 
             return [
@@ -362,6 +379,7 @@ class ClienteExplorarMobileController extends Controller
                 'destaque_premium' => $premiumIds->contains($est->id),
                 // Quantos serviços/reservas do dono aceitam pontos: sobe na lista logo depois dos premium.
                 'destaque_pontos' => (int) ($pontosPorLocal[$est->id] ?? 0),
+                'aceita_pagamento_online' => $premium->aceitaPagamentoOnline((int) $est->id),
                 'created_at' => optional($est->created_at)->toIso8601String(),
             ];
         })->values();
@@ -374,11 +392,11 @@ class ClienteExplorarMobileController extends Controller
             ->whereHas('estabelecimento', fn ($q) => $q->where('ativo', true));
 
         if ($busca) {
-            $termo = "%{$busca}%";
+            $termo = self::termoSemAcento($busca);
             $query->where(function ($q) use ($termo) {
-                $q->where('nome', 'ilike', $termo)
-                  ->orWhere('descricao', 'ilike', $termo)
-                  ->orWhereHas('estabelecimento', fn ($e) => $e->where('nome', 'ilike', $termo)->orWhere('cidade', 'ilike', $termo));
+                $q->whereRaw(self::semAcento('nome'), [$termo])
+                  ->orWhereRaw(self::semAcento('descricao'), [$termo])
+                  ->orWhereHas('estabelecimento', fn ($e) => $e->whereRaw(self::semAcento('nome'), [$termo])->orWhereRaw(self::semAcento('cidade'), [$termo]));
             });
         }
         if ($categoria) {
@@ -389,7 +407,7 @@ class ClienteExplorarMobileController extends Controller
         $pontosPorLocal = $premium->pontosPorEstabelecimento();
         $vagasServico = app(\App\Services\Agendamento\VagasServicoService::class);
 
-        return $query->get()->map(function ($s) use ($premiumIds, $pontosPorLocal, $lat, $lng, $clienteEhPremium, $vagasServico) {
+        return $query->get()->map(function ($s) use ($premium, $premiumIds, $pontosPorLocal, $lat, $lng, $clienteEhPremium, $vagasServico) {
             $est = $s->estabelecimento;
             $fotos = $this->decodificarFotos($s->fotos);
             $base = (float) $s->valor;
@@ -423,6 +441,7 @@ class ClienteExplorarMobileController extends Controller
                 'destaque_premium' => $premiumIds->contains($est->id),
                 // Quantos serviços/reservas do dono aceitam pontos: sobe na lista logo depois dos premium.
                 'destaque_pontos' => (int) ($pontosPorLocal[$est->id] ?? 0),
+                'aceita_pagamento_online' => $premium->aceitaPagamentoOnline((int) $est->id),
                 'vagas_status' => $vagas['status'],
                 'vagas_restantes' => $vagas['restantes'],
                 'created_at' => optional($s->created_at)->toIso8601String(),
@@ -436,11 +455,11 @@ class ClienteExplorarMobileController extends Controller
 
         if ($busca) {
             $query->where(function ($q) use ($busca) {
-                $termo = "%{$busca}%";
-                $q->where('nome', 'ilike', $termo)
-                  ->orWhere('marca', 'ilike', $termo)
-                  ->orWhere('modelo', 'ilike', $termo)
-                  ->orWhere('descricao', 'ilike', $termo);
+                $termo = self::termoSemAcento($busca);
+                $q->whereRaw(self::semAcento('nome'), [$termo])
+                  ->orWhereRaw(self::semAcento('marca'), [$termo])
+                  ->orWhereRaw(self::semAcento('modelo'), [$termo])
+                  ->orWhereRaw(self::semAcento('descricao'), [$termo]);
             });
         }
         if ($categoria) $query->where('categoria', 'ilike', "%{$categoria}%");
@@ -452,7 +471,7 @@ class ClienteExplorarMobileController extends Controller
 
         $disponibilidade = app(\App\Services\Locacao\DisponibilidadeService::class);
 
-        return $query->get()->map(function ($item) use ($premiumUsuarios, $pontosPorDono, $donosComEstabelecimento, $clienteEhPremium, $disponibilidade) {
+        return $query->get()->map(function ($item) use ($premium, $premiumUsuarios, $pontosPorDono, $donosComEstabelecimento, $clienteEhPremium, $disponibilidade) {
             $fotos = $this->decodificarFotos($item->fotos);
             $base = (float) $item->valor_diaria;
             $comDesconto = $this->calcularValorComDesconto($base, (bool) $item->tem_promocao, $item->tipo_desconto, $item->valor_desconto);
@@ -482,6 +501,7 @@ class ClienteExplorarMobileController extends Controller
                 'distancia' => null,
                 'destaque_premium' => $premiumUsuarios->contains($item->estabelecimento_id),
                 'destaque_pontos' => (int) ($pontosPorDono[$item->estabelecimento_id] ?? 0),
+                'aceita_pagamento_online' => $premium->aceitaPagamentoOnline((int) $item->estabelecimento_id, 'usuario'),
                 'vagas_status' => $vagas['status'],
                 'vagas_restantes' => $vagas['restantes'],
                 'created_at' => optional($item->created_at)->toIso8601String(),

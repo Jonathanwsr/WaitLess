@@ -27,7 +27,16 @@ import {
 // autoritativo sempre é recalculado no servidor.
 const PONTOS_POR_REAL = 1000;
 
-export default function Agendar({ auth, estabelecimento, servicos = [], produtosExtras = [], extras_ids, pedidoProdutoPendente = null, cuponsRecomendados = [], funcionarios = [] }) {
+// Mesma regra do PrecificacaoService::comPromocao (o back cobra este valor).
+const precoComPromocao = (s) => {
+    const valor = Number(s?.valor) || 0;
+    const desconto = Number(s?.valor_desconto) || 0;
+    if (!s?.tem_promocao || !desconto) return valor;
+    const final = s.tipo_desconto === 'fixo' ? valor - desconto : valor - (valor * desconto / 100);
+    return Math.max(Math.round(final * 100) / 100, 0);
+};
+
+export default function Agendar({ auth, estabelecimento, servicos = [], produtosExtras = [], extras_ids, pedidoProdutoPendente = null, cuponsRecomendados = [], funcionarios = [], aceitaPagamentoOnline = true }) {
     const [servicoSelecionado, setServicoSelecionado] = useState(null);
     const [diaDaSemanaSelecionado, setDiaDaSemanaSelecionado] = useState('');
     const [editandoDataHora, setEditandoDataHora] = useState(false);
@@ -49,15 +58,20 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
     const [validandoCupom, setValidandoCupom] = useState(false);
     const [erroCupom, setErroCupom] = useState(null);
     const [usarPontos, setUsarPontos] = useState(false);
+    const [pontosDesejados, setPontosDesejados] = useState(null); // quantidade escolhida na página do serviço
+    const [servicoDaUrl, setServicoDaUrl] = useState(false); // veio de /servicos/{id}/detalhes: mostra só o serviço escolhido
+    const [conflitoHorario, setConflitoHorario] = useState(null);
+    const [conferindoHora, setConferindoHora] = useState(false);
 
     const saldoPontosUsuario = Number(auth?.user?.pontos_saldo) || 0;
     const { flash = {}, pontosPremium = {} } = usePage().props;
 
     // Pontos: liberados quando o serviço aceita, ou para cliente premium (até um % do valor).
     const servicoAceitaPontos = !!servicoSelecionado?.aceita_pontos;
-    const pontosPeloPremium = !servicoAceitaPontos && !!pontosPremium.ativo;
+    // Premium usa quantos pontos quiser em qualquer serviço (sem o limite do local).
+    const pontosPeloPremium = !!pontosPremium.ativo;
     const aceitaPontos = servicoAceitaPontos || pontosPeloPremium;
-    const maximoPontosPermitidos = servicoAceitaPontos ? (servicoSelecionado?.maximo_pontos_permitidos || null) : null;
+    const maximoPontosPermitidos = !pontosPeloPremium && servicoAceitaPontos ? (servicoSelecionado?.maximo_pontos_permitidos || null) : null;
 
     // Calcula o valor total apenas dos produtos extras escolhidos que ainda estão na lista
     const valorDosExtras = listaProdutosExtras.reduce((acc, produto) => {
@@ -105,6 +119,10 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
         const urlExtrasIds = parametros.get('extras_ids');
         const urlViagemId = parametros.get('viagem_id');
 
+        // Vindo da página de detalhes com "Resgatar desconto": já começa usando os pontos.
+        if (parametros.get('usar_pontos') === '1') setUsarPontos(true);
+        if (Number(parametros.get('pontos')) > 0) setPontosDesejados(Number(parametros.get('pontos')));
+
         let newState = { ...data };
         let mudouAlgo = false;
 
@@ -132,8 +150,15 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
             const servicoEncontrado = servicos.find(s => s.id.toString() === urlServicoId);
             if (servicoEncontrado) {
                 setServicoSelecionado(servicoEncontrado);
+                setServicoDaUrl(true);
                 newState.servico_id = servicoEncontrado.id;
                 mudouAlgo = true;
+
+                // Sem data na URL: começa no primeiro dia em que o serviço atende.
+                if (!urlData) {
+                    const primeiro = gerarDiasProximos(extrairConfiguracoes(servicoEncontrado.configuracoes).diasArray)[0];
+                    if (primeiro) newState.data_agendamento = primeiro.dataOriginal;
+                }
 
                 const config = extrairConfiguracoes(servicoEncontrado.configuracoes);
                 newState.forma_pagamento = config.tipoPagamentoRaw === 'presencial' ? 'presencial' : 'online_agora';
@@ -186,14 +211,13 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
     useEffect(() => {
         if (servicoSelecionado) {
             // SOMA O VALOR DO SERVIÇO COM O VALOR DOS EXTRAS
-            let valorCalculado = ((Number(servicoSelecionado.valor) || 0) * qtdLocal) + valorDosExtras;
+            let valorCalculado = (precoComPromocao(servicoSelecionado) * qtdLocal) + valorDosExtras;
 
             // PONTOS DE FIDELIDADE (saldo global) — aplicados antes do cupom
             let pontosAplicaveis = 0;
             if (aceitaPontos && usarPontos && saldoPontosUsuario > 0) {
                 const maxPeloSubtotal = Math.floor(valorCalculado * PONTOS_POR_REAL);
-                const maxPremium = pontosPeloPremium ? Math.floor(valorCalculado * ((Number(pontosPremium.percentual) || 0) / 100) * PONTOS_POR_REAL) : Infinity;
-                pontosAplicaveis = Math.min(saldoPontosUsuario, maxPeloSubtotal, maxPremium, maximoPontosPermitidos || Infinity);
+                pontosAplicaveis = Math.min(saldoPontosUsuario, maxPeloSubtotal, maximoPontosPermitidos || Infinity, pontosDesejados || Infinity);
                 if (pontosAplicaveis > 0) {
                     valorCalculado = Math.max(0, valorCalculado - (pontosAplicaveis / PONTOS_POR_REAL));
                 }
@@ -215,7 +239,7 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
                 pontos_utilizados: pontosAplicaveis,
             }));
         }
-    }, [qtdLocal, servicoSelecionado, cupomAtivo, valorDosExtras, usarPontos, aceitaPontos, saldoPontosUsuario, maximoPontosPermitidos, pontosPeloPremium, pontosPremium.percentual]);
+    }, [qtdLocal, servicoSelecionado, cupomAtivo, valorDosExtras, usarPontos, aceitaPontos, saldoPontosUsuario, maximoPontosPermitidos, pontosDesejados]);
 
     useEffect(() => {
         if (flash.success && flash.success.includes('PIN')) {
@@ -232,7 +256,8 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
         if (typeof config === 'string') {
             try { config = JSON.parse(config); } catch (e) { config = {}; }
         }
-        const tipoPagamentoRaw = config.tipo_pagamento || 'hibrido';
+        // Sócio sem carteira: só pagamento no local (o back recusa o online).
+        const tipoPagamentoRaw = aceitaPagamentoOnline ? (config.tipo_pagamento || 'hibrido') : 'presencial';
         const tipoPagamentoExibicao = tipoPagamentoRaw === 'hibrido' ? 'Presencial ou Online' : (tipoPagamentoRaw === 'online' ? 'Somente Online' : 'Somente no Local');
         const dias = config.dias_disponiveis || [];
         return { tipoPagamentoExibicao, tipoPagamentoRaw, diasArray: dias };
@@ -274,6 +299,28 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
         setQtdLocal(1);
         setEditandoDataHora(true);
         setUsarPontos(false);
+        setPontosDesejados(null);
+        setConflitoHorario(null);
+    };
+
+    // Confere a vaga na hora: se alguém já reservou, avisa e sugere outros horários.
+    const escolherHorario = async (hora) => {
+        setConflitoHorario(null);
+        setConferindoHora(true);
+        try {
+            const { data: r } = await axios.get(route('cliente.servicos.disponibilidade', servicoSelecionado.id), { params: { data: data.data_agendamento, hora } });
+            if (!r.livre) {
+                setConflitoHorario({ hora, motivo: r.motivo, sugestoes: r.sugestoes || [] });
+                setData('hora_agendamento', '');
+                return;
+            }
+        } catch {
+            // Sem resposta: o servidor confere de novo ao confirmar.
+        } finally {
+            setConferindoHora(false);
+        }
+        setData('hora_agendamento', hora);
+        setEditandoDataHora(false);
     };
 
     const aplicarCupom = () => aplicarCupomCodigo(cupomInput);
@@ -530,10 +577,20 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
                                     <span className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm font-black">1</span>
                                     Escolha o Serviço
                                 </h3>
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {servicoDaUrl && servicoSelecionado && (
+                                    <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl border-2 border-indigo-600 bg-indigo-50 p-4">
+                                        <div className="min-w-0">
+                                            <p className="text-xs font-bold uppercase tracking-wide text-indigo-500">Serviço escolhido</p>
+                                            <p className="truncate font-black text-indigo-900">{servicoSelecionado.nome}</p>
+                                            <p className="text-xs text-gray-500">{servicoSelecionado.duracao_minutos} min · {precoComPromocao(servicoSelecionado) < (Number(servicoSelecionado.valor) || 0) && <span className="line-through mr-1">{formatarMoeda(servicoSelecionado.valor)}</span>}{formatarMoeda(precoComPromocao(servicoSelecionado))}</p>
+                                        </div>
+                                        <button type="button" onClick={() => setServicoDaUrl(false)} className="shrink-0 rounded-xl border border-indigo-200 bg-white px-3 py-2 text-xs font-bold text-indigo-700 hover:bg-indigo-100">Trocar serviço</button>
+                                    </div>
+                                )}
+                                <div className={`grid grid-cols-1 md:grid-cols-2 gap-4 ${servicoDaUrl && servicoSelecionado ? 'hidden' : ''}`}>
                                     {servicos?.map(s => {
                                         let precoOriginal = Number(s.valor) || 0;
-                                        let precoComDesconto = precoOriginal;
+                                        let precoComDesconto = precoComPromocao(s);
                                         if (cupomAtivo) {
                                             if (cupomAtivo.tipo === 'percentual') precoComDesconto -= precoComDesconto * ((Number(cupomAtivo.valor) || 0) / 100);
                                             else precoComDesconto -= (Number(cupomAtivo.valor) || 0);
@@ -557,7 +614,7 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
                                                     </div>
                                                 </div>
                                                 <div className="text-right">
-                                                    {cupomAtivo && precoComDesconto < precoOriginal ? (
+                                                    {precoComDesconto < precoOriginal ? (
                                                         <div className="flex flex-col items-end">
                                                             <span className="text-[10px] text-gray-400 line-through mb-0.5">{formatarMoeda(precoOriginal)}</span>
                                                             <span className="font-black text-emerald-600 text-lg bg-emerald-50 px-2 py-0.5 rounded-lg">{formatarMoeda(precoComDesconto)}</span>
@@ -590,7 +647,7 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
                                                     return (
                                                         <button
                                                             key={dia.dataOriginal} type="button" disabled={processing}
-                                                            onClick={() => { setData('data_agendamento', dia.dataOriginal); setData('hora_agendamento', ''); }}
+                                                            onClick={() => { setData('data_agendamento', dia.dataOriginal); setData('hora_agendamento', ''); setConflitoHorario(null); }}
                                                             className={`snap-start flex flex-col items-center justify-center min-w-[80px] p-4 rounded-2xl border-2 transition-all disabled:opacity-50 ${isSelected ? 'border-indigo-600 bg-indigo-600 text-white shadow-lg shadow-indigo-200 transform scale-105' : 'border-gray-100 bg-white text-gray-700 hover:border-indigo-200 hover:bg-indigo-50/50'}`}
                                                         >
                                                             <span className={`text-xs font-bold uppercase mb-1 ${isSelected ? 'text-indigo-200' : 'text-gray-400'}`}>{dia.diaSemana}</span>
@@ -618,8 +675,8 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
                                                         const isSelected = data.hora_agendamento === hora;
                                                         return (
                                                             <button
-                                                                type="button" key={hora} disabled={processing}
-                                                                onClick={() => { setData('hora_agendamento', hora); setEditandoDataHora(false); }}
+                                                                type="button" key={hora} disabled={processing || conferindoHora}
+                                                                onClick={() => escolherHorario(hora)}
                                                                 className={`px-5 py-3 text-sm font-black rounded-2xl border-2 transition-all disabled:opacity-50 ${isSelected ? 'border-indigo-600 bg-indigo-600 text-white shadow-md' : 'border-gray-100 bg-gray-50 text-gray-700 hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700'}`}
                                                             >
                                                                 {hora}
@@ -628,6 +685,19 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
                                                     })
                                                 ) : (
                                                     <div className="p-4 bg-gray-50 text-gray-500 rounded-2xl text-sm w-full text-center">Nenhum horário cadastrado para este dia.</div>
+                                                )}
+                                            </div>
+                                        )}
+                                        {conflitoHorario && (
+                                            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                                                <p className="font-bold">{conflitoHorario.hora} — {conflitoHorario.motivo}</p>
+                                                {conflitoHorario.sugestoes.length > 0 && (
+                                                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                                                        <span className="text-xs">Horários livres:</span>
+                                                        {conflitoHorario.sugestoes.map((h) => (
+                                                            <button key={h} type="button" onClick={() => escolherHorario(h)} className="rounded-full bg-white px-3 py-1 text-xs font-bold text-gray-800 shadow-sm hover:bg-gray-50">{h}</button>
+                                                        ))}
+                                                    </div>
                                                 )}
                                             </div>
                                         )}
@@ -833,7 +903,7 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
                                                                 <p className="text-sm font-bold text-orange-900">Usar meus pontos</p>
                                                                 <p className="text-xs text-orange-700">
                                                                     Você tem {saldoPontosUsuario} pontos disponíveis
-                                                                    {pontosPeloPremium && ` · benefício premium: até ${String(pontosPremium.percentual).replace('.', ',')}% do valor`}
+                                                                    {pontosPeloPremium && ' · premium: use quantos quiser'}
                                                                 </p>
                                                             </div>
                                                         </div>
@@ -856,7 +926,7 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
                                         <div className="p-6 md:p-8 bg-gray-50/50">
                                             <div className="flex justify-between items-center text-sm text-gray-600 mb-3">
                                                 <span>Subtotal do Serviço</span>
-                                                <span>{formatarMoeda((Number(servicoSelecionado.valor) || 0) * qtdLocal)}</span>
+                                                <span>{precoComPromocao(servicoSelecionado) < (Number(servicoSelecionado.valor) || 0) && <span className="mr-2 text-xs text-gray-400 line-through">{formatarMoeda((Number(servicoSelecionado.valor) || 0) * qtdLocal)}</span>}{formatarMoeda(precoComPromocao(servicoSelecionado) * qtdLocal)}</span>
                                             </div>
 
                                             {listaProdutosExtras.length > 0 && (
@@ -917,6 +987,12 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
                                 <InputError message={errors.metodo_pagamento} className="mb-4" />
 
                                 <h3 className="text-lg font-bold text-gray-900 mb-4">Escolha a forma de pagamento</h3>
+                                {!aceitaPagamentoOnline && (
+                                    <div className="mb-4 flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+                                        <BuildingStorefrontIcon className="h-5 w-5 shrink-0 text-emerald-600" />
+                                        <p>Este local recebe o pagamento <b>direto no atendimento</b>. Você reserva agora e paga lá.</p>
+                                    </div>
+                                )}
 
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
                                     {/* CARD CARTÃO DE CRÉDITO */}

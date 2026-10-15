@@ -67,7 +67,7 @@ class ViagemService
         foreach (array_values($itens) as $i => $item) {
             $limpo = array_intersect_key($item, array_flip(self::CAMPOS_ITEM));
             $limpo['titulo'] = Str::limit((string) ($limpo['titulo'] ?? 'Item'), 250, '');
-            $limpo['tipo'] = in_array($limpo['tipo'] ?? '', ['hospedagem', 'transporte', 'servico', 'atracao', 'livre', 'personalizado'], true) ? $limpo['tipo'] : 'personalizado';
+            $limpo['tipo'] = in_array($limpo['tipo'] ?? '', ['hospedagem', 'transporte', 'servico', 'atracao', 'livre', 'personalizado', 'produto'], true) ? $limpo['tipo'] : 'personalizado';
             $limpo['custo_estimado'] = max((float) ($limpo['custo_estimado'] ?? 0), 0);
             $limpo['ordem'] = $limpo['ordem'] ?? $i;
             $limpo['destaque_premium'] = (bool) ($limpo['destaque_premium'] ?? false);

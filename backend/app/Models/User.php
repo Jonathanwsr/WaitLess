@@ -80,6 +80,12 @@ class User extends Authenticatable
      * corresponde a nenhum plano realmente vendido — essa checagem nunca
      * era verdadeira para um assinante de verdade.
      */
+    /** "Esqueci minha senha" do site: e-mail em português, com a marca Lokyva (sai pela Brevo). */
+    public function sendPasswordResetNotification($token): void
+    {
+        $this->notify(new \App\Notifications\RedefinirSenhaNotification($token));
+    }
+
     public function isPremium(): bool
     {
         return $this->plano_assinatura

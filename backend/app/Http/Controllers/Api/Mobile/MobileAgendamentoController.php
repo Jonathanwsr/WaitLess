@@ -471,7 +471,7 @@ class MobileAgendamentoController extends Controller
             if ($tipo === 'aluguel') {
                 $item = ItemAluguel::findOrFail($id);
                 $horariosStr = $item->horarios_disponiveis ?? '[]';
-                
+
                 if (is_string($horariosStr)) {
                     $horariosFuncionamento = json_decode($horariosStr, true) ?? [];
                 } elseif (is_array($horariosStr)) {
@@ -486,7 +486,7 @@ class MobileAgendamentoController extends Controller
                     ->pluck('hora_inicio')
                     ->map(fn($hora) => substr($hora, 0, 5))
                     ->toArray();
-                    
+
             } else {
                 $servico = Servico::findOrFail($id);
                 $horariosStr = $servico->horarios_disponiveis ?? '[]';
@@ -718,14 +718,14 @@ class MobileAgendamentoController extends Controller
             'fotos' => $fotosArray,
             'avaliacao_media' => $servico->avaliacao_media ?? 0,
             'total_avaliacoes' => $servico->total_avaliacoes ?? 0,
-            
+
             // Regras de Desconto
             'tem_promocao' => $config['tem_cupom'] ?? false,
             'tipo_desconto' => $config['tipo_desconto_cupom'] ?? 'percentual',
             'valor_desconto' => $config['valor_cupom'] ?? 0,
-            'aceita_pontos' => true, 
+            'aceita_pontos' => true,
             'maximo_pontos_permitidos' => 10000,
-            
+
             'estabelecimento' => [
                 'id' => $servico->estabelecimento->id ?? null,
                 'nome' => $servico->estabelecimento->nome ?? $servico->estabelecimento->nome_fantasia ?? 'Estabelecimento',
@@ -776,22 +776,25 @@ class MobileAgendamentoController extends Controller
             'nome' => $item->nome,
             'categoria' => $item->categoria ?? 'locacao',
             'descricao' => $item->descricao,
-            
+
             // Preços
             'valor_diaria' => $item->valor_diaria,
             'valor_semanal' => $item->valor_semanal,
             'valor_mensal' => $item->valor_mensal,
             'valor_caucao' => $item->valor_caucao,
-            
+
             // Promoções e Descontos
             'tem_promocao' => (bool) $item->tem_promocao,
             'tipo_desconto' => $item->tipo_desconto ?? 'percentual',
             'valor_desconto' => $item->valor_desconto ?? 0,
-            
+
             // Fidelidade
             'aceita_pontos' => (bool) $item->aceita_pontos,
             'maximo_pontos_permitidos' => $item->maximo_pontos_permitidos ?? 0,
-            
+
+            // Política de cancelamento (modelo Airbnb), mostrada antes de reservar.
+            'politica_cancelamento' => \App\Services\Locacao\PoliticaCancelamentoService::infoDoItem($item->politica_cancelamento),
+
             // Atributos Especiais
             'capacidade_pessoas' => $item->capacidade_pessoas ?? 0,
             'numero_quartos' => $item->numero_quartos ?? 0,
@@ -807,7 +810,7 @@ class MobileAgendamentoController extends Controller
             'recursos_oferecidos' => is_array($recursos) ? $recursos : [],
             'acessorios' => is_array($acessorios) ? $acessorios : [],
             'fotos' => $fotosArray,
-            
+
             // Retirada Específica do Bem
             'cep_retirada' => $item->cep_retirada,
             'rua_retirada' => $item->rua_retirada,
@@ -823,7 +826,7 @@ class MobileAgendamentoController extends Controller
             'bairro_entrega' => $item->bairro_entrega,
             'cidade_entrega' => $item->cidade_entrega,
             'estado_entrega' => $item->estado_entrega,
-            
+
             // Perfil do Anunciante
             'estabelecimento' => [
                 'id' => $provedor->id ?? null,
@@ -857,7 +860,7 @@ class MobileAgendamentoController extends Controller
             )->first();
 
         $dadosEstabelecimento = $estabelecimento->only([
-            'id','nome','foto_perfil','foto_banner','bairro','cidade','estado','telefone'
+            'id','nome','foto_perfil','foto_banner','bairro','cidade','estado','telefone','site','bio'
         ]);
         $dadosEstabelecimento['favoritado'] = \App\Models\Favorito::where('usuario_id', Auth::id())
             ->where('estabelecimento_id', $id)
@@ -869,7 +872,9 @@ class MobileAgendamentoController extends Controller
             'estabelecimento' => $dadosEstabelecimento,
             'avaliacoes_resumo' => $avaliacoes,
             'servicos' => $estabelecimento->servicos()->where('ativo', true)->get(),
-            'locacoes' => ItemAluguel::where('estabelecimento_id', $id)->where('ativo', true)->get()
+            // Reservas cadastradas neste local, com a foto principal pronta para o card.
+            'locacoes' => ItemAluguel::catalogo()->doLocal((int) $id)->where('ativo', true)->get()
+                ->each(fn ($i) => $i->setAttribute('foto_principal', $i->foto_principal)->setAttribute('valor', $i->valor ?: $i->valor_diaria)),
         ]);
     }
 
@@ -929,7 +934,7 @@ class MobileAgendamentoController extends Controller
             $produtosParaVincular = [];
 
             foreach ($validated['itens'] as $itemReq) {
-                
+
                 if ($itemReq['tipo'] === 'servico') {
                     $servico = $servicosNoBanco->get($itemReq['id']);
                     if (!$servico) continue;
@@ -978,7 +983,7 @@ class MobileAgendamentoController extends Controller
                     if (!$itemAluguel) continue;
 
                     $tipoPeriodo = $itemReq['tipo_periodo'] ?? 'diaria';
-                    
+
                     $valorUnitario = match($tipoPeriodo) {
                         'semanal' => $itemAluguel->valor_semanal,
                         'mensal'  => $itemAluguel->valor_mensal,
@@ -987,8 +992,8 @@ class MobileAgendamentoController extends Controller
 
                     $qtdPeriodos = $itemReq['quantidade_periodos'] ?? 1;
                     $valorItemTotal = ($valorUnitario * $qtdPeriodos) * $itemReq['quantidade'];
-                    $valorItemTotal += ($itemAluguel->valor_caucao ?? 0); 
-                    
+                    $valorItemTotal += ($itemAluguel->valor_caucao ?? 0);
+
                     $valorTotalBruto += $valorItemTotal;
 
                     // Entrega no endereço do cliente só existe para bens móveis (veículos, equipamentos…);
@@ -1013,7 +1018,7 @@ class MobileAgendamentoController extends Controller
                         'taxa_plataforma'     => $valorItemTotal * \App\Support\Taxas::fracao(),
                         'forma_pagamento'     => $validated['forma_pagamento'],
                         'status'              => 'pendente',
-                        
+
                         'cep_entrega'         => $isDelivery ? $validated['cep_entrega'] : null,
                         'rua_entrega'         => $isDelivery ? $validated['rua_entrega'] : null,
                         'numero_entrega'      => $isDelivery ? $validated['numero_entrega'] : null,
@@ -1067,7 +1072,7 @@ class MobileAgendamentoController extends Controller
                 $pontosSolicitados = $validated['pontos_a_usar'];
 
                 if ($saldoPontos >= $pontosSolicitados) {
-                    $taxaConversao = 0.01; 
+                    $taxaConversao = 0.01;
                     $descontoCalculado = $pontosSolicitados * $taxaConversao;
 
                     if ($descontoCalculado > $valorTotalBruto) {
@@ -1239,6 +1244,7 @@ class MobileAgendamentoController extends Controller
                 'valor_final'        => (float) $aluguel->valor_total,
                 'forma_pagamento'    => $aluguel->forma_pagamento,
                 'valor_caucao'       => (float) ($aluguel->valor_caucao ?? 0),
+                'cancelamento'       => app(\App\Services\Locacao\PoliticaCancelamentoService::class)->resumoParaCliente($aluguel),
                 'item' => $item ? [
                     'nome'                 => $item->nome,
                     'descricao'            => $item->descricao,
@@ -1456,8 +1462,8 @@ class MobileAgendamentoController extends Controller
     {
         $request->validate([
             'agendamento_id' => 'required|exists:agendamentos,id',
-            'lat'            => 'required|numeric',
-            'lng'            => 'required|numeric',
+            'lat'            => 'required|numeric|between:-90,90',
+            'lng'            => 'required|numeric|between:-180,180',
             'heading'        => 'nullable|numeric',
             'velocidade'     => 'nullable|numeric',
         ]);
@@ -1468,26 +1474,17 @@ class MobileAgendamentoController extends Controller
             abort(403, 'Você só pode transmitir localização do seu próprio agendamento.');
         }
 
-        // Guarda a última posição conhecida pra quem abrir o mapa depois do
-        // primeiro ping não ficar com a tela vazia esperando o próximo envio.
-        $agendamento->forceFill([
-            'ultima_latitude' => $request->lat,
-            'ultima_longitude' => $request->lng,
-            'ultimo_heading' => $request->heading,
-            'ultima_velocidade' => $request->velocidade,
-            'ultima_localizacao_em' => now(),
-        ])->save();
-
-        broadcast(new LocationUpdated(
-            $agendamento->id,
-            $request->lat,
-            $request->lng,
-            $request->heading,
-            $request->velocidade
-        ));
+        // Salva a última posição (o mapa do dono lê dela) e avisa em tempo real quando o WebSocket está no ar.
+        app(\App\Services\Rastreamento\RastreamentoService::class)->registrar(
+            $agendamento,
+            (float) $request->lat,
+            (float) $request->lng,
+            $request->filled('heading') ? (float) $request->heading : null,
+            $request->filled('velocidade') ? (float) $request->velocidade : null,
+        );
 
         return response()->json([
-            'status'  => 'sucesso',
+            'status' => 'sucesso',
             'message' => 'Coordenadas transmitidas ao estabelecimento.',
         ], 200);
     }

@@ -21,10 +21,12 @@ class ExtratoProviderController extends Controller
     {
         $user = Auth::user();
 
-        // O financeiro do proprietário/gerente agora é uma tela só: a Carteira.
-        if (in_array(mb_strtolower((string) $user->papel), ['socio', 'sócio', 'proprietario', 'proprietário', 'gerente'], true)) {
-            return redirect()->route('carteira.asaas');
-        }
+        // Extrato é um relatório (só leitura): sócio, gerente e admin veem. Saque e contas ficam na Carteira (só o sócio).
+        abort_unless(
+            in_array(mb_strtolower((string) $user->papel), ['admin', 'socio', 'sócio', 'proprietario', 'proprietário', 'gerente'], true),
+            403,
+            'O extrato financeiro é para quem administra um local.'
+        );
 
         // 1. Definição do escopo de estabelecimentos permitidos de acordo com o papel
         if ($user->papel === 'admin') {
@@ -85,18 +87,27 @@ class ExtratoProviderController extends Controller
         $extratoPaginado = $query->latest()->paginate(10)->withQueryString();
 
         // 3. CÁLCULO DOS INDICADORES FINANCEIROS (KPIs)
-        $receitaTotal = $queryParaCards->where('tipo', 'credito')->sum('valor_bruto');
-        $despesasTotais = $queryParaCards->where('tipo', 'credito')->sum('taxa_plataforma') + abs($queryParaCards->where('tipo', 'estorno')->sum('valor_liquido'));
+        // Cada indicador usa a sua própria cópia da consulta: antes os filtros se acumulavam e os
+        // estornos (tipo "credito" E "estorno" ao mesmo tempo) sempre davam zero.
+        $creditos = (clone $queryParaCards)->where('tipo', 'credito');
+        $receitaTotal = (float) (clone $creditos)->sum('valor_bruto');
+        $taxas = (float) (clone $creditos)->sum('taxa_plataforma');
+        $estornos = abs((float) (clone $queryParaCards)->where('tipo', 'estorno')->sum('valor_liquido'));
+        $despesasTotais = $taxas + $estornos;
         $lucroLiquido = $receitaTotal - $despesasTotais;
-        $totalTransacoes = $queryParaCards->where('tipo', 'credito')->count();
+        $totalTransacoes = (clone $creditos)->count();
         $ticketMedio = $totalTransacoes > 0 ? ($receitaTotal / $totalTransacoes) : 0;
+        $porCategoria = (clone $creditos)
+            ->selectRaw("CASE WHEN origem_type LIKE '%Aluguel%' THEN 'Reservas' WHEN origem_type LIKE '%Pedido%' THEN 'Produtos' ELSE 'Serviços' END as categoria, SUM(valor_bruto) as total")
+            ->groupBy('categoria')
+            ->get();
 
         // 4. ALIMENTAÇÃO DINÂMICA DOS COMPONENTES DE FILTRO DO FRONT-END
         $estabelecimentosFiltro = Estabelecimento::whereIn('id', $estabelecimentosPermitidos)->get(['id', 'nome']);
         $funcionariosFiltro = Funcionario::whereIn('estabelecimento_id', $estabelecimentosPermitidos)->get(['id', 'nome']);
 
         // 5. PROCESSAMENTO DE DADOS PARA OS GRÁFICOS (Agrupamentos)
-        $receitasPorFormaPgto = $queryParaGraficos->where('tipo', 'credito')
+        $receitasPorFormaPgto = (clone $queryParaGraficos)->where('tipo', 'credito')
             ->select('metodo_pagamento', DB::raw('SUM(valor_bruto) as total'))
             ->groupBy('metodo_pagamento')
             ->get();
@@ -110,13 +121,16 @@ class ExtratoProviderController extends Controller
                 'lucro_liquido'    => number_format($lucroLiquido, 2, ',', '.'),
                 'transacoes_count' => $totalTransacoes,
                 'ticket_medio'     => number_format($ticketMedio, 2, ',', '.'),
+                'taxas'            => number_format($taxas, 2, ',', '.'),
+                'estornos'         => number_format($estornos, 2, ',', '.'),
             ],
             'filtrosDados' => [
                 'estabelecimentos' => $estabelecimentosFiltro,
                 'funcionarios'     => $funcionariosFiltro,
             ],
             'dadosGraficos' => [
-                'formas_pagamento' => $receitasPorFormaPgto
+                'formas_pagamento' => $receitasPorFormaPgto,
+                'categorias' => $porCategoria,
             ],
             'filtrosAtuais' => $request->only(['data_inicio', 'data_fim', 'estabelecimento_id', 'tipo', 'metodo_pagamento']),
         ]);

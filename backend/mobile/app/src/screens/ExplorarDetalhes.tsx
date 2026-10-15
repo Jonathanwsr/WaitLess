@@ -11,6 +11,7 @@ import {
   TextInput,
   SafeAreaView,
   useWindowDimensions,
+  Linking,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -98,6 +99,7 @@ interface ItemAluguel {
   valor_desconto?: number | string;
   aceita_pontos?: boolean;
   maximo_pontos_permitidos?: number;
+  politica_cancelamento?: { id: string; nome: string; resumo: string; longa_duracao: string } | null;
   modelo_precificacao?: 'pacote' | 'por_pessoa';
   pessoas_incluidas?: number;
   valor_pessoa_extra?: number | string;
@@ -196,6 +198,45 @@ async function pegarToken() {
   return (await AsyncStorage.getItem('@waitless_token')) || (await AsyncStorage.getItem('@lokyva_token'));
 }
 
+// Ficha montada no servidor (FichaDoItemService): o mesmo conteúdo da página web da reserva.
+type FichaItem = {
+  perfil: 'hospedagem' | 'veiculo' | 'equipamento' | 'espaco';
+  textos: { unidade: string; unidades: string; inicio: string; fim: string; pessoa: string; pessoas: string; sobre: string; quem: string };
+  local: { id: number; nome: string; telefone?: string | null } | null;
+  endereco: { linha1: string | null; linha2: string | null; cep: string | null; do_local: boolean; mapa: string } | null;
+  especificacoes: { rotulo: string; valor: string }[];
+  precos: { rotulo: string; valor: number }[];
+  regras: { icone: string; texto: string }[];
+  retirada: { endereco: string | null; combinar: boolean; horario: string | null } | null;
+  devolucao: { endereco: string | null; combinar: boolean; horario: string | null } | null;
+  acessorios: string[];
+  especificacoes_texto: string | null;
+  observacoes: string | null;
+  observacoes_disponibilidade: string | null;
+};
+type AvaliacoesServico = {
+  escopo: 'servico' | 'estabelecimento'; media: number; total: number; distribuicao: Record<string, number>;
+  lista: { id: number; nome: string; nota: number; comentario: string | null; resposta: string | null; data: string | null }[];
+};
+type OutroServico = { id: number; nome: string; valor_com_promocao: number; duracao_minutos: number; foto: string | null; horarios: string[]; avaliacao_media: number };
+
+const ICONE_REGRA: Record<string, string> = { clock: 'time-outline', calendar: 'calendar-outline', users: 'people-outline', doc: 'document-text-outline', shield: 'shield-checkmark-outline', pet: 'paw-outline', star: 'sparkles-outline' };
+const iconeDaEspecificacao = (rotulo: string): string => {
+  const r = rotulo.toLowerCase();
+  if (r.includes('quarto') || r.includes('suíte')) return 'bed-outline';
+  if (r.includes('banheiro')) return 'water-outline';
+  if (r.includes('vaga')) return 'car-outline';
+  if (r.includes('área')) return 'resize-outline';
+  if (r.includes('ano')) return 'calendar-outline';
+  if (r.includes('placa')) return 'card-outline';
+  if (r.includes('combust')) return 'flash-outline';
+  if (r.includes('câmbio')) return 'settings-outline';
+  if (r.includes('quilometr') || r.includes('potência') || r.includes('cilindr')) return 'speedometer-outline';
+  if (r.includes('seguro')) return 'shield-checkmark-outline';
+  if (r.includes('lugar') || r.includes('capacidade')) return 'people-outline';
+  return 'pricetag-outline';
+};
+
 export default function ExplorarDetalhes() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -226,6 +267,15 @@ export default function ExplorarDetalhes() {
   const [funcionarios, setFuncionarios] = useState<{ id: number; nome: string; cargo?: string | null }[]>([]);
   const [funcionarioId, setFuncionarioId] = useState<number | null>(null);
   const [anfitriao, setAnfitriao] = useState<Anfitriao | null>(null);
+  const [ficha, setFicha] = useState<FichaItem | null>(null);
+  const [avaliacoesServico, setAvaliacoesServico] = useState<AvaliacoesServico | null>(null);
+  const [ocupadosServico, setOcupadosServico] = useState<Record<string, string[]>>({});
+  const [outrosServicos, setOutrosServicos] = useState<OutroServico[]>([]);
+  // Horário escolhido que já tem alguém: avisa e sugere outros livres.
+  const [conflito, setConflito] = useState<{ hora: string; motivo: string; sugestoes: string[] } | null>(null);
+  // Serviço sem horários fixos: o cliente combina o horário direto com o proprietário.
+  const [horarioACombinar, setHorarioACombinar] = useState(false);
+  const [abrindoChat, setAbrindoChat] = useState(false);
 
   // Pagamento online real (Asaas): Pix, cartão em até 12x ou boleto
   const [metodoPagamento, setMetodoPagamento] = useState<'pix' | 'cartao' | 'boleto'>('pix');
@@ -282,12 +332,14 @@ export default function ExplorarDetalhes() {
   const [calendarioAberto, setCalendarioAberto] = useState(false);
 
   const [formaPagamento, setFormaPagamento] = useState<'online_agora' | 'presencial'>('online_agora');
+  // Sócio sem carteira Asaas: só pagamento no local.
+  const [aceitaOnline, setAceitaOnline] = useState(true);
   const [termosAceitos, setTermosAceitos] = useState(false);
 
   // Pontos de fidelidade (saldo global) e cupom de desconto
   const [saldoPontos, setSaldoPontos] = useState(0);
   const [usarPontos, setUsarPontos] = useState(false);
-  const [pontosPremium, setPontosPremium] = useState<{ ativo: boolean; percentual: number }>({ ativo: false, percentual: 0 });
+  const [pontosPremium, setPontosPremium] = useState<{ ativo: boolean }>({ ativo: false });
   const [cupomInput, setCupomInput] = useState('');
   const [cupomAtivo, setCupomAtivo] = useState<{ codigo: string; valor: number; tipo: string } | null>(null);
   const [validandoCupom, setValidandoCupom] = useState(false);
@@ -308,7 +360,7 @@ export default function ExplorarDetalhes() {
       if (res.ok) {
         const data = await res.json();
         setSaldoPontos(data.pontos_saldo ?? 0);
-        if (data.pontos_premium) setPontosPremium({ ativo: !!data.pontos_premium.ativo, percentual: Number(data.pontos_premium.percentual) || 0 });
+        if (data.pontos_premium) setPontosPremium({ ativo: !!data.pontos_premium.ativo });
       }
     } catch (e) {
       // segue com saldo 0; não é crítico pra tela carregar
@@ -338,6 +390,14 @@ export default function ExplorarDetalhes() {
       setReputacao(data.reputacao || null);
       setFuncionarios(Array.isArray(data.funcionarios) ? data.funcionarios : []);
       setAnfitriao(data.anfitriao || null);
+      setFicha(data.ficha || null);
+      setAvaliacoesServico(data.avaliacoes || null);
+      setOcupadosServico(data.ocupados && !Array.isArray(data.ocupados) ? data.ocupados : {});
+      setOutrosServicos(Array.isArray(data.outros_servicos) ? data.outros_servicos : []);
+      setHorarioACombinar(!ehAluguel && !!data.horario_a_combinar);
+      const online = data.aceita_pagamento_online !== false;
+      setAceitaOnline(online);
+      if (!online) setFormaPagamento('presencial');
     } catch (e) {
       setErro(true);
     } finally {
@@ -455,6 +515,11 @@ export default function ExplorarDetalhes() {
     let valorBase = Number(itemAluguel.valor_diaria) || 0;
     if (tipoPeriodo === 'semanal') valorBase = Number(itemAluguel.valor_semanal) || valorBase * 7;
     if (tipoPeriodo === 'mensal') valorBase = Number(itemAluguel.valor_mensal) || valorBase * 30;
+    // Promoção da reserva (mesma regra do back).
+    const descontoPromo = Number(itemAluguel.valor_desconto) || 0;
+    if (itemAluguel.tem_promocao && descontoPromo > 0) {
+      valorBase = Math.max(itemAluguel.tipo_desconto === 'fixo' ? valorBase - descontoPromo : valorBase - (valorBase * descontoPromo) / 100, 0);
+    }
 
     const ehPorPessoa = itemAluguel.modelo_precificacao === 'por_pessoa';
     const capacidade = itemAluguel.capacidade_pessoas || itemAluguel.lugares || 99;
@@ -491,11 +556,11 @@ export default function ExplorarDetalhes() {
     return false;
   })();
 
-  // Pontos liberados quando o local aceita, ou para cliente premium (até um % do valor).
+  // Pontos: liberados quando o local aceita; o premium usa quantos quiser em qualquer serviço (sem limite do local).
   const localAceitaPontos = ehAluguel ? !!itemAluguel?.aceita_pontos : !!servico?.aceita_pontos;
-  const pontosPeloPremium = !localAceitaPontos && pontosPremium.ativo;
+  const pontosPeloPremium = pontosPremium.ativo;
   const aceitaPontos = localAceitaPontos || pontosPeloPremium;
-  const maximoPontosPermitidos = localAceitaPontos ? (ehAluguel ? itemAluguel?.maximo_pontos_permitidos : servico?.maximo_pontos_permitidos) : null;
+  const maximoPontosPermitidos = !pontosPeloPremium && localAceitaPontos ? (ehAluguel ? itemAluguel?.maximo_pontos_permitidos : servico?.maximo_pontos_permitidos) : null;
 
   // Subtotal antes de pontos/cupom, e prévia dos descontos — o valor final e
   // autoritativo é sempre recalculado no servidor.
@@ -504,8 +569,7 @@ export default function ExplorarDetalhes() {
   const pontosAplicaveisPreview = (() => {
     if (!aceitaPontos || !usarPontos || saldoPontos <= 0) return 0;
     const maxPeloSubtotal = Math.floor(subtotalBase * PONTOS_POR_REAL);
-    const maxPremium = pontosPeloPremium ? Math.floor(subtotalBase * (pontosPremium.percentual / 100) * PONTOS_POR_REAL) : Infinity;
-    return Math.min(saldoPontos, maxPeloSubtotal, maxPremium, maximoPontosPermitidos || Infinity);
+    return Math.min(saldoPontos, maxPeloSubtotal, maximoPontosPermitidos || Infinity);
   })();
   const descontoPontosPreview = pontosAplicaveisPreview / PONTOS_POR_REAL;
 
@@ -661,6 +725,25 @@ export default function ExplorarDetalhes() {
       const token = await pegarToken();
 
       if (!ehAluguel && servico) {
+        // Confere na hora se ainda tem vaga (alguém pode ter acabado de reservar o mesmo horário).
+        try {
+          const dataISO = parseDataBRparaISO(dataAgendamento);
+          const resVaga = await fetch(`${API_URL}/servicos/${servico.id}/disponibilidade?data=${dataISO}&hora=${horaAgendamento}`, {
+            headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+          });
+          if (resVaga.ok) {
+            const vaga = await resVaga.json();
+            if (vaga && vaga.livre === false) {
+              setConflito({ hora: horaAgendamento, motivo: vaga.motivo, sugestoes: vaga.sugestoes || [] });
+              setHoraAgendamento('');
+              alertar('Horário ocupado', `${vaga.motivo}${vaga.sugestoes?.length ? `\n\nLivres nesse dia: ${vaga.sugestoes.join(', ')}` : ''}`);
+              return;
+            }
+          }
+        } catch (e) {
+          // sem resposta: o servidor confere de novo ao salvar o agendamento
+        }
+
         const res = await fetch(`${API_URL}/agendamentos/estabelecimento/${servico.estabelecimento_id}/store`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', 'Content-Type': 'application/json' },
@@ -856,11 +939,61 @@ export default function ExplorarDetalhes() {
     itemAluguel.possui_seguro && { icone: 'shield-checkmark-outline', rotulo: 'Seguro', valor: 'Incluso' },
   ].filter(Boolean) as { icone: string; rotulo: string; valor: string }[]);
 
-  const acessorios: string[] = itemAluguel?.acessorios?.length ? itemAluguel.acessorios : [];
+  const acessorios: string[] = ficha?.acessorios?.length ? ficha.acessorios : (itemAluguel?.acessorios?.length ? itemAluguel.acessorios : []);
 
-  const enderecoCompleto = [itemAluguel?.endereco, itemAluguel?.numero, itemAluguel?.bairro, itemAluguel?.cidade, itemAluguel?.estado]
-    .filter(Boolean)
-    .join(', ');
+  // Com a ficha do servidor: valores formatados (placa só o final) e o endereço do local quando o item não tem o seu.
+  const especificacoesExibidas = ficha?.especificacoes?.length
+    ? ficha.especificacoes.map((e) => ({ icone: iconeDaEspecificacao(e.rotulo), rotulo: e.rotulo, valor: e.valor }))
+    : especificacoes;
+
+  const enderecoCompleto = ficha
+    ? [ficha.endereco?.linha1, ficha.endereco?.linha2].filter(Boolean).join(' · ')
+    : [itemAluguel?.endereco, itemAluguel?.numero, itemAluguel?.bairro, itemAluguel?.cidade, itemAluguel?.estado].filter(Boolean).join(', ');
+  const cepExibido = ficha ? ficha.endereco?.cep : itemAluguel?.cep;
+
+  const telefoneLocal = String((estabelecimento as any)?.telefone || '').replace(/\D/g, '');
+
+  const falarComProprietario = async () => {
+    if (!estabelecimento?.id) return;
+    setAbrindoChat(true);
+    try {
+      const token = await pegarToken();
+      const res = await fetch(`${API_URL}/mensagens/iniciar`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ estabelecimento_id: estabelecimento.id }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (res.ok && json.conversa_id) {
+        router.push({ pathname: '/mensagens/[id]' as never, params: { id: String(json.conversa_id) } });
+      } else {
+        alertar('Não foi possível abrir a conversa', json.error || json.message || 'Tente pelo telefone do local.');
+      }
+    } catch (e) {
+      alertar('Sem conexão', 'Não foi possível abrir a conversa agora.');
+    } finally {
+      setAbrindoChat(false);
+    }
+  };
+
+  const abrirWhatsApp = () => {
+    if (!telefoneLocal) return;
+    const texto = encodeURIComponent(`Olá! Vi o serviço "${servico?.nome || ''}" na Lokyva e quero combinar um horário.`);
+    Linking.openURL(`https://wa.me/55${telefoneLocal.replace(/^55/, '')}?text=${texto}`);
+  };
+
+  // Horários do dia escolhido que já têm alguém agendado.
+  const dataServicoISO = parseDataBRparaISO(dataAgendamento);
+  const ocupadosDoDia: string[] = !ehAluguel && dataServicoISO ? (ocupadosServico[dataServicoISO] || []) : [];
+  const escolherHorario = (h: string) => {
+    if (ocupadosDoDia.includes(h)) {
+      setHoraAgendamento('');
+      setConflito({ hora: h, motivo: 'Já tem alguém agendado nesse horário. Escolha outro.', sugestoes: horariosDisponiveis.filter((x) => x > h).slice(0, 4) });
+      return;
+    }
+    setConflito(null);
+    setHoraAgendamento(h);
+  };
 
   return (
     <SafeAreaView style={s.safe}>
@@ -919,7 +1052,7 @@ export default function ExplorarDetalhes() {
 
           {!!descricaoItem && (
             <>
-              <Text style={s.secao}>Sobre o {ehAluguel ? 'item' : 'serviço'}</Text>
+              <Text style={s.secao}>{ehAluguel ? (ficha?.textos.sobre || 'Sobre o item') : 'Sobre o serviço'}</Text>
               <Text style={s.descricao}>{descricaoItem}</Text>
             </>
           )}
@@ -937,7 +1070,7 @@ export default function ExplorarDetalhes() {
           )}
 
           {/* RETIRADA E DEVOLUÇÃO — só itens/veículos */}
-          {movel && (!!itemAluguel?.local_retirada || !!itemAluguel?.local_entrega) && (
+          {!ficha && movel && (!!itemAluguel?.local_retirada || !!itemAluguel?.local_entrega) && (
             <>
               <Text style={s.secao}>Retirada e devolução</Text>
               {!!itemAluguel?.local_retirada && (
@@ -960,7 +1093,7 @@ export default function ExplorarDetalhes() {
                 {anfitriao.foto ? <Image source={{ uri: String(anfitriao.foto) }} style={{ width: '100%', height: '100%' }} /> : <Text style={s.anfitriaoIni}>{anfitriao.nome.charAt(0).toUpperCase()}</Text>}
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={s.anfitriaoNome}>Anfitrião: {anfitriao.nome}</Text>
+                <Text style={s.anfitriaoNome}>{ficha?.textos.quem || 'Anfitrião'}: {ficha?.local?.nome || anfitriao.nome}</Text>
                 <Text style={s.anfitriaoSub}>
                   {anfitriao.superanfitriao ? 'Superanfitrião · ' : ''}{anfitriao.desde ? `No Lokyva desde ${anfitriao.desde}` : ''}
                 </Text>
@@ -1002,7 +1135,7 @@ export default function ExplorarDetalhes() {
                   ))}
                 </>
               ) : (
-                <Text style={s.ajudaTxt}>Este anfitrião ainda não recebeu avaliações. Seja o primeiro a se hospedar e avaliar.</Text>
+                <Text style={s.ajudaTxt}>Ainda sem avaliações. Seja o primeiro a reservar e avaliar.</Text>
               )}
             </>
           )}
@@ -1023,11 +1156,11 @@ export default function ExplorarDetalhes() {
           )}
 
           {/* FICHA TÉCNICA — tudo que o sócio preencheu ao criar a reserva */}
-          {especificacoes.length > 0 && (
+          {especificacoesExibidas.length > 0 && (
             <>
-              <Text style={s.secao}>Detalhes</Text>
+              <Text style={s.secao}>{ficha?.perfil === 'veiculo' ? 'Ficha do veículo' : ficha?.perfil === 'hospedagem' ? 'Detalhes da hospedagem' : 'Detalhes'}</Text>
               <View style={s.fichaTecnica}>
-                {especificacoes.map((e) => (
+                {especificacoesExibidas.map((e) => (
                   <View key={e.rotulo} style={s.fichaLinha}>
                     <Ionicons name={e.icone as never} size={18} color={T.muted} />
                     <Text style={s.fichaRotulo}>{e.rotulo}</Text>
@@ -1041,7 +1174,7 @@ export default function ExplorarDetalhes() {
           {/* ACESSÓRIOS */}
           {acessorios.length > 0 && (
             <>
-              <Text style={s.secao}>Acessórios inclusos</Text>
+              <Text style={s.secao}>O que vem junto</Text>
               <View style={s.comodidades}>
                 {acessorios.map((a) => (
                   <View key={a} style={s.comodidade}>
@@ -1053,22 +1186,150 @@ export default function ExplorarDetalhes() {
             </>
           )}
 
+          {!!ficha?.especificacoes_texto && (
+            <>
+              <Text style={s.secao}>Especificações</Text>
+              <Text style={s.descricao}>{ficha.especificacoes_texto}</Text>
+            </>
+          )}
+
+          {ehAluguel && (ficha?.precos?.length || 0) > 1 && (
+            <>
+              <Text style={s.secao}>Preços</Text>
+              <View style={s.chips}>
+                {ficha!.precos.map((p) => (
+                  <View key={p.rotulo} style={s.chip}>
+                    <Text style={s.chipValor}>R$ {Number(p.valor).toFixed(2).replace('.', ',')}</Text>
+                    <Text style={s.chipRotulo}>{p.rotulo}</Text>
+                  </View>
+                ))}
+              </View>
+            </>
+          )}
+
+          {/* RETIRADA, DEVOLUÇÃO E REGRAS — tudo o que o sócio cadastrou */}
+          {ehAluguel && ficha && (!!ficha.retirada || ficha.regras.length > 0) && (
+            <>
+              <Text style={s.secao}>{ficha.retirada ? 'Retirada, devolução e regras' : 'Regras e horários'}</Text>
+              <View style={s.fichaTecnica}>
+                {!!ficha.retirada && (
+                  <View style={s.regraLinha}>
+                    <Ionicons name="log-out-outline" size={18} color={T.primary} />
+                    <Text style={s.regraTxt}><Text style={{ fontWeight: '800' }}>Retirada: </Text>{ficha.retirada.endereco || 'combinar com o responsável'}{ficha.retirada.horario ? ` · a partir das ${ficha.retirada.horario}` : ''}</Text>
+                  </View>
+                )}
+                {!!ficha.retirada && (
+                  <View style={s.regraLinha}>
+                    <Ionicons name="log-in-outline" size={18} color={T.primary} />
+                    <Text style={s.regraTxt}><Text style={{ fontWeight: '800' }}>Devolução: </Text>{ficha.devolucao?.endereco || ficha.retirada.endereco || 'combinar com o responsável'}{ficha.devolucao?.horario ? ` · até ${ficha.devolucao.horario}` : ''}</Text>
+                  </View>
+                )}
+                {ficha.regras.map((regra) => (
+                  <View key={regra.texto} style={s.regraLinha}>
+                    <Ionicons name={(ICONE_REGRA[regra.icone] || 'checkmark-circle-outline') as never} size={18} color={T.primary} />
+                    <Text style={s.regraTxt}>{regra.texto}</Text>
+                  </View>
+                ))}
+              </View>
+            </>
+          )}
+
           {/* ENDEREÇO */}
+          {ehAluguel && ficha && !enderecoCompleto && (
+            <>
+              <Text style={s.secao}>Endereço</Text>
+              <Text style={s.ajudaTxt}>O endereço é combinado com o responsável depois da reserva.</Text>
+            </>
+          )}
           {!!enderecoCompleto && (
             <>
               <Text style={s.secao}>Endereço</Text>
               <View style={s.explica}>
                 <Ionicons name="location-outline" size={18} color={T.primary} />
-                <Text style={s.explicaTxt}>{enderecoCompleto}{itemAluguel?.cep ? ` · CEP ${itemAluguel.cep}` : ''}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.explicaTxt}>{enderecoCompleto}{cepExibido ? ` · CEP ${cepExibido}` : ''}</Text>
+                  {!!ficha?.endereco?.do_local && !!ficha.local?.nome && <Text style={s.ajudaTxt}>Endereço de {ficha.local.nome}</Text>}
+                  {!!ficha?.local?.telefone && <Text style={s.ajudaTxt}>Telefone: {ficha.local.telefone}</Text>}
+                </View>
               </View>
             </>
           )}
 
           {/* OBSERVAÇÕES DO ANFITRIÃO */}
-          {!!itemAluguel?.observacoes && (
+          {(!!itemAluguel?.observacoes || !!ficha?.observacoes_disponibilidade) && (
             <>
-              <Text style={s.secao}>Observações</Text>
-              <Text style={s.ajudaTxt}>{itemAluguel.observacoes}</Text>
+              <Text style={s.secao}>Informações importantes</Text>
+              <View style={s.avisoImportante}>
+                {!!(ficha?.observacoes || itemAluguel?.observacoes) && <Text style={s.avisoImportanteTxt}>{ficha?.observacoes || itemAluguel?.observacoes}</Text>}
+                {!!ficha?.observacoes_disponibilidade && <Text style={s.avisoImportanteTxt}>{ficha.observacoes_disponibilidade}</Text>}
+              </View>
+            </>
+          )}
+
+          {/* AVALIAÇÕES DO SERVIÇO */}
+          {!ehAluguel && avaliacoesServico && (
+            <>
+              <Text style={s.secao}>Avaliações</Text>
+              {avaliacoesServico.total > 0 ? (
+                <>
+                  {avaliacoesServico.escopo === 'estabelecimento' && <Text style={s.ajudaTxt}>Este serviço ainda não tem avaliações próprias; mostrando as do local.</Text>}
+                  <View style={s.notaLinha}>
+                    <Text style={s.notaGrande}>{Number(avaliacoesServico.media).toFixed(1).replace('.', ',')}</Text>
+                    <View style={{ flex: 1 }}>
+                      {[5, 4, 3, 2, 1].map((n) => {
+                        const qtd = avaliacoesServico.distribuicao[String(n)] || 0;
+                        return (
+                          <View key={n} style={s.criterioLinha}>
+                            <Text style={s.criterioNome}>{n} ★</Text>
+                            <View style={s.criterioBarra}><View style={[s.criterioPreench, { width: `${(qtd / avaliacoesServico.total) * 100}%` }]} /></View>
+                            <Text style={s.criterioNota}>{qtd}</Text>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </View>
+                  {avaliacoesServico.lista.map((a) => (
+                    <View key={a.id} style={s.avaliacaoCard}>
+                      <View style={s.avaliacaoTopo}>
+                        <Text style={s.avaliacaoAutor}>{a.nome}</Text>
+                        <Text style={s.avaliacaoNota}>★ {a.nota}</Text>
+                      </View>
+                      {!!a.data && <Text style={s.avaliacaoData}>{new Date(`${a.data}T12:00:00`).toLocaleDateString('pt-BR')}</Text>}
+                      {!!a.comentario && <Text style={s.avaliacaoTxt}>{a.comentario}</Text>}
+                      {!!a.resposta && <Text style={s.ajudaTxt}>Resposta do local: {a.resposta}</Text>}
+                    </View>
+                  ))}
+                </>
+              ) : (
+                <Text style={s.ajudaTxt}>Ainda sem avaliações. Depois do atendimento, quem agendou pode avaliar.</Text>
+              )}
+            </>
+          )}
+
+          {/* OUTROS SERVIÇOS DO LOCAL: foto e horários */}
+          {!ehAluguel && outrosServicos.length > 0 && (
+            <>
+              <Text style={s.secao}>Outros serviços de {estabelecimento?.nome || 'este local'}</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingBottom: 4 }}>
+                {outrosServicos.map((o) => (
+                  <TouchableOpacity
+                    key={o.id}
+                    style={s.outroCard}
+                    activeOpacity={0.85}
+                    onPress={() => router.push({ pathname: '/src/screens/ExplorarDetalhes' as never, params: { id: String(o.id), tipo: 'servicos' } })}
+                  >
+                    <Image source={{ uri: o.foto || DEFAULT_IMG }} style={s.outroFoto} />
+                    <View style={{ padding: 10, gap: 4 }}>
+                      <Text style={s.outroNome} numberOfLines={1}>{o.nome}</Text>
+                      <Text style={s.ajudaTxt}>R$ {Number(o.valor_com_promocao).toFixed(2).replace('.', ',')} · {o.duracao_minutos} min</Text>
+                      <View style={s.outroHorarios}>
+                        {!(o as any).horario_a_combinar && o.horarios.slice(0, 4).map((h) => <Text key={h} style={s.outroHorario}>{h}</Text>)}
+                        {((o as any).horario_a_combinar || o.horarios.length === 0) && <Text style={s.ajudaTxt}>Horário a combinar</Text>}
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
             </>
           )}
 
@@ -1080,6 +1341,33 @@ export default function ExplorarDetalhes() {
             </View>
           )}
 
+          {/* HORÁRIO A COMBINAR: sem agenda online, o cliente fala com o proprietário */}
+          {horarioACombinar && (
+            <View style={s.combinarBox}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="time-outline" size={20} color={T.primary} />
+                <Text style={s.combinarTitulo}>Horário a combinar</Text>
+              </View>
+              <Text style={s.combinarTxt}>
+                Este serviço não tem horários fixos. Combine o horário com o proprietário: entre em contato pelo chat ou telefone e marquem o melhor dia e hora.
+              </Text>
+              <TouchableOpacity style={s.combinarBtn} onPress={falarComProprietario} disabled={abrindoChat} activeOpacity={0.85}>
+                {abrindoChat ? <ActivityIndicator color="#fff" /> : <><Ionicons name="chatbubbles-outline" size={18} color="#fff" /><Text style={s.combinarBtnTxt}>Conversar com o proprietário</Text></>}
+              </TouchableOpacity>
+              {!!telefoneLocal && (
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  <TouchableOpacity style={s.combinarBtnSec} onPress={abrirWhatsApp} activeOpacity={0.85}>
+                    <Ionicons name="logo-whatsapp" size={18} color="#16A34A" /><Text style={s.combinarBtnSecTxt}>WhatsApp</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={s.combinarBtnSec} onPress={() => Linking.openURL(`tel:${telefoneLocal}`)} activeOpacity={0.85}>
+                    <Ionicons name="call-outline" size={18} color={T.ink} /><Text style={s.combinarBtnSecTxt}>Ligar</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
+          )}
+
+          {!horarioACombinar && (<>
           {/* 1. DATA */}
           <Text style={s.secao}>{ehAluguel ? (movel ? 'Escolha a data de retirada' : 'Escolha a data de entrada') : 'Horários disponíveis'}</Text>
 
@@ -1133,11 +1421,43 @@ export default function ExplorarDetalhes() {
               {horariosDisponiveis.map((h) => {
                 const on = horaAgendamento === h;
                 return (
-                  <TouchableOpacity key={h} style={[s.horario, on && s.horarioOn]} onPress={() => setHoraAgendamento(h)} activeOpacity={0.85}>
+                  <TouchableOpacity key={h} style={[s.horario, on && s.horarioOn]} onPress={() => escolherHorario(h)} activeOpacity={0.85}>
                     <Text style={[s.horarioTxt, on && { color: '#fff' }]}>{h}</Text>
                   </TouchableOpacity>
                 );
               })}
+            </View>
+          )}
+
+          {/* HORÁRIOS JÁ OCUPADOS NESSE DIA: tocar mostra o aviso e as sugestões */}
+          {!ehAluguel && !buscandoHorarios && ocupadosDoDia.length > 0 && (
+            <>
+              <Text style={s.ajudaTxt}>Já ocupados neste dia:</Text>
+              <View style={s.horarios}>
+                {ocupadosDoDia.map((h) => (
+                  <TouchableOpacity key={`oc-${h}`} style={[s.horario, s.horarioOcupado]} onPress={() => escolherHorario(h)} activeOpacity={0.85}>
+                    <Text style={[s.horarioTxt, s.horarioOcupadoTxt]}>{h}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
+          )}
+
+          {!ehAluguel && !!conflito && (
+            <View style={s.conflito}>
+              <Ionicons name="alert-circle" size={18} color="#B45309" />
+              <View style={{ flex: 1 }}>
+                <Text style={s.conflitoTxt}>{conflito.hora} — {conflito.motivo}</Text>
+                {conflito.sugestoes.length > 0 && (
+                  <View style={[s.horarios, { marginTop: 8 }]}>
+                    {conflito.sugestoes.map((h) => (
+                      <TouchableOpacity key={`sg-${h}`} style={s.horario} onPress={() => escolherHorario(h)} activeOpacity={0.85}>
+                        <Text style={s.horarioTxt}>{h}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </View>
             </View>
           )}
 
@@ -1232,8 +1552,8 @@ export default function ExplorarDetalhes() {
           <Text style={s.secao}>Forma de pagamento</Text>
           {[
             { value: 'online_agora', label: 'Pagar online agora', desc: 'Pix, cartão em até 12x ou boleto, com cobrança segura pelo Asaas.', icone: 'shield-checkmark-outline' },
-            { value: 'presencial', label: 'Pagar no local', desc: 'Pague diretamente no estabelecimento.', icone: 'storefront-outline' },
-          ].map((opt) => {
+            { value: 'presencial', label: 'Pagar no local', desc: aceitaOnline ? 'Pague diretamente no estabelecimento.' : 'Este local recebe o pagamento direto no atendimento.', icone: 'storefront-outline' },
+          ].filter((opt) => aceitaOnline || opt.value === 'presencial').map((opt) => {
             const on = formaPagamento === opt.value;
             return (
               <TouchableOpacity key={opt.value} style={[s.opcao, on && s.opcaoOn]} onPress={() => setFormaPagamento(opt.value as typeof formaPagamento)} activeOpacity={0.85}>
@@ -1376,6 +1696,15 @@ export default function ExplorarDetalhes() {
           )}
           {!!erroCupom && <Text style={s.erroCupom}>{erroCupom}</Text>}
 
+          {ehAluguel && !!itemAluguel?.politica_cancelamento && (
+            <View style={s.politica}>
+              <Text style={s.politicaTitulo}>Política de cancelamento: {itemAluguel.politica_cancelamento.nome}</Text>
+              <Text style={s.politicaTxt}>{itemAluguel.politica_cancelamento.resumo}</Text>
+              <Text style={s.politicaTxt}>{itemAluguel.politica_cancelamento.longa_duracao}</Text>
+              <Text style={s.politicaTxt}>A caução sempre volta inteira. Se o responsável cancelar, você recebe tudo de volta, sem pedir estorno.</Text>
+            </View>
+          )}
+
           {aceitaPontos && saldoPontos > 0 && (
             <TouchableOpacity style={s.pontos} onPress={() => setUsarPontos(!usarPontos)} activeOpacity={0.85}>
               <View style={s.pontosIcone}><Ionicons name="gift-outline" size={18} color={T.primary} /></View>
@@ -1383,7 +1712,7 @@ export default function ExplorarDetalhes() {
                 <Text style={s.pontosTitulo}>Usar meus pontos</Text>
                 <Text style={s.pontosDesc}>
                   Você tem {saldoPontos} pontos disponíveis
-                  {pontosPeloPremium ? ` · benefício premium: até ${String(pontosPremium.percentual).replace('.', ',')}% do valor` : ''}
+                  {pontosPeloPremium ? ' · premium: use quantos quiser' : ''}
                 </Text>
               </View>
               <View style={[s.check, usarPontos && s.checkOn]}>{usarPontos && <Ionicons name="checkmark" size={14} color="#fff" />}</View>
@@ -1415,6 +1744,7 @@ export default function ExplorarDetalhes() {
               <Text style={s.link} onPress={abrirLink.bind(null, '/privacidade')}>política de privacidade</Text>.
             </Text>
           </TouchableOpacity>
+          </>)}
         </View>
       </ScrollView>
 
@@ -1425,12 +1755,18 @@ export default function ExplorarDetalhes() {
       <View style={[s.rodape, { paddingBottom: 20 + (Platform.OS === 'android' ? insets.bottom : 0) }]}>
         <View style={s.rodapeCard}>
           <View style={{ flex: 1 }}>
-            <Text style={s.rodapeRotulo}>Total {ehAluguel ? `(${quantidadePeriodos}x ${tipoPeriodo})` : 'a pagar'}</Text>
+            <Text style={s.rodapeRotulo}>{horarioACombinar ? 'Valor do serviço' : `Total ${ehAluguel ? `(${quantidadePeriodos}x ${tipoPeriodo})` : 'a pagar'}`}</Text>
             <Text style={s.rodapeTotal}>R$ {totalFinalPreview.toFixed(2).replace('.', ',')}</Text>
           </View>
+          {horarioACombinar ? (
+            <TouchableOpacity style={[s.btnReservar, abrindoChat && { opacity: 0.7 }]} onPress={falarComProprietario} disabled={abrindoChat} activeOpacity={0.88}>
+              <Text style={s.btnReservarTxt}>Falar com o proprietário</Text>
+            </TouchableOpacity>
+          ) : (
           <TouchableOpacity style={[s.btnReservar, (processando || periodoEsgotado) && { opacity: 0.7 }]} onPress={handleConfirmar} disabled={processando || periodoEsgotado} activeOpacity={0.88}>
             {processando ? <ActivityIndicator color="#fff" /> : <Text style={s.btnReservarTxt}>{periodoEsgotado ? 'Esgotado' : formaPagamento !== 'online_agora' ? (ehAluguel ? 'Reservar' : 'Agendar') : metodoPagamento === 'cartao' ? (parcelas > 1 ? `Pagar ${parcelas}x` : 'Pagar no cartão') : metodoPagamento === 'pix' ? 'Pagar com Pix' : 'Gerar boleto'}</Text>}
           </TouchableOpacity>
+          )}
         </View>
       </View>
     </SafeAreaView>
@@ -1438,6 +1774,30 @@ export default function ExplorarDetalhes() {
 }
 
 const s = StyleSheet.create({
+  combinarBox: { backgroundColor: T.primarySoft, borderRadius: 18, padding: 16, marginTop: 20, gap: 10 },
+  combinarTitulo: { fontSize: 17, fontWeight: '800', color: T.ink },
+  combinarTxt: { fontSize: 14, color: T.ink, lineHeight: 20 },
+  combinarBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: T.primary, borderRadius: 14, height: 48 },
+  combinarBtnTxt: { color: '#fff', fontWeight: '800', fontSize: 15 },
+  combinarBtnSec: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: T.card, borderRadius: 14, height: 44, borderWidth: 1, borderColor: T.line },
+  combinarBtnSecTxt: { color: T.ink, fontWeight: '700', fontSize: 14 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  chip: { backgroundColor: T.card, borderWidth: 1, borderColor: T.line, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 8 },
+  chipValor: { fontSize: 15, fontWeight: '800', color: T.ink },
+  chipRotulo: { fontSize: 11, color: T.muted, marginTop: 2 },
+  regraLinha: { flexDirection: 'row', gap: 10, alignItems: 'flex-start', paddingVertical: 6 },
+  regraTxt: { flex: 1, fontSize: 14, color: T.ink, lineHeight: 20 },
+  avisoImportante: { backgroundColor: '#FEF3C7', borderRadius: 14, padding: 12, gap: 6 },
+  avisoImportanteTxt: { fontSize: 14, color: '#78350F', lineHeight: 20 },
+  horarioOcupado: { backgroundColor: '#FEF2F2', borderColor: '#FECACA' },
+  horarioOcupadoTxt: { color: '#F87171', textDecorationLine: 'line-through' },
+  conflito: { flexDirection: 'row', gap: 8, backgroundColor: '#FEF3C7', borderRadius: 14, padding: 12, marginTop: 12, alignItems: 'flex-start' },
+  conflitoTxt: { fontSize: 13, fontWeight: '700', color: '#78350F' },
+  outroCard: { width: 190, backgroundColor: T.card, borderRadius: 18, borderWidth: 1, borderColor: T.line, overflow: 'hidden' },
+  outroFoto: { width: '100%', height: 110, backgroundColor: T.line },
+  outroNome: { fontSize: 14, fontWeight: '800', color: T.ink },
+  outroHorarios: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 4 },
+  outroHorario: { fontSize: 11, fontWeight: '700', color: T.ink, borderWidth: 1, borderColor: T.line, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 2 },
   espera: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: T.primarySoft, borderRadius: 18, padding: 14, marginTop: 14 },
   esperaTitulo: { fontSize: 14, fontWeight: '800', color: T.ink },
   esperaTxt: { fontSize: 12, color: T.muted, lineHeight: 17, marginTop: 2 },
@@ -1588,4 +1948,7 @@ const s = StyleSheet.create({
   rodapeTotal: { fontSize: 22, fontWeight: '800', color: T.ink, letterSpacing: -0.5 },
   btnReservar: { backgroundColor: T.primary, paddingHorizontal: 32, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
   btnReservarTxt: { color: '#fff', fontWeight: '800', fontSize: 16 },
+  politica: { backgroundColor: '#F7F7F8', borderRadius: 16, padding: 14, gap: 6, marginBottom: 12, borderWidth: 1, borderColor: '#E6E7E9' },
+  politicaTitulo: { fontSize: 14, fontWeight: '800', color: '#282828' },
+  politicaTxt: { fontSize: 12, color: '#6A6C72', lineHeight: 17 },
 });

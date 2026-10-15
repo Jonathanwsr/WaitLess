@@ -1,5 +1,8 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, Platform, ActivityIndicator } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { baixarPdf } from '../../services/baixarPdf';
+import { useAviso } from '../../components/owner/Aviso';
 import { Ionicons } from '@expo/vector-icons';
 import { OwnerScreen, Card, Pilula, Vazio, Erro, Metrica, Segmentado, api, brl } from '../../components/owner/ui';
 import { useCarga } from '../../components/owner/useCarga';
@@ -26,6 +29,9 @@ type Dados = {
   resumo: { em_aberto: number; concluidos: number; cancelados: number };
 };
 
+// Situações em que já existe pagamento confirmado: dá para baixar o comprovante do pagamento.
+const COM_PAGAMENTO = ['pago', 'aguardando_confirmacao', 'concluido', 'confirmado', 'em_andamento', 'finalizado', 'estornado'];
+
 const TOM: Record<string, 'neutro' | 'positivo' | 'negativo' | 'alerta' | 'info'> = {
   pendente_pagamento: 'alerta',
   pendente: 'alerta',
@@ -49,7 +55,83 @@ const EM_ABERTO = ['pendente_pagamento', 'aguardando_confirmacao', 'pago', 'pend
 const quando = (iso?: string | null) =>
   iso ? new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-';
 
+const isoLocal = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const ULTIMOS_MESES = Array.from({ length: 12 }, (_, i) => {
+  const d = new Date();
+  d.setDate(1);
+  d.setMonth(d.getMonth() - i);
+  return { id: isoLocal(d).slice(0, 7), rotulo: d.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }) };
+});
+
+/** Histórico em PDF de todos os serviços e reservas de um dia ou de um mês. */
+function HistoricoPdf({ local, aoErro }: { local: number | null; aoErro: (e: any) => void }) {
+  const [periodo, setPeriodo] = useState<'dia' | 'mes'>('dia');
+  const [dia, setDia] = useState(isoLocal(new Date()));
+  const [mes, setMes] = useState(ULTIMOS_MESES[0].id);
+  const [calendario, setCalendario] = useState(false);
+  const [baixando, setBaixando] = useState(false);
+
+  const baixar = async () => {
+    setBaixando(true);
+    try {
+      const params = new URLSearchParams({ periodo, ...(periodo === 'dia' ? { data: dia } : { mes }), ...(local ? { estabelecimento_id: String(local) } : {}) });
+      await baixarPdf(`/gestao/historico-pdf?${params.toString()}`, `Historico_${periodo === 'dia' ? dia : mes}.pdf`);
+    } catch (e) {
+      aoErro(e);
+    } finally {
+      setBaixando(false);
+    }
+  };
+
+  return (
+    <Card>
+      <Text style={s.histTitulo}>Histórico em PDF</Text>
+      <Text style={s.meta}>Todos os serviços e reservas do período: cliente, código, situação, quem atendeu, valores e reembolsos.</Text>
+      <View style={[s.filtros, { marginTop: 12, marginBottom: 10 }]}>
+        {(['dia', 'mes'] as const).map((p) => (
+          <TouchableOpacity key={p} onPress={() => setPeriodo(p)} style={[s.chip, periodo === p && s.chipAtivo]}>
+            <Text style={[s.chipTxt, periodo === p && s.chipTxtAtivo]}>{p === 'dia' ? 'Dia' : 'Mês'}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+      {periodo === 'dia' ? (
+        <>
+          <TouchableOpacity onPress={() => setCalendario(true)} style={s.dataBotao}>
+            <Ionicons name="calendar-outline" size={16} color={O.ink} />
+            <Text style={s.dataTxt}>{new Date(`${dia}T12:00:00`).toLocaleDateString('pt-BR')}</Text>
+          </TouchableOpacity>
+          {calendario && (
+            <DateTimePicker
+              value={new Date(`${dia}T12:00:00`)}
+              mode="date"
+              maximumDate={new Date()}
+              display={Platform.OS === 'ios' ? 'inline' : 'default'}
+              onChange={(_, d) => {
+                setCalendario(Platform.OS === 'ios');
+                if (d) setDia(isoLocal(d));
+              }}
+            />
+          )}
+        </>
+      ) : (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chips}>
+          {ULTIMOS_MESES.map((m) => (
+            <TouchableOpacity key={m.id} onPress={() => setMes(m.id)} style={[s.chip, mes === m.id && s.chipAtivo]}>
+              <Text style={[s.chipTxt, mes === m.id && s.chipTxtAtivo]}>{m.rotulo}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      )}
+      <TouchableOpacity disabled={baixando} onPress={baixar} style={[s.baixar, baixando && { opacity: 0.5 }]}>
+        {baixando ? <ActivityIndicator color="#fff" /> : <Ionicons name="download-outline" size={18} color="#fff" />}
+        <Text style={s.baixarTxt}>{baixando ? 'Gerando...' : 'Baixar PDF'}</Text>
+      </TouchableOpacity>
+    </Card>
+  );
+}
+
 export default function PedidosGestao() {
+  const { aviso, mostrarErro } = useAviso();
   const [local, setLocal] = useState<number | null>(null);
   const { dados, carregando, atualizando, erro, recarregar, atualizar } = useCarga<Dados>(
     () => api(`/gestao/pedidos${local ? `?estabelecimento_id=${local}` : ''}`),
@@ -71,8 +153,11 @@ export default function PedidosGestao() {
 
   return (
     <OwnerScreen titulo="Pedidos" subtitulo="Tudo o que foi solicitado e quem atende" carregando={carregando} atualizando={atualizando} onAtualizar={atualizar}>
+      {aviso}
       {erro ? <Erro mensagem={erro} aoTentar={recarregar} /> : (
         <>
+          <HistoricoPdf local={local} aoErro={mostrarErro} />
+
           <View style={s.metricas}>
             <Metrica rotulo="Em aberto" valor={dados?.resumo.em_aberto ?? 0} icone="time-outline" tom="info" largura={110} />
             <Metrica rotulo="Concluídos" valor={dados?.resumo.concluidos ?? 0} icone="checkmark-done-outline" tom="positivo" largura={110} />
@@ -122,7 +207,17 @@ export default function PedidosGestao() {
               </View>
               <View style={s.atende}>
                 <Ionicons name="person-circle-outline" size={18} color={p.quem_atende ? O.accent : O.faint} />
-                <Text style={[s.atendeTxt, !p.quem_atende && { color: O.faint }]}>{p.quem_atende || 'Ninguém designado'}</Text>
+                <Text style={[s.atendeTxt, !p.quem_atende && { color: O.faint }, { flex: 1 }]}>{p.quem_atende || 'Ninguém designado'}</Text>
+                {COM_PAGAMENTO.includes(p.status) && (
+                  <TouchableOpacity
+                    onPress={() => baixarPdf(`/comprovante-pagamento?${p.tipo === 'produto' ? 'pedido_entrega_id' : 'aluguel_id'}=${p.id}`, `Comprovante_pagamento_${p.codigo}.pdf`).catch(mostrarErro)}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}
+                    hitSlop={8}
+                  >
+                    <Ionicons name="receipt-outline" size={15} color={O.accent} />
+                    <Text style={{ color: O.accent, fontWeight: '800', fontSize: 12 }}>Comprovante</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </Card>
           ))}
@@ -149,4 +244,9 @@ const s = StyleSheet.create({
   rodape: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 10 },
   atende: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10, backgroundColor: O.soft, borderRadius: 10, padding: 8 },
   atendeTxt: { fontSize: 13, fontWeight: '700', color: O.ink },
+  histTitulo: { fontSize: 15, fontWeight: '800', color: O.ink, marginBottom: 4 },
+  dataBotao: { flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start', borderWidth: 1, borderColor: O.line, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9 },
+  dataTxt: { fontSize: 14, fontWeight: '700', color: O.ink },
+  baixar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: O.ink, borderRadius: 14, height: 46, marginTop: 14 },
+  baixarTxt: { color: '#fff', fontWeight: '800', fontSize: 14 },
 });

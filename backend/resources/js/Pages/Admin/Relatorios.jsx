@@ -119,7 +119,7 @@ function ModalCusto({ custo, categorias, onClose }) {
     );
 }
 
-export default function Relatorios({ mes, resumo, vendasEntregas, evolucaoMensal, repasses, estornos, clientes, custos, custosPorCategoria, categoriasCusto }) {
+export default function Relatorios({ mes, resumo, vendasEntregas, vendaCruzada, flashDeals, evolucaoMensal, repasses, estornos, clientes, custos, custosPorCategoria, categoriasCusto }) {
     const { flash = {} } = usePage().props;
     const [aba, setAba] = useState('geral');
     const [mesFiltro, setMesFiltro] = useState(mes || '');
@@ -219,6 +219,41 @@ export default function Relatorios({ mes, resumo, vendasEntregas, evolucaoMensal
                                     <CardMetrica titulo="Receita de produtos" valor={fmt(vendasEntregas.receita_plataforma)} cor="text-emerald-600" />
                                 </div>
                             </div>
+
+                            {flashDeals && (
+                                <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-5">
+                                    <div className="mb-4">
+                                        <p className="font-bold text-gray-900">Flash Deals</p>
+                                        <p className="text-xs text-gray-500">Ofertas relâmpago dos parceiros para vagas ociosas, avisadas a quem está na cidade.</p>
+                                    </div>
+                                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                                        <CardMetrica titulo="Deals lançados" valor={flashDeals.deals} />
+                                        <CardMetrica titulo="No ar agora" valor={flashDeals.ativos} cor="text-emerald-600" />
+                                        <CardMetrica titulo="Clientes avisados" valor={flashDeals.notificados} />
+                                        <CardMetrica titulo="Abriram a oferta" valor={flashDeals.clicados} />
+                                        <CardMetrica titulo="Vagas vendidas" valor={`${flashDeals.vagas_vendidas} de ${flashDeals.vagas_ofertadas}`} cor="text-emerald-600" destaque />
+                                        <CardMetrica titulo="Ocupação das vagas" valor={`${flashDeals.taxa_ocupacao}%`} />
+                                    </div>
+                                </div>
+                            )}
+
+                            {vendaCruzada && (
+                                <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-5">
+                                    <div className="mb-4">
+                                        <p className="font-bold text-gray-900">Venda cruzada de viagem</p>
+                                        <p className="text-xs text-gray-500">Ofertas automáticas para quem reservou hospedagem: veículo 2 dias antes do check-in, restaurante e spa na chegada à cidade.</p>
+                                    </div>
+                                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                                        <CardMetrica titulo="Ofertas enviadas" valor={vendaCruzada.enviadas} />
+                                        <CardMetrica titulo="Abertas" valor={`${vendaCruzada.clicadas} · ${vendaCruzada.taxa_clique}%`} />
+                                        <CardMetrica titulo="Viraram reserva" valor={`${vendaCruzada.convertidas} · ${vendaCruzada.taxa_conversao}%`} cor="text-emerald-600" destaque />
+                                        <CardMetrica titulo="Veículo (antes do check-in)" valor={`${vendaCruzada.por_tipo?.veiculo_pre_checkin?.convertidas ?? 0} de ${vendaCruzada.por_tipo?.veiculo_pre_checkin?.enviadas ?? 0}`} />
+                                        <CardMetrica titulo="Restaurante (chegada)" valor={`${vendaCruzada.por_tipo?.chegada_restaurante?.convertidas ?? 0} de ${vendaCruzada.por_tipo?.chegada_restaurante?.enviadas ?? 0}`} />
+                                        <CardMetrica titulo="Spa (chegada)" valor={`${vendaCruzada.por_tipo?.chegada_spa?.convertidas ?? 0} de ${vendaCruzada.por_tipo?.chegada_spa?.enviadas ?? 0}`} />
+                                    </div>
+                                    <p className="text-xs text-gray-400 mt-3">{vendaCruzada.agendadas} oferta(s) aguardando a data ou a chegada do cliente.</p>
+                                </div>
+                            )}
 
                             <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
                                 <div className="px-5 py-4 border-b border-gray-100 font-bold text-gray-900">Evolução mensal (últimos 6 meses)</div>

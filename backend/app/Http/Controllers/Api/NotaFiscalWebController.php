@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\NotaFiscal;
 use App\Models\Provider;
+use App\Services\NotaFiscal\CentralNotasService;
 use App\Services\NotaFiscalService;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -12,36 +13,44 @@ use Inertia\Inertia;
 class NotaFiscalWebController extends Controller
 {
     /**
-     * Tela com o status de cada nota fiscal emitida (ou tentada) para o usuário logado:
-     * as notas de VENDA (pagamentos que ele recebeu como prestador, se for sócio premium)
-     * e as notas da própria ASSINATURA dele (sócio ou cliente, qualquer plano pago).
+     * Central de notas fiscais do usuário logado:
+     * - vendas: notas que o sócio emitiu para os clientes (Sócio Premium);
+     * - comissões: notas que a Lokyva emitiu para o sócio pela taxa de intermediação;
+     * - assinatura: notas da assinatura do próprio usuário;
+     * - e, para o cliente, as notas das compras que ele fez.
      */
-    public function index(Request $request)
+    public function index(Request $request, CentralNotasService $central)
     {
         $user = $request->user();
         $provider = Provider::where('user_id', $user->id)->first();
+        $tipo = in_array($request->query('tipo'), CentralNotasService::TIPOS, true) ? $request->query('tipo') : null;
 
-        $notas = NotaFiscal::where('usuario_id', $user->id)
-            ->when($provider, fn ($q) => $q->orWhere('provider_id', $provider->id))
+        $notas = $central->consultaDoUsuario($user, $provider)
+            ->when($tipo, fn ($q) => $q->where('tipo', $tipo))
             ->with(['pagamento:id,valor,valor_total,created_at', 'assinatura:id,nome_plano'])
             ->orderByDesc('created_at')
-            ->paginate(15);
+            ->paginate(15)
+            ->withQueryString();
 
-        return Inertia::render('Estabelecimentos/NotasFiscais', [
-            'notas' => $notas,
-            'elegivel' => $provider ? app(NotaFiscalService::class)->elegivel($provider) : false,
-        ]);
+        return Inertia::render('Estabelecimentos/NotasFiscais', ['notas' => $notas, 'filtro' => $tipo] + $central->painel($user, $provider));
     }
 
-    public function tentarNovamente(Request $request, NotaFiscal $notaFiscal)
+    /** O sócio informa o serviço municipal e as alíquotas das notas de venda (dados do contador dele). */
+    public function salvarConfiguracao(Request $request, CentralNotasService $central)
+    {
+        $provider = Provider::where('user_id', $request->user()->id)->firstOrFail();
+        $central->salvarConfiguracao($provider, $request->validate(CentralNotasService::REGRAS_CONFIGURACAO, CentralNotasService::MENSAGENS_CONFIGURACAO));
+
+        return back()->with('success', 'Configuração fiscal salva. As próximas notas de venda já saem com esses dados.');
+    }
+
+    public function tentarNovamente(Request $request, NotaFiscal $notaFiscal, CentralNotasService $central)
     {
         $user = $request->user();
         $provider = Provider::where('user_id', $user->id)->first();
 
-        $donoDaNota = $notaFiscal->usuario_id === $user->id
-            || ($provider && $notaFiscal->provider_id === $provider->id);
-
-        abort_unless($donoDaNota, 403);
+        abort_unless($central->podeMexer($notaFiscal, $user, $provider), 403);
+        abort_if($notaFiscal->status === 'CANCELADA', 422, 'Nota cancelada não pode ser reemitida.');
 
         app(NotaFiscalService::class)->tentarNovamente($notaFiscal);
 

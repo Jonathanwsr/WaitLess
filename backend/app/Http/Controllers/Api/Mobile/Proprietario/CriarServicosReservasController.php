@@ -65,43 +65,10 @@ class CriarServicosReservasController extends Controller
         ], 500);
     }
 
-    /**
-     * Integração com a HIVE AI para moderação de imagens
-     * Retorna true se a imagem for segura, false se for indevida
-     */
+    /** Moderação de imagem centralizada no HiveAiService (desligada por padrão). True = imagem aceita. */
     private function validarImagemHiveSegura($file)
     {
-        try {
-            // Substitua pela sua chave da Hive AI no arquivo .env (HIVE_API_KEY)
-            $apiKey = env('HIVE_API_KEY', 'sua_chave_hive_aqui');
-
-            $response = Http::withHeaders([
-                'Authorization' => 'token ' . $apiKey,
-                'Accept' => 'application/json',
-            ])->attach(
-                'media', file_get_contents($file->getRealPath()), $file->getClientOriginalName()
-            )->post('https://api.thehive.ai/api/v2/task/sync');
-
-            if ($response->successful()) {
-                $data = $response->json();
-                $classes = $data['status'][0]['response']['output'][0]['classes'] ?? [];
-
-                foreach ($classes as $class) {
-                    // Bloqueia se identificar pornografia, nudez explícita, violência gore ou armas com mais de 80% de precisão
-                    if (in_array($class['class'], ['yes_nsfw', 'porn', 'gory', 'weapons']) && $class['score'] > 0.80) {
-                        return false;
-                    }
-                }
-            }
-
-            return true;
-        } catch (Exception $e) {
-            Log::error("Erro na API da Hive AI: " . $e->getMessage());
-            // Em caso de falha da API, você pode decidir se bloqueia ou libera.
-            // Por padrão, liberamos para não travar o app do usuário por instabilidade externa,
-            // mas o erro fica logado.
-            return true;
-        }
+        return \App\Services\HiveAiService::isSafe($file);
     }
 
     /**
@@ -155,6 +122,7 @@ class CriarServicosReservasController extends Controller
             'tipo_desconto'            => 'required_if:tem_promocao,true|in:percentual,fixo',
             'valor_desconto'           => 'nullable|numeric|min:0',
             'aceita_pontos'            => 'boolean',
+            'politica_cancelamento'    => 'nullable|in:flexivel,moderada,firme,rigorosa',
             'maximo_pontos_permitidos' => 'nullable|integer|min:0',
             'produtos_vinculados'      => 'nullable|array',
             'produtos_vinculados.*'    => 'integer|exists:produtos,id',
@@ -211,7 +179,8 @@ class CriarServicosReservasController extends Controller
                     'configuracoes'        => json_encode([
                         'dias_disponiveis'   => $dias,
                         'tipo_pagamento'     => $validated['tipo_pagamento'],
-                        'funcionario_padrao' => $funcionarioParaSalvar
+                        'funcionario_padrao' => $funcionarioParaSalvar,
+                        'horario_a_combinar' => $request->boolean('horario_a_combinar'),
                     ]),
                     'fotos'                => json_encode($urlsFotos),
                     'somente_premium'          => $somentePremium,
@@ -220,6 +189,7 @@ class CriarServicosReservasController extends Controller
                     'valor_desconto'           => $temPromocao ? ($validated['valor_desconto'] ?? null) : null,
                     'aceita_pontos'            => $aceitaPontos,
                     'maximo_pontos_permitidos' => $aceitaPontos ? ($validated['maximo_pontos_permitidos'] ?? null) : null,
+                    'politica_cancelamento'    => \App\Services\Locacao\PoliticaCancelamentoService::valida($validated['politica_cancelamento'] ?? null),
                 ]);
 
                 $this->vincularProdutosExistentes($produtosVinculados, 'servico_id', $servico->id, $est_id);
@@ -268,6 +238,7 @@ class CriarServicosReservasController extends Controller
             'tipo_desconto'            => 'required_if:tem_promocao,true|in:percentual,fixo',
             'valor_desconto'           => 'nullable|numeric|min:0',
             'aceita_pontos'            => 'boolean',
+            'politica_cancelamento'    => 'nullable|in:flexivel,moderada,firme,rigorosa',
             'maximo_pontos_permitidos' => 'nullable|integer|min:0',
             'produtos_vinculados'      => 'nullable|array',
             'produtos_vinculados.*'    => 'integer|exists:produtos,id',
@@ -289,7 +260,8 @@ class CriarServicosReservasController extends Controller
                 'configuracoes'        => json_encode([
                     'dias_disponiveis'   => $validated['dias_disponiveis'] ?? [],
                     'tipo_pagamento'     => $validated['tipo_pagamento'],
-                    'funcionario_padrao' => $validated['funcionario_id'] ?? null
+                    'funcionario_padrao' => $validated['funcionario_id'] ?? null,
+                    'horario_a_combinar' => $request->boolean('horario_a_combinar'),
                 ]),
                 'somente_premium'          => $request->boolean('somente_premium', false),
                 'tem_promocao'             => $temPromocao,
@@ -297,6 +269,7 @@ class CriarServicosReservasController extends Controller
                 'valor_desconto'           => $temPromocao ? ($validated['valor_desconto'] ?? null) : null,
                 'aceita_pontos'            => $aceitaPontos,
                 'maximo_pontos_permitidos' => $aceitaPontos ? ($validated['maximo_pontos_permitidos'] ?? null) : null,
+                'politica_cancelamento'    => \App\Services\Locacao\PoliticaCancelamentoService::valida($validated['politica_cancelamento'] ?? null),
             ];
 
             if ($request->hasFile('fotos')) {
@@ -394,13 +367,17 @@ class CriarServicosReservasController extends Controller
         try {
             $estabelecimentosIds = Auth::user()->estabelecimentos()->pluck('estabelecimentos.id');
 
-            $itens = ItemAluguel::whereIn('estabelecimento_id', $estabelecimentosIds)
+            $itens = ItemAluguel::where(fn ($q) => $q->whereIn('local_id', $estabelecimentosIds)
+                    ->orWhere(fn ($legado) => $legado->whereNull('local_id')->whereIn('estabelecimento_id', $estabelecimentosIds)))
                 ->when($request->search, function ($query, $search) {
                     $query->where('nome', 'like', "%{$search}%")
                           ->orWhere('modelo', 'like', "%{$search}%");
                 })
                 ->latest()
                 ->paginate(10);
+
+            // O app de gestão trabalha com o id do LOCAL no campo estabelecimento_id.
+            $itens->getCollection()->each->paraTelaDoDono();
 
             return response()->json($itens);
         } catch (Exception $e) {
@@ -416,11 +393,11 @@ class CriarServicosReservasController extends Controller
                 return response()->json(['status' => 'error', 'message' => 'Item não encontrado.'], 404);
             }
 
-            if (!Auth::user()->estabelecimentos->contains($item->estabelecimento_id)) {
+            if (!Auth::user()->estabelecimentos->contains($item->localId())) {
                 return response()->json(['status' => 'error', 'message' => 'Acesso restrito a este item.'], 403);
             }
 
-            return response()->json($item);
+            return response()->json($item->paraTelaDoDono());
         } catch (Exception $e) {
             return $this->respostaErro($e, 'showItem');
         }
@@ -501,6 +478,10 @@ class CriarServicosReservasController extends Controller
             $produtosVinculados = $dados['produtos_vinculados'] ?? [];
             unset($dados['produtos_vinculados']);
 
+            // O app manda o LOCAL; o item guarda o local em local_id e o DONO em estabelecimento_id.
+            $dados['local_id'] = (int) $dados['estabelecimento_id'];
+            $dados['estabelecimento_id'] = ItemAluguel::donoDoLocal($dados['local_id']);
+
             $item = ItemAluguel::create(array_merge($dados, [
                 'fotos'                     => json_encode($urlsFotos),
                 'recursos_oferecidos'       => json_encode($dados['recursos_oferecidos'] ?? []),
@@ -524,7 +505,7 @@ class CriarServicosReservasController extends Controller
                 'ativo'             => true,
             ]));
 
-            $this->vincularProdutosExistentes($produtosVinculados, 'aluguel_id', $item->id, $item->estabelecimento_id);
+            $this->vincularProdutosExistentes($produtosVinculados, 'aluguel_id', $item->id, $item->localId());
 
             return response()->json(['status' => 'success', 'message' => 'Reserva/Item salvo com sucesso!', 'data' => $item], 201);
         } catch (Exception $e) {
@@ -540,15 +521,22 @@ class CriarServicosReservasController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Item não encontrado.'], 404);
         }
 
-        if (!Auth::user()->estabelecimentos->contains($item->estabelecimento_id)) {
+        if (!Auth::user()->estabelecimentos->contains($item->localId())) {
             return response()->json(['status' => 'error', 'message' => 'Acesso restrito a este item.'], 403);
         }
 
         $dados = $request->validate($this->regrasValidacaoItemAluguel());
 
+        if (!Auth::user()->estabelecimentos->contains($dados['estabelecimento_id'])) {
+            return response()->json(['status' => 'error', 'message' => 'Acesso não autorizado para esta filial.'], 403);
+        }
+
         try {
             $produtosVinculados = $dados['produtos_vinculados'] ?? [];
             unset($dados['produtos_vinculados']);
+
+            $dados['local_id'] = (int) $dados['estabelecimento_id'];
+            $dados['estabelecimento_id'] = ItemAluguel::donoDoLocal($dados['local_id']);
 
             $dadosParaAtualizar = array_merge($dados, [
                 'recursos_oferecidos'       => json_encode($dados['recursos_oferecidos'] ?? []),
@@ -584,7 +572,7 @@ class CriarServicosReservasController extends Controller
 
             $item->update($dadosParaAtualizar);
 
-            $this->vincularProdutosExistentes($produtosVinculados, 'aluguel_id', $item->id, $item->estabelecimento_id);
+            $this->vincularProdutosExistentes($produtosVinculados, 'aluguel_id', $item->id, $item->localId());
 
             return response()->json(['status' => 'success', 'message' => 'Reserva/Item atualizado com sucesso!', 'data' => $item]);
         } catch (Exception $e) {
@@ -602,7 +590,7 @@ class CriarServicosReservasController extends Controller
                 return response()->json(['status' => 'error', 'message' => 'Item não encontrado.'], 404);
             }
 
-            if (!Auth::user()->estabelecimentos->contains($item->estabelecimento_id)) {
+            if (!Auth::user()->estabelecimentos->contains($item->localId())) {
                 return response()->json(['status' => 'error', 'message' => 'Acesso restrito a este item.'], 403);
             }
 

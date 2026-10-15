@@ -36,14 +36,14 @@ const cargosOpcoes = ['Atendente', 'Gerente', 'Administrador', 'Barbeiro', 'Mec�
 
 export default function ConfiguracoesMobile() {
   const router = useRouter();
-  
+
   // Pegando o ID e o Nome que vêm do Dashboard
-  const { id: estabelecimentoId, nome: estabelecimentoNome, aba: abaInicial } = useLocalSearchParams<{ id: string, nome?: string, aba?: string }>(); 
+  const { id: estabelecimentoId, nome: estabelecimentoNome, aba: abaInicial } = useLocalSearchParams<{ id: string, nome?: string, aba?: string }>();
 
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [userName, setUserName] = useState('U');
   const [userPhoto, setUserPhoto] = useState<string | null>(null);
-  
+
   const [activeTab, setActiveTab] = useState(['detalhes', 'equipe', 'servicos', 'reservas_alugueis', 'financeiro'].includes(String(abaInicial)) ? String(abaInicial) : 'detalhes');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -66,7 +66,7 @@ export default function ConfiguracoesMobile() {
   // FORM 1: DETALHES DA LOJA
   // ==========================================
   const [formDetalhes, setFormDetalhes] = useState({
-    nome: '', cnpj: '', razao_social: '', site: '', ramo_atuacao: '', 
+    nome: '', cnpj: '', razao_social: '', site: '', bio: '', ramo_atuacao: '',
     telefone: '', cep: '', rua: '', numero: '',
     complemento: '', bairro: '', cidade: '', estado: 'PE',
   });
@@ -88,6 +88,7 @@ export default function ConfiguracoesMobile() {
     id: null as any, nome: '', tipo_servico: '', descricao: '', valor: '', gratuito: false, duracao_minutos: '30', vagas_por_horario: '1',
     funcionario_id: '', dias_disponiveis: ['segunda', 'terca', 'quarta', 'quinta', 'sexta'] as string[],
     horarios_disponiveis: [] as string[],
+    horario_a_combinar: false,
     tipo_pagamento: 'hibrido',
     somente_premium: false, tem_promocao: false, tipo_desconto: 'percentual', valor_desconto: '',
     aceita_pontos: false, maximo_pontos_permitidos: '',
@@ -159,7 +160,7 @@ export default function ConfiguracoesMobile() {
     try {
       setLoading(true);
       let token = await AsyncStorage.getItem('@waitless_token');
-      if (!token) token = await AsyncStorage.getItem('@lokyva_token'); 
+      if (!token) token = await AsyncStorage.getItem('@lokyva_token');
       if (!token) { router.replace('/autenticacao/login'); return; }
       setAuthToken(token);
 
@@ -174,25 +175,25 @@ export default function ConfiguracoesMobile() {
       const res = await fetch(`${cleanBaseUrl}/configuracoes/${estabelecimentoId}`, {
         headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
       });
-      
+
       const { ok, data } = await handleApiResponse(res);
 
       if (ok) {
         // Garantindo que pega os dados independente da estrutura da API (data.estabelecimento ou data direto)
-        const est = data.estabelecimento || data; 
-        
+        const est = data.estabelecimento || data;
+
         if (est && est.id) {
           setEstabelecimento(est);
           setFormDetalhes({
             nome: est.nome || '', cnpj: est.cnpj || '', razao_social: est.razao_social || '',
-            site: est.site || '', ramo_atuacao: est.ramo_atuacao || '', telefone: est.telefone || '',
+            site: est.site || '', bio: est.bio || '', ramo_atuacao: est.ramo_atuacao || '', telefone: est.telefone || '',
             cep: est.cep || '', rua: est.rua || '', numero: est.numero || '', complemento: est.complemento || '',
             bairro: est.bairro || '', cidade: est.cidade || '', estado: est.estado || 'PE',
           });
           setFotoPerfilPreview(est.foto_perfil || null);
           setFotoBannerPreview(est.foto_banner || null);
         }
-        
+
         setFuncionarios(data.funcionarios || []);
         setServicos(data.servicos || []);
         setItensAluguel(data.itens_aluguel || []);
@@ -323,12 +324,12 @@ export default function ConfiguracoesMobile() {
 
   const submitFuncionario = async () => {
     const { nome, email, password, cargo } = formFuncionario;
-    
+
     // Corrigido bug da validação (Removendo o .trim() para evitar quebras)
     if (!nome || !email || !password || !cargo) {
       return alertar('Atenção', 'Nome, email, cargo e senha são campos obrigatórios e não podem ficar em branco.');
     }
-    
+
     try {
       setSubmitting(true);
       const res = await fetch(`${v1MobileUrl}/estabelecimentos/${estabelecimento.id}/funcionarios`, { method: 'POST', headers: getHeaders(), body: JSON.stringify(formFuncionario) });
@@ -373,6 +374,7 @@ export default function ConfiguracoesMobile() {
     id: null as any, nome: '', tipo_servico: '', descricao: '', valor: '', gratuito: false, duracao_minutos: '30', vagas_por_horario: '1',
     funcionario_id: '', dias_disponiveis: ['segunda', 'terca', 'quarta', 'quinta', 'sexta'] as string[],
     horarios_disponiveis: [] as string[],
+    horario_a_combinar: false,
     tipo_pagamento: 'hibrido',
     somente_premium: false, tem_promocao: false, tipo_desconto: 'percentual', valor_desconto: '',
     aceita_pontos: false, maximo_pontos_permitidos: '',
@@ -405,6 +407,14 @@ export default function ConfiguracoesMobile() {
       valor_desconto: s.valor_desconto != null ? String(s.valor_desconto) : '',
       aceita_pontos: !!s.aceita_pontos,
       maximo_pontos_permitidos: s.maximo_pontos_permitidos != null ? String(s.maximo_pontos_permitidos) : '',
+      horario_a_combinar: (() => {
+        try {
+          let cfg = s.configuracoes;
+          if (typeof cfg === 'string') cfg = JSON.parse(cfg);
+          if (typeof cfg === 'string') cfg = JSON.parse(cfg);
+          return !!cfg?.horario_a_combinar;
+        } catch { return false; }
+      })(),
     });
     setFotosServico([]);
   };
@@ -424,6 +434,8 @@ export default function ConfiguracoesMobile() {
       Object.entries(dadosServico).forEach(([k, v]) => {
         if (k === 'dias_disponiveis' || k === 'horarios_disponiveis' || k === 'produtos_vinculados') {
           (v as (string | number)[]).forEach(item => formData.append(`${k}[]`, String(item)));
+        } else if (typeof v === 'boolean') {
+          formData.append(k, v ? '1' : '0');
         } else if (v !== null) {
           formData.append(k, String(v));
         }
@@ -571,7 +583,7 @@ export default function ConfiguracoesMobile() {
             <Ionicons name="arrow-back" size={16} color="#282828" />
             <Text style={styles.backButtonText}>Voltar</Text>
           </TouchableOpacity>
-          
+
           <Text style={styles.headerTitle}>
             {estabelecimentoNome ? `CONFIGURAÇÕES - ${estabelecimentoNome.toUpperCase()}` : 'CONFIGURAÇÕES'}
           </Text>
@@ -605,7 +617,7 @@ export default function ConfiguracoesMobile() {
       )}
 
       <ScrollView contentContainerStyle={styles.mainContent}>
-        
+
         {/* ======================================================== */}
         {/* ABA 1: PERFIL */}
         {/* ======================================================== */}
@@ -632,16 +644,28 @@ export default function ConfiguracoesMobile() {
               </View>
 
               <View style={styles.inputGroup}><Text style={styles.label}>Nome do Estabelecimento *</Text><TextInput style={styles.input} value={formDetalhes.nome} onChangeText={(t) => setFormDetalhes({ ...formDetalhes, nome: t })} /></View>
-              
+
               <View style={styles.rowGrid}>
                 <View style={styles.gridCol}><Text style={styles.labelSmall}>CNPJ</Text><TextInput style={styles.input} keyboardType="numeric" value={formDetalhes.cnpj} onChangeText={(t) => setFormDetalhes({ ...formDetalhes, cnpj: t.replace(/\D/g, '').slice(0, 14) })} /></View>
                 <View style={styles.gridCol}><Text style={styles.labelSmall}>Telefone</Text><TextInput style={styles.input} keyboardType="phone-pad" value={formDetalhes.telefone} onChangeText={(t) => setFormDetalhes({ ...formDetalhes, telefone: t.replace(/\D/g, '').slice(0, 15) })} /></View>
               </View>
-              
+
               <View style={styles.inputGroup}><Text style={styles.labelSmall}>Razão Social</Text><TextInput style={styles.input} value={formDetalhes.razao_social} onChangeText={(t) => setFormDetalhes({ ...formDetalhes, razao_social: t })} /></View>
-              <View style={styles.inputGroup}><Text style={styles.labelSmall}>Site / Link Externo</Text><TextInput style={styles.input} autoCapitalize="none" value={formDetalhes.site} onChangeText={(t) => setFormDetalhes({ ...formDetalhes, site: t })} placeholder="ex: www.sualoja.com.br" /></View>
+              <View style={styles.inputGroup}><Text style={styles.labelSmall}>Site ou rede social</Text><TextInput style={styles.input} autoCapitalize="none" keyboardType="url" value={formDetalhes.site} onChangeText={(t) => setFormDetalhes({ ...formDetalhes, site: t })} placeholder="ex: www.sualoja.com.br ou instagram.com/sualoja" /><Text style={styles.ajudaCampo}>Aparece na vitrine como um botão para o cliente abrir.</Text></View>
+              <View style={styles.inputGroup}>
+                <Text style={styles.labelSmall}>Descrição do local</Text>
+                <TextInput
+                  style={[styles.input, { minHeight: 110, textAlignVertical: 'top', paddingTop: 12 }]}
+                  multiline
+                  maxLength={1000}
+                  value={formDetalhes.bio}
+                  onChangeText={(t) => setFormDetalhes({ ...formDetalhes, bio: t })}
+                  placeholder="Conte o que o seu local oferece, o diferencial e o que o cliente pode esperar."
+                />
+                <Text style={styles.ajudaCampo}>Aparece na vitrine para o cliente · {(formDetalhes.bio || '').length}/1000</Text>
+              </View>
               <View style={styles.inputGroup}><Text style={styles.labelSmall}>Ramo de Atuação</Text><TextInput style={styles.input} value={formDetalhes.ramo_atuacao} onChangeText={(t) => setFormDetalhes({ ...formDetalhes, ramo_atuacao: t })} placeholder="Ex: Barbearia, Quadra..." /></View>
-              
+
               <View style={styles.divider} />
               <Text style={styles.sectionSubTitle}>Endereço (Busca por CEP)</Text>
 
@@ -655,7 +679,7 @@ export default function ConfiguracoesMobile() {
 
               <View style={styles.inputGroup}><Text style={styles.labelSmall}>Rua / Avenida</Text><TextInput style={styles.input} value={formDetalhes.rua} onChangeText={(t) => setFormDetalhes({ ...formDetalhes, rua: t })} /></View>
               <View style={styles.inputGroup}><Text style={styles.labelSmall}>Bairro</Text><TextInput style={styles.input} value={formDetalhes.bairro} onChangeText={(t) => setFormDetalhes({ ...formDetalhes, bairro: t })} /></View>
-              
+
               <View style={styles.rowGrid}>
                 <View style={styles.gridCol}><Text style={styles.labelSmall}>Cidade</Text><TextInput style={styles.input} value={formDetalhes.cidade} onChangeText={(t) => setFormDetalhes({ ...formDetalhes, cidade: t })} /></View>
                 <View style={styles.gridCol}><Text style={styles.labelSmall}>Complemento</Text><TextInput style={styles.input} value={formDetalhes.complemento} onChangeText={(t) => setFormDetalhes({ ...formDetalhes, complemento: t })} /></View>
@@ -669,7 +693,7 @@ export default function ConfiguracoesMobile() {
                   </TouchableOpacity>
                 ))}
               </ScrollView>
-              
+
               <TouchableOpacity style={styles.saveButton} onPress={submitDetalhes} disabled={submitting}>
                 {submitting ? <ActivityIndicator color="#FFF" /> : <Text style={styles.primaryButtonText}>SALVAR ALTERAÇÕES</Text>}
               </TouchableOpacity>
@@ -691,9 +715,9 @@ export default function ConfiguracoesMobile() {
           <View style={styles.tabContainer}>
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Novo Profissional</Text>
-              
+
               <TextInput style={styles.input} placeholder="Nome Completo *" value={formFuncionario.nome} onChangeText={(t) => setFormFuncionario({ ...formFuncionario, nome: t })} />
-              
+
               <Text style={styles.labelSmall}>Cargo / Papel no Sistema *</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap: 8, paddingBottom: 6}}>
                 {cargosOpcoes.map(cargo => (
@@ -705,7 +729,7 @@ export default function ConfiguracoesMobile() {
 
               <TextInput style={styles.input} placeholder="Email de Acesso *" autoCapitalize="none" keyboardType="email-address" value={formFuncionario.email} onChangeText={(t) => setFormFuncionario({ ...formFuncionario, email: t })} />
               <TextInput style={styles.input} placeholder="Senha Inicial *" secureTextEntry value={formFuncionario.password} onChangeText={(t) => setFormFuncionario({ ...formFuncionario, password: t })} />
-              
+
               <TouchableOpacity style={styles.accentButton} onPress={submitFuncionario} disabled={submitting}>
                 <Text style={styles.accentButtonText}>+ Cadastrar Membro</Text>
               </TouchableOpacity>
@@ -751,7 +775,7 @@ export default function ConfiguracoesMobile() {
 
               <TextInput style={styles.input} placeholder="Nome do Serviço (Ex: Corte de Cabelo)" value={formServico.nome} onChangeText={(t) => setFormServico({ ...formServico, nome: t })} />
               <TextInput style={styles.input} placeholder="Descrição (Opcional)" value={formServico.descricao} onChangeText={(t) => setFormServico({ ...formServico, descricao: t })} />
-              
+
               <View style={styles.rowGrid}>
                 <View style={styles.gridCol}>
                   <TextInput
@@ -785,6 +809,12 @@ export default function ConfiguracoesMobile() {
                 })}
               </ScrollView>
 
+              <View style={styles.switchRow}>
+                <View style={{flex:1}}><Text style={styles.label}>Horário a combinar</Text><Text style={styles.labelSmall}>Sem horários fixos: o cliente vê "Combine o horário com o proprietário" e fala com você pelo chat ou telefone para marcar.</Text></View>
+                <Switch value={!!formServico.horario_a_combinar} onValueChange={(v) => setFormServico({...formServico, horario_a_combinar: v})} trackColor={{ false: "#E1E2E5", true: '#FF7A00' }} />
+              </View>
+
+              {!formServico.horario_a_combinar && (<>
               <Text style={styles.labelSmall}>Horários de Atendimento</Text>
               <View style={styles.rowGrid}>
                 <View style={styles.gridCol}><TextInput style={styles.input} placeholder="Ex: 09:00" value={novoHorarioServico} onChangeText={setNovoHorarioServico} /></View>
@@ -795,6 +825,7 @@ export default function ConfiguracoesMobile() {
                   <View key={h} style={styles.badge}><Text style={styles.badgeText}>{h}</Text><TouchableOpacity onPress={()=>rmHorarioServico(h)}><Ionicons name="close" size={14} color="#FFF"/></TouchableOpacity></View>
                 ))}
               </View>
+              </>)}
 
               <View style={styles.imageUploadSection}>
                 <Text style={styles.labelSmall}>Fotos (Até 5 fotos)</Text>
@@ -903,7 +934,7 @@ export default function ConfiguracoesMobile() {
           <View style={styles.tabContainer}>
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Cadastrar Item de Locação</Text>
-              
+
               <View style={styles.rowGrid}>
                 <View style={styles.gridCol}>
                   <InputLabel text="Categoria *" />
@@ -918,7 +949,7 @@ export default function ConfiguracoesMobile() {
               </View>
 
               <TextInput style={styles.input} placeholder="Título da Locação *" value={formItem.nome} onChangeText={(t) => setFormItem({ ...formItem, nome: t })} />
-              
+
               <View style={styles.rowGrid}>
                 <View style={styles.gridCol}><TextInput style={styles.input} placeholder="Qtd Estoque" keyboardType="numeric" value={formItem.quantidade} onChangeText={(t) => setFormItem({ ...formItem, quantidade: t })} /></View>
                 <View style={styles.gridCol}><TextInput style={styles.input} placeholder="Marca (Opcional)" value={formItem.marca} onChangeText={(t) => setFormItem({ ...formItem, marca: t })} /></View>
@@ -926,7 +957,7 @@ export default function ConfiguracoesMobile() {
               </View>
 
               <View style={styles.divider} />
-              
+
               <Text style={styles.sectionSubTitle}>Matriz Financeira (R$)</Text>
               <View style={styles.rowGrid}>
                 <View style={styles.gridCol}><TextInput style={styles.input} placeholder="Diária *" keyboardType="numeric" value={formItem.valor_diaria} onChangeText={(t) => setFormItem({ ...formItem, valor_diaria: t })} /></View>
@@ -936,7 +967,7 @@ export default function ConfiguracoesMobile() {
               <View style={styles.divider} />
 
               <Text style={styles.sectionSubTitle}>Regras da Plataforma</Text>
-              
+
               <View style={styles.switchRow}>
                 <View style={{flex:1}}><Text style={styles.label}>Sempre Disponível</Text><Text style={styles.labelSmall}>Ignora as datas específicas.</Text></View>
                 <Switch value={formItem.sempre_disponivel} onValueChange={(v) => setFormItem({...formItem, sempre_disponivel: v})} trackColor={{ false: "#E1E2E5", true: '#FF7A00' }} />
@@ -1098,7 +1129,7 @@ const styles = StyleSheet.create({
   backButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F0F0F2', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
   backButtonText: { fontSize: 12, fontWeight: '600', color: '#282828', marginLeft: 4 },
   headerTitle: { fontSize: 10, fontWeight: '700', color: '#A0A2A8', letterSpacing: 0.5 },
-  
+
   // Bolinha do Avatar no Canto Superior Direito
   avatarMiniHeader: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#FFEDD5', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
   avatarTextHeader: { color: '#282828', fontWeight: 'bold', fontSize: 14 },
@@ -1108,10 +1139,10 @@ const styles = StyleSheet.create({
   tabButtonActive: { backgroundColor: '#FF7A00', borderColor: '#FF7A00' },
   tabButtonText: { fontSize: 12, fontWeight: '700', color: '#6A6C72', marginLeft: 6 },
   tabButtonTextActive: { color: '#FFFFFF' },
-  
+
   toast: { position: 'absolute', top: 100, left: 20, right: 20, zIndex: 999, backgroundColor: '#282828', borderRadius: 12, padding: 12, flexDirection: 'row', alignItems: 'center', elevation: 5 },
   toastText: { color: '#FFF', fontWeight: 'bold', marginLeft: 8 },
-  
+
   mainContent: { padding: 16 },
   tabContainer: { gap: 16 },
   card: { backgroundColor: '#FFF', borderRadius: 20, padding: 16, gap: 12, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
@@ -1131,16 +1162,17 @@ const styles = StyleSheet.create({
   inputGroup: { gap: 4 },
   label: { fontSize: 12, fontWeight: 'bold', color: '#6A6C72' },
   labelSmall: { fontSize: 11, color: '#6A6C72', marginBottom: 2 },
+  ajudaCampo: { fontSize: 11, color: '#A0A2A8', marginTop: 4 },
   input: { borderWidth: 1, borderColor: '#E1E2E5', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, fontSize: 14, color: '#282828', backgroundColor: '#FFF' },
   rowGrid: { flexDirection: 'row', gap: 12 },
   gridCol: { flex: 1 },
-  
+
   primaryButton: { backgroundColor: '#FF7A00', borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
   saveButton: { backgroundColor: '#12A150', borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
   primaryButtonText: { color: '#FFF', fontWeight: 'bold', fontSize: 14 },
   accentButton: { backgroundColor: '#12A150', borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
   accentButtonText: { color: '#FFF', fontWeight: 'bold' },
-  
+
   dangerCard: { backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FCA5A5', borderRadius: 14, padding: 16, gap: 8 },
   dangerTitle: { fontSize: 14, fontWeight: 'bold', color: '#991B1B' },
   dangerButton: { backgroundColor: '#DC2626', borderRadius: 12, paddingVertical: 10, alignItems: 'center' },
@@ -1155,17 +1187,17 @@ const styles = StyleSheet.create({
   addImageBtn: { width: 60, height: 60, borderRadius: 8, borderWidth: 1, borderColor: '#E1E2E5', borderStyle: 'dashed', justifyContent: 'center', alignItems: 'center', marginRight: 8 },
   imagePreviewContainer: { width: 60, height: 60, borderRadius: 8, marginRight: 8, overflow: 'hidden' },
   imagePreview: { width: '100%', height: '100%' },
-  
+
   chip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, backgroundColor: '#F0F0F2', borderWidth: 1, borderColor: '#E6E7E9' },
   chipCategoria: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
   chipActive: { backgroundColor: '#FFEDD5', borderColor: '#282828' },
   chipText: { fontSize: 12, color: '#6A6C72', fontWeight: 'bold' },
   chipTextActive: { color: '#EA580C' },
-  
+
   badge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#282828', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 14, gap: 6 },
   badgeText: { color: '#FFF', fontSize: 12, fontWeight: 'bold' },
   switchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: '#F0F0F2' },
-  
+
   bottomMenu: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center', backgroundColor: '#FFFFFF', paddingVertical: 10, borderTopWidth: 1, borderTopColor: '#F0F0F2' },
   menuItem: { alignItems: 'center', justifyContent: 'center', flex: 1, height: 50 },
   menuIconActiveBg: { width: 40, height: 40, borderRadius: 14, backgroundColor: '#FFEDD5', justifyContent: 'center', alignItems: 'center' },

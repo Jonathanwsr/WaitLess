@@ -32,7 +32,8 @@ interface Provider {
 const FORM_INICIAL = {
   name: '',
   email: '',
-  person_type: 'FISICA' as 'FISICA' | 'JURIDICA',
+  // Carteira e pagamento online só com CNPJ (MEI serve); sem CNPJ o sócio usa pagamento no local.
+  person_type: 'JURIDICA' as 'FISICA' | 'JURIDICA',
   document: '',
   birth_date: '',
   income_value: '',
@@ -194,7 +195,12 @@ export default function RegisterProviderScreen() {
         return;
       }
 
-      alertar('Carteira ativada!', 'Sua carteira digital foi criada com sucesso. Enviamos um e-mail de confirmação.');
+      if (json?.aguardando_liberacao) {
+        // O Asaas ainda não libera novas carteiras: os dados ficaram salvos e a carteira abre sozinha depois.
+        alertar('Dados salvos', json.message);
+      } else {
+        alertar('Carteira ativada!', 'Sua carteira digital foi criada com sucesso. Enviamos um e-mail de confirmação.');
+      }
       setProvider(json.provider);
     } catch (e) {
       alertar('Erro', 'Falha de conexão. Tente novamente.');
@@ -247,8 +253,12 @@ export default function RegisterProviderScreen() {
           <View style={styles.statusIconBoxPendente}>
             <Feather name="clock" size={32} color="#D97706" />
           </View>
-          <Text style={styles.statusTitulo}>Carteira em Análise</Text>
-          <Text style={styles.statusDesc}>Seus dados já foram enviados e estão em análise. Assim que aprovada, você poderá receber pagamentos por aqui.</Text>
+          <Text style={styles.statusTitulo}>{provider?.asaas_status === 'AGUARDANDO_LIBERACAO' ? 'Carteira aguardando liberação' : 'Carteira em Análise'}</Text>
+          <Text style={styles.statusDesc}>
+            {provider?.asaas_status === 'AGUARDANDO_LIBERACAO'
+              ? 'Seus dados estão salvos. O nosso parceiro de pagamentos está liberando novas carteiras e a sua será aberta automaticamente — você recebe um e-mail quando estiver ativa. Enquanto isso, use a Lokyva com pagamento no local.'
+              : 'Seus dados já foram enviados e estão em análise. Assim que aprovada, você poderá receber pagamentos por aqui.'}
+          </Text>
         </View>
       ) : (
         <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 40 }}>
@@ -272,19 +282,11 @@ export default function RegisterProviderScreen() {
 
           <Text style={styles.sectionLabel}>Dados pessoais</Text>
 
-          <View style={styles.toggleRow}>
-            <TouchableOpacity
-              style={[styles.toggleBtn, form.person_type === 'FISICA' && styles.toggleBtnAtivo]}
-              onPress={() => atualizar('person_type', 'FISICA')}
-            >
-              <Text style={[styles.toggleText, form.person_type === 'FISICA' && styles.toggleTextAtivo]}>Pessoa Física</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.toggleBtn, form.person_type === 'JURIDICA' && styles.toggleBtnAtivo]}
-              onPress={() => atualizar('person_type', 'JURIDICA')}
-            >
-              <Text style={[styles.toggleText, form.person_type === 'JURIDICA' && styles.toggleTextAtivo]}>Pessoa Jurídica</Text>
-            </TouchableOpacity>
+          <View style={{ backgroundColor: '#FEF3C7', borderRadius: 14, padding: 14, marginBottom: 14 }}>
+            <Text style={{ color: '#92400E', fontWeight: '800', fontSize: 14 }}>Conta de recebimento é para quem tem CNPJ (MEI serve)</Text>
+            <Text style={{ color: '#92400E', fontSize: 13, lineHeight: 19, marginTop: 4 }}>
+              Sem CNPJ você continua usando a Lokyva como sócio informal, com os clientes pagando no local. Com CNPJ você libera a carteira, o pagamento online e aparece antes nas buscas.
+            </Text>
           </View>
 
           <Text style={styles.label}>Nome completo {form.person_type === 'JURIDICA' ? '(Razão Social)' : ''}</Text>

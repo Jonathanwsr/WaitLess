@@ -119,6 +119,17 @@ export default function Vitrine({ auth, vitrine, divulgacao = null, produtosVend
                         </div>
                     </div>
 
+                    {(est.bio || est.site) && (
+                        <div className="mt-6 rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
+                            {est.bio && <p className="text-sm leading-relaxed text-gray-600 whitespace-pre-line">{est.bio}</p>}
+                            {est.site && (
+                                <a href={est.site} target="_blank" rel="noopener noreferrer nofollow" className="mt-2 inline-block text-sm font-bold text-[#FF5A00] hover:underline">
+                                    {est.site.replace(/^https?:\/\//i, '').replace(/\/$/, '')}
+                                </a>
+                            )}
+                        </div>
+                    )}
+
                     <div className="mt-8 flex gap-2 overflow-x-auto pb-2">
                         {abas.map(({ id, rotulo, qtd, icone: Icone }) => (
                             <button key={id} onClick={() => setAba(id)} className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-bold whitespace-nowrap border transition ${aba === id ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'}`}>

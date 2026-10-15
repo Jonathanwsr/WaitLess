@@ -1,15 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { 
-    StarIcon, 
-    ClockIcon, 
-    UserGroupIcon, 
-    CreditCardIcon, 
-    CalendarIcon, 
+import {
+    StarIcon,
+    ClockIcon,
+    UserGroupIcon,
+    CreditCardIcon,
+    CalendarIcon,
     ChevronRightIcon,
     ChevronLeftIcon,
-    ShareIcon, 
+    ShareIcon,
     MagnifyingGlassIcon,
     ArrowLeftIcon,
     Cog6ToothIcon,
@@ -22,10 +22,12 @@ import {
     TagIcon,
     FireIcon,
     PlusIcon,
-    TruckIcon
+    TruckIcon,
+    HomeModernIcon,
+    GlobeAltIcon
 } from '@heroicons/react/24/solid';
 
-export default function Loja({ auth, estabelecimento, servicosPaginados, statusFuncionamento, produtosVendidos = 0 }) {
+export default function Loja({ auth, estabelecimento, servicosPaginados, statusFuncionamento, produtosVendidos = 0, reservas = [] }) {
     // Abas e Listagem
     const [abaAtiva, setAbaAtiva] = useState('servicos'); // 'servicos' | 'produtos'
     const [produtos, setProdutos] = useState([]);
@@ -67,7 +69,7 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
     useEffect(() => {
         const salvo = localStorage.getItem('checkout_pendente_waitless');
         if (salvo) setCheckoutPendente(JSON.parse(salvo));
-        
+
         const urlParams = new URLSearchParams(window.location.search);
         const openId = urlParams.get('open_servico');
         if (openId) {
@@ -161,7 +163,7 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
         setProdutoSelecionado(null);
         setServicoSelecionado(servico);
         setFotoAtualIndex(0);
-        setDataSelecionada(''); 
+        setDataSelecionada('');
         setHoraSelecionada('');
         setExtrasSelecionados([]); // Reseta os extras ao trocar de serviço
         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -196,24 +198,24 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
 
     const gerarDiasProximos = (diasPermitidosBanco) => {
         if (!diasPermitidosBanco || diasPermitidosBanco.length === 0) return [];
-        
+
         const diasMapa = { 0: 'domingo', 1: 'segunda', 2: 'terca', 3: 'quarta', 4: 'quinta', 5: 'sexta', 6: 'sabado' };
         const diasGerados = [];
         let dataAtual = new Date();
 
         for (let i = 0; i < 15; i++) {
             const diaSemanaStr = diasMapa[dataAtual.getDay()];
-            
+
             if (diasPermitidosBanco.includes(diaSemanaStr)) {
                 const year = dataAtual.getFullYear();
                 const month = String(dataAtual.getMonth() + 1).padStart(2, '0');
                 const day = String(dataAtual.getDate()).padStart(2, '0');
-                
+
                 diasGerados.push({
                     dataOriginal: `${year}-${month}-${day}`,
-                    diaSemana: diaSemanaStr.substring(0, 3), 
+                    diaSemana: diaSemanaStr.substring(0, 3),
                     diaMes: dataAtual.getDate(),
-                    mes: dataAtual.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '') 
+                    mes: dataAtual.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '')
                 });
             }
             dataAtual.setDate(dataAtual.getDate() + 1);
@@ -252,20 +254,20 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
         return valorBase + valorExtras;
     };
 
-    const produtosExtras = servicoSelecionado 
-        ? produtos.filter(p => 
-            (p.atrelado_reservas == 1 || p.atrelado_reservas === true) && 
+    const produtosExtras = servicoSelecionado
+        ? produtos.filter(p =>
+            (p.atrelado_reservas == 1 || p.atrelado_reservas === true) &&
             p.estoque_disponivel > 0 &&
             (!p.servico_id || p.servico_id === servicoSelecionado.id)
           )
         : [];
 
-    const servicosOutros = servicoSelecionado 
-        ? servicos.filter(s => s.id !== servicoSelecionado.id).slice(0, 4) 
+    const servicosOutros = servicoSelecionado
+        ? servicos.filter(s => s.id !== servicoSelecionado.id).slice(0, 4)
         : [];
 
-    const produtosOutros = produtoSelecionado 
-        ? produtos.filter(p => p.id !== produtoSelecionado.id).slice(0, 4) 
+    const produtosOutros = produtoSelecionado
+        ? produtos.filter(p => p.id !== produtoSelecionado.id).slice(0, 4)
         : [];
 
     const bannerUrl = estabelecimento.foto_banner || 'https://images.unsplash.com/photo-1629909613654-28e377c37b09?auto=format&fit=crop&w=1920&q=80';
@@ -278,8 +280,8 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
             header={
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div className="flex items-center gap-4">
-                        <Link 
-                            href={route('cliente.explorar')} 
+                        <Link
+                            href={route('cliente.explorar')}
                             className="bg-gray-100 hover:bg-gray-200 text-gray-700 w-10 h-10 rounded-full flex items-center justify-center transition shadow-sm font-bold"
                             title="Voltar"
                         >
@@ -303,19 +305,19 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
 
             {/* HEADER BANNER E PERFIL */}
             <div className="relative w-full h-80 md:h-[420px] bg-gray-900 overflow-hidden">
-                <img 
-                    src={bannerUrl} 
-                    alt="Banner do estabelecimento" 
+                <img
+                    src={bannerUrl}
+                    alt="Banner do estabelecimento"
                     className="w-full h-full object-cover opacity-80"
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/40 to-transparent" />
-                
+
                 <div className="absolute bottom-0 inset-x-0 pb-8 px-4 max-w-7xl mx-auto sm:px-6 lg:px-8 flex flex-col md:flex-row md:items-end justify-between gap-6">
                     <div className="flex items-start md:items-center gap-5">
                         <div className="bg-white p-1.5 rounded-2xl shadow-xl w-24 h-24 md:w-32 md:h-32 flex items-center justify-center border border-gray-100 flex-shrink-0 z-10">
                             <img src={logoUrl} alt={estabelecimento.nome} className="w-full h-full object-contain rounded-xl" />
                         </div>
-                        
+
                         <div className="text-white">
                             <div className="flex items-center gap-3 flex-wrap">
                                 <h1 className="text-2xl md:text-4xl font-extrabold tracking-tight">{estabelecimento.nome}</h1>
@@ -326,7 +328,7 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
                                     <span className="text-[10px] bg-indigo-600/90 backdrop-blur-md text-white px-2.5 py-1 rounded-full uppercase tracking-wider font-bold">Visão Gerencial</span>
                                 )}
                             </div>
-                            
+
                             <div className="flex items-center gap-2 text-sm text-gray-300 mt-2 flex-wrap">
                                 {temAvaliacaoReal ? (
                                     <>
@@ -373,11 +375,18 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
                                 </div>
                             )}
 
-                            <div className="flex items-center gap-2 mt-4 flex-wrap hidden md:flex">
-                                <span className="bg-white/10 backdrop-blur-md border border-white/20 text-white px-3 py-1.5 rounded-full text-xs font-medium tracking-wide">Profissionais qualificados</span>
-                                <span className="bg-white/10 backdrop-blur-md border border-white/20 text-white px-3 py-1.5 rounded-full text-xs font-medium tracking-wide">Ambiente moderno</span>
-                                <span className="bg-white/10 backdrop-blur-md border border-white/20 text-white px-3 py-1.5 rounded-full text-xs font-medium tracking-wide">Atendimento humanizado</span>
-                            </div>
+                            {estabelecimento.site && (
+                                <div className="flex items-center gap-2 mt-4 flex-wrap">
+                                    <a
+                                        href={estabelecimento.site}
+                                        target="_blank"
+                                        rel="noopener noreferrer nofollow"
+                                        className="inline-flex items-center gap-1.5 bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 text-white px-3 py-1.5 rounded-full text-xs font-bold tracking-wide transition"
+                                    >
+                                        <GlobeAltIcon className="w-4 h-4" /> {estabelecimento.site.replace(/^https?:\/\//i, '').replace(/\/$/, '')}
+                                    </a>
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -458,22 +467,44 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
 
             {/* CONTEÚDO PRINCIPAL (VITRINE) */}
             <div className="max-w-7xl mx-auto mt-8 px-4 sm:px-6 lg:px-8 pb-24">
-                
+
+                {/* SOBRE O LOCAL: descrição escrita pelo dono em Editar local */}
+                {!servicoSelecionado && !produtoSelecionado && estabelecimento.bio && (
+                    <section className="mb-6 bg-white rounded-2xl border border-gray-100 shadow-sm p-5 sm:p-6">
+                        <h2 className="text-lg font-black text-gray-900">Sobre {estabelecimento.nome}</h2>
+                        <p className="mt-2 text-sm text-gray-600 leading-relaxed whitespace-pre-line">{estabelecimento.bio}</p>
+                        {estabelecimento.site && (
+                            <a href={estabelecimento.site} target="_blank" rel="noopener noreferrer nofollow" className="mt-3 inline-flex items-center gap-1.5 text-sm font-bold text-[#FF5A00] hover:underline">
+                                <GlobeAltIcon className="w-4 h-4" /> Visitar o site
+                            </a>
+                        )}
+                    </section>
+                )}
+
                 {/* Se não houver nada selecionado, mostra o Catálogo com Abas */}
                 {!servicoSelecionado && !produtoSelecionado && (
                     <div className="space-y-6">
-                        
+
                         {/* CONTROLES E ABAS DE NAVEGAÇÃO */}
                         <div className="flex flex-col lg:flex-row gap-4 items-center justify-between bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
                             <div className="flex gap-4 w-full lg:w-auto border-b border-gray-100">
-                                <button 
-                                    onClick={() => setAbaAtiva('servicos')} 
+                                <button
+                                    onClick={() => setAbaAtiva('servicos')}
                                     className={`pb-3 font-black text-sm transition-all flex items-center gap-2 px-2 ${abaAtiva === 'servicos' ? 'border-b-2 border-[#FF5A00] text-[#FF5A00]' : 'text-gray-400 hover:text-gray-700 border-b-2 border-transparent'}`}
                                 >
                                     <ChartBarIcon className="w-4 h-4" /> Serviços
                                 </button>
-                                <button 
-                                    onClick={() => setAbaAtiva('produtos')} 
+                                {reservas.length > 0 && (
+                                    <button
+                                        onClick={() => setAbaAtiva('reservas')}
+                                        className={`pb-3 font-black text-sm transition-all flex items-center gap-2 px-2 ${abaAtiva === 'reservas' ? 'border-b-2 border-[#FF5A00] text-[#FF5A00]' : 'text-gray-400 hover:text-gray-700 border-b-2 border-transparent'}`}
+                                    >
+                                        <HomeModernIcon className="w-4 h-4" /> Reservas
+                                        <span className="text-[10px] bg-orange-100 text-[#FF5A00] px-1.5 py-0.5 rounded-full">{reservas.length}</span>
+                                    </button>
+                                )}
+                                <button
+                                    onClick={() => setAbaAtiva('produtos')}
                                     className={`pb-3 font-black text-sm transition-all flex items-center gap-2 px-2 ${abaAtiva === 'produtos' ? 'border-b-2 border-[#FF5A00] text-[#FF5A00]' : 'text-gray-400 hover:text-gray-700 border-b-2 border-transparent'}`}
                                 >
                                     <ShoppingBagIcon className="w-4 h-4" /> Produtos da Loja
@@ -523,18 +554,18 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
                                             const fotoCapa = fotos.length > 0 ? fotos[0] : 'https://placehold.co/400x300/e2e8f0/828ea8?text=Sem+Imagem';
 
                                             return (
-                                                <div 
-                                                    key={servico.id} 
-                                                    onClick={() => abrirDetalhes(servico)} 
+                                                <div
+                                                    key={servico.id}
+                                                    onClick={() => abrirDetalhes(servico)}
                                                     className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex flex-col cursor-pointer group hover:shadow-xl hover:-translate-y-1 transition-all duration-300"
                                                 >
                                                     <div className="w-full aspect-[4/3] bg-gray-100 relative overflow-hidden">
-                                                        <img 
-                                                            src={fotoCapa} 
-                                                            alt={servico.nome} 
-                                                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" 
+                                                        <img
+                                                            src={fotoCapa}
+                                                            alt={servico.nome}
+                                                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
                                                         />
-                                                        
+
                                                         {Number(servico.total_avaliacoes) > 0 && (
                                                             <div className="absolute top-3 left-3 bg-white/95 backdrop-blur-sm px-2.5 py-1.5 rounded-lg text-xs font-bold text-gray-900 flex items-center gap-1 shadow-sm">
                                                                 <StarIcon className="w-4 h-4 text-amber-500" />
@@ -570,7 +601,7 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
                                                                     {Number(servico.valor).toFixed(2).replace('.', ',')}
                                                                 </div>
                                                             </div>
-                                                            
+
                                                             <div className="w-10 h-10 rounded-xl bg-orange-50 group-hover:bg-[#FF5A00] flex items-center justify-center text-[#FF5A00] group-hover:text-white transition-all shadow-sm">
                                                                 <ChevronRightIcon className="w-5 h-5 stroke-[3]" />
                                                             </div>
@@ -582,6 +613,47 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
                                     </div>
                                 )}
                             </>
+                        )}
+
+                        {/* RESERVAS DESTE LOCAL (hospedagens, veículos, equipamentos e espaços) */}
+                        {abaAtiva === 'reservas' && (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 animate-in fade-in duration-300">
+                                {reservas.filter((r) => !busca || r.nome.toLowerCase().includes(busca.toLowerCase())).filter((r) => !somentePromocoes || r.preco_final < r.valor_diaria).map((r) => (
+                                    <Link
+                                        key={r.id}
+                                        href={route('itens.detalhes', r.id)}
+                                        className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex flex-col group hover:shadow-xl hover:-translate-y-1 transition-all duration-300"
+                                    >
+                                        <div className="w-full aspect-[4/3] bg-gray-100 relative overflow-hidden">
+                                            <img
+                                                src={r.foto ? (r.foto.startsWith('http') || r.foto.startsWith('/') ? r.foto : `/storage/${r.foto}`) : 'https://placehold.co/400x300/e2e8f0/828ea8?text=Sem+Imagem'}
+                                                alt={r.nome}
+                                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                                            />
+                                            {r.preco_final < r.valor_diaria && (
+                                                <div className="absolute top-3 right-3 bg-red-600 text-white text-[10px] font-black px-2.5 py-1.5 rounded-lg tracking-wider uppercase shadow-sm">Promoção</div>
+                                            )}
+                                        </div>
+                                        <div className="p-5 flex-1 flex flex-col justify-between">
+                                            <div>
+                                                <div className="text-[10px] text-[#FF5A00] font-extrabold uppercase tracking-widest mb-1.5">{(r.categoria || 'Reserva').replace(/_/g, ' ')}</div>
+                                                <h4 className="font-bold text-gray-900 text-lg leading-tight group-hover:text-[#FF5A00] transition-colors line-clamp-2">{r.nome}</h4>
+                                                {r.capacidade_pessoas > 0 && <p className="text-gray-500 text-xs mt-2">Até {r.capacidade_pessoas} pessoas</p>}
+                                            </div>
+                                            <div className="mt-5 pt-4 border-t border-gray-100 flex items-center justify-between">
+                                                <div className="text-gray-900 font-black text-xl flex items-baseline">
+                                                    <span className="text-sm font-bold text-gray-500 mr-1">R$</span>
+                                                    {Number(r.preco_final).toFixed(2).replace('.', ',')}
+                                                    <span className="text-xs font-semibold text-gray-400 ml-1">/ {r.unidade}</span>
+                                                </div>
+                                                <div className="w-10 h-10 rounded-xl bg-orange-50 group-hover:bg-[#FF5A00] flex items-center justify-center text-[#FF5A00] group-hover:text-white transition-all shadow-sm">
+                                                    <ChevronRightIcon className="w-5 h-5 stroke-[3]" />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </Link>
+                                ))}
+                            </div>
                         )}
 
                         {/* LISTAGEM DE PRODUTOS */}
@@ -604,18 +676,18 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
                                             const fotoCapa = fotos.length > 0 ? (fotos[0].startsWith('http') ? fotos[0] : `/storage/${fotos[0]}`) : 'https://placehold.co/400x300/e2e8f0/828ea8?text=Sem+Imagem';
 
                                             return (
-                                                <div 
-                                                    key={produto.id} 
-                                                    onClick={() => abrirDetalhesProduto(produto)} 
+                                                <div
+                                                    key={produto.id}
+                                                    onClick={() => abrirDetalhesProduto(produto)}
                                                     className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden flex flex-col cursor-pointer group hover:shadow-xl hover:-translate-y-1 transition-all duration-300 relative"
                                                 >
                                                     <div className="w-full aspect-square bg-gray-50 relative overflow-hidden flex items-center justify-center">
-                                                        <img 
-                                                            src={fotoCapa} 
-                                                            alt={produto.nome} 
-                                                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" 
+                                                        <img
+                                                            src={fotoCapa}
+                                                            alt={produto.nome}
+                                                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
                                                         />
-                                                        
+
                                                         <div className="absolute top-3 left-3 flex flex-col gap-2">
                                                             {(produto.promocao == 1 || produto.is_promocao == 1) && (
                                                                 <span className="bg-red-600 text-white text-[10px] font-black uppercase px-2 py-1 rounded-md shadow-sm flex items-center gap-1">
@@ -728,7 +800,7 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
                 {/* TELA DE DETALHES DO SERVIÇO */}
                 {servicoSelecionado && (
                     <div className="bg-white rounded-3xl p-6 md:p-8 lg:p-10 border border-gray-100 shadow-xl shadow-gray-200/40 animate-in fade-in duration-500 slide-in-from-bottom-4">
-                        
+
                         <div className="flex items-center gap-2 mb-8 text-sm text-gray-500 font-medium overflow-x-auto whitespace-nowrap pb-2 scrollbar-hide">
                             <button onClick={fecharDetalhes} className="hover:text-[#FF5A00] transition-colors flex items-center gap-1">
                                 <ArrowLeftIcon className="w-4 h-4" /> Catálogo
@@ -745,11 +817,11 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
                                     const fotosServico = parseJSONSeguro(servicoSelecionado.fotos);
                                     const hasFotos = fotosServico.length > 0;
                                     const totalFotos = fotosServico.length;
-                                    
+
                                     return (
                                         <>
                                             <img src={hasFotos ? fotosServico[fotoAtualIndex] : 'https://placehold.co/600x600/e2e8f0/828ea8?text=Imagem+do+Serviço'} alt={servicoSelecionado.nome} className="w-full h-full object-cover transition-transform duration-700 hover:scale-105" />
-                                            
+
                                             {totalFotos > 1 && (
                                                 <>
                                                     <button onClick={() => fotoAnterior(totalFotos)} className="absolute left-4 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white text-gray-800 w-12 h-12 flex items-center justify-center rounded-full shadow-lg border border-gray-100 opacity-0 group-hover:opacity-100 transition-all focus:opacity-100">
@@ -772,7 +844,7 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
 
                             <div className="w-full lg:w-1/2 pb-24 lg:pb-0">
                                 <span className="text-sm text-[#FF5A00] font-extrabold uppercase tracking-widest">{servicoSelecionado.tipo_servico}</span>
-                                
+
                                 <div className="flex items-start justify-between gap-4 mt-2 mb-4">
                                     <h1 className="text-3xl md:text-5xl font-extrabold text-gray-900 tracking-tight leading-tight">
                                         {servicoSelecionado.nome}
@@ -792,7 +864,7 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
                                         </div>
                                     )}
                                     <div className="flex items-center gap-2 text-gray-700 font-medium bg-gray-50 border border-gray-100 px-3 py-1.5 rounded-lg">
-                                        <ClockIcon className="w-5 h-5 text-gray-400"/> 
+                                        <ClockIcon className="w-5 h-5 text-gray-400"/>
                                         <span>{servicoSelecionado.duracao_minutos} minutos</span>
                                     </div>
                                 </div>
@@ -804,8 +876,8 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
                                 {!isAdminOuGerente && (() => {
                                     const config = parseJSONSeguro(servicoSelecionado.configuracoes);
                                     const diasDisponiveisBanco = config.dias_disponiveis || ['segunda', 'terca', 'quarta', 'quinta', 'sexta'];
-                                    const horariosDisponiveisBanco = parseJSONSeguro(servicoSelecionado.horarios_disponiveis).length > 0 
-                                        ? parseJSONSeguro(servicoSelecionado.horarios_disponiveis) 
+                                    const horariosDisponiveisBanco = parseJSONSeguro(servicoSelecionado.horarios_disponiveis).length > 0
+                                        ? parseJSONSeguro(servicoSelecionado.horarios_disponiveis)
                                         : ['08:00', '09:00', '10:00', '11:00', '14:00', '15:00', '16:00'];
                                     const diasParaMostrar = gerarDiasProximos(diasDisponiveisBanco);
 
@@ -820,7 +892,7 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
                                                         diasParaMostrar.map(dia => {
                                                             const isSelected = dataSelecionada === dia.dataOriginal;
                                                             return (
-                                                                <button 
+                                                                <button
                                                                     key={dia.dataOriginal}
                                                                     type="button"
                                                                     onClick={() => setDataSelecionada(dia.dataOriginal)}
@@ -846,7 +918,7 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
                                                     horariosDisponiveisBanco.map(h => {
                                                         const isSelected = horaSelecionada === h;
                                                         return (
-                                                            <button 
+                                                            <button
                                                                 key={h}
                                                                 type="button"
                                                                 onClick={() => setHoraSelecionada(h)}
@@ -877,11 +949,11 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
                                             {produtosExtras.length > 0 && (
                                                 <div className="mt-8 pt-8 border-t border-gray-100 animate-in fade-in slide-in-from-bottom-2">
                                                     <h4 className="text-lg font-bold text-gray-900 mb-1 flex items-center gap-2">
-                                                        <ShoppingBagIcon className="w-5 h-5 text-[#FF5A00]" /> 
+                                                        <ShoppingBagIcon className="w-5 h-5 text-[#FF5A00]" />
                                                         Turbine seu agendamento
                                                     </h4>
                                                     <p className="text-sm text-gray-500 mb-6">Adicione produtos recomendados para retirar no dia do serviço.</p>
-                                                    
+
                                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                                         {produtosExtras.map(extra => {
                                                             let fotoCapa = 'https://placehold.co/100x100/e2e8f0/828ea8?text=Sem+Foto';
@@ -894,8 +966,8 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
                                                             const isSelected = extrasSelecionados.some(e => e.id === extra.id);
 
                                                             return (
-                                                                <div 
-                                                                    key={extra.id} 
+                                                                <div
+                                                                    key={extra.id}
                                                                     onClick={() => toggleExtra(extra)}
                                                                     className={`flex items-center gap-4 bg-white border p-3 rounded-2xl shadow-sm cursor-pointer transition-colors ${isSelected ? 'border-[#FF5A00] bg-orange-50/30' : 'border-gray-200 hover:border-orange-300'}`}
                                                                 >
@@ -938,13 +1010,13 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
                                     {calcularTotalServico().toFixed(2).replace('.', ',')}
                                 </div>
                             </div>
-                            
+
                             {!isAdminOuGerente && (
                                 <div className="flex items-center gap-3 w-full sm:w-auto">
                                     {/* 👇 NOVO: BOTÃO AGORA É UM LINK QUE PASSA OS DADOS PELA URL */}
-                                    <Link 
-                                        href={route('cliente.agendar', { 
-                                            estabelecimento: estabelecimento.id, 
+                                    <Link
+                                        href={route('cliente.agendar', {
+                                            estabelecimento: estabelecimento.id,
                                             servico_id: servicoSelecionado.id,
                                             data: dataSelecionada || undefined,
                                             hora: horaSelecionada || undefined,
@@ -959,7 +1031,7 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
                                 </div>
                             )}
                         </div>
-                        
+
                         {!isAdminOuGerente && (!dataSelecionada || !horaSelecionada) && (
                             <div className="hidden sm:block text-right mt-3 text-xs font-medium text-gray-400">
                                 Selecione uma data e horário acima para continuar
@@ -975,8 +1047,8 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
                                         const fotoCapaO = fotosO.length > 0 ? fotosO[0] : 'https://placehold.co/400x300/e2e8f0/828ea8?text=Sem+Imagem';
 
                                         return (
-                                            <div 
-                                                key={outroServico.id} 
+                                            <div
+                                                key={outroServico.id}
                                                 onClick={() => abrirDetalhes(outroServico)}
                                                 className="cursor-pointer group flex flex-col bg-white p-4 rounded-3xl border border-gray-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300"
                                             >
@@ -987,7 +1059,7 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
                                                     <span className="text-xs text-gray-400 font-bold mr-1">R$</span> {Number(outroServico.valor).toFixed(2).replace('.', ',')}
                                                 </div>
                                                 <h4 className="font-bold text-gray-700 text-sm line-clamp-2 group-hover:text-[#FF5A00] transition-colors leading-snug">{outroServico.nome}</h4>
-                                                
+
                                                 <div className="flex items-center gap-3 mt-4 pt-4 border-t border-gray-50 text-xs text-gray-500 font-medium">
                                                     <span className="flex items-center gap-1"><ClockIcon className="w-4 h-4 text-gray-400" /> {outroServico.duracao_minutos}m</span>
                                                     {Number(outroServico.total_avaliacoes) > 0 && (
@@ -1008,7 +1080,7 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
                 {/* TELA DE DETALHES DO PRODUTO (VENDA AVULSA) */}
                 {produtoSelecionado && (
                     <div className="bg-white rounded-3xl p-6 md:p-8 lg:p-10 border border-gray-100 shadow-xl shadow-gray-200/40 animate-in fade-in duration-500 slide-in-from-bottom-4">
-                        
+
                         <div className="flex items-center gap-2 mb-8 text-sm text-gray-500 font-medium overflow-x-auto whitespace-nowrap pb-2 scrollbar-hide">
                             <button onClick={fecharDetalhes} className="hover:text-[#FF5A00] transition-colors flex items-center gap-1">
                                 <ArrowLeftIcon className="w-4 h-4" /> Catálogo
@@ -1025,11 +1097,11 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
                                     const fotosProduto = parseJSONSeguro(produtoSelecionado.fotos);
                                     const hasFotos = fotosProduto.length > 0;
                                     const totalFotos = fotosProduto.length;
-                                    
+
                                     return (
                                         <>
                                             <img src={hasFotos ? (fotosProduto[fotoAtualIndex].startsWith('http') ? fotosProduto[fotoAtualIndex] : `/storage/${fotosProduto[fotoAtualIndex]}`) : 'https://placehold.co/600x600/e2e8f0/828ea8?text=Imagem+do+Produto'} alt={produtoSelecionado.nome} className="w-full h-full object-cover transition-transform duration-700 hover:scale-105" />
-                                            
+
                                             {totalFotos > 1 && (
                                                 <>
                                                     <button onClick={() => fotoAnterior(totalFotos)} className="absolute left-4 top-1/2 -translate-y-1/2 bg-white/90 hover:bg-white text-gray-800 w-12 h-12 flex items-center justify-center rounded-full shadow-lg border border-gray-100 opacity-0 group-hover:opacity-100 transition-all focus:opacity-100">
@@ -1052,7 +1124,7 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
 
                             <div className="w-full lg:w-1/2 pb-24 lg:pb-0">
                                 <span className="text-sm text-[#FF5A00] font-extrabold uppercase tracking-widest">{produtoSelecionado.categoria || 'PRODUTO'}</span>
-                                
+
                                 <h1 className="text-3xl md:text-5xl font-extrabold text-gray-900 tracking-tight leading-tight mt-2 mb-4">
                                     {produtoSelecionado.nome}
                                 </h1>
@@ -1111,10 +1183,10 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
                                     </div>
                                 )}
                             </div>
-                            
+
                             {!isAdminOuGerente && (
                                 <div className="flex items-center gap-3 w-full sm:w-auto">
-                                    <button 
+                                    <button
                                         onClick={adicionarAoCarrinho}
                                         disabled={adicionandoAoCarrinho || produtoSelecionado.estoque_disponivel <= 0}
                                         className={`flex-1 sm:flex-none flex items-center justify-center gap-2 text-center font-bold py-3.5 sm:py-4 px-6 sm:px-10 rounded-2xl shadow-lg transition-all text-sm sm:text-base w-full ${produtoSelecionado.estoque_disponivel <= 0 ? 'bg-gray-200 text-gray-400 cursor-not-allowed' : 'bg-green-600 text-white hover:bg-green-700 hover:scale-[1.02] shadow-green-600/30'}`}
@@ -1143,8 +1215,8 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
                                         const fotoCapaO = fotosO.length > 0 ? (fotosO[0].startsWith('http') ? fotosO[0] : `/storage/${fotosO[0]}`) : 'https://placehold.co/400x300/e2e8f0/828ea8?text=Sem+Imagem';
 
                                         return (
-                                            <div 
-                                                key={outroProduto.id} 
+                                            <div
+                                                key={outroProduto.id}
                                                 onClick={() => abrirDetalhesProduto(outroProduto)}
                                                 className="cursor-pointer group flex flex-col bg-white p-4 rounded-3xl border border-gray-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300"
                                             >

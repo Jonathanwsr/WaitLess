@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { alertar } from '../../services/alertar';
+import { baixarPdf } from '../../services/baixarPdf';
 import { T } from '../../constants/ClientTheme';
 import GaleriaFotos, { normalizarFotos } from '../../components/client/GaleriaFotos';
 
@@ -46,6 +47,10 @@ interface Reserva {
     cidade?: string | null; estado?: string | null; foto_perfil?: string | null;
   } | null;
   estabelecimento_id?: number;
+  cancelamento?: {
+    politica: string; nome: string; resumo: string; valor_reembolsado: number | null;
+    se_cancelar_agora: { valor_reembolso: number; percentual: number; explicacao: string } | null;
+  } | null;
   cobranca?: {
     codigo: string; status: string; total: number; parcelas: number; pagas: number;
     proxima: { numero: number; valor: number; vencimento: string } | null;
@@ -119,10 +124,16 @@ export default function DetalhesAgendamento() {
   }, []);
 
   const cancelar = () => {
-    const prazo = isAluguel ? '24 horas' : '30 minutos';
+    // Reserva: mostra exatamente quanto volta pela política do item. Serviço: regra dos 30 minutos.
+    const simulacao = isAluguel ? reserva?.cancelamento?.se_cancelar_agora : null;
+    const texto = isAluguel
+      ? (simulacao
+        ? `Se cancelar agora, você recebe ${brl(simulacao.valor_reembolso)} de volta (${simulacao.percentual}% do valor). ${simulacao.explicacao}`
+        : 'A reserva será cancelada.')
+      : `Cancelamentos feitos a menos de 30 minutos do horário marcado podem ter retenção de ${cancelamentoPct}% do valor pago. Deseja cancelar?`;
     alertar(
       'Cancelar reserva',
-      `Cancelamentos feitos a menos de ${prazo} do horário marcado podem ter retenção de ${cancelamentoPct}% do valor pago. Deseja cancelar?`,
+      texto,
       [
         { text: 'Voltar', style: 'cancel' },
         {
@@ -258,6 +269,20 @@ export default function DetalhesAgendamento() {
   const pagamentoTxt = isAluguel
     ? PAGAMENTO_LABEL[reserva.forma_pagamento || ''] || reserva.forma_pagamento || null
     : PAGAMENTO_LABEL[reserva.status_pagamento || ''] || reserva.status_pagamento || null;
+  // Comprovante do pagamento: só para o que foi pago online (no local, quem registra é o estabelecimento).
+  const pagoOnline = isAluguel
+    ? !['presencial', 'local'].includes(String(reserva.forma_pagamento || ''))
+    : ['pago', 'pago_online', 'concluido'].includes(String(reserva.status_pagamento || ''));
+  const baixarComprovantePagamento = async () => {
+    setProcessando(true);
+    try {
+      await baixarPdf(`/comprovante-pagamento?${isAluguel ? 'aluguel_id' : 'agendamento_id'}=${id}`, `Comprovante_pagamento_${id}.pdf`);
+    } catch {
+      alertar('Comprovante ainda indisponível', 'O comprovante do pagamento aparece assim que o pagamento online é confirmado.');
+    } finally {
+      setProcessando(false);
+    }
+  };
   const pontosUsados = num(reserva.pontos_utilizados);
   const descontoPontos = num(reserva.valor_desconto_pontos);
   const descontoCupom = num(reserva.valor_desconto_cupom);
@@ -370,6 +395,30 @@ export default function DetalhesAgendamento() {
             </View>
           </View>
 
+          {/* POLÍTICA DE CANCELAMENTO (reservas) */}
+          {isAluguel && !!reserva.cancelamento && (
+            <View style={s.cartao}>
+              <Text style={s.secao}>Política de cancelamento</Text>
+              <Text style={s.titulo}>{reserva.cancelamento.nome}</Text>
+              <Text style={[s.linhaRotulo, { lineHeight: 19 }]}>{reserva.cancelamento.resumo}</Text>
+              {reserva.cancelamento.valor_reembolsado !== null && reserva.status === 'cancelado' && (
+                <Text style={[s.linhaValor, { color: T.success, marginTop: 10 }]}>
+                  Valor devolvido: {brl(reserva.cancelamento.valor_reembolsado)}, na forma de pagamento original.
+                </Text>
+              )}
+              {!!reserva.cancelamento.se_cancelar_agora && (
+                <View style={s.simulacao}>
+                  <Text style={s.linhaRotulo}>Se cancelar agora</Text>
+                  <Text style={[s.titulo, { marginTop: 2 }]}>
+                    Você recebe {brl(reserva.cancelamento.se_cancelar_agora.valor_reembolso)} ({reserva.cancelamento.se_cancelar_agora.percentual}%)
+                  </Text>
+                  <Text style={s.linhaRotulo}>{reserva.cancelamento.se_cancelar_agora.explicacao}</Text>
+                </View>
+              )}
+              <Text style={[s.linhaRotulo, { marginTop: 8, fontSize: 11 }]}>O valor volta sozinho na forma de pagamento original. Você não precisa pedir estorno.</Text>
+            </View>
+          )}
+
           {/* PAGAMENTO PARCELADO (cobrança enviada pelo local) */}
           {!!reserva.cobranca && (
             <TouchableOpacity style={s.cartao} activeOpacity={0.85} onPress={() => router.push('/src/screens/MinhasCobrancas' as never)}>
@@ -425,6 +474,13 @@ export default function DetalhesAgendamento() {
               </>
             )}
           </TouchableOpacity>
+
+          {pagoOnline && (
+            <TouchableOpacity style={s.btnClaro} onPress={baixarComprovantePagamento} disabled={processando} activeOpacity={0.8}>
+              <Ionicons name="receipt-outline" size={19} color={T.ink} />
+              <Text style={s.btnClaroTxt}>Comprovante do pagamento</Text>
+            </TouchableOpacity>
+          )}
 
           {podeCancelar && (
             <TouchableOpacity style={s.btnCancelar} onPress={cancelar} disabled={processando} activeOpacity={0.8}>
@@ -485,4 +541,5 @@ const s = StyleSheet.create({
   btnCancelarTxt: { color: T.danger, fontWeight: '800', fontSize: 14 },
   barraParcelas: { height: 6, borderRadius: 3, backgroundColor: '#EEF2FF', overflow: 'hidden', marginTop: 10 },
   barraParcelasOn: { height: 6, borderRadius: 3, backgroundColor: '#4F46E5' },
+  simulacao: { backgroundColor: '#F7F7F8', borderRadius: 12, padding: 12, marginTop: 10, gap: 2 },
 });

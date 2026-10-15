@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
 import { useLocalSearchParams } from 'expo-router';
@@ -13,7 +13,7 @@ interface Produto { id: number; nome: string; valor_final: number; foto?: string
 interface Cupom { id: number; titulo: string; codigo: string; tipo_desconto: string; valor_desconto: number; apenas_plus: boolean; alvo?: string | null }
 interface Vitrine {
   locais: { id: number; nome: string }[];
-  estabelecimento: { id: number; nome: string; foto_perfil?: string | null; foto_banner?: string | null; ramo_atuacao?: string | null; bairro?: string | null; cidade?: string | null; estado?: string | null };
+  estabelecimento: { id: number; nome: string; foto_perfil?: string | null; foto_banner?: string | null; ramo_atuacao?: string | null; bio?: string | null; site?: string | null; bairro?: string | null; cidade?: string | null; estado?: string | null };
   servicos: Servico[];
   reservas: Reserva[];
   produtos: Produto[];
@@ -86,6 +86,12 @@ export default function VitrineSocio() {
               <Text style={s.sub}>
                 {[v.estabelecimento.ramo_atuacao, [v.estabelecimento.cidade, v.estabelecimento.estado].filter(Boolean).join(' - ')].filter(Boolean).join(' · ')}
               </Text>
+              {!!v.estabelecimento.bio && <Text style={s.bio}>{v.estabelecimento.bio}</Text>}
+              {!!v.estabelecimento.site && (
+                <TouchableOpacity onPress={() => Linking.openURL(String(v.estabelecimento.site))} activeOpacity={0.8}>
+                  <Text style={s.site} numberOfLines={1}>{String(v.estabelecimento.site).replace(/^https?:\/\//i, '').replace(/\/$/, '')}</Text>
+                </TouchableOpacity>
+              )}
               {v.avaliacoes.total > 0 && (
                 <View style={s.notaLinha}>
                   <Ionicons name="star" size={14} color="#F59E0B" />
@@ -203,6 +209,8 @@ const s = StyleSheet.create({
   capaInfo: { padding: 16 },
   nome: { fontSize: 22, fontWeight: '800', color: O.ink, letterSpacing: -0.5 },
   sub: { fontSize: 13, color: O.muted, marginTop: 3 },
+  bio: { fontSize: 13, color: O.ink, lineHeight: 19, marginTop: 8 },
+  site: { fontSize: 13, fontWeight: '700', color: O.accent, marginTop: 6 },
   notaLinha: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8 },
   notaTxt: { fontSize: 13, fontWeight: '700', color: O.ink },
   cartao: { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 20, overflow: 'hidden', marginBottom: 12, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },

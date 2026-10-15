@@ -22,33 +22,39 @@ class ProviderController extends Controller
         // 1. Validação
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255', 'regex:/^[a-zA-ZÀ-ÿ\s]+$/'],
-            'email' => 'required|email|unique:providers,email',
+            // Quem já deixou o pedido "aguardando liberação" pode reenviar com o mesmo e-mail.
+            'email' => ['required', 'email', \Illuminate\Validation\Rule::unique('providers', 'email')->ignore(app(\App\Services\Carteira\AberturaCarteiraService::class)->pendenteDe($request->user()->id)?->id)],
             'person_type' => 'required|in:FISICA,JURIDICA',
-            'document' => ['required', 'string'], 
+            'document' => ['required', 'string'],
             'birth_date' => 'required|date',
             'income_value' => 'required|string', // 🚀 Validando a renda que vem do form
-            
+
             'mobile_phone' => 'required|string',
             'postal_code' => 'required|string',
             'address' => 'required|string|max:255',
             'address_number' => 'required|string|max:20',
             'complement' => 'nullable|string|max:100',
-            'province' => 'required|string|max:100', 
+            'province' => 'required|string|max:100',
 
             'company_type' => 'required_if:person_type,JURIDICA|in:MEI,EI,EIRELI,LTDA,SA,ANY_OTHER',
             'responsible_name' => ['required_if:person_type,JURIDICA', 'nullable', 'string', 'regex:/^[a-zA-ZÀ-ÿ\s]+$/'],
             'responsible_cpf' => 'required_if:person_type,JURIDICA|nullable|string',
 
             'pix_key_type' => 'required|in:CPF,CNPJ,EMAIL,PHONE,RANDOM',
-            'pix_key' => ['required', 'string', 'max:255', 'regex:/^[^<>]+$/'], 
+            'pix_key' => ['required', 'string', 'max:255', 'regex:/^[^<>]+$/'],
         ]);
+
+        // Sócio informal (sem CNPJ) não abre carteira: sem carteira não há pagamento online.
+        if (!\App\Support\ContaFormal::podeAbrirCarteira($validated['person_type'], $validated['document'])) {
+            return response()->json(\App\Support\ContaFormal::resposta(), 422);
+        }
 
         // 2. Limpeza de Strings
         $cleanDocument = preg_replace('/[^0-9]/', '', $validated['document']);
         $cleanPostalCode = preg_replace('/[^0-9]/', '', $validated['postal_code']);
         $cleanMobilePhone = preg_replace('/[^0-9]/', '', $validated['mobile_phone']);
         $cleanRespCpf = $validated['responsible_cpf'] ? preg_replace('/[^0-9]/', '', $validated['responsible_cpf']) : null;
-        
+
         $formattedBirthDate = date('Y-m-d', strtotime($validated['birth_date']));
 
         // 🚀 Limpeza da Renda (Transforma "R$ 1.500,00" em "1500.00")
@@ -66,13 +72,34 @@ class ProviderController extends Controller
             'postalCode' => $cleanPostalCode,
             'address' => $validated['address'],
             'addressNumber' => $validated['address_number'],
-            'complement' => $validated['complement'],
+            'complement' => $validated['complement'] ?? null,
             'province' => $validated['province'],
         ];
 
         if ($validated['person_type'] === 'JURIDICA') {
             $asaasPayload['companyType'] = $validated['company_type'];
         }
+
+        // Dados guardados no sistema (usados também se o Asaas ainda não liberar a abertura).
+        $dadosLocais = [
+            'name' => $validated['name'],
+            'email' => $validated['email'],
+            'person_type' => $validated['person_type'],
+            'document' => $cleanDocument,
+            'birth_date' => $formattedBirthDate,
+            'income_value' => $cleanIncome,
+            'mobile_phone' => $cleanMobilePhone,
+            'postal_code' => $cleanPostalCode,
+            'address' => $validated['address'],
+            'address_number' => $validated['address_number'],
+            'complement' => $validated['complement'] ?? null,
+            'province' => $validated['province'],
+            'company_type' => $validated['company_type'] ?? null,
+            'responsible_name' => $validated['responsible_name'] ?? null,
+            'responsible_cpf' => $cleanRespCpf,
+            'pix_key_type' => $validated['pix_key_type'],
+            'pix_key' => trim($validated['pix_key']),
+        ];
 
         try {
             // 4. Integração com o Asaas
@@ -82,7 +109,7 @@ class ProviderController extends Controller
                     'Accept'       => 'application/json',
                 ])->post(config('services.asaas.url') . '/accounts', $asaasPayload);
 
-            $asaasData = $response->json(); 
+            $asaasData = $response->json();
 
             // Se o Asaas retornar erro (Status 400, 401, 500, etc)
             if ($response->failed() || $response->status() === 302) {
@@ -92,7 +119,7 @@ class ProviderController extends Controller
                     'response' => $asaasData ?? $response->body(),
                     'payload' => $asaasPayload,
                 ]);
-                
+
                 // Captura a descrição original vinda do Asaas (ex: "O email ... já está em uso.")
                 // — o Asaas às vezes responde em outro formato, sem "errors[]", só
                 // com "message"/"code" direto na raiz (ex: limite de contas de teste).
@@ -102,10 +129,16 @@ class ProviderController extends Controller
                 // Limite de contas de teste do ambiente sandbox do Asaas — não é um
                 // erro nos dados informados, retentar não resolve. Avisa claramente
                 // em vez de "erro desconhecido".
-                if ($errorCode === 'baas_trial_limit_child_account_creation_reached') {
+                // O Asaas ainda não libera novas carteiras (homologação pendente da conta Lokyva):
+                // o pedido fica salvo e o comando carteira:abrir-pendentes abre sozinho quando liberar.
+                if ($errorCode === \App\Services\Carteira\AberturaCarteiraService::CODIGO_LIMITE) {
+                    $provider = app(\App\Services\Carteira\AberturaCarteiraService::class)->salvarPendente($request->user(), $dadosLocais);
+
                     return response()->json([
-                        'error' => 'O ambiente de testes do nosso parceiro de pagamentos atingiu o limite de contas criadas. Isso não é um problema com os seus dados — é preciso concluir a homologação do gateway para liberar novas contas. Nossa equipe já foi notificada.'
-                    ], 503);
+                        'message' => \App\Services\Carteira\AberturaCarteiraService::MENSAGEM_AGUARDANDO,
+                        'aguardando_liberacao' => true,
+                        'provider' => $provider,
+                    ], 202);
                 }
 
                 // Traduzindo mensagens comuns para torná-las amigáveis ao usuário
@@ -141,20 +174,20 @@ class ProviderController extends Controller
 
             // 5. Salvar no banco de dados local
             $provider = Provider::create([
-                'user_id' => $request->user()->id, 
+                'user_id' => $request->user()->id,
                 'name' => $validated['name'],
                 'email' => $validated['email'],
                 'person_type' => $validated['person_type'],
                 'document' => $cleanDocument,
-                'birth_date' => $formattedBirthDate, 
+                'birth_date' => $formattedBirthDate,
                 'income_value' => $cleanIncome, // 🚀 Salvando a renda localmente
                 'mobile_phone' => $cleanMobilePhone,
                 'postal_code' => $cleanPostalCode,
                 'address' => $validated['address'],
                 'address_number' => $validated['address_number'],
-                'complement' => $validated['complement'],
+                'complement' => $validated['complement'] ?? null,
                 'province' => $validated['province'],
-                
+
                 'company_type' => $validated['company_type'] ?? null,
                 'responsible_name' => $validated['responsible_name'] ?? null,
                 'responsible_cpf' => $cleanRespCpf,
@@ -243,7 +276,7 @@ class ProviderController extends Controller
         // 1. Validação restrita apenas aos campos de PIX
         $validated = $request->validate([
             'pix_key_type' => 'required|in:CPF,CNPJ,EMAIL,PHONE,RANDOM',
-            'pix_key' => ['required', 'string', 'max:255', 'regex:/^[^<>]+$/'], 
+            'pix_key' => ['required', 'string', 'max:255', 'regex:/^[^<>]+$/'],
         ]);
 
         try {

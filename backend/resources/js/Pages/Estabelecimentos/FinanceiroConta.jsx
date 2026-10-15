@@ -8,8 +8,9 @@ import axios from 'axios'; // <-- Importando axios
 // não se perde.
 const RASCUNHO_KEY = 'waitless_financeiro_conta_rascunho';
 
+// Carteira e pagamento online só para quem tem CNPJ (MEI serve); sem CNPJ, o sócio usa pagamento no local.
 const CAMPOS_PADRAO = {
-  person_type: 'FISICA',
+  person_type: 'JURIDICA',
   name: '',
   email: '',
   document: '',
@@ -31,7 +32,7 @@ const CAMPOS_PADRAO = {
 function carregarRascunho() {
   try {
     const salvo = localStorage.getItem(RASCUNHO_KEY);
-    return salvo ? { ...CAMPOS_PADRAO, ...JSON.parse(salvo) } : CAMPOS_PADRAO;
+    return salvo ? { ...CAMPOS_PADRAO, ...JSON.parse(salvo), person_type: 'JURIDICA' } : CAMPOS_PADRAO;
   } catch (e) {
     return CAMPOS_PADRAO;
   }
@@ -235,6 +236,7 @@ export default function FinanceiroConta({ auth }) {
 
     const payload = {
       ...formData,
+      person_type: 'JURIDICA',
       birth_date: formattedBirthDate
     };
 
@@ -454,16 +456,13 @@ Acompanhe seu saldo: Gerencie todos os seus recebimentos diretamente pelo painel
 
               <form onSubmit={handleSubmit} className="space-y-6">
 
-                {/* --- TIPO DE CONTA --- */}
-                <div className="flex flex-wrap gap-4 border-b border-gray-100 dark:border-gray-700 pb-6">
-                  <label className="flex items-center space-x-2 cursor-pointer">
-                    <input type="radio" name="person_type" value="FISICA" checked={formData.person_type === 'FISICA'} onChange={handleChange} className="form-radio text-[#006837] focus:ring-[#006837]" />
-                    <span className="text-gray-700 dark:text-gray-300 font-medium text-sm">Pessoa Física (CPF)</span>
-                  </label>
-                  <label className="flex items-center space-x-2 cursor-pointer">
-                    <input type="radio" name="person_type" value="JURIDICA" checked={formData.person_type === 'JURIDICA'} onChange={handleChange} className="form-radio text-[#006837] focus:ring-[#006837]" />
-                    <span className="text-gray-700 dark:text-gray-300 font-medium text-sm">Pessoa Jurídica (CNPJ)</span>
-                  </label>
+                {/* --- TIPO DE CONTA: só CNPJ --- */}
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                  <p className="font-bold">A conta de recebimento é para quem tem CNPJ (MEI serve).</p>
+                  <p className="mt-1 text-amber-800">
+                    Sem CNPJ você continua usando a Lokyva normalmente como sócio informal, com os clientes pagando no local.
+                    Com CNPJ você libera a carteira, os pagamentos online (Pix, cartão e boleto) e aparece antes nas buscas.
+                  </p>
                 </div>
 
                 {/* --- DADOS BÁSICOS --- */}

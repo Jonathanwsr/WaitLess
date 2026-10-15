@@ -1,4 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import ComoFunciona from '@/Components/ComoFunciona';
 import { Head, router, usePage, Link } from '@inertiajs/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect } from 'react';
@@ -19,9 +20,30 @@ import {
     BellIcon,
     TrashIcon,
     ShieldCheckIcon,
-    ShoppingBagIcon
+    ShoppingBagIcon,
+    ArrowLeftIcon,
+    BuildingStorefrontIcon,
+    ChevronLeftIcon,
+    ChevronRightIcon
 } from '@heroicons/react/24/outline';
 import { CheckCircleIcon as CheckSolid, UserCircleIcon, MegaphoneIcon } from '@heroicons/react/24/solid';
+
+// Idade a partir da data de nascimento (null se não houver).
+const idadeDe = (nascimento) => {
+    if (!nascimento) return null;
+    const n = new Date(String(nascimento).slice(0, 10) + 'T12:00:00');
+    if (Number.isNaN(n.getTime())) return null;
+    const hoje = new Date();
+    let idade = hoje.getFullYear() - n.getFullYear();
+    if (hoje.getMonth() < n.getMonth() || (hoje.getMonth() === n.getMonth() && hoje.getDate() < n.getDate())) idade -= 1;
+    return idade >= 0 && idade < 130 ? idade : null;
+};
+
+// CPF mascarado como nos comprovantes: 123.***.***-45 (nunca mostra o documento inteiro na fila).
+const cpfMascarado = (doc) => {
+    const n = String(doc || '').replace(/\D/g, '');
+    return n.length === 11 ? `${n.slice(0, 3)}.***.***-${n.slice(9)}` : null;
+};
 
 // ==============================================================================
 // SUB-COMPONENTE: Linha da Tabela
@@ -39,7 +61,7 @@ const LinhaAgendamento = ({ item, index, currentPage, perPage, funcionarios, vis
     const getColors = () => {
         if (isPago) return { bg: 'bg-emerald-50', text: 'text-emerald-600', border: 'border-emerald-100', icon: <CheckCircleIcon className="w-4 h-4" /> };
         if (isPresencial) return { bg: 'bg-blue-50', text: 'text-blue-600', border: 'border-blue-100', icon: <CreditCardIcon className="w-4 h-4" /> };
-        return { bg: 'bg-indigo-50', text: 'text-indigo-600', border: 'border-indigo-100', icon: <ClockIcon className="w-4 h-4" /> };
+        return { bg: 'bg-orange-50', text: 'text-orange-600', border: 'border-orange-100', icon: <ClockIcon className="w-4 h-4" /> };
     };
 
     const colors = getColors();
@@ -47,7 +69,7 @@ const LinhaAgendamento = ({ item, index, currentPage, perPage, funcionarios, vis
     const renderPaymentBadge = () => {
         let label = 'Pendente';
         if (isPago) label = 'Pago';
-        if (isPresencial) label = 'Pag. no Local';
+        if (isPresencial) label = 'Pagamento presencial';
 
         return (
             <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold ${colors.bg} ${colors.text} ${colors.border} border whitespace-nowrap`}>
@@ -64,7 +86,7 @@ const LinhaAgendamento = ({ item, index, currentPage, perPage, funcionarios, vis
     return (
         <tr className="group hover:bg-gray-50/50 transition-colors duration-200 border-b border-gray-100 last:border-0 relative">
             <td className="px-4 py-4 whitespace-nowrap text-center align-top pt-5">
-                <div className={`mx-auto flex items-center justify-center w-7 h-7 rounded-full text-[11px] font-bold bg-white border shadow-sm ${colors.text} border-gray-100`}>
+                <div className={`mx-auto flex items-center justify-center w-7 h-7 rounded-full text-[11px] font-bold ${colors.bg} ${colors.text}`}>
                     {posicao}
                 </div>
             </td>
@@ -102,7 +124,10 @@ const LinhaAgendamento = ({ item, index, currentPage, perPage, funcionarios, vis
                                 {item.usuario?.name || 'Cliente'}
                             </div>
                             <span className="text-xs text-gray-500 mt-0.5">
-                                {item.usuario?.telefone || (item.usuario?.cpf ? `CPF ${item.usuario.cpf}` : 'S/ Contato')}
+                                {[
+                                    idadeDe(item.usuario?.birth_date) !== null ? `${idadeDe(item.usuario?.birth_date)} anos` : null,
+                                    cpfMascarado(item.usuario?.cpf_cnpj) ? `CPF ${cpfMascarado(item.usuario?.cpf_cnpj)}` : null,
+                                ].filter(Boolean).join(' • ') || item.usuario?.mobile_phone || 'Sem contato'}
                             </span>
                         </div>
                     </Link>
@@ -137,6 +162,9 @@ const LinhaAgendamento = ({ item, index, currentPage, perPage, funcionarios, vis
                     <span className="font-bold text-gray-900 text-sm">
                         {item.servico?.nome || 'Serviço Excluído'}
                     </span>
+                    {item.funcionario_id && (
+                        <span className="text-xs text-gray-500">{funcionarios?.find((f) => String(f.id) === String(item.funcionario_id))?.nome}</span>
+                    )}
 
                     {/* 👇 NOVO BLOCO: PRODUTOS EXTRAS */}
                     {produtosExtras.length > 0 && (
@@ -469,7 +497,7 @@ export default function Fila({ auth, estabelecimento, estabelecimentos = [], age
         <AuthenticatedLayout user={auth.user}>
             <Head title="Fila de Atendimento" />
 
-            <div className="min-h-screen bg-[#FBF9F9] pb-12 pt-6 relative">
+            <div className="min-h-screen bg-[#FBF9F9] pb-12 pt-1 relative">
 
                 {/* --- ALERTA DE CHAMADA GIGANTE E MODERNO NO CENTRO/TOPO DA TELA --- */}
                 <div className="fixed top-10 left-1/2 -translate-x-1/2 z-[100] w-full max-w-2xl px-4 pointer-events-none flex flex-col gap-3">
@@ -527,12 +555,37 @@ export default function Fila({ auth, estabelecimento, estabelecimentos = [], age
                 </div>
 
 
-                <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
+                <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 space-y-5">
+                    {/* BARRA DE NAVEGAÇÃO: voltar e onde a pessoa está */}
+                    <div className="flex items-center gap-4">
+                        <button
+                            type="button"
+                            onClick={() => (window.history.length > 1 ? window.history.back() : router.visit(route('dashboard')))}
+                            className="inline-flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:text-gray-900"
+                        >
+                            <ArrowLeftIcon className="w-4 h-4" /> Voltar
+                        </button>
+                        <span className="h-8 w-px bg-gray-200" />
+                        <div className="flex items-center gap-3">
+                            <span className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                                <BuildingStorefrontIcon className="w-5 h-5" />
+                            </span>
+                            <div>
+                                <p className="text-[10px] font-black uppercase tracking-wider text-emerald-600">
+                                    {estabelecimento?.ramo_atuacao || (visaoAgregada ? 'Todos os locais' : 'Estabelecimento')}
+                                </p>
+                                <p className="text-lg font-black text-gray-900 leading-tight">Agendamentos</p>
+                            </div>
+                        </div>
+                    </div>
+
+
+
                     {/* --- HEADER SUPERIOR --- */}
-                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mt-6">
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                         <div>
                             <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Fila de atendimento</h1>
-                            <p className="text-sm text-gray-500 mt-1">Visualize e gerencie a fila de agendamentos e faturamentos.</p>
+                            <p className="text-sm text-gray-500 mt-1">Visualize a fila de agendamentos do estabelecimento selecionado.</p>
                         </div>
 
                         {/* BARRA DE FILTROS */}
@@ -549,10 +602,26 @@ export default function Fila({ auth, estabelecimento, estabelecimentos = [], age
                                 className={`w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-2.5 border rounded-xl text-sm font-semibold shadow-sm transition ${showFilters ? 'bg-indigo-50 border-indigo-200 text-indigo-700' : 'bg-white border-gray-200 text-gray-700 hover:bg-gray-50'}`}
                             >
                                 <AdjustmentsHorizontalIcon className="w-4 h-4" />
-                                Filtros Adicionais
+                                Filtros
                             </button>
                         </div>
                     </div>
+
+                    <ComoFunciona
+                        chave="fila"
+                        titulo="Como funciona a fila de atendimento"
+                        passos={[
+                            { titulo: "O cliente entra na fila", texto: "Ao agendar ou chegar, ele aparece aqui na ordem de atendimento." },
+                            { titulo: "Chame o próximo", texto: "Ao chamar, o cliente recebe o aviso no celular na hora." },
+                            { titulo: "Atenda e finalize", texto: "Finalize quando terminar. Se ele não aparecer, pule ou cancele." },
+                            { titulo: "Mostre na TV", texto: "Abra o \"Painel da fila (TV)\" para os clientes acompanharem a vez." },
+                        ]}
+                        dicas={[
+                            "Quando faltam 2 atendimentos para a vez dele, o cliente é avisado automaticamente.",
+                            "Cancelar um atendimento pago devolve o dinheiro ao cliente.",
+                            "Cada ação da equipe aparece na \"Atividade da equipe\" da tela Equipe.",
+                        ]}
+                    />
 
                     {/* --- FILTROS ADICIONAIS --- */}
                     <AnimatePresence>
@@ -632,7 +701,7 @@ export default function Fila({ auth, estabelecimento, estabelecimentos = [], age
                     <div className="flex flex-col lg:flex-row gap-4 items-stretch">
 
                         <div className="relative bg-white border border-gray-200 rounded-2xl shadow-sm p-4 w-full lg:w-72 flex flex-col justify-center cursor-pointer hover:border-gray-300 transition">
-                            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">Visão do Estabelecimento</label>
+                            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-0.5">Estabelecimento</label>
                             <select
                                 className="w-full bg-transparent border-none p-0 text-base font-bold text-gray-900 focus:ring-0 outline-none cursor-pointer appearance-none !bg-none pr-8"
                                 style={{ backgroundImage: 'none' }}
@@ -655,7 +724,7 @@ export default function Fila({ auth, estabelecimento, estabelecimentos = [], age
                                 </div>
                                 <div>
                                     <p className="text-xl font-black text-gray-900">{metricas.total}</p>
-                                    <p className="text-[10px] sm:text-[11px] text-gray-400 font-semibold leading-tight">Total na Fila</p>
+                                    <p className="text-[10px] sm:text-[11px] text-gray-400 font-semibold leading-tight">Total de agendamentos</p>
                                 </div>
                             </div>
                             <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 flex items-center gap-3 sm:gap-4">
@@ -663,17 +732,17 @@ export default function Fila({ auth, estabelecimento, estabelecimentos = [], age
                                     <CheckSolid className="w-5 h-5 text-emerald-500" />
                                 </div>
                                 <div>
-                                    <p className="text-xl font-black text-gray-900">{metricas.pagos}</p>
-                                    <p className="text-[10px] sm:text-[11px] text-gray-400 font-semibold leading-tight">Já Pagos</p>
+                                    <p className="text-xl font-black text-emerald-600">{metricas.pagos}</p>
+                                    <p className="text-[10px] sm:text-[11px] text-gray-400 font-semibold leading-tight">Pagos</p>
                                 </div>
                             </div>
                             <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 flex items-center gap-3 sm:gap-4">
-                                <div className="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center border border-indigo-100 shrink-0">
-                                    <ClockIcon className="w-5 h-5 text-indigo-500" />
+                                <div className="w-10 h-10 rounded-full bg-orange-50 flex items-center justify-center border border-orange-100 shrink-0">
+                                    <ClockIcon className="w-5 h-5 text-orange-500" />
                                 </div>
                                 <div>
-                                    <p className="text-xl font-black text-gray-900">{metricas.pendentes}</p>
-                                    <p className="text-[10px] sm:text-[11px] text-gray-400 font-semibold leading-tight">Aguardando</p>
+                                    <p className="text-xl font-black text-orange-600">{metricas.pendentes}</p>
+                                    <p className="text-[10px] sm:text-[11px] text-gray-400 font-semibold leading-tight">Pendentes</p>
                                 </div>
                             </div>
                             <div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-4 flex items-center gap-3 sm:gap-4">
@@ -681,25 +750,25 @@ export default function Fila({ auth, estabelecimento, estabelecimentos = [], age
                                     <CreditCardIcon className="w-5 h-5 text-blue-500" />
                                 </div>
                                 <div>
-                                    <p className="text-xl font-black text-gray-900">{metricas.presencial}</p>
-                                    <p className="text-[10px] sm:text-[11px] text-gray-400 font-semibold leading-tight">Pag. Presencial</p>
+                                    <p className="text-xl font-black text-blue-600">{metricas.presencial}</p>
+                                    <p className="text-[10px] sm:text-[11px] text-gray-400 font-semibold leading-tight">Pagamento presencial</p>
                                 </div>
                             </div>
                         </div>
                     </div>
 
                     {/* --- TABELA DE AGENDAMENTOS --- */}
-                    <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden mt-6">
+                    <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
                         <div className="overflow-x-auto min-h-[300px]">
                             <table className="w-full text-left border-collapse relative min-w-[800px]">
                                 <thead>
-                                    <tr className="bg-gray-50 border-b border-gray-200 text-[11px] uppercase tracking-wider text-gray-500 font-bold">
-                                        <th className="px-4 py-4 text-center w-16">Pos</th>
+                                    <tr className="bg-gray-50/80 border-b border-gray-200 text-xs text-gray-500 font-semibold">
+                                        <th className="px-4 py-4 text-center w-20">Posição</th>
                                         {visaoAgregada && <th className="px-4 py-4">Local</th>}
                                         <th className="px-4 py-4">Cliente</th>
                                         <th className="px-4 py-4">Horário</th>
-                                        <th className="px-4 py-4">Serviço / Extras / Delegação</th>
-                                        <th className="px-4 py-4 text-center">Pagamento / Total</th>
+                                        <th className="px-4 py-4">Serviço</th>
+                                        <th className="px-4 py-4 text-center">Status do pagamento</th>
                                         <th className="px-4 py-4 text-center w-16">Ações</th>
                                     </tr>
                                 </thead>
@@ -736,6 +805,28 @@ export default function Fila({ auth, estabelecimento, estabelecimentos = [], age
                                 </tbody>
                             </table>
                         </div>
+                        {agendamentos?.total > 0 && (
+                            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-gray-100 px-5 py-4">
+                                <p className="text-xs text-gray-500">
+                                    Mostrando {agendamentos.from} a {agendamentos.to} de {agendamentos.total} agendamentos
+                                </p>
+                                {agendamentos.last_page > 1 && (
+                                    <div className="flex items-center gap-1.5">
+                                        {(agendamentos.links || []).map((l, i) => {
+                                            const primeiro = i === 0;
+                                            const ultimo = i === agendamentos.links.length - 1;
+                                            const conteudo = primeiro ? <ChevronLeftIcon className="w-4 h-4" /> : ultimo ? <ChevronRightIcon className="w-4 h-4" /> : l.label;
+                                            const classe = `flex h-8 min-w-8 items-center justify-center rounded-lg px-2 text-sm font-bold ${l.active ? 'bg-[#FF8A00] text-white' : 'border border-gray-200 text-gray-600 hover:bg-gray-50'} ${!l.url ? 'pointer-events-none opacity-40' : ''}`;
+                                            return l.url ? (
+                                                <Link key={i} href={l.url} preserveScroll preserveState className={classe}>{conteudo}</Link>
+                                            ) : (
+                                                <span key={i} className={classe}>{conteudo}</span>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
 
                 </div>

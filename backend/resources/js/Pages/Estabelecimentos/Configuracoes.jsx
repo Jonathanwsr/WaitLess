@@ -6,17 +6,17 @@ import TextInput from '@/Components/TextInput';
 
 import { Head, useForm, Link, router, usePage } from '@inertiajs/react';
 import { useState, useEffect } from 'react';
-import { 
-    CheckBadgeIcon, 
-    DocumentTextIcon, 
-    PlusIcon, 
-    XMarkIcon, 
-    MapPinIcon, 
-    CalendarIcon, 
-    ArchiveBoxIcon, 
-    TicketIcon, 
-    Cog6ToothIcon, 
-    UserPlusIcon, 
+import {
+    CheckBadgeIcon,
+    DocumentTextIcon,
+    PlusIcon,
+    XMarkIcon,
+    MapPinIcon,
+    CalendarIcon,
+    ArchiveBoxIcon,
+    TicketIcon,
+    Cog6ToothIcon,
+    UserPlusIcon,
     PhotoIcon,
     ExclamationTriangleIcon,
     ArrowRightIcon,
@@ -87,7 +87,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
     const parseJSONSeguro = (dados, fallback = null) => {
         if (!dados) return fallback;
         if (typeof dados === 'string') {
-            try { 
+            try {
                 const parsed = JSON.parse(dados);
                 return parsed !== null ? parsed : fallback;
             } catch (e) { return fallback; }
@@ -111,8 +111,8 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
     })();
 
     const ufsBrasil = [
-        'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 
-        'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 
+        'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA',
+        'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN',
         'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'
     ];
 
@@ -120,7 +120,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         'Academia e Crossfit', 'Açougue e Casa de Carnes', 'Advocacia e Escritórios', 'Agência de Turismo', 'Aluguel de Equipamentos',
         'Aluguel de Imóveis', 'Aluguel de Roupas e Fantasias', 'Aluguel de Veículos', 'Artesanato e Costura', 'Assistência Técnica',
         'Auto Escola', 'Bar e Pub', 'Barbearia', 'Cafeteria e Casa de Chá', 'Centro Automotivo', 'Clínica de Estética',
-        'Clínica Médica', 'Clínica Odontológica', 'Clínica Veterinária', 'Coworking', 'E-commerce e Loja Virtual', 
+        'Clínica Médica', 'Clínica Odontológica', 'Clínica Veterinária', 'Coworking', 'E-commerce e Loja Virtual',
         'Espaço de Eventos', 'Estúdio de Fotografia', 'Farmácia e Drogaria', 'Hospedagem e Hotelaria',
         'Imobiliária', 'Logística e Fretes', 'Oficina Mecânica', 'Pet Shop', 'Restaurante', 'Salão de Beleza', 'Outros'
     ].sort();
@@ -174,7 +174,8 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
     const [fetchedLocacoes, setFetchedLocacoes] = useState([]);
 
     const atualizarListaLocacoes = () => {
-        fetch('/api/catalogo/itens', { headers: { 'Accept': 'application/json' } })
+        // Só as reservas deste local (as avulsas ficam em "Reservas avulsas").
+        fetch(`/api/catalogo/itens${estabelecimento?.id ? `?estabelecimento_id=${estabelecimento.id}` : ''}`, { headers: { 'Accept': 'application/json' } })
             .then(res => res.json())
             .then(data => {
                 if (data && data.data) {
@@ -219,6 +220,8 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         nome: estabelecimento?.nome || '',
         ramo_atuacao: estabelecimento?.ramo_atuacao || '',
         telefone: estabelecimento?.telefone || '',
+        site: estabelecimento?.site || '',
+        bio: estabelecimento?.bio || '',
         cep: estabelecimento?.cep || '',
         rua: estabelecimento?.rua || '',
         numero: estabelecimento?.numero || '',
@@ -226,8 +229,8 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         bairro: estabelecimento?.bairro || '',
         cidade: estabelecimento?.cidade || '',
         estado: estabelecimento?.estado || '',
-        token_mercadopago: estabelecimento?.token_mercadopago || '', 
-        foto_perfil: null, 
+        token_mercadopago: estabelecimento?.token_mercadopago || '',
+        foto_perfil: null,
         foto_banner: null,
     });
 
@@ -235,7 +238,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         const file = e.target.files[0];
         if (file) {
             formDetalhes.setData('foto_perfil', file);
-            setFotoPerfilPreview(URL.createObjectURL(file)); 
+            setFotoPerfilPreview(URL.createObjectURL(file));
         }
     };
 
@@ -243,7 +246,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         const file = e.target.files[0];
         if (file) {
             formDetalhes.setData('foto_banner', file);
-            setFotoBannerPreview(URL.createObjectURL(file)); 
+            setFotoBannerPreview(URL.createObjectURL(file));
         }
     };
 
@@ -256,7 +259,8 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
             preserveScroll: true,
             onSuccess: () => {
                 mostrarMensagem('Configurações salvas com sucesso!');
-                formDetalhes.setData({ foto_perfil: null, foto_banner: null });
+                // Limpa só as fotos escolhidas (o resto do formulário continua preenchido).
+                formDetalhes.setData((d) => ({ ...d, foto_perfil: null, foto_banner: null }));
             },
             onError: (erros) => {
                 formDetalhes.setError(erros);
@@ -305,7 +309,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
     // FORM 2: EQUIPE / FUNCIONÁRIOS
     // ==========================================
     const [isEditingFuncionario, setIsEditingFuncionario] = useState(false);
-    
+
     const formFuncionario = useForm({
         id: null,
         nome: '',
@@ -343,8 +347,8 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
             nome: func.nome,
             telefone: func.telefone || '',
             cargo: func.cargo || 'Atendente',
-            email: '', 
-            password: '', 
+            email: '',
+            password: '',
         });
     };
 
@@ -364,9 +368,9 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
     // FORM 3: CATÁLOGO DE SERVIÇOS
     // ==========================================
     const [isEditingServico, setIsEditingServico] = useState(false);
-    const [novoHorario, setNovoHorario] = useState(''); 
+    const [novoHorario, setNovoHorario] = useState('');
     const [visualizandoServico, setVisualizandoServico] = useState(null);
-    
+
     const [quadradosFotos, setQuadradosFotos] = useState([null, null, null, null, null]);
     const [fotoDetalheIndexServico, setFotoDetalheIndexServico] = useState(0);
 
@@ -382,10 +386,11 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         funcionario_id: '',
         tipo_pagamento: 'hibrido',
         dias_disponiveis: ['segunda', 'terca', 'quarta', 'quinta', 'sexta'],
-        horarios_disponiveis: [], 
+        horarios_disponiveis: [],
+        horario_a_combinar: false,
         estabelecimentos_ids: [estabelecimento?.id],
-        fotos: [], 
-        fotos_existentes: [], 
+        fotos: [],
+        fotos_existentes: [],
         tem_cupom: false,
         tipo_desconto_cupom: 'percentual',
         valor_cupom: '',
@@ -414,7 +419,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                 } catch (e) {}
             }
         }
-    }, [isEditingServico, visualizandoServico]); 
+    }, [isEditingServico, visualizandoServico]);
 
     useEffect(() => {
         if (!isEditingServico && !visualizandoServico) {
@@ -434,7 +439,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
             };
             localStorage.setItem('lokyva_servico_draft', JSON.stringify(dadosParaSalvar));
         }
-    }, [formServico.data, isEditingServico, visualizandoServico]); 
+    }, [formServico.data, isEditingServico, visualizandoServico]);
 
     const handleFotoQuadrado = (index, arquivoSelecionado) => {
         if (!arquivoSelecionado) return;
@@ -453,7 +458,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         if (novoHorario && !formServico.data.horarios_disponiveis.includes(novoHorario)) {
             const listaAtualizada = [...formServico.data.horarios_disponiveis, novoHorario].sort();
             formServico.setData('horarios_disponiveis', listaAtualizada);
-            setNovoHorario(''); 
+            setNovoHorario('');
         }
     };
 
@@ -469,7 +474,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
 
     const submitServico = (withEvent) => {
         withEvent.preventDefault();
-        
+
         formServico.transform((data) => ({
             ...data,
             // Serviço gratuito: garante valor 0 e desliga qualquer promoção (não
@@ -477,6 +482,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
             // sobrou no campo desabilitado.
             valor: data.gratuito ? 0 : data.valor,
             tem_promocao: data.gratuito ? false : data.tem_promocao,
+            horario_a_combinar: data.horario_a_combinar ? 1 : 0,
             fotos_existentes: quadradosFotos.filter(f => typeof f === 'string' && f !== null),
             fotos: quadradosFotos.filter(f => f instanceof File),
             _method: isEditingServico ? 'put' : 'post'
@@ -494,9 +500,9 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
 
     const editarServico = (servico) => {
         setIsEditingServico(true);
-        setVisualizandoServico(null); 
-        localStorage.removeItem('lokyva_servico_draft'); 
-        
+        setVisualizandoServico(null);
+        localStorage.removeItem('lokyva_servico_draft');
+
         let config = { dias_disponiveis: [], tipo_pagamento: 'hibrido', funcionario_padrao: '', tem_cupom: false, tipo_desconto_cupom: 'percentual', valor_cupom: '', codigo_cupom: '' };
         let horarios = [];
         try {
@@ -507,7 +513,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         const existingPhotos = parseArraySeguro(servico.fotos);
         const newQuadrados = [null, null, null, null, null];
         existingPhotos.forEach((url, i) => { if(i < 5) newQuadrados[i] = url; });
-        setQuadradosFotos(newQuadrados); 
+        setQuadradosFotos(newQuadrados);
 
         formServico.setData({
             id: servico.id,
@@ -522,8 +528,9 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
             tipo_pagamento: config.tipo_pagamento || 'hibrido',
             dias_disponiveis: config.dias_disponiveis || ['segunda', 'terca', 'quarta', 'quinta', 'sexta'],
             horarios_disponiveis: horarios,
-            estabelecimentos_ids: [estabelecimento.id], 
-            fotos: [], 
+            horario_a_combinar: !!config.horario_a_combinar,
+            estabelecimentos_ids: [estabelecimento.id],
+            fotos: [],
             fotos_existentes: existingPhotos,
             tem_cupom: config.tem_cupom || false,
             tipo_desconto_cupom: config.tipo_desconto_cupom || 'percentual',
@@ -537,8 +544,8 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
             maximo_pontos_permitidos: servico.maximo_pontos_permitidos ?? '',
             produtos_vinculados: produtos.filter(p => p.servico_id === servico.id).map(p => p.id),
         });
-        
-        window.scrollTo({ top: 0, behavior: 'smooth' }); 
+
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
     const visualizarServico = (servico) => {
@@ -564,7 +571,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
     const deletarServico = (id) => {
         const mensagem = "Atenção: Tem certeza que deseja apagar este serviço?\n\nEsta ação irá CANCELAR todos os agendamentos futuros e ESTORNAR automaticamente o dinheiro dos clientes que já pagaram online.\n\nDeseja prosseguir?";
         if (window.confirm(mensagem)) {
-            router.delete(route('servicos.destroy', id), { 
+            router.delete(route('servicos.destroy', id), {
                 preserveScroll: true,
                 onSuccess: () => {
                     cancelarEdicaoServico();
@@ -595,7 +602,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
     const [novaDataBloqueada, setNovaDataBloqueada] = useState('');
     const [novoHorarioBloqueado, setNovoHorarioBloqueado] = useState({ data: '', inicio: '', fim: '' });
     const [diasMesInput, setDiasMesInput] = useState('');
-    
+
     const [mostrarSimulador, setMostrarSimulador] = useState(false);
     const [simulacaoPontos, setSimulacaoPontos] = useState('');
 
@@ -611,7 +618,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         id: null,
         estabelecimento_id: estabelecimento?.id,
         nome: '',
-        categoria: 'casa', 
+        categoria: 'casa',
         modelo: '',
         marca: '',
         tipo: '',
@@ -624,31 +631,31 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         valor_mensal: '',
         valor_caucao: '',
         fotos: [],
-        fotos_existentes: [], 
-        
-        recursos_oferecidos: [], 
-        acessorios: [], 
+        fotos_existentes: [],
+
+        recursos_oferecidos: [],
+        acessorios: [],
         funcionarios_responsaveis: [],
-        
+
         // Imóvel Base
         endereco: '', numero: '', complemento: '', bairro: '', cidade: '', estado: '', cep: '',
         latitude: '', longitude: '', numero_quartos: '', numero_banheiros: '', numero_suites: '',
         numero_comodos: '', numero_vagas: '', area_total: '', area_construida: '',
         mobiliado: false, aceita_pet: false, possui_wifi: false, possui_ar_condicionado: false, piscina: false, churrasqueira: false,
-        
+
         // Veículos
-        placa: '', renavam: '', chassis: '', ano: '', 
+        placa: '', renavam: '', chassis: '', ano: '',
         combustivel: '', cambio: '', quilometragem: '', cilindrada: '', potencia: '', possui_seguro: false,
-        
+
         // Equipamentos
         fabricante: '', numero_serie: '', patrimonio: '', voltagem: '', potencia_equipamento: '', peso: '', dimensoes: '', garantia: '',
-        
+
         // Endereços de Retirada/Entrega
         cep_retirada: '', rua_retirada: '', numero_retirada: '', complemento_retirada: '', bairro_retirada: '', cidade_retirada: '', estado_retirada: '',
         latitude_retirada: '', longitude_retirada: '',
         cep_entrega: '', rua_entrega: '', numero_entrega: '', complemento_entrega: '', bairro_entrega: '', cidade_entrega: '', estado_entrega: '',
         latitude_entrega: '', longitude_entrega: '',
-        
+
         observacoes: '',
         periodo_faturamento_padrao: 'diaria',
         permitir_pagamento: 'online',
@@ -671,14 +678,14 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         datas_bloqueadas: [],
         horarios_bloqueados: [],
         observacoes_disponibilidade: '',
-        
+
         // Regras Avançadas de Disponibilidade (Data e Horário específicos)
         disponibilidade_por_data: false,
         quantidade_padrao: '',
         tipo_quantidade: '',
         dias_disponiveis: [],
         horarios_disponiveis: [],
-        
+
         // Promoções, Fidelidade, Contrato
         tem_promocao: false,
         tipo_desconto: 'percentual',
@@ -771,7 +778,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
     const higienizarEntrada = (dados) => {
         const regexInseguro = /<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi;
         const regexEmoji = /[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/u;
-        
+
         for (let chave in dados) {
             if (typeof dados[chave] === 'string' && chave !== 'fotos' && chave !== 'fotos_existentes') {
                 if (regexInseguro.test(dados[chave]) || regexEmoji.test(dados[chave])) {
@@ -825,7 +832,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
     const calcularSimulacao = (valorOriginal) => {
         const val = parseFloat(valorOriginal) || 0;
         if (val === 0) return { cliente: '0.00', taxa: '0.00', liquido: '0.00', descPromocao: '0.00', descPontos: '0.00' };
-        
+
         let descontoPromocao = 0;
         if (formItem.data.tem_promocao) {
             const valDesconto = parseFloat(formItem.data.valor_desconto) || 0;
@@ -843,11 +850,11 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
             const pontosValidos = Math.min(pontosInseridos, maxPontosPermitidos);
             descontoPontos = pontosValidos / 1000; // 1000 pontos = R$ 1,00
         }
-        
+
         const valorClienteFinal = Math.max(0, val - descontoPromocao - descontoPontos);
-        const taxaLokyva = valorClienteFinal * (Number(taxaPlataforma) / 100); 
+        const taxaLokyva = valorClienteFinal * (Number(taxaPlataforma) / 100);
         const valorLiquido = valorClienteFinal - taxaLokyva;
-        
+
         return {
             cliente: valorClienteFinal.toFixed(2),
             taxa: taxaLokyva.toFixed(2),
@@ -861,7 +868,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         const sim = calcularSimulacao(valor);
         const valOriginal = parseFloat(valor) || 0;
         if(valOriginal === 0) return null;
-        
+
         return (
             <div className="bg-gray-50 p-5 border border-gray-200 rounded-2xl shadow-sm flex flex-col h-full relative overflow-hidden flex-1">
                <h5 className="text-xs font-black text-gray-500 uppercase tracking-widest mb-2">{label}</h5>
@@ -871,7 +878,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                    )}
                    <p className="text-2xl font-black text-gray-900">R$ {sim.cliente}</p>
                </div>
-               
+
                <div className="mt-auto border-t border-dashed border-gray-300 pt-3 space-y-2">
                    {parseFloat(sim.descPromocao) > 0 && <p className="text-[11px] font-bold text-green-600 flex justify-between"><span>Promoção Ativa</span> <span>- R$ {sim.descPromocao}</span></p>}
                    {parseFloat(sim.descPontos) > 0 && <p className="text-[11px] font-bold text-blue-600 flex justify-between"><span>Desconto em Pontos</span> <span>- R$ {sim.descPontos}</span></p>}
@@ -903,7 +910,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                 fotos: quadradosFotosItem.filter(f => f instanceof File)
             };
         });
-        
+
         formItem.post(isEditingItem ? route('catalogo.itens.update', formItem.data.id) : route('catalogo.itens.store'), {
             preserveScroll: true,
             onSuccess: () => {
@@ -925,7 +932,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         existingPhotos.forEach((url, i) => { if(i < 24) newQuadrados[i] = url; });
         setQuadradosFotosItem(newQuadrados);
 
-        formItem.setData({ 
+        formItem.setData({
             ...item,
             recursos_oferecidos: parseArraySeguro(item.recursos_oferecidos),
             acessorios: parseArraySeguro(item.acessorios),
@@ -970,7 +977,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
 
     const deletarItem = (id) => {
         if (confirm('Tem certeza que deseja remover este item de locação do catálogo?')) {
-            router.delete(route('catalogo.itens.destroy', id), { 
+            router.delete(route('catalogo.itens.destroy', id), {
                 preserveScroll: true,
                 onSuccess: () => {
                     cancelarEdicaoItem();
@@ -984,24 +991,24 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
 
     const cat = formItem.data.categoria;
     const esImovel = [
-        'casa', 'apartamento', 'casa_praia', 'flat', 'hotel', 'pousada', 'hostel', 'chalé', 'cabana', 
-        'loft', 'kitnet', 'cobertura', 'condominio', 'sitio', 'chacara', 'fazenda', 'galpao', 'armazem', 
+        'casa', 'apartamento', 'casa_praia', 'flat', 'hotel', 'pousada', 'hostel', 'chalé', 'cabana',
+        'loft', 'kitnet', 'cobertura', 'condominio', 'sitio', 'chacara', 'fazenda', 'galpao', 'armazem',
         'terreno', 'escritorio', 'consultorio', 'sala', 'auditorio', 'espaco_eventos', 'salão_festas', 'coworking',
-        'quadra', 'quadra_futebol', 'quadra_futsal', 'quadra_volei', 'quadra_basquete', 'quadra_tenis', 
-        'quadra_beach_tennis', 'quadra_padel', 'campo_futebol', 'arena', 'ginasio', 'piscina', 'academia', 
+        'quadra', 'quadra_futebol', 'quadra_futsal', 'quadra_volei', 'quadra_basquete', 'quadra_tenis',
+        'quadra_beach_tennis', 'quadra_padel', 'campo_futebol', 'arena', 'ginasio', 'piscina', 'academia',
         'estudio_danca', 'consultorio_estetica', 'salao_beleza', 'espaco_spa', 'espaco_pet', 'armazenamento', 'deposito'
     ].includes(cat);
-    
+
     const esVeiculo = [
-        'carro', 'moto', 'bicicleta', 'bicicleta_eletrica', 'patinete', 'patinete_eletrico', 'van', 'onibus', 
+        'carro', 'moto', 'bicicleta', 'bicicleta_eletrica', 'patinete', 'patinete_eletrico', 'van', 'onibus',
         'micro_onibus', 'caminhao', 'carreta', 'motorhome', 'trailer', 'jet_ski', 'barco', 'lancha', 'iate', 'caiaque'
     ].includes(cat);
-    
+
     const esEquipamento = [
-        'equipamento', 'ferramenta', 'equipamento_construcao', 'equipamento_agricola', 'equipamento_industrial', 
-        'andaime', 'betoneira', 'gerador', 'compressor', 'escada', 'camera', 'camera_fotografica', 'camera_filmagem', 
-        'drone', 'notebook', 'computador', 'tablet', 'projetor', 'impressora', 'monitor', 'videogame', 'audio_video', 
-        'caixa_som', 'mesa_som', 'microfone', 'telão', 'painel_led', 'iluminacao', 'karaoke', 'palco', 'tenda', 
+        'equipamento', 'ferramenta', 'equipamento_construcao', 'equipamento_agricola', 'equipamento_industrial',
+        'andaime', 'betoneira', 'gerador', 'compressor', 'escada', 'camera', 'camera_fotografica', 'camera_filmagem',
+        'drone', 'notebook', 'computador', 'tablet', 'projetor', 'impressora', 'monitor', 'videogame', 'audio_video',
+        'caixa_som', 'mesa_som', 'microfone', 'telão', 'painel_led', 'iluminacao', 'karaoke', 'palco', 'tenda',
         'cadeira', 'mesa', 'decoracao', 'brinquedo_inflavel', 'roupa', 'terno', 'vestido', 'fantasia', 'cadeira_barbeiro'
     ].includes(cat);
 
@@ -1068,7 +1075,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                 )}
 
                 <div className="max-w-7xl mx-auto mt-6 flex flex-col md:flex-row gap-8 pb-12 px-4 sm:px-6 lg:px-8">
-                    
+
                     <aside className="w-full md:w-64 shrink-0">
                         <nav className="flex md:flex-col gap-2 overflow-x-auto pb-4 md:pb-0">
                             <button onClick={() => setActiveTab('detalhes')} className={`text-left px-4 py-3 rounded-xl text-sm font-bold transition whitespace-nowrap flex items-center gap-2 ${activeTab === 'detalhes' ? 'bg-[#FF5A00] text-white shadow-md' : 'text-gray-600 hover:bg-gray-100'}`}>
@@ -1103,14 +1110,14 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                             <div className="space-y-8 animate-in fade-in duration-300">
                                 <div className="bg-white p-6 sm:p-8 rounded-2xl shadow-sm border border-gray-100">
                                     <form onSubmit={submitDetalhes} className="space-y-6">
-                                        
+
                                         <div className="flex flex-col sm:flex-row items-center gap-6 pb-6 border-b border-gray-100">
                                             <div className="relative group cursor-pointer w-24 h-24 sm:w-32 sm:h-32 shrink-0">
                                                 <label className="cursor-pointer w-full h-full block">
                                                     {fotoPerfilPreview ? (
-                                                        <img 
-                                                            src={fotoPerfilPreview} 
-                                                            alt="Logo da Loja" 
+                                                        <img
+                                                            src={fotoPerfilPreview}
+                                                            alt="Logo da Loja"
                                                             className="w-full h-full object-cover rounded-2xl shadow-md border-2 border-white"
                                                         />
                                                     ) : (
@@ -1118,20 +1125,20 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                             {formDetalhes.data.nome ? formDetalhes.data.nome.charAt(0) : 'L'}
                                                         </div>
                                                     )}
-                                                    
+
                                                     <div className="absolute inset-0 bg-black/50 rounded-2xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                                         <span className="text-white text-xs font-bold uppercase tracking-wider flex items-center gap-1"><PhotoIcon className="w-4 h-4"/> Alterar</span>
                                                     </div>
-                                                    
-                                                    <input 
-                                                        type="file" 
-                                                        className="hidden" 
+
+                                                    <input
+                                                        type="file"
+                                                        className="hidden"
                                                         accept="image/*"
-                                                        onChange={handleFotoEstabelecimento} 
+                                                        onChange={handleFotoEstabelecimento}
                                                     />
                                                 </label>
                                             </div>
-                                            
+
                                             <div className="text-center sm:text-left">
                                                 <h3 className="text-lg font-bold text-gray-900">Logo do Estabelecimento</h3>
                                                 <p className="text-sm text-gray-400 mt-1 max-w-md">Esta imagem será exibida para os clientes na tela de agendamento e buscas. Formatos: JPG, PNG, WEBP (Max: 2MB).</p>
@@ -1144,13 +1151,13 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                 <h3 className="text-lg font-bold text-gray-900">Banner da Loja</h3>
                                                 <p className="text-sm text-gray-400 mt-1">Este banner será exibido na parte superior da página pública do seu estabelecimento.</p>
                                             </div>
-                                            
+
                                             <div className="relative group cursor-pointer w-full h-40 sm:h-56 shrink-0">
                                                 <label className="cursor-pointer w-full h-full block">
                                                     {fotoBannerPreview ? (
-                                                        <img 
-                                                            src={fotoBannerPreview} 
-                                                            alt="Banner da Loja" 
+                                                        <img
+                                                            src={fotoBannerPreview}
+                                                            alt="Banner da Loja"
                                                             className="w-full h-full object-cover rounded-2xl shadow-md border-2 border-white"
                                                         />
                                                     ) : (
@@ -1159,16 +1166,16 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                             Inserir Banner da Vitrine
                                                         </div>
                                                     )}
-                                                    
+
                                                     <div className="absolute inset-0 bg-black/50 rounded-2xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                                         <span className="text-white text-sm font-bold uppercase tracking-wider flex items-center gap-2"><PhotoIcon className="w-5 h-5"/> Alterar Banner</span>
                                                     </div>
-                                                    
-                                                    <input 
-                                                        type="file" 
-                                                        className="hidden" 
+
+                                                    <input
+                                                        type="file"
+                                                        className="hidden"
                                                         accept="image/*"
-                                                        onChange={handleFotoBanner} 
+                                                        onChange={handleFotoBanner}
                                                     />
                                                 </label>
                                             </div>
@@ -1183,9 +1190,9 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                             </div>
                                             <div>
                                                 <InputLabel value="Ramo de Atuação" />
-                                                <select 
-                                                    className="mt-1 w-full border-gray-300 rounded-lg shadow-sm focus:border-[#FF5A00]" 
-                                                    value={formDetalhes.data.ramo_atuacao ?? ''} 
+                                                <select
+                                                    className="mt-1 w-full border-gray-300 rounded-lg shadow-sm focus:border-[#FF5A00]"
+                                                    value={formDetalhes.data.ramo_atuacao ?? ''}
                                                     onChange={e => formDetalhes.setData('ramo_atuacao', e.target.value)}
                                                 >
                                                     <option value="">Selecione a categoria...</option>
@@ -1198,17 +1205,39 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                 <TextInput className="mt-1 w-full focus:border-[#FF5A00]" value={formDetalhes.data.telefone ?? ''} onChange={e => formDetalhes.setData('telefone', e.target.value)} placeholder="(00) 00000-0000" />
                                                 <InputError message={formDetalhes.errors.telefone} />
                                             </div>
+                                            <div className="md:col-span-2">
+                                                <InputLabel value="Site ou rede social" />
+                                                <TextInput className="mt-1 w-full focus:border-[#FF5A00]" value={formDetalhes.data.site ?? ''} onChange={e => formDetalhes.setData('site', e.target.value)} placeholder="www.seulocal.com.br ou instagram.com/seulocal" />
+                                                <p className="mt-1 text-xs text-gray-400">Aparece na vitrine do seu local como um botão para o cliente abrir.</p>
+                                                <InputError message={formDetalhes.errors.site} />
+                                            </div>
+                                            <div className="md:col-span-2">
+                                                <InputLabel value="Descrição do local" />
+                                                <textarea
+                                                    rows={4}
+                                                    maxLength={1000}
+                                                    className="mt-1 w-full rounded-lg border-gray-300 shadow-sm focus:border-[#FF5A00] focus:ring-[#FF5A00]"
+                                                    value={formDetalhes.data.bio ?? ''}
+                                                    onChange={e => formDetalhes.setData('bio', e.target.value)}
+                                                    placeholder="Conte o que o seu local oferece, o diferencial, o ambiente e o que o cliente pode esperar."
+                                                />
+                                                <div className="mt-1 flex justify-between text-xs text-gray-400">
+                                                    <span>Aparece na vitrine para o cliente, no topo da página do seu local.</span>
+                                                    <span>{(formDetalhes.data.bio || '').length}/1000</span>
+                                                </div>
+                                                <InputError message={formDetalhes.errors.bio} />
+                                            </div>
                                         </div>
 
                                         <h3 className="text-lg font-bold text-gray-900 mt-8 mb-4 pt-6 border-t border-gray-100">Endereço</h3>
                                         <div className="grid grid-cols-1 md:grid-cols-6 gap-6">
                                             <div className="md:col-span-2">
                                                 <InputLabel value="CEP" />
-                                                <TextInput 
-                                                    className="mt-1 w-full focus:border-[#FF5A00]" 
-                                                    value={formDetalhes.data.cep ?? ''} 
-                                                    onChange={e => formDetalhes.setData('cep', e.target.value)} 
-                                                    onBlur={(e) => buscarEnderecoAutomatizado(e.target.value, formDetalhes.setData, '')} 
+                                                <TextInput
+                                                    className="mt-1 w-full focus:border-[#FF5A00]"
+                                                    value={formDetalhes.data.cep ?? ''}
+                                                    onChange={e => formDetalhes.setData('cep', e.target.value)}
+                                                    onBlur={(e) => buscarEnderecoAutomatizado(e.target.value, formDetalhes.setData, '')}
                                                 />
                                             </div>
                                             <div className="md:col-span-4"><InputLabel value="Rua / Avenida" /><TextInput className="mt-1 w-full focus:border-[#FF5A00]" value={formDetalhes.data.rua ?? ''} onChange={e => formDetalhes.setData('rua', e.target.value)} /></div>
@@ -1285,8 +1314,8 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                         {estabelecimento.ativo ? 'Desativar Estabelecimento' : 'Ativar Estabelecimento'}
                                     </h3>
                                     <p className={`text-sm mb-6 ${estabelecimento.ativo ? 'text-red-600' : 'text-green-600'}`}>
-                                        {estabelecimento.ativo 
-                                            ? 'Ao desativar, a sua loja deixará de aparecer para os clientes e não aceitará mais agendamentos.' 
+                                        {estabelecimento.ativo
+                                            ? 'Ao desativar, a sua loja deixará de aparecer para os clientes e não aceitará mais agendamentos.'
                                             : 'A sua loja está fechada ao público. Clique no botão abaixo para ativar a loja.'}
                                     </p>
                                     <button onClick={toggleStatusEstabelecimento} className={`px-6 py-3 text-sm font-bold rounded-xl shadow-sm transition text-white ${estabelecimento.ativo ? 'bg-red-600 hover:bg-red-700' : 'bg-green-600 hover:bg-green-700'}`}>
@@ -1547,6 +1576,19 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                     </div>
                                                 </div>
                                                 <div className="md:col-span-2 p-5 bg-gray-50 rounded-xl border">
+                                                    <label className="mb-4 flex cursor-pointer items-start gap-3 rounded-xl border border-orange-200 bg-white p-4">
+                                                        <input
+                                                            type="checkbox"
+                                                            className="mt-0.5 rounded border-gray-300 text-[#FF5A00] focus:ring-[#FF5A00]"
+                                                            checked={!!formServico.data.horario_a_combinar}
+                                                            onChange={e => formServico.setData('horario_a_combinar', e.target.checked)}
+                                                        />
+                                                        <span>
+                                                            <span className="block text-sm font-black text-gray-900">Horário a combinar</span>
+                                                            <span className="block text-xs text-gray-500">Sem horários fixos: o cliente vê "Combine o horário com o proprietário" e fala com você pelo chat ou telefone para marcar.</span>
+                                                        </span>
+                                                    </label>
+                                                    {!formServico.data.horario_a_combinar && (<>
                                                     <InputLabel value="Horários Operacionais *" className="mb-2" />
                                                     <div className="flex gap-3 mb-4">
                                                         <TextInput type="time" value={novoHorario ?? ''} onChange={e => setNovoHorario(e.target.value)} className="w-32 text-center focus:border-[#FF5A00]" />
@@ -1559,6 +1601,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                             </span>
                                                         ))}
                                                     </div>
+                                                    </>)}
                                                 </div>
                                             </div>
 
@@ -1699,13 +1742,13 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                         {/* ========================================================================= */}
                         {activeTab === 'reservas_alugueis' && (
                             <div className="space-y-8 animate-in fade-in duration-300">
-                                
+
                                 {visualizandoItem ? (
                                     <div className="bg-white p-6 sm:p-10 rounded-[2.5rem] shadow-sm border border-gray-100 animate-in fade-in slide-in-from-bottom-4">
                                         <button onClick={() => setVisualizandoItem(null)} className="mb-8 flex items-center gap-2 text-sm font-bold text-gray-500 hover:text-[#FF5A00] transition">
                                             <ArrowLeftIcon className="w-4 h-4" /> Voltar para o Catálogo
                                         </button>
-                                        
+
                                         <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
                                             <div className="lg:col-span-5 space-y-4">
                                                 <div className="aspect-square bg-gray-50 rounded-[2rem] overflow-hidden border border-gray-100 shadow-sm relative">
@@ -1749,7 +1792,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                 ) : (
                                     <div className="bg-white p-6 sm:p-8 rounded-3xl shadow-sm border border-gray-100">
                                         <form onSubmit={submitItemLocacao} className="space-y-8">
-                                            
+
                                             {/* SESSÃO 1: INFORMAÇÕES BÁSICAS */}
                                             <div>
                                                 <h3 className="text-xl font-black text-gray-900 mb-2 flex items-center gap-2">
@@ -1783,7 +1826,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                 </div>
                                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-4">
                                                     <div><InputLabel value="Marca / Fabricante" /><TextInput className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.marca ?? ''} onChange={e => formItem.setData('marca', e.target.value)} /></div>
-                                                    
+
                                                     {(esVeiculo || esEquipamento) && (
                                                         <div>
                                                             <InputLabel value="Modelo" />
@@ -1801,14 +1844,14 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                             )}
                                                         </div>
                                                     )}
-                                                    
+
                                                     <div>
                                                         <InputLabel value="Tipo / Subtipo" />
-                                                        <input 
-                                                            list="opcoes-tipo" 
-                                                            className="mt-1 w-full border-gray-300 rounded-lg shadow-sm focus:border-[#FF5A00] focus:ring-[#FF5A00]" 
-                                                            value={formItem.data.tipo ?? ''} 
-                                                            onChange={e => formItem.setData('tipo', e.target.value)} 
+                                                        <input
+                                                            list="opcoes-tipo"
+                                                            className="mt-1 w-full border-gray-300 rounded-lg shadow-sm focus:border-[#FF5A00] focus:ring-[#FF5A00]"
+                                                            value={formItem.data.tipo ?? ''}
+                                                            onChange={e => formItem.setData('tipo', e.target.value)}
                                                             placeholder="Escolha ou digite..."
                                                         />
                                                         <datalist id="opcoes-tipo">
@@ -2010,18 +2053,18 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                                 <p className="text-[11px] text-gray-500 mb-6 leading-relaxed max-w-2xl">
                                                                     Veja quanto o cliente vai pagar e o valor líquido exato que vai entrar na sua conta após aplicar a taxa da LOKYVA ({taxaPlataforma}%) e os seus descontos e pontos.
                                                                 </p>
-                                                                
+
                                                                 {formItem.data.aceita_pontos && (
                                                                     <div className="mb-6 bg-gray-50 p-4 rounded-xl border border-gray-200 max-w-md">
                                                                         <InputLabel value="Simular uso de pontos:" className="text-gray-700 text-xs font-bold" />
                                                                         <div className="flex items-center gap-2 mt-2">
-                                                                            <TextInput 
-                                                                                type="number" 
-                                                                                min="0" 
+                                                                            <TextInput
+                                                                                type="number"
+                                                                                min="0"
                                                                                 max={formItem.data.maximo_pontos_permitidos || 0}
-                                                                                className="w-full text-sm font-bold bg-white text-gray-900 border-gray-300 focus:border-[#FF5A00]" 
-                                                                                value={simulacaoPontos ?? ''} 
-                                                                                onChange={e => setSimulacaoPontos(e.target.value)} 
+                                                                                className="w-full text-sm font-bold bg-white text-gray-900 border-gray-300 focus:border-[#FF5A00]"
+                                                                                value={simulacaoPontos ?? ''}
+                                                                                onChange={e => setSimulacaoPontos(e.target.value)}
                                                                                 placeholder="Ex: 100"
                                                                             />
                                                                             <span className="text-xs font-bold text-gray-500 w-32 bg-gray-200 px-3 py-2 rounded-lg text-center">
@@ -2061,7 +2104,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                                                     <div className="space-y-5">
                                                         <h4 className="font-bold text-gray-800 text-sm">1. Configuração Geral</h4>
-                                                        
+
                                                         <label className="flex items-center justify-between bg-white p-4 rounded-xl border cursor-pointer hover:border-orange-300 transition shadow-sm">
                                                             <div>
                                                                 <span className="font-bold text-sm text-gray-900 block">Sempre Disponível</span>
@@ -2093,7 +2136,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
 
                                                     <div className="space-y-5">
                                                         <h4 className="font-bold text-gray-800 text-sm">2. Seleção de Regras e Datas</h4>
-                                                        
+
                                                         {(formItem.data.tipo_disponibilidade === 'todos' || formItem.data.tipo_disponibilidade === 'dias_semana') && (
                                                             <div>
                                                                 <InputLabel value="Quais dias da semana está liberado?" />

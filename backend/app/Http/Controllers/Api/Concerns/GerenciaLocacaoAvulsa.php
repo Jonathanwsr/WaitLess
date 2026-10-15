@@ -16,6 +16,46 @@ use Illuminate\Support\Facades\Log;
  */
 trait GerenciaLocacaoAvulsa
 {
+    /** Reservas futuras dos itens do dono (ainda não começaram), para ele acompanhar e cancelar. */
+    private function proximasReservasDoDono($itemIds)
+    {
+        return \App\Models\Aluguel::with('item:id,nome', 'locatario:id,name', 'pagamento:id,status')
+            ->whereIn('item_aluguel_id', $itemIds)
+            ->whereNotIn('status', ['cancelado', 'finalizado', 'concluido', 'em_andamento'])
+            ->where('data_inicio', '>=', now('America/Sao_Paulo')->toDateString())
+            ->orderBy('data_inicio')
+            ->limit(50)
+            ->get()
+            ->map(fn ($aluguel) => [
+                'id'          => $aluguel->id,
+                'codigo'      => $aluguel->codigo_reserva,
+                'item_nome'   => $aluguel->item->nome ?? '—',
+                'locatario'   => $aluguel->locatario->name ?? '—',
+                'data_inicio' => $aluguel->data_inicio,
+                'data_fim'    => $aluguel->data_fim,
+                'valor'       => (float) $aluguel->valor_total,
+                'pago'        => $aluguel->pagamento?->status === 'pago',
+                'status'      => $aluguel->status,
+            ])
+            ->values();
+    }
+
+    /**
+     * Dono cancela uma reserva: se já foi paga, o cliente recebe 100% de volta (e os pontos usados),
+     * sem pedir estorno. Devolve o resultado do PagamentoService ou lança exceção com mensagem amigável.
+     */
+    private function cancelarReservaDoDono(\App\Models\Aluguel $aluguel): array
+    {
+        $donoId = Auth::id();
+        abort_unless((int) $aluguel->proprietario_id === (int) $donoId || (int) $aluguel->estabelecimento_id === (int) $donoId, 403, 'Esta reserva não é sua.');
+
+        if (in_array($aluguel->status, ['cancelado', 'finalizado', 'concluido'], true)) {
+            throw new \DomainException('Esta reserva não pode mais ser cancelada.');
+        }
+
+        return app(\App\Services\PagamentoService::class)->processarCancelamentoAluguel($aluguel, $donoId, true);
+    }
+
     private function garantirPapelPermitido(): void
     {
         $papel = mb_strtolower((string) Auth::user()->papel);
@@ -41,6 +81,8 @@ trait GerenciaLocacaoAvulsa
             'valor_desconto'           => 'nullable|numeric|min:0',
             'aceita_pontos'            => 'nullable|boolean',
             'maximo_pontos_permitidos' => 'nullable|integer|min:0',
+            // Política de cancelamento (modelo Airbnb); reservas de 28+ dias usam longa duração.
+            'politica_cancelamento'    => 'nullable|in:flexivel,moderada,firme,rigorosa',
             'ativo'                    => 'nullable|boolean',
             'local_retirada'           => 'nullable|string|max:500',
             'local_entrega'            => 'nullable|string|max:500',
@@ -155,30 +197,10 @@ trait GerenciaLocacaoAvulsa
         return array_values(array_merge($fotosMantidas, $caminhosNovos));
     }
 
+    /** Moderação de imagem centralizada no HiveAiService (desligada por padrão). */
     private function imagemContemConteudoInadequado($foto): bool
     {
-        try {
-            $hiveKey = env('HIVE_API_KEY');
-            if (!$hiveKey) return false;
-
-            $response = Http::withHeaders([
-                'authorization' => 'token ' . $hiveKey,
-                'accept'        => 'application/json',
-            ])->attach('media', file_get_contents($foto->getRealPath()), $foto->getClientOriginalName())
-              ->post('https://api.thehive.ai/api/v2/task/sync', ['classes' => 'nsfw']);
-
-            if ($response->successful()) {
-                $classes = $response->json()['status'][0]['response']['output'][0]['classes'] ?? [];
-                foreach ($classes as $class) {
-                    if (in_array($class['class'], ['yes_nsfw', 'pornography']) && $class['score'] > 0.70) {
-                        return true;
-                    }
-                }
-            }
-        } catch (\Exception $e) {
-            Log::error('Hive AI error (locação avulsa): ' . $e->getMessage());
-        }
-        return false;
+        return \App\Services\HiveAiService::bloqueada($foto);
     }
 
     private function uploadParaImageKit($foto): string

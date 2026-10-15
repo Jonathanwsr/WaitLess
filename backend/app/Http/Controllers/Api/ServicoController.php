@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Agendamento;
 use App\Models\Pagamento;
 use App\Services\PagamentoService;
-use App\Services\ImageKitService; 
+use App\Services\ImageKitService;
 use Carbon\Carbon;
 use Exception;
 use App\Models\Servico;
@@ -65,11 +65,12 @@ class ServicoController extends Controller
             'valor'                => 'required|numeric|min:0',
             'duracao_minutos'      => 'required|integer|min:1',
             'vagas_por_horario'   => 'nullable|integer|min:1|max:100',
-            'estabelecimentos_ids' => 'required|array|min:1', 
+            'estabelecimentos_ids' => 'required|array|min:1',
             'estabelecimentos_ids.*' => 'exists:estabelecimentos,id',
             'funcionario_id'       => 'nullable|exists:funcionarios,id',
             'dias_disponiveis'     => 'nullable|array',
             'horarios_disponiveis' => 'nullable|array',
+            'horario_a_combinar'   => 'nullable|boolean',
             'tipo_pagamento'       => 'required|in:hibrido,online,presencial',
 
             'fotos'                => 'nullable|array|max:5',
@@ -131,7 +132,9 @@ class ServicoController extends Controller
                 'configuracoes'        => json_encode([
                     'dias_disponiveis'   => $dias,
                     'tipo_pagamento'     => $validated['tipo_pagamento'],
-                    'funcionario_padrao' => $funcionarioParaSalvar
+                    'funcionario_padrao' => $funcionarioParaSalvar,
+                    // Sem horários fixos: o cliente combina o horário direto com o dono.
+                    'horario_a_combinar' => $request->boolean('horario_a_combinar'),
                 ]),
                 'fotos'                => json_encode($urlsFotos),
                 'somente_premium'          => $somentePremium,
@@ -182,8 +185,9 @@ class ServicoController extends Controller
             'funcionario_id'       => 'nullable|exists:funcionarios,id',
             'dias_disponiveis'     => 'nullable|array',
             'horarios_disponiveis' => 'nullable|array',
-            'tipo_pagamento'       => 'required|in:hibrido,online,presencial', 
-            
+            'horario_a_combinar'   => 'nullable|boolean',
+            'tipo_pagamento'       => 'required|in:hibrido,online,presencial',
+
             // Campos de imagem ajustados para a edição
             'fotos_existentes'     => 'nullable|array',
             'fotos_existentes.*'   => 'string',
@@ -219,7 +223,9 @@ class ServicoController extends Controller
             'configuracoes'        => json_encode([
                 'dias_disponiveis'   => $dias,
                 'tipo_pagamento'     => $validated['tipo_pagamento'],
-                'funcionario_padrao' => $validated['funcionario_id'] ?? null
+                'funcionario_padrao' => $validated['funcionario_id'] ?? null,
+                // Sem horários fixos: o cliente combina o horário direto com o dono.
+                'horario_a_combinar' => $request->boolean('horario_a_combinar'),
             ]),
             'somente_premium'          => $request->boolean('somente_premium', false),
             'tem_promocao'             => $temPromocao,
@@ -301,7 +307,7 @@ class ServicoController extends Controller
                         // agendamento pago era removido. Agora usa o mesmo fluxo central
                         // de cancelamento (cria o registro em "estornos", visível pro
                         // admin, e processa a devolução de verdade no Asaas).
-                        $mpService->processarCancelamentoAgendamento($agendamento);
+                        $mpService->processarCancelamentoAgendamento($agendamento, true);
                         $estornosComSucesso++;
 
                     } catch (Exception $e) {
@@ -338,13 +344,16 @@ class ServicoController extends Controller
     {
         $estabelecimentosIds = Auth::user()->estabelecimentos()->pluck('id');
 
-        $itens = ItemAluguel::whereIn('estabelecimento_id', $estabelecimentosIds)
+        $itens = ItemAluguel::where(fn ($q) => $q->whereIn('local_id', $estabelecimentosIds)
+                ->orWhere(fn ($legado) => $legado->whereNull('local_id')->whereIn('estabelecimento_id', $estabelecimentosIds)))
             ->when($request->search, function ($query, $search) {
-                $query->where('nome', 'like', "%{$search}%")
-                      ->orWhere('modelo', 'like', "%{$search}%");
+                $query->where(fn ($w) => $w->where('nome', 'like', "%{$search}%")
+                      ->orWhere('modelo', 'like', "%{$search}%"));
             })
             ->latest()
             ->paginate(10);
+
+        $itens->getCollection()->each->paraTelaDoDono();
 
         return response()->json($itens);
     }
@@ -458,7 +467,7 @@ class ServicoController extends Controller
     public function showItem($id)
     {
         $item = ItemAluguel::with('estabelecimento')->findOrFail($id);
-        
+
         if (!Auth::user()->estabelecimentos->contains($item->estabelecimento_id)) {
             abort(403, 'Acesso Restrito.');
         }
@@ -488,7 +497,7 @@ class ServicoController extends Controller
             'capacidade_pessoas' => 'nullable|integer|min:1',
             'disponivel'         => 'required|boolean',
             'ativo'              => 'required|boolean',
-            
+
             'valor_diaria'       => 'nullable|numeric|min:0',
             'valor_semanal'      => 'nullable|numeric|min:0',
             'valor_mensal'       => 'nullable|numeric|min:0',
@@ -519,13 +528,13 @@ class ServicoController extends Controller
             'numero_suites'      => 'nullable|integer|min:0',
             'numero_vagas'       => 'nullable|integer|min:0',
             'area_total'         => 'nullable|numeric|min:0',
-            
+
             'placa'              => 'nullable|string|max:20',
             'renavam'            => 'nullable|string|max:20',
             'chassis'            => 'nullable|string|max:30',
             'quilometragem'      => 'nullable|integer|min:0',
             'possui_seguro'      => 'nullable|boolean',
-            
+
             'fabricante'         => 'nullable|string|max:255',
             'numero_serie'       => 'nullable|string|max:255',
             'patrimonio'         => 'nullable|string|max:255',

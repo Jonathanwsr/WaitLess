@@ -1,8 +1,13 @@
-import { Head } from '@inertiajs/react';
+import { Head, router } from '@inertiajs/react';
 import { useEffect, useState } from 'react';
 import { ClockIcon, UserIcon, SparklesIcon } from '@heroicons/react/24/solid';
+import { ArrowLeftIcon, ArrowsPointingOutIcon, BuildingStorefrontIcon } from '@heroicons/react/24/outline';
 
-export default function FilaPainel({ estabelecimento }) {
+export default function FilaPainel({ estabelecimento, locais = [] }) {
+    const voltar = () => (window.history.length > 1 ? window.history.back() : router.visit(route('dashboard')));
+    const trocarLocal = (id) => router.visit(route('estabelecimentos.fila.painel', id));
+    const telaCheia = () => Promise.resolve(document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.()).catch(() => {});
+
     const [atual, setAtual] = useState(null);
     const [proximos, setProximos] = useState([]);
     const [hora, setHora] = useState(new Date());
@@ -39,6 +44,31 @@ export default function FilaPainel({ estabelecimento }) {
     return (
         <div className="min-h-screen bg-[#111111] text-white flex flex-col">
             <Head title={`Fila - ${estabelecimento.nome}`} />
+
+            {/* Controles: voltar, trocar o local exibido e tela cheia. Discretos para não poluir a TV. */}
+            <div className="flex flex-wrap items-center justify-between gap-3 px-10 pt-4 opacity-60 hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                <button type="button" onClick={voltar} className="inline-flex items-center gap-2 rounded-xl bg-white/10 hover:bg-white/20 px-4 py-2 text-sm font-bold">
+                    <ArrowLeftIcon className="w-4 h-4" /> Voltar
+                </button>
+                <div className="flex items-center gap-2">
+                    {locais.length > 1 && (
+                        <label className="inline-flex items-center gap-2 rounded-xl bg-white/10 pl-3 text-sm font-bold">
+                            <BuildingStorefrontIcon className="w-4 h-4" />
+                            <span className="hidden sm:inline">Local exibido:</span>
+                            <select
+                                value={estabelecimento.id}
+                                onChange={(e) => trocarLocal(e.target.value)}
+                                className="bg-transparent border-0 text-white text-sm font-bold focus:ring-0 pr-8 py-2"
+                            >
+                                {locais.map((l) => <option key={l.id} value={l.id} className="text-gray-900">{l.nome}</option>)}
+                            </select>
+                        </label>
+                    )}
+                    <button type="button" onClick={telaCheia} className="inline-flex items-center gap-2 rounded-xl bg-white/10 hover:bg-white/20 px-4 py-2 text-sm font-bold">
+                        <ArrowsPointingOutIcon className="w-4 h-4" /> Tela cheia
+                    </button>
+                </div>
+            </div>
 
             <div className="flex items-center justify-between px-10 py-6 border-b border-white/10">
                 <div className="flex items-center gap-4">

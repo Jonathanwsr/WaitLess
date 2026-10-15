@@ -334,7 +334,7 @@ Regido pela Lei nº 8.245/1991 (Lei do Inquilinato) e pelo Código Civil Brasile
                 </div>
             }
         >
-            <Head title="Gestor de Contratos - Lokyva" />
+            <Head title="Gestor de Contratos" />
 
             <div className="bg-gray-50/50 min-h-screen pb-16">
                 

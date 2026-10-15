@@ -4,8 +4,8 @@ import { Head, Link } from '@inertiajs/react';
 import axios from 'axios';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import { 
-  ArrowLeft, MapPin, Navigation, Clock, User, 
+import {
+  ArrowLeft, MapPin, Navigation, Clock, User,
   Phone, AlertTriangle, CheckCircle2, Car, Search, Crown
 } from 'lucide-react';
 
@@ -14,16 +14,25 @@ import {
 // ==========================================
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
 
-function MapaRastreamentoConteudo({ auth, agendamentosAtivos }) {
+const INTERVALO_ATUALIZACAO = 10000; // a lista e as posições são relidas do servidor a cada 10 s
+const horaDe = (iso) => (iso ? new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : null);
+const minutosDesde = (iso) => (iso ? Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000)) : null);
+
+function MapaRastreamentoConteudo({ auth, agendamentosAtivos: iniciais }) {
+  // Lista viva: começa com o que veio da página e é atualizada sozinha.
+  const [agendamentosAtivos, setAgendamentosAtivos] = useState(iniciais || []);
+  const [ultimaLeitura, setUltimaLeitura] = useState(new Date());
+  const posicaoMostrada = useRef(null); // atualizado_em da última posição desenhada
   const mapContainer = useRef(null);
   const map = useRef(null);
   const markerCliente = useRef(null);
   const markerLoja = useRef(null);
 
   // Coordenada Padrão (Primeiro cliente da lista ou Centro da Cidade)
-  const coordPadrao = agendamentosAtivos && agendamentosAtivos.length > 0 
-    ? [agendamentosAtivos[0].estabelecimento.longitude, agendamentosAtivos[0].estabelecimento.latitude]
-    : [-34.88, -8.05]; 
+  const primeiroComLocal = (iniciais || []).find((a) => a.estabelecimento?.latitude && a.estabelecimento?.longitude);
+  const coordPadrao = primeiroComLocal
+    ? [primeiroComLocal.estabelecimento.longitude, primeiroComLocal.estabelecimento.latitude]
+    : [-34.88, -8.05];
 
   // Estados de Gerenciamento da Tela Unificada
   const [clienteSelecionado, setClienteSelecionado] = useState(null);
@@ -73,7 +82,38 @@ function MapaRastreamentoConteudo({ auth, agendamentosAtivos }) {
         }
       }, labelLayerId);
     });
-  }, [coordPadrao]);
+  }, []);
+
+  // 1.1 ATUALIZAÇÃO AUTOMÁTICA: relê a lista e as últimas posições (funciona mesmo sem WebSocket).
+  useEffect(() => {
+    let ativo = true;
+    const ler = async () => {
+      try {
+        const { data } = await axios.get(route('proprietario.rastreamento'), { headers: { Accept: 'application/json' } });
+        if (!ativo) return;
+        setAgendamentosAtivos(data.agendamentos_ativos || []);
+        setUltimaLeitura(new Date());
+      } catch (e) {
+        // Sem conexão momentânea: tenta de novo no próximo ciclo.
+      }
+    };
+    const t = setInterval(ler, INTERVALO_ATUALIZACAO);
+    return () => { ativo = false; clearInterval(t); };
+  }, []);
+
+  // 1.2 Quando chega uma posição nova do cliente selecionado (pela atualização automática), move o carro.
+  useEffect(() => {
+    if (!clienteSelecionado || !map.current) return;
+    const atual = agendamentosAtivos.find((a) => a.id === clienteSelecionado.id);
+    const pos = atual?.ultima_localizacao;
+    if (!pos || pos.atualizado_em === posicaoMostrada.current) return;
+    const loja = [atual.estabelecimento.longitude, atual.estabelecimento.latitude];
+    if (!loja[0] || !loja[1]) return;
+    posicaoMostrada.current = pos.atualizado_em;
+    setStatusConexao(minutosDesde(pos.atualizado_em) <= 2 ? 'Sinal GPS Ativo - Movendo-se' : `Última posição às ${horaDe(pos.atualizado_em)}`);
+    setUltimaAtualizacao(horaDe(pos.atualizado_em));
+    atualizarPosicaoETrajeto([pos.longitude, pos.latitude], loja);
+  }, [agendamentosAtivos, clienteSelecionado]);
 
   // 2. CONECTAR NO WEBSOCKET DO CLIENTE SELECIONADO
   useEffect(() => {
@@ -82,7 +122,12 @@ function MapaRastreamentoConteudo({ auth, agendamentosAtivos }) {
     // Configura o Pino de Destino (Sua Loja)
     if (markerLoja.current) markerLoja.current.remove();
     const lojaCoords = [clienteSelecionado.estabelecimento.longitude, clienteSelecionado.estabelecimento.latitude];
-    
+    posicaoMostrada.current = null;
+    if (!lojaCoords[0] || !lojaCoords[1]) {
+      setStatusConexao('Este local não tem endereço no mapa. Cadastre o endereço do estabelecimento.');
+      return;
+    }
+
     // Custom Marker da Loja (Estilo moderno)
     const elLoja = document.createElement('div');
     elLoja.className = 'custom-marker-loja';
@@ -109,25 +154,35 @@ function MapaRastreamentoConteudo({ auth, agendamentosAtivos }) {
     // VOAR CÂMERA PARA A LOJA ATÉ O SINAL CHEGAR
     map.current.flyTo({ center: lojaCoords, zoom: 15, pitch: 65, essential: true });
 
-    // === INICIA CONEXÃO LARAVEL REVERB ===
+    const ultima = clienteSelecionado.ultima_localizacao;
+    if (ultima) {
+      posicaoMostrada.current = ultima.atualizado_em;
+      setStatusConexao(minutosDesde(ultima.atualizado_em) <= 2 ? 'Sinal GPS Ativo - Movendo-se' : `Última posição às ${horaDe(ultima.atualizado_em)}`);
+      setUltimaAtualizacao(horaDe(ultima.atualizado_em));
+      atualizarPosicaoETrajeto([ultima.longitude, ultima.latitude], lojaCoords);
+    } else {
+      setStatusConexao(`${clienteSelecionado.usuario.name} ainda não compartilhou a localização.`);
+    }
+
+    // === TEMPO REAL (Laravel Reverb), quando disponível. Sem ele, a atualização automática cobre. ===
     if (!window.Echo) {
-      console.error("Laravel Echo não detectado.");
       return;
     }
 
     const channelName = `rastreamento.${clienteSelecionado.id}`;
-    
+
     window.Echo.private(channelName)
       .listen('.client.moved', (dados) => {
         setStatusConexao('Sinal GPS Ativo - Movendo-se');
-        setUltimaAtualizacao(new Date().toLocaleTimeString());
+        setUltimaAtualizacao(new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }));
+        posicaoMostrada.current = dados.timestamp || posicaoMostrada.current;
 
         const novaPosicao = [dados.longitude, dados.latitude];
         atualizarPosicaoETrajeto(novaPosicao, lojaCoords);
       })
       .error((error) => {
-        console.error("Erro no WebSocket:", error);
-        setStatusConexao('Erro ao conectar ao rastreamento.');
+        // Sem WebSocket o mapa continua sendo atualizado a cada 10 segundos.
+        console.warn('Tempo real indisponível, usando atualização automática:', error);
       });
 
     return () => {
@@ -137,14 +192,14 @@ function MapaRastreamentoConteudo({ auth, agendamentosAtivos }) {
 
   // 3. ATUALIZA CARRO, MAPA E ROTA COM EFEITO 3D UBER
   const atualizarPosicaoETrajeto = async (posicaoCliente, lojaCoords) => {
-    
+
     // CRIA OU ATUALIZA O CARRINHO
     if (!markerCliente.current) {
       const elCarro = document.createElement('div');
       elCarro.className = 'custom-marker-carro';
       // Desenho do carro em HTML
       elCarro.innerHTML = `<div class="pino-carro ring-pulse"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6"><path d="M3.375 3C2.339 3 1.5 3.84 1.5 4.875v.75c0 1.036.84 1.875 1.875 1.875h17.25c1.035 0 1.875-.84 1.875-1.875v-.75C22.5 3.839 21.66 3 20.625 3H3.375z" /><path fill-rule="evenodd" d="M3.087 9l.54 9.176A3 3 0 006.62 21h10.757a3 3 0 002.995-2.824L20.913 9H3.087zm6.163 3.75A.75.75 0 0110 12h4a.75.75 0 010 1.5h-4a.75.75 0 01-.75-.75z" clip-rule="evenodd" /></svg></div>`;
-      
+
       markerCliente.current = new mapboxgl.Marker({ element: elCarro })
         .setLngLat(posicaoCliente)
         .addTo(map.current);
@@ -156,10 +211,10 @@ function MapaRastreamentoConteudo({ auth, agendamentosAtivos }) {
       // BUSCA A ROTA NO MAPBOX
       const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${posicaoCliente[0]},${posicaoCliente[1]};${lojaCoords[0]},${lojaCoords[1]}?geometries=geojson&access_token=${mapboxgl.accessToken}`;
       const response = await axios.get(url);
-      
+
       if (response.data.routes.length > 0) {
         const rota = response.data.routes[0];
-        
+
         setTempoChegada(Math.round(rota.duration / 60) + ' min');
         setDistancia((rota.distance / 1000).toFixed(1) + ' km');
 
@@ -204,7 +259,7 @@ function MapaRastreamentoConteudo({ auth, agendamentosAtivos }) {
   };
 
   // Filtragem da lista da lateral
-  const agendamentosFiltrados = (agendamentosAtivos || []).filter(item => 
+  const agendamentosFiltrados = (agendamentosAtivos || []).filter(item =>
     item.usuario?.name?.toLowerCase().includes(filtroNome.toLowerCase())
   );
 
@@ -217,9 +272,9 @@ function MapaRastreamentoConteudo({ auth, agendamentosAtivos }) {
 
       <div className="py-8 bg-slate-50 min-h-screen">
         <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8">
-          
+
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-            <button 
+            <button
               onClick={() => window.history.back()}
               className="inline-flex items-center gap-2 text-sm font-semibold text-gray-600 hover:text-gray-900 bg-white px-4 py-2 rounded-xl shadow-sm border border-gray-200 transition-all"
             >
@@ -238,16 +293,20 @@ function MapaRastreamentoConteudo({ auth, agendamentosAtivos }) {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[75vh]">
-            
+
             {/* BARRA LATERAL ESQUERDA: LISTA DE CLIENTES */}
             <div className="lg:col-span-4 flex flex-col gap-4 h-full bg-white rounded-3xl shadow-sm border border-gray-200/60 p-4">
               <div className="pb-4 border-b border-gray-100 shrink-0">
-                <h3 className="font-bold text-gray-900 text-lg mb-2">Deslocamentos Ativos</h3>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="font-bold text-gray-900 text-lg">Deslocamentos Ativos</h3>
+                  <span className="text-[11px] text-gray-400">Atualizado às {ultimaLeitura.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                </div>
+                <p className="text-xs text-gray-500 mb-2">A lista se atualiza sozinha. O cliente aparece no mapa quando toca em "Compartilhar localização" no agendamento.</p>
                 <div className="relative">
                   <Search className="w-4 h-4 text-gray-400 absolute left-3 top-3" />
-                  <input 
-                    type="text" 
-                    placeholder="Buscar cliente..." 
+                  <input
+                    type="text"
+                    placeholder="Buscar cliente..."
                     value={filtroNome}
                     onChange={(e) => setFiltroNome(e.target.value)}
                     className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-gray-200 rounded-xl text-sm focus:ring-emerald-500 focus:border-emerald-500 outline-none"
@@ -262,12 +321,12 @@ function MapaRastreamentoConteudo({ auth, agendamentosAtivos }) {
                     </div>
                 ) : (
                     agendamentosFiltrados.map((item) => (
-                        <div 
+                        <div
                             key={item.id}
                             onClick={() => setClienteSelecionado(item)}
                             className={`p-4 rounded-2xl cursor-pointer border transition-all ${
-                                clienteSelecionado?.id === item.id 
-                                    ? 'bg-emerald-50 border-emerald-500 shadow-md ring-1 ring-emerald-500/20' 
+                                clienteSelecionado?.id === item.id
+                                    ? 'bg-emerald-50 border-emerald-500 shadow-md ring-1 ring-emerald-500/20'
                                     : 'bg-white border-gray-100 hover:border-emerald-300 hover:shadow-sm'
                             }`}
                         >
@@ -291,6 +350,13 @@ function MapaRastreamentoConteudo({ auth, agendamentosAtivos }) {
                                 <Car className="w-3.5 h-3.5 shrink-0" />
                                 <span className="truncate">{item.titulo}</span>
                             </div>
+                            <div className="mt-2 text-[11px] font-semibold">
+                                {item.ultima_localizacao ? (
+                                    minutosDesde(item.ultima_localizacao.atualizado_em) <= 2
+                                        ? <span className="text-emerald-600">● A caminho, sinal ao vivo</span>
+                                        : <span className="text-amber-600">● Última posição às {horaDe(item.ultima_localizacao.atualizado_em)}</span>
+                                ) : <span className="text-gray-400">○ Ainda sem localização</span>}
+                            </div>
                         </div>
                     ))
                 )}
@@ -299,7 +365,7 @@ function MapaRastreamentoConteudo({ auth, agendamentosAtivos }) {
 
             {/* ÁREA DIREITA: MAPA 3D E DADOS DO CLIENTE */}
             <div className="lg:col-span-8 flex flex-col gap-4 h-full relative">
-                
+
                 {/* Painel Superior (ETA) flutuante */}
                 {clienteSelecionado ? (
                     <div className="absolute top-4 left-4 right-4 z-10 bg-gradient-to-r from-slate-900/95 to-slate-800/95 backdrop-blur-md rounded-2xl p-4 shadow-2xl text-white flex flex-col sm:flex-row justify-between items-center gap-4 border border-white/10">
@@ -336,7 +402,7 @@ function MapaRastreamentoConteudo({ auth, agendamentosAtivos }) {
                 {/* Container do Mapa */}
                 <div className="flex-1 bg-[#e2e8f0] rounded-3xl shadow-inner border border-gray-200/60 overflow-hidden relative">
                     <div ref={mapContainer} className="absolute inset-0" />
-                    
+
                     {/* Badge Sincronização */}
                     {clienteSelecionado && ultimaAtualizacao && (
                         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-slate-900/90 backdrop-blur shadow-lg px-4 py-2 rounded-full border border-slate-700 text-xs font-bold text-white z-10 flex items-center gap-2">
@@ -356,7 +422,7 @@ function MapaRastreamentoConteudo({ auth, agendamentosAtivos }) {
         .custom-scrollbar::-webkit-scrollbar { width: 5px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 5px; }
-        
+
         /* CSS DOS PINOS CUSTOMIZADOS DO MAPA */
         .custom-marker-loja {
             z-index: 1;
@@ -383,7 +449,7 @@ function MapaRastreamentoConteudo({ auth, agendamentosAtivos }) {
             border-style: solid;
             border-color: white transparent transparent transparent;
         }
-        
+
         .custom-marker-carro {
             z-index: 2;
         }
@@ -399,7 +465,7 @@ function MapaRastreamentoConteudo({ auth, agendamentosAtivos }) {
             box-shadow: 0 4px 10px rgba(0,0,0,0.25);
             border: 3px solid #2563EB;
         }
-        
+
         /* Animação de pulso para simular tempo real (Onda azul do radar) */
         .ring-pulse::before {
             content: '';
@@ -412,7 +478,7 @@ function MapaRastreamentoConteudo({ auth, agendamentosAtivos }) {
             z-index: -1;
             animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
         }
-        
+
         @keyframes pulse-ring {
             0% { transform: scale(1); opacity: 0.8; }
             100% { transform: scale(2.5); opacity: 0; }

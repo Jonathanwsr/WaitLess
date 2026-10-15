@@ -146,7 +146,17 @@ class ProdutoController extends Controller
                 }
             }
 
-            $dados = $request->all();
+            // Fotos tratadas à parte: arquivos e listas não vão direto para o campo `fotos`.
+            $dados = $request->except(['fotos', 'fotos_existentes', 'fotos_mantidas', '_method']);
+
+            $fotos = $this->fotosDaEdicao($request, $produto);
+            if ($fotos instanceof \Illuminate\Http\JsonResponse) {
+                return $fotos;
+            }
+            if ($fotos !== null) {
+                $dados['fotos'] = $fotos;
+            }
+
             $hasPromocaoInput = $request->has('is_promocao') || $request->has('promocao');
 
             if ($hasPromocaoInput) {
@@ -436,34 +446,50 @@ class ProdutoController extends Controller
         }
     }
 
+    /**
+     * Fotos na edição: mantém só as que o produto já tinha (vindas em `fotos_existentes`, JSON ou lista,
+     * ou `fotos_mantidas[]`) e soma as novas enviadas em `fotos[]`, até 5 no total.
+     * Devolve null quando a edição não mexe em fotos (ficam como estão).
+     */
+    private function fotosDaEdicao(Request $request, Produto $produto)
+    {
+        $mexeuEmFotos = $request->has('fotos_existentes') || $request->has('fotos_mantidas') || $request->hasFile('fotos');
+        if (!$mexeuEmFotos) {
+            return null;
+        }
+
+        $atuais = is_array($produto->fotos) ? $produto->fotos : (json_decode((string) $produto->fotos, true) ?: []);
+
+        $pedidas = $request->input('fotos_mantidas', $request->input('fotos_existentes', []));
+        if (is_string($pedidas)) {
+            $pedidas = json_decode($pedidas, true) ?: [];
+        }
+        // Só fotos que já eram deste produto: ninguém consegue "colar" uma URL de fora.
+        $mantidas = array_values(array_filter((array) $pedidas, fn ($url) => is_string($url) && in_array($url, $atuais, true)));
+
+        $novas = $request->hasFile('fotos') ? (array) $request->file('fotos') : [];
+        if (count($mantidas) + count($novas) > 5) {
+            return response()->json(['error' => 'Você só pode ter no máximo 5 fotos por produto.'], 400);
+        }
+
+        foreach ($novas as $foto) {
+            if ($this->imagemContemConteudoInadequado($foto)) {
+                return response()->json(['error' => 'Uma das imagens enviadas violou nossos termos de uso (conteúdo inadequado detectado).'], 400);
+            }
+            $mantidas[] = $this->uploadParaImageKit($foto);
+        }
+
+        return $mantidas;
+    }
+
     /* =========================================================================
        MÉTODOS PRIVADOS AUXILIARES (HIVE AI E IMAGEKIT)
        ========================================================================= */
 
+    /** Moderação de imagem centralizada no HiveAiService (desligada por padrão). */
     private function imagemContemConteudoInadequado($foto)
     {
-        try {
-            $hiveKey = env('HIVE_API_KEY'); 
-            if (!$hiveKey) return false;
-
-            $response = Http::withHeaders([
-                'authorization' => 'token ' . $hiveKey,
-                'accept'        => 'application/json',
-            ])->attach('media', file_get_contents($foto->getRealPath()), $foto->getClientOriginalName())
-              ->post('https://api.thehive.ai/api/v2/task/sync', ['classes' => 'nsfw']);
-
-            if ($response->successful()) {
-                $classes = $response->json()['status'][0]['response']['output'][0]['classes'] ?? [];
-                foreach ($classes as $class) {
-                    if (in_array($class['class'], ['yes_nsfw', 'pornography']) && $class['score'] > 0.70) {
-                        return true; 
-                    }
-                }
-            }
-        } catch (\Exception $e) {
-            Log::error('Hive AI error: ' . $e->getMessage());
-        }
-        return false;
+        return \App\Services\HiveAiService::bloqueada($foto);
     }
 
     private function uploadParaImageKit($foto)

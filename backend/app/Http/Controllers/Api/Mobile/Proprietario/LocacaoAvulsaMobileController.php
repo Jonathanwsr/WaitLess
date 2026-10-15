@@ -26,7 +26,9 @@ class LocacaoAvulsaMobileController extends Controller
         $this->garantirPapelPermitido();
         $donoId = Auth::id();
 
+        // Só as avulsas: reservas cadastradas no catálogo de um local ficam na tela do local.
         $itens = ItemAluguel::catalogo()
+            ->avulsas()
             ->where('estabelecimento_id', $donoId)
             ->orderBy('created_at', 'desc')
             ->get();
@@ -47,8 +49,28 @@ class LocacaoAvulsaMobileController extends Controller
         return response()->json([
             'itens'       => $itens,
             'em_uso_agora' => $emUsoAgora,
+            'proximas_reservas' => $this->proximasReservasDoDono($itens->pluck('id')),
+            'politicas'   => \App\Services\Locacao\PoliticaCancelamentoService::opcoes(),
             'categorias'  => ItemAluguel::CATEGORIAS_LOCACAO_AVULSA,
         ]);
+    }
+
+    /** Dono cancela uma reserva: se já foi paga, o cliente recebe tudo de volta automaticamente. */
+    public function cancelarReserva(Aluguel $aluguel)
+    {
+        $this->garantirPapelPermitido();
+
+        try {
+            $resultado = $this->cancelarReservaDoDono($aluguel);
+        } catch (\DomainException $e) {
+            return response()->json(['error' => $e->getMessage()], 409);
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+            throw $e;
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage() ?: 'Não foi possível cancelar agora.'], 422);
+        }
+
+        return response()->json(['message' => $resultado['message'], 'reembolso' => $resultado['reembolso']]);
     }
 
     public function store(Request $request)
@@ -69,7 +91,7 @@ class LocacaoAvulsaMobileController extends Controller
     {
         $this->garantirPapelPermitido();
 
-        if ((int) $item->estabelecimento_id !== Auth::id()) {
+        if ((int) $item->estabelecimento_id !== Auth::id() || $item->local_id) {
             abort(403, 'Você não tem permissão para editar esta locação.');
         }
 
@@ -86,7 +108,7 @@ class LocacaoAvulsaMobileController extends Controller
     {
         $this->garantirPapelPermitido();
 
-        if ((int) $item->estabelecimento_id !== Auth::id()) {
+        if ((int) $item->estabelecimento_id !== Auth::id() || $item->local_id) {
             abort(403, 'Você não tem permissão para excluir esta locação.');
         }
 

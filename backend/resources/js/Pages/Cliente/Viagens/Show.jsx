@@ -104,22 +104,65 @@ export default function Show({ painelInicial }) {
             <div className="max-w-5xl mx-auto space-y-5">
                 <Link href={route('viagens.index')} className="inline-flex items-center gap-1 text-sm font-bold text-gray-500 hover:text-gray-800"><ArrowLeftIcon className="w-4 h-4" /> Minhas viagens</Link>
 
-                <div className="bg-gradient-to-br from-gray-900 to-gray-800 text-white rounded-3xl p-6 shadow-lg">
-                    <div className="flex flex-wrap items-start justify-between gap-4">
-                        <div>
-                            <p className="flex items-center gap-1.5 text-white/60 text-sm"><MapPinIcon className="w-4 h-4" /> {viagem.destino}</p>
-                            <h3 className="text-2xl sm:text-3xl font-black mt-1">{viagem.titulo}</h3>
-                            <p className="flex items-center gap-1.5 text-white/70 text-sm mt-2"><CalendarDaysIcon className="w-4 h-4" /> {fmtDia(viagem.data_inicio)} a {fmtDia(viagem.data_fim)} · {viagem.total_dias} {viagem.total_dias === 1 ? 'dia' : 'dias'} · {confirmados}/{painel.membros.length} confirmados</p>
+                {/* DADOS DA VIAGEM + RESUMO DO ORÇAMENTO (padrão "Planejar Viagem") */}
+                <div className="grid gap-4 lg:grid-cols-2">
+                    <section className="bg-white rounded-3xl border border-gray-100 shadow-sm p-5">
+                        <h3 className="flex items-center gap-2 font-black text-gray-900"><MapIcon className="w-5 h-5 text-[#FF5A00]" /> Dados da viagem</h3>
+                        <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                            <div className="col-span-2 rounded-2xl bg-gray-50 px-4 py-3">
+                                <dt className="text-xs text-gray-400">Nome da viagem</dt>
+                                <dd className="font-bold text-gray-900">{viagem.titulo}</dd>
+                            </div>
+                            <div className="col-span-2 rounded-2xl bg-gray-50 px-4 py-3">
+                                <dt className="text-xs text-gray-400">Destino</dt>
+                                <dd className="flex items-center gap-1.5 font-bold text-gray-900"><MapPinIcon className="w-4 h-4 text-gray-400" /> {viagem.destino}</dd>
+                            </div>
+                            <div className="rounded-2xl bg-gray-50 px-4 py-3">
+                                <dt className="text-xs text-gray-400">Ida</dt>
+                                <dd className="flex items-center gap-1.5 font-bold text-gray-900"><CalendarDaysIcon className="w-4 h-4 text-gray-400" /> {fmtDia(viagem.data_inicio)}</dd>
+                            </div>
+                            <div className="rounded-2xl bg-gray-50 px-4 py-3">
+                                <dt className="text-xs text-gray-400">Volta</dt>
+                                <dd className="flex items-center gap-1.5 font-bold text-gray-900"><CalendarDaysIcon className="w-4 h-4 text-gray-400" /> {fmtDia(viagem.data_fim)}</dd>
+                            </div>
+                            <div className="rounded-2xl bg-gray-50 px-4 py-3">
+                                <dt className="text-xs text-gray-400">Grupo</dt>
+                                <dd className="flex items-center gap-1.5 font-bold text-gray-900"><UsersIcon className="w-4 h-4 text-gray-400" /> {confirmados}/{painel.membros.length} confirmados</dd>
+                            </div>
+                            <div className="rounded-2xl bg-gray-50 px-4 py-3">
+                                <dt className="text-xs text-gray-400">Orçamento previsto</dt>
+                                <dd className="font-bold text-gray-900">{orc != null ? fmt(orc) : 'Sem limite'}</dd>
+                            </div>
+                        </dl>
+                    </section>
+
+                    <section className="bg-white rounded-3xl border border-gray-100 shadow-sm p-5 flex flex-col">
+                        <h3 className="flex items-center gap-2 font-black text-gray-900"><CurrencyDollarIcon className="w-5 h-5 text-[#FF5A00]" /> Resumo do orçamento</h3>
+                        <div className="mt-4 grid grid-cols-2 gap-4">
+                            <div>
+                                <p className="text-xs text-gray-400">Total gasto</p>
+                                <p className="text-2xl font-black text-[#FF5A00]">{fmt(painel.custos.gasto_real || 0)}</p>
+                                {orc ? <p className="text-xs text-gray-400">{Math.round(((painel.custos.gasto_real || 0) / orc) * 100)}% do orçamento</p> : null}
+                            </div>
+                            <div>
+                                <p className="text-xs text-gray-400">Restante</p>
+                                <p className={`text-2xl font-black ${orc != null && (painel.custos.gasto_real || 0) > orc ? 'text-red-600' : 'text-emerald-600'}`}>
+                                    {orc != null ? fmt(orc - (painel.custos.gasto_real || 0)) : '—'}
+                                </p>
+                                <p className="text-xs text-gray-400">{viagem.total_dias} {viagem.total_dias === 1 ? 'dia' : 'dias'} de viagem</p>
+                            </div>
                         </div>
-                        <div className="text-right">
-                            <p className="text-xs text-white/50 uppercase font-bold">Previsto</p>
-                            <p className="text-3xl font-black">{fmt(painel.custos.estimado)}</p>
-                            {orc != null && <p className="text-xs text-white/60">de {fmt(orc)} de orçamento</p>}
+                        {orc ? (
+                            <div className="mt-4 h-2.5 rounded-full bg-gray-100 overflow-hidden">
+                                <div className={`h-full rounded-full ${(painel.custos.gasto_real || 0) > orc ? 'bg-red-500' : 'bg-[#FF5A00]'}`} style={{ width: `${Math.min(100, ((painel.custos.gasto_real || 0) / orc) * 100)}%` }} />
+                            </div>
+                        ) : null}
+                        <div className="mt-auto pt-4 flex items-center justify-between border-t border-gray-100 text-sm">
+                            <span className="text-gray-500">Previsto no roteiro</span>
+                            <span className={`font-bold ${usoOrc != null && painel.custos.estimado > orc ? 'text-red-600' : 'text-gray-900'}`}>{fmt(painel.custos.estimado)}</span>
                         </div>
-                    </div>
-                    {usoOrc != null && (
-                        <div className="mt-4 h-2 rounded-full bg-white/15 overflow-hidden"><div className={`h-full rounded-full ${painel.custos.estimado > orc ? 'bg-red-400' : 'bg-[#FF5A00]'}`} style={{ width: `${usoOrc}%` }} /></div>
-                    )}
+                        <button type="button" onClick={() => setAba('gastos')} className="mt-3 text-left text-sm font-bold text-[#FF5A00] hover:underline">Ver e lançar gastos →</button>
+                    </section>
                 </div>
 
                 <Aviso aviso={aviso} onFechar={() => setAviso(null)} />

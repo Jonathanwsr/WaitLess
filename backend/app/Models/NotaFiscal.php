@@ -12,19 +12,28 @@ class NotaFiscal extends Model
         'pagamento_id',
         'provider_id',
         'assinatura_id',
+        'cobranca_parcela_id',
         'usuario_id',
         'tipo',
         'asaas_invoice_id',
         'referencia_cobranca',
         'status',
         'valor',
+        'valor_operacao',
+        'percentual',
+        'numero',
         'descricao_servico',
         'pdf_url',
+        'xml_url',
         'mensagem_erro',
+        'emitida_em',
     ];
 
     protected $casts = [
         'valor' => 'decimal:2',
+        'valor_operacao' => 'decimal:2',
+        'percentual' => 'decimal:2',
+        'emitida_em' => 'datetime',
     ];
 
     public function pagamento()
@@ -40,6 +49,11 @@ class NotaFiscal extends Model
     public function assinatura()
     {
         return $this->belongsTo(Assinatura::class);
+    }
+
+    public function cobrancaParcela()
+    {
+        return $this->belongsTo(CobrancaParcela::class);
     }
 
     public function usuario()

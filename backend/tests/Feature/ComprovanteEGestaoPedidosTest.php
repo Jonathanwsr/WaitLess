@@ -238,4 +238,32 @@ class ComprovanteEGestaoPedidosTest extends TestCase
         $this->deleteJson("/api/mobile/produtos/{$id}")->assertOk();
         $this->assertNull(\App\Models\Produto::withTrashed()->find($id));
     }
+
+    public function test_edicao_de_fotos_do_produto(): void
+    {
+        [$socio, $estab] = $this->socio();
+        $produto = \App\Models\Produto::create([
+            'nome' => 'Kit', 'usuario_id' => $socio->id, 'estabelecimento_id' => $estab->id,
+            'valor_normal' => 20, 'valor_final' => 20, 'estoque_disponivel' => 3,
+            'fotos' => ['https://ik.test/a.jpg', 'https://ik.test/b.jpg'],
+        ]);
+        \Laravel\Sanctum\Sanctum::actingAs($socio);
+
+        // Sem mexer em fotos: continuam iguais.
+        $this->postJson("/api/mobile/produtos/{$produto->id}", ['nome' => 'Kit 2'])->assertOk();
+        $this->assertSame(['https://ik.test/a.jpg', 'https://ik.test/b.jpg'], $produto->fresh()->fotos);
+
+        // Remove uma e tenta "colar" uma URL de fora: só fica a que já era do produto.
+        $this->postJson("/api/mobile/produtos/{$produto->id}", [
+            'fotos_existentes' => json_encode(['https://ik.test/b.jpg', 'https://malicioso.test/x.jpg']),
+        ])->assertOk();
+        $this->assertSame(['https://ik.test/b.jpg'], $produto->fresh()->fotos);
+
+        // Mais de 5 no total é recusado (antes de enviar qualquer arquivo).
+        $arquivos = array_map(fn ($i) => \Illuminate\Http\UploadedFile::fake()->image("f{$i}.jpg"), range(1, 5));
+        $this->post("/api/mobile/produtos/{$produto->id}", [
+            'fotos_existentes' => json_encode(['https://ik.test/b.jpg']), 'fotos' => $arquivos,
+        ], ['Accept' => 'application/json'])->assertStatus(400);
+        $this->assertSame(['https://ik.test/b.jpg'], $produto->fresh()->fotos);
+    }
 }

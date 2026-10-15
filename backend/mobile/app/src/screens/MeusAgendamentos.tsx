@@ -18,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { T } from '../../../constants/ClientTheme';
 import { HeaderCliente } from '../../../components/client/ui';
 import { alertar } from '../../../services/alertar';
+import { baixarPdf } from '../../../services/baixarPdf';
 import { obterEcho } from '../../../services/echo';
 
 interface Estabelecimento {
@@ -193,6 +194,15 @@ export default function MeusAgendamentos() {
     return filtrar(item, abaAtiva);
   });
 
+  // Comprovante individual do pagamento (via do cliente). Pago no local não tem comprovante da Lokyva.
+  const baixarComprovantePagamento = async (item: AgendamentoItem, isAluguel: boolean) => {
+    try {
+      await baixarPdf(`/comprovante-pagamento?${isAluguel ? 'aluguel_id' : 'agendamento_id'}=${item.id}`, `Comprovante_pagamento_${item.id}.pdf`);
+    } catch {
+      alertar('Comprovante indisponível', 'Este atendimento não foi pago online pela Lokyva. Se você pagou no local, peça o recibo ao estabelecimento.');
+    }
+  };
+
   const contagem = (aba: string) => lista.filter((i) => filtrar(i, aba)).length;
   const idProxima = lista.find((i) => filtrar(i, 'proximos'))?.id;
 
@@ -307,6 +317,13 @@ export default function MeusAgendamentos() {
             )}
           </View>
 
+          {concluido && (
+            <TouchableOpacity style={s.comprovante} onPress={() => baixarComprovantePagamento(item, isAluguel)} activeOpacity={0.85}>
+              <Ionicons name="document-text-outline" size={18} color={T.ink} />
+              <Text style={s.comprovanteTxt}>Comprovante do pagamento</Text>
+            </TouchableOpacity>
+          )}
+
           {concluido && !isAluguel && !!item.estabelecimento_id && (
             <TouchableOpacity style={s.repetir} onPress={() => repetirReserva(item)} activeOpacity={0.85}>
               <Ionicons name="repeat-outline" size={18} color={T.primary} />
@@ -393,6 +410,8 @@ export default function MeusAgendamentos() {
 }
 
 const s = StyleSheet.create({
+  comprovante: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 46, borderRadius: 23, borderWidth: 1, borderColor: T.line, backgroundColor: T.card, marginTop: 10 },
+  comprovanteTxt: { color: T.ink, fontWeight: '800', fontSize: 13 },
   repetir: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 46, borderRadius: 23, backgroundColor: T.primarySoft, marginTop: 10 },
   repetirTxt: { color: T.primary, fontWeight: '800', fontSize: 13 },
   safe: { flex: 1, backgroundColor: T.cream, paddingTop: Platform.OS === 'android' ? 30 : 0 },

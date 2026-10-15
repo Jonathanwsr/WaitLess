@@ -35,6 +35,39 @@ class AssinaturaMobileController extends Controller
     /**
      * 🔵 STATUS DA ASSINATURA
      */
+    /**
+     * Cobrança da assinatura em aberto. Quando é Pix e está perto de vencer (ou vencida),
+     * a tela mostra o QR code para pagar — o Asaas também manda a mesma cobrança por e-mail.
+     */
+    public function cobrancaEmAberto()
+    {
+        $user = Auth::user();
+        $assinatura = Assinatura::where('user_id', $user->id)
+            ->whereIn('status', ['ativa', 'pendente', 'atrasada'])
+            ->whereNotNull('gateway_assinatura_id')
+            ->latest()->first();
+
+        if (!$assinatura) {
+            return response()->json(['cobranca' => null]);
+        }
+
+        try {
+            $cobranca = $this->asaasService->cobrancaEmAberto($assinatura->gateway_assinatura_id);
+        } catch (\Throwable $e) {
+            Log::warning('Não foi possível consultar a cobrança da assinatura: ' . $e->getMessage());
+            $cobranca = null;
+        }
+
+        // Mostra quando faltam até 3 dias para vencer ou já venceu.
+        if ($cobranca && $cobranca['vencimento']) {
+            $dias = now()->startOfDay()->diffInDays(Carbon::parse($cobranca['vencimento'])->startOfDay(), false);
+            $cobranca['dias_para_vencer'] = (int) $dias;
+            $cobranca['mostrar'] = $cobranca['vencida'] || $dias <= 3;
+        }
+
+        return response()->json(['cobranca' => $cobranca]);
+    }
+
     public function status()
     {
         $user = Auth::user();
@@ -48,6 +81,19 @@ class AssinaturaMobileController extends Controller
         $statusAcesso = 'inativo';
         $expiraEm = null;
         $diasRestantes = 0;
+        $voltaGratuitoEm = null;
+
+        // Cancelou com ciclo pago: benefícios até o vencimento, depois volta ao Grátis.
+        if (!$assinatura && $user->isPremium()) {
+            $cancelada = Assinatura::where('user_id', $user->id)->where('status', 'cancelada')->latest('cancelada_em')->first();
+            if ($cancelada) {
+                $planoAtual = $cancelada->nome_plano;
+                $statusAcesso = 'cancelada';
+                $expiraEm = Carbon::parse($user->plano_expira_em);
+                $diasRestantes = Carbon::now()->diffInDays($expiraEm, false);
+                $voltaGratuitoEm = $expiraEm->format('d/m/Y');
+            }
+        }
 
         if ($assinatura) {
             $planoAtual = $assinatura->nome_plano;
@@ -70,6 +116,10 @@ class AssinaturaMobileController extends Controller
             'expira_em'       => $expiraEm ? $expiraEm->format('d/m/Y') : 'N/A',
             'dias_restantes'  => max(0, (int) $diasRestantes),
             'detalhes_fatura' => $assinatura,
+            'volta_gratuito_em' => $voltaGratuitoEm,
+            'premium'         => $user->isPremium(),
+            // Planos com preço e todos os benefícios explicados (mesma lista do web).
+            'planos'          => \App\Support\BeneficiosPlanos::catalogo((string) $user->papel),
             'dados_usuario'   => [
                 'pontos_saldo'              => $user->pontos_saldo ?? 0,
                 'asaas_subscription_id'     => $user->asaas_subscription_id,
@@ -104,6 +154,18 @@ class AssinaturaMobileController extends Controller
         $request->validate([
             'plano'  => 'required|string|in:' . implode(',', $this->planoService->planosPermitidos($user->papel)),
             'metodo' => 'required|string|in:pix,credit_card',
+            // Cartão digitado na tela (opcional: sem ele o Asaas manda o link de pagamento por e-mail).
+            'cartao' => 'nullable|array',
+            'cartao.numero' => 'required_with:cartao|string|min:13|max:23',
+            'cartao.titular' => 'required_with:cartao|string|max:120',
+            'cartao.mes' => 'required_with:cartao|integer|between:1,12',
+            'cartao.ano' => 'required_with:cartao|integer',
+            'cartao.cvv' => 'required_with:cartao|string|min:3|max:4',
+            'titular' => 'nullable|array',
+            'titular.cpf_cnpj' => 'nullable|string|max:20',
+            'titular.cep' => 'nullable|string|max:10',
+            'titular.numero' => 'nullable|string|max:20',
+            'titular.telefone' => 'nullable|string|max:20',
         ]);
 
         $planoEscolhido = $request->plano;
@@ -132,7 +194,12 @@ class AssinaturaMobileController extends Controller
                 'status'          => 'pendente',
             ]);
 
-            $gatewayData = $this->asaasService->criarCobranca($assinatura, $user, $detalhesPlano, $request->metodo);
+            $gatewayData = $this->asaasService->criarCobranca(
+                $assinatura, $user, $detalhesPlano, $request->metodo,
+                $request->metodo === 'credit_card' ? $request->input('cartao') : null,
+                $request->input('titular'),
+                $request->ip(),
+            );
 
             $assinatura->update([
                 'gateway_assinatura_id' => $gatewayData['id'],
@@ -142,6 +209,8 @@ class AssinaturaMobileController extends Controller
                 'asaas_subscription_id'     => $gatewayData['id'],
                 'asaas_subscription_status' => 'PENDING',
                 'plano_assinatura'          => $planoEscolhido,
+                // Período de teste: o plano já vale até a primeira cobrança (sem isso o app seguia mostrando "Seja Premium").
+                'plano_expira_em'           => $dataPrimeiraCobranca,
             ]);
 
             DB::commit();
@@ -183,7 +252,7 @@ class AssinaturaMobileController extends Controller
             $dataInicio = Carbon::parse($assinaturaAtual->data_inicio);
             $dataVencimento = Carbon::parse($assinaturaAtual->data_vencimento);
 
-            if (now()->diffInDays($dataInicio) < 5) {
+            if ($dataInicio->diffInDays(now()) < 5) { // Carbon 3: diff com sinal; do início até agora é positivo
                 return response()->json(['error' => 'Você só pode mudar de plano após 5 dias da confirmação do último pagamento.'], 403);
             }
 
@@ -195,6 +264,13 @@ class AssinaturaMobileController extends Controller
         $request->validate([
             'novo_plano' => 'required|string|in:' . implode(',', $this->planoService->planosPermitidos($user->papel)),
             'metodo'     => 'required|string|in:pix,credit_card',
+            'cartao' => 'nullable|array',
+            'cartao.numero' => 'required_with:cartao|string|min:13|max:23',
+            'cartao.titular' => 'required_with:cartao|string|max:120',
+            'cartao.mes' => 'required_with:cartao|integer|between:1,12',
+            'cartao.ano' => 'required_with:cartao|integer',
+            'cartao.cvv' => 'required_with:cartao|string|min:3|max:4',
+            'titular' => 'nullable|array',
         ]);
 
         $novoPlano = $request->novo_plano;
@@ -245,7 +321,7 @@ class AssinaturaMobileController extends Controller
                 'status'          => 'pendente',
             ]);
 
-            $gatewayData = $this->asaasService->criarCobranca($novaAssinatura, $user, $detalhesPlano, $request->metodo);
+            $gatewayData = $this->asaasService->criarCobranca($novaAssinatura, $user, $detalhesPlano, $request->metodo, $request->metodo === 'credit_card' ? $request->input('cartao') : null, $request->input('titular'), $request->ip());
 
             $novaAssinatura->update([
                 'gateway_assinatura_id' => $gatewayData['id'],
@@ -285,7 +361,7 @@ class AssinaturaMobileController extends Controller
             $dataInicio = Carbon::parse($assinatura->data_inicio);
             $dataVencimento = Carbon::parse($assinatura->data_vencimento);
 
-            if (now()->diffInDays($dataInicio) < 5) {
+            if ($dataInicio->diffInDays(now()) < 5) { // Carbon 3: diff com sinal; do início até agora é positivo
                 return response()->json(['error' => 'O cancelamento só é permitido após 5 dias da confirmação do último pagamento.'], 403);
             }
 
@@ -299,6 +375,8 @@ class AssinaturaMobileController extends Controller
                 $this->asaasService->cancelarNoGateway($assinatura->gateway_assinatura_id);
             }
 
+            $statusAntes = $assinatura->status;
+
             $assinatura->update([
                 'status'       => 'cancelada',
                 'cancelada_em' => now(),
@@ -308,8 +386,26 @@ class AssinaturaMobileController extends Controller
                 'asaas_subscription_status' => 'CANCELLED',
             ]);
 
+            // Mesma regra do web: teste/ciclo não pago volta ao Grátis na hora; ciclo pago vale até o
+            // vencimento e o comando assinaturas:voltar-gratuito devolve ao Grátis quando ele acabar.
+            $cicloPago = $statusAntes === 'ativa' && $user->plano_expira_em && Carbon::parse($user->plano_expira_em)->isFuture();
+
+            if (!$cicloPago) {
+                $user->update(['plano_assinatura' => 'gratuito', 'plano_expira_em' => null]);
+
+                return response()->json([
+                    'message' => 'Assinatura cancelada. Sua conta voltou para o plano Grátis.',
+                    'volta_gratuito_em' => now()->format('d/m/Y'),
+                    'premium' => false,
+                ]);
+            }
+
+            $fim = Carbon::parse($user->plano_expira_em)->format('d/m/Y');
+
             return response()->json([
-                'message' => 'Plano cancelado com sucesso. O acesso será mantido até o fim do ciclo pago atual.',
+                'message' => "Assinatura cancelada. Você não será mais cobrado. Os benefícios continuam até {$fim}; depois sua conta volta sozinha para o plano Grátis.",
+                'volta_gratuito_em' => $fim,
+                'premium' => true,
             ]);
         } catch (\Exception $e) {
             return response()->json(['error' => 'Falha de comunicação com o provedor de pagamentos.'], 500);
