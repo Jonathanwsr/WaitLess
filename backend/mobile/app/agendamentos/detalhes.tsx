@@ -11,6 +11,7 @@ import { alertar } from '../../services/alertar';
 import { baixarPdf } from '../../services/baixarPdf';
 import { T } from '../../constants/ClientTheme';
 import GaleriaFotos, { normalizarFotos } from '../../components/client/GaleriaFotos';
+import ContratoDaReserva, { ContratoReserva } from '../../components/client/ContratoDaReserva';
 
 const ENV_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api/mobile';
 // Sempre termina em /mobile, mesmo que a variável de ambiente venha só com /api.
@@ -47,6 +48,9 @@ interface Reserva {
     cidade?: string | null; estado?: string | null; foto_perfil?: string | null;
   } | null;
   estabelecimento_id?: number;
+  contrato?: ContratoReserva | null;
+  itens_extras?: { nome: string; quantidade: number; valor: number }[];
+  exige_contrato?: boolean;
   cancelamento?: {
     politica: string; nome: string; resumo: string; valor_reembolsado: number | null;
     se_cancelar_agora: { valor_reembolso: number; percentual: number; explicacao: string } | null;
@@ -396,6 +400,22 @@ export default function DetalhesAgendamento() {
           </View>
 
           {/* POLÍTICA DE CANCELAMENTO (reservas) */}
+          {/* Produtos adicionais comprados junto */}
+          {!!reserva.itens_extras?.length && (
+            <View style={s.cartao}>
+              <Text style={s.secao}>Adicionais</Text>
+              {reserva.itens_extras.map((x, i) => (
+                <View key={`${x.nome}${i}`} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 6 }}>
+                  <Text style={[s.linhaRotulo, { flex: 1 }]} numberOfLines={1}>{x.quantidade}x {x.nome}</Text>
+                  <Text style={s.titulo}>{brl(x.valor * x.quantidade)}</Text>
+                </View>
+              ))}
+              <Text style={[s.linhaRotulo, { marginTop: 4 }]}>Retire os adicionais no dia, junto com o atendimento.</Text>
+            </View>
+          )}
+
+          {isAluguel && <ContratoDaReserva contrato={reserva.contrato} exigeContrato={reserva.exige_contrato} />}
+
           {isAluguel && !!reserva.cancelamento && (
             <View style={s.cartao}>
               <Text style={s.secao}>Política de cancelamento</Text>

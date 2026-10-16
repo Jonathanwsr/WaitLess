@@ -10,6 +10,16 @@ class Estabelecimento extends Model
     
     protected $guarded = ['id'];
 
+    /** Sem coordenadas, o local fica fora das buscas por distância: completa a partir do endereço, depois da resposta. */
+    protected static function booted(): void
+    {
+        static::saved(function (Estabelecimento $e) {
+            if ((!$e->latitude || !$e->longitude) && $e->cidade && app(\App\Services\GeocodificacaoService::class)->ativo()) {
+                dispatch(fn () => app(\App\Services\GeocodificacaoService::class)->preencherEstabelecimento($e->fresh() ?? $e))->afterResponse();
+            }
+        });
+    }
+
     public function proprietarios()
     {
         return $this->belongsToMany(

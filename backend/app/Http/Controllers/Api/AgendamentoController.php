@@ -871,6 +871,9 @@ public function pularProximo($id)
             'detalhes' => array_values(array_filter([
                 $servico?->tipo_servico ? ['rotulo' => 'Tipo', 'valor' => $servico->tipo_servico] : null,
                 ['rotulo' => 'Duração', 'valor' => "{$duracao} minutos"],
+                $servico ? ['rotulo' => 'Atendimento', 'valor' => \App\Support\CamposServico::paraTela($servico)['modalidade_rotulo']] : null,
+                $agendamento->endereco_atendimento ? ['rotulo' => 'Endereço do atendimento', 'valor' => $agendamento->endereco_atendimento] : null,
+                (float) $agendamento->taxa_deslocamento > 0 ? ['rotulo' => 'Taxa de deslocamento', 'valor' => 'R$ ' . number_format((float) $agendamento->taxa_deslocamento, 2, ',', '.')] : null,
                 $agendamento->quantidade_pessoas ? ['rotulo' => 'Pessoas', 'valor' => (string) $agendamento->quantidade_pessoas] : null,
                 ['rotulo' => 'Profissional', 'valor' => $agendamento->funcionario?->nome ?? 'Será definido pelo local'],
                 ['rotulo' => 'Pagamento', 'valor' => self::rotuloPagamento($agendamento->status_pagamento)],
@@ -967,6 +970,10 @@ public function pularProximo($id)
             'foto_principal' => $fotoPrincipal,
             'exige_contrato' => $item->exige_contrato,
             'status_contrato' => $aluguel->contratoDocumento ? ($aluguel->contratoDocumento->assinado ? 'assinado' : 'pendente_assinatura') : 'nao_aplicavel',
+            // Produtos adicionais comprados junto com a reserva.
+            'itens_extras' => app(\App\Services\ProdutosAdicionaisService::class)->daReserva($aluguel),
+            // Contrato gerado pelo proprietário: o cliente lê e baixa direto na reserva.
+            'contrato' => app(\App\Services\Locacao\ContratoReservaService::class)->paraTela($aluguel->contratoDocumento),
             'codigo_verificacao' => substr($aluguel->codigo_reserva, -4),
             'detalhes' => array_values(array_filter([
                 ['rotulo' => 'Categoria', 'valor' => (string) $item->categoria],
@@ -1092,11 +1099,16 @@ public function pularProximo($id)
             'acessorios_selecionados' => 'nullable|array',
             'pontos_utilizados'       => 'nullable|integer|min:0',
             'cupom_codigo'            => 'nullable|string|max:60',
+            'extras'                  => 'nullable|array|max:30',
         ]);
 
         $item = ItemAluguel::findOrFail($id);
         $cotacao = app(\App\Services\Locacao\CotacaoAluguelService::class)->cotar($item, Auth::user(), $validated, $cupomService);
-        $total = round((float) $cotacao['totalComCaucao'], 2);
+        // Adicionais escolhidos entram no total (e nas parcelas do cartão), como na reserva.
+        $adicionais = app(\App\Services\ProdutosAdicionaisService::class)->orcar(
+            \App\Services\ProdutosAdicionaisService::normalizarPedido($validated['extras'] ?? []), null, (int) $item->id, Auth::user()
+        );
+        $total = round((float) $cotacao['totalComCaucao'] + $adicionais['total'], 2);
 
         return response()->json([
             'total' => $total,
@@ -1159,6 +1171,9 @@ public function pularProximo($id)
             'estado_entrega' => 'required_with:cep_entrega|string|size:2',
             'latitude_entrega' => 'nullable|numeric',
             'longitude_entrega' => 'nullable|numeric',
+            // Produtos adicionais escolhidos junto com a reserva.
+            'extras' => 'nullable|array|max:30',
+            'extras_ids' => 'nullable|string|max:500',
         ]);
 
         $validated = array_map(function($item) {
@@ -1207,6 +1222,19 @@ public function pularProximo($id)
                 }
             }
         }
+
+        // Adicionais escolhidos (só os oferecidos para esta reserva, com estoque), somados ao total.
+        $adicionaisService = app(\App\Services\ProdutosAdicionaisService::class);
+        try {
+            $adicionais = $adicionaisService->orcar(
+                \App\Services\ProdutosAdicionaisService::normalizarPedido($request->input('extras', $validated['extras_ids'] ?? null)),
+                null, (int) $item->id, $user
+            );
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return back()->withErrors($e->errors());
+        }
+        $precoFinalCliente = round($precoFinalCliente + $adicionais['total'], 2);
+        $totalComCaucao = round($totalComCaucao + $adicionais['total'], 2);
 
         $taxaMarketplace = \App\Support\Taxas::sobre($precoFinalCliente);
 
@@ -1271,6 +1299,17 @@ public function pularProximo($id)
             'longitude_entrega'   => $validated['longitude_entrega'] ?? null,
         ]);
 
+        try {
+            DB::transaction(fn () => $adicionaisService->registrar($adicionais, $aluguel, $user));
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            if ($pontosParaAbater > 0) {
+                $user->increment('pontos_saldo', $pontosParaAbater);
+            }
+            $aluguel->delete();
+
+            return back()->withErrors($e->errors());
+        }
+
         $user->increment('numero_reservas');
         $proprietario = User::find($item->estabelecimento_id);
         if ($proprietario) {
@@ -1319,6 +1358,7 @@ public function pularProximo($id)
                 if ($pontosParaAbater > 0) {
                     $user->increment('pontos_saldo', $pontosParaAbater);
                 }
+                $adicionaisService->estornar($aluguel);
                 $aluguel->delete();
 
                 Log::error("Erro ao gerar cobrança Asaas para aluguel #{$aluguel->id}: " . $e->getMessage());
@@ -1505,14 +1545,14 @@ public function pularProximo($id)
 
         $pdf = Pdf::loadHTML($html);
         $pdfPath = 'contratos/contrato_' . $aluguel->codigo_reserva . '.pdf';
-        Storage::disk('public')->put($pdfPath, $pdf->output());
+        Storage::disk('local')->put($pdfPath, $pdf->output());
 
         $tokenApi = config('services.d4sign.token');
         $cryptKey = config('services.d4sign.crypt');
         $uuidCofre = config('services.d4sign.uuid_safe');
 
         $responseUpload = Http::withHeaders(['Accept' => 'application/json'])
-            ->attach('file', Storage::disk('public')->get($pdfPath), 'contrato.pdf')
+            ->attach('file', Storage::disk('local')->get($pdfPath), 'contrato.pdf')
             ->post("https://binary.d4sign.com.br/v1/documents/{$uuidCofre}/upload?token={$tokenApi}&crypt={$cryptKey}");
 
         if ($responseUpload->failed()) {
@@ -1570,7 +1610,7 @@ public function pularProximo($id)
 
                 if ($responseDownload->successful()) {
                     $pdfAssinadoPath = 'contratos/assinados/contrato_final_' . $uuidDoc . '.pdf';
-                    Storage::disk('public')->put($pdfAssinadoPath, $responseDownload->body());
+                    Storage::disk('local')->put($pdfAssinadoPath, $responseDownload->body());
 
                     $contrato->update([
                         'assinado' => true,
@@ -1766,6 +1806,10 @@ public function pularProximo($id)
             $servico = Servico::findOrFail($validated['servico_id']);
             // Valor com a promoção cadastrada no serviço.
             $valorTotal = app(\App\Services\PrecificacaoService::class)->comPromocao((float) $servico->valor, (bool) ($servico->tem_promocao ?? false), $servico->tipo_desconto ?? null, $servico->valor_desconto ?? null);
+            // Serviço que vai até o cliente: taxa de deslocamento (e o endereço informado).
+            $enderecoAtendimento = trim((string) $request->input('endereco_atendimento')) ?: null;
+            $taxaDeslocamento = \App\Support\CamposServico::taxaDoAgendamento($servico, $enderecoAtendimento);
+            $valorTotal = round($valorTotal + $taxaDeslocamento, 2);
 
             // 1. Cria o agendamento inicial (Carrinho)
             $agendamento = Agendamento::create([
@@ -1777,6 +1821,8 @@ public function pularProximo($id)
                 'status'             => 'pendente', 
                 'valor_original'     => $servico->valor,
                 'valor_final'        => $valorTotal,
+                'endereco_atendimento' => \App\Support\CamposServico::vaiAteOCliente($servico) ? $enderecoAtendimento : null,
+                'taxa_deslocamento'  => $taxaDeslocamento ?: null,
                 'codigo_verificacao' => str_pad(mt_rand(1, 9999), 4, '0', STR_PAD_LEFT),
             ]);
 

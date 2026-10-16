@@ -57,6 +57,8 @@ class ServicoDetalheController extends Controller
                 'horarios' => $detalhe->listaDeHorarios($servico->horarios_disponiveis),
                 // Sem horários fixos: o cliente combina com o dono (chat ou telefone).
                 'horario_a_combinar' => $servico->horarioACombinar(),
+                // Onde atende, 24h, taxa de deslocamento, tipo de preço, o que inclui...
+                'atendimento' => $servico->atendimento,
             ],
             'estabelecimento' => $local,
             'profissionais' => Funcionario::where('estabelecimento_id', $local->id)->where('ativo', true)->orderBy('nome')->limit(8)->get(['id', 'nome', 'cargo']),

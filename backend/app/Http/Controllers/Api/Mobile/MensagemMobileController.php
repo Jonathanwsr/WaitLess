@@ -78,11 +78,14 @@ class MensagemMobileController extends Controller
             ->update(['lida_em' => now()]);
 
         $mensagens = $conversa->mensagens()
+            ->with(['cupom', 'oferta'])
             ->orderBy('created_at', 'asc')
             ->get()
             ->map(fn (Mensagem $msg) => [
                 'id' => $msg->id,
                 'conteudo' => $msg->conteudo,
+                // Oferta exclusiva para quem favoritou: o chat mostra o cartão do cupom.
+                'oferta' => \App\Services\OfertaFavoritosService::cartao($msg, (int) $conversa->usuario_id),
                 'horario' => $msg->created_at->format('H:i'),
                 'data' => $msg->created_at->format('d/m/Y'),
                 'is_mine' => $msg->remetente_id === $user->id,

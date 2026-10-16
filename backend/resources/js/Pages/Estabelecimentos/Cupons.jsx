@@ -1,5 +1,6 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import ComoFunciona from '@/Components/ComoFunciona';
+import OfertaParaFavoritos from '@/Components/Marketing/OfertaParaFavoritos';
 import InputError from '@/Components/InputError';
 import InputLabel from '@/Components/InputLabel';
 import PrimaryButton from '@/Components/PrimaryButton';
@@ -139,6 +140,8 @@ export default function Cupons({ auth, estabelecimento, cupons = [], servicos = 
                         ❌ {flash.error}
                     </div>
                 )}
+
+                <OfertaParaFavoritos estabelecimentoId={estabelecimento.id} />
 
                 <div className="flex flex-col lg:flex-row gap-8">
                     

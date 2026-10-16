@@ -54,8 +54,8 @@ class ContratoController extends Controller
      */
     private function autorizarAluguel(Aluguel $aluguel): void
     {
-        $user = Auth::user();
-        if ((int) $aluguel->estabelecimento_id !== (int) $user->id && $user->papel !== 'admin') {
+        // Dono da reserva, sócios/gerentes do mesmo local ou admin (a listagem já mostra as reservas de todos os sócios).
+        if (!app(\App\Services\Locacao\ContratoReservaService::class)->podeGerenciar($aluguel, Auth::user())) {
             abort(403, 'Acesso não autorizado a esta reserva.');
         }
     }
@@ -126,6 +126,15 @@ class ContratoController extends Controller
         $contratosGerados = Contrato::whereHas('aluguel', function ($q) use ($donosDoEstabelecimento) {
             $q->whereIn('estabelecimento_id', $donosDoEstabelecimento);
         })->with(['aluguel.locatario', 'aluguel.item'])->latest()->paginate(15);
+        // Links assinados (o arquivo não fica mais em pasta pública).
+        $servicoContratos = app(\App\Services\Locacao\ContratoReservaService::class);
+        $contratosGerados->getCollection()->transform(function (Contrato $c) use ($servicoContratos) {
+            $c->setAttribute('pdf_url', $c->arquivo_pdf ? $servicoContratos->link($c, 'pdf') : null);
+            $c->setAttribute('docx_url', $c->arquivo_docx ? $servicoContratos->link($c, 'docx') : null);
+            $c->setAttribute('link_whatsapp', $c->arquivo_pdf ? $servicoContratos->linkParaCompartilhar($c) : null);
+
+            return $c;
+        });
 
         $reservasPendentes = Aluguel::whereIn('estabelecimento_id', $donosDoEstabelecimento)
             ->whereNull('contrato_id')
@@ -291,7 +300,8 @@ class ContratoController extends Controller
         // PDF
         $pdf = Pdf::loadHTML($htmlCompleto);
         $pdfPath = 'contratos/' . $aluguel->codigo_reserva . '_' . uniqid() . '.pdf';
-        Storage::disk('public')->put($pdfPath, $pdf->output());
+        // Disco privado: o arquivo só sai por link assinado (cliente, dono ou e-mail).
+        Storage::disk(\App\Services\Locacao\ContratoReservaService::DISCO)->put($pdfPath, $pdf->output());
 
         // Word (.docx) — conversão do mesmo HTML. O parser do PhpWord exige
         // XML bem-formado (ex: <br/> fechado), mas o texto do contrato é HTML
@@ -307,13 +317,16 @@ class ContratoController extends Controller
         $section = $phpWord->addSection();
         PhpWordHtml::addHtml($section, $htmlNormalizado, false, false);
         $docxPath = 'contratos/' . $aluguel->codigo_reserva . '_' . uniqid() . '.docx';
-        $docxAbsolutePath = Storage::disk('public')->path($docxPath);
+        Storage::disk(\App\Services\Locacao\ContratoReservaService::DISCO)->makeDirectory('contratos');
+        $docxAbsolutePath = Storage::disk(\App\Services\Locacao\ContratoReservaService::DISCO)->path($docxPath);
         IOFactory::createWriter($phpWord, 'Word2007')->save($docxAbsolutePath);
 
         $contrato = Contrato::create([
             'aluguel_id' => $aluguel->id,
             'numero_contrato' => 'CTR-' . strtoupper(Str::random(8)),
             'titulo' => $titulo,
+            // Guarda o texto para o cliente ler o contrato direto na tela da reserva.
+            'descricao' => $textoHtml,
             'arquivo_pdf' => $pdfPath,
             'arquivo_docx' => $docxPath,
             'hash_documento' => Str::random(15),
@@ -327,8 +340,8 @@ class ContratoController extends Controller
             'success' => true,
             'message' => 'Contrato gerado com sucesso!',
             'contrato' => $contrato,
-            'pdf_url' => Storage::disk('public')->url($pdfPath),
-            'docx_url' => Storage::disk('public')->url($docxPath),
+            'pdf_url' => app(\App\Services\Locacao\ContratoReservaService::class)->link($contrato, 'pdf'),
+            'docx_url' => app(\App\Services\Locacao\ContratoReservaService::class)->link($contrato, 'docx'),
         ]);
     }
 
@@ -360,12 +373,7 @@ class ContratoController extends Controller
         $contrato = Contrato::with('aluguel')->findOrFail($id);
         $this->autorizarAluguel($contrato->aluguel);
 
-        if ($contrato->arquivo_pdf) {
-            Storage::disk('public')->delete($contrato->arquivo_pdf);
-        }
-        if ($contrato->arquivo_docx) {
-            Storage::disk('public')->delete($contrato->arquivo_docx);
-        }
+        \App\Services\Locacao\ContratoReservaService::apagarArquivos($contrato);
 
         if ($contrato->aluguel && $contrato->aluguel->contrato_id === $contrato->id) {
             $contrato->aluguel->update(['contrato_id' => null]);

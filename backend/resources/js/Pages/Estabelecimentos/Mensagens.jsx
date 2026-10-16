@@ -291,7 +291,32 @@ export default function Mensagens({ auth, conversas = [], conversaAtiva = null, 
                                                             msg.is_mine ? 'bg-[#FFE9DB] text-gray-900 rounded-br-md' : 'bg-white border border-gray-100 text-gray-800 rounded-bl-md'
                                                         }`}
                                                     >
-                                                        <p className="text-[13.5px] leading-relaxed whitespace-pre-wrap break-words">{msg.conteudo}</p>
+                                                        {msg.oferta ? (
+                                                            <div className="min-w-[220px]">
+                                                                <p className="text-[11px] font-bold uppercase tracking-wide text-rose-500">🎁 Oferta exclusiva{msg.oferta.local ? ` · ${msg.oferta.local.nome}` : ''}</p>
+                                                                <p className="mt-0.5 font-bold text-gray-900">{msg.oferta.titulo}</p>
+                                                                <p className="mt-1 text-[13.5px] leading-relaxed whitespace-pre-wrap break-words">{msg.oferta.texto}</p>
+                                                                {msg.oferta.cupom && (
+                                                                    <div className={`mt-2 rounded-xl border border-dashed p-3 ${msg.oferta.cupom.valido && !msg.oferta.cupom.usado ? 'border-green-300 bg-green-50' : 'border-gray-200 bg-gray-50 opacity-70'}`}>
+                                                                        <div className="flex items-center justify-between gap-2">
+                                                                            <span className="font-mono text-base font-black text-green-800">{msg.oferta.cupom.codigo}</span>
+                                                                            {!msg.is_mine && msg.oferta.cupom.valido && !msg.oferta.cupom.usado && (
+                                                                                <button type="button" onClick={() => navigator.clipboard?.writeText(msg.oferta.cupom.codigo)} className="rounded-lg bg-white px-2 py-1 text-[11px] font-bold text-green-700 ring-1 ring-green-200 hover:bg-green-100">Copiar</button>
+                                                                            )}
+                                                                        </div>
+                                                                        <p className="text-xs text-green-700">{msg.oferta.cupom.desconto}{msg.oferta.cupom.validade ? ` · até ${msg.oferta.cupom.validade}` : ''}{msg.oferta.cupom.apenas_premium ? ' · só Premium' : ''}</p>
+                                                                        {msg.oferta.cupom.usado && <p className="text-xs font-bold text-gray-500">Cupom já usado</p>}
+                                                                        {!msg.oferta.cupom.valido && <p className="text-xs font-bold text-gray-500">Oferta encerrada</p>}
+                                                                        {!msg.is_mine && msg.oferta.cupom.valido && !msg.oferta.cupom.usado && <p className="mt-1 text-[11px] text-green-700">Já está na sua carteira — use o código ao reservar.</p>}
+                                                                    </div>
+                                                                )}
+                                                                {!msg.is_mine && msg.oferta.local && (
+                                                                    <a href={route('estabelecimentos.loja', msg.oferta.local.id)} className="mt-2 inline-flex min-h-[36px] items-center text-xs font-bold text-[#FF5A00] hover:underline">Ver o local e reservar →</a>
+                                                                )}
+                                                            </div>
+                                                        ) : (
+                                                            <p className="text-[13.5px] leading-relaxed whitespace-pre-wrap break-words">{msg.conteudo}</p>
+                                                        )}
                                                         <span className="text-[10px] block mt-1 text-right font-medium text-gray-400">{msg.horario}</span>
                                                     </div>
                                                 </div>

@@ -58,6 +58,8 @@ class ServicoController extends Controller
         // 1. Aciona a trava de segurança
         $this->verificarPermissao();
 
+        // Campos de atendimento (onde atende, 24h, raio, taxa de deslocamento, tipo de preço...).
+        $request->validate(\App\Support\CamposServico::regras(), \App\Support\CamposServico::mensagens());
         $validated = $request->validate([
             'nome'                 => 'required|string|max:255',
             'tipo_servico'         => 'required|string|max:255',
@@ -119,7 +121,7 @@ class ServicoController extends Controller
                 }
             }
 
-            $servico = Servico::create([
+            $servico = Servico::create(\App\Support\CamposServico::doRequest($request) + [
                 'estabelecimento_id'   => $est_id,
                 'nome'                 => $validated['nome'],
                 'tipo_servico'         => $validated['tipo_servico'],
@@ -175,6 +177,8 @@ class ServicoController extends Controller
         $this->verificarPermissao();
         $this->garantirQueGerenciaEstabelecimento((int) $servico->estabelecimento_id);
 
+        // Campos de atendimento (onde atende, 24h, raio, taxa de deslocamento, tipo de preço...).
+        $request->validate(\App\Support\CamposServico::regras(), \App\Support\CamposServico::mensagens());
         $validated = $request->validate([
             'nome'                 => 'required|string|max:255',
             'tipo_servico'         => 'required|string|max:255',
@@ -268,7 +272,7 @@ class ServicoController extends Controller
             }
         }
 
-        $servico->update($dadosParaAtualizar);
+        $servico->update($dadosParaAtualizar + \App\Support\CamposServico::doRequest($request));
 
         $this->vincularProdutosExistentes(
             $validated['produtos_vinculados'] ?? [],

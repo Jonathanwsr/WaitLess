@@ -4,6 +4,7 @@ import { useState } from 'react';
 import axios from 'axios';
 import { PlusIcon, MapPinIcon, UsersIcon, CalendarDaysIcon, SparklesIcon, LockClosedIcon } from '@heroicons/react/24/solid';
 import { Aviso, erroDe, fmtDia } from '@/Components/Viagem/util';
+import { AbasPlanejamento } from '@/Components/Viagem/Roteiro/comum';
 
 export default function Index({ viagens, premium }) {
     const [aviso, setAviso] = useState(null);
@@ -21,6 +22,7 @@ export default function Index({ viagens, premium }) {
         <AuthenticatedLayout header={<h2 className="font-black text-xl text-gray-800">Minhas viagens</h2>}>
             <Head title="Minhas viagens" />
             <div className="max-w-5xl mx-auto space-y-6">
+                <AbasPlanejamento ativa="viagens" />
                 <div className="flex flex-wrap items-center justify-between gap-3">
                     <p className="text-gray-500">Roteiros, reservas e gastos do grupo em um só lugar.</p>
                     <Link href={route('viagens.nova')} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#FF5A00] hover:bg-[#C74B27] text-white font-black transition">

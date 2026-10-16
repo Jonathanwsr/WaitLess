@@ -913,3 +913,43 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
 // Conferência pública do código de autenticação dos comprovantes de pagamento.
 Route::get('/comprovantes/verificar', [\App\Http\Controllers\Api\ComprovantePagamentoController::class, 'verificar'])->middleware('throttle:30,1')->name('comprovantes.verificar');
+
+// Contrato da reserva para o cliente: dados/texto (logado) e o arquivo por link assinado e temporário.
+Route::middleware('auth')->get('/contratos/{contrato}/ver', [\App\Http\Controllers\Api\ContratoArquivoController::class, 'mostrar'])
+    ->whereNumber('contrato')->name('contratos.ver');
+Route::middleware(['auth', 'throttle:10,1'])->post('/contratos/{contrato}/aceitar', [\App\Http\Controllers\Api\ContratoArquivoController::class, 'aceitar'])
+    ->whereNumber('contrato')->name('contratos.aceitar');
+Route::middleware(['signed', 'throttle:30,1'])->get('/contratos/{contrato}/arquivo/{formato}', [\App\Http\Controllers\Api\ContratoArquivoController::class, 'arquivo'])
+    ->whereNumber('contrato')->name('contratos.arquivo');
+
+// ---------------------------------------------------------------------------------------------
+// Planejamento de Viagem: Guia do Local e Roteiros (dia a dia). Páginas + JSON do próprio site.
+// ---------------------------------------------------------------------------------------------
+Route::middleware(['auth'])->group(function () {
+    $roteiros = App\Http\Controllers\Api\RoteiroController::class;
+    Route::get('/viagens/guia', [$roteiros, 'paginaGuia'])->name('viagens.guia');
+    Route::get('/viagens/roteiros', [$roteiros, 'paginaRoteiros'])->name('viagens.roteiros');
+    Route::get('/viagens/roteiros/novo', [$roteiros, 'paginaNovo'])->name('viagens.roteiros.novo');
+    Route::get('/viagens/roteiros/{roteiro}/editar', [$roteiros, 'paginaEditar'])->whereNumber('roteiro')->name('viagens.roteiros.editar');
+
+    Route::prefix('viagens/api')->name('viagens.api.')->group(fn () => App\Http\Controllers\Api\RoteiroController::rotas());
+});
+
+// Roteiro compartilhado por link: somente leitura, sem login.
+Route::middleware('throttle:60,1')->group(function () {
+    Route::get('/roteiro/{token}', [App\Http\Controllers\Api\RoteiroController::class, 'paginaCompartilhado'])->name('roteiro.compartilhado');
+    Route::get('/roteiro/{token}/pdf', [App\Http\Controllers\Api\RoteiroController::class, 'compartilhadoPdf'])->name('roteiro.compartilhado.pdf');
+});
+
+// Ofertas Exclusivas via Mensagem: cupom + comunicado para quem favoritou o local.
+Route::middleware('auth')->group(function () {
+    Route::get('/estabelecimentos/{estabelecimento}/ofertas-favoritos', [App\Http\Controllers\Api\OfertaFavoritosController::class, 'painel'])->name('ofertas-favoritos.painel');
+    Route::post('/estabelecimentos/{estabelecimento}/ofertas-favoritos', [App\Http\Controllers\Api\OfertaFavoritosController::class, 'enviar'])->middleware('throttle:10,1')->name('ofertas-favoritos.enviar');
+});
+
+// Adicionais (produtos) que o cliente pode escolher ao agendar um serviço ou reservar.
+Route::middleware('throttle:60,1')->get('/produtos/adicionais', [App\Http\Controllers\Api\ProdutoController::class, 'adicionais'])->name('produtos.adicionais');
+Route::middleware('auth')->get('/produtos/adicionais-vendidos', [App\Http\Controllers\Api\ProdutoController::class, 'adicionaisVendidos'])->name('produtos.adicionais-vendidos');
+
+// Pagamento da assinatura: forma padrão, faturas reais do Asaas, Pix/boleto e troca de cartão.
+Route::middleware('auth')->prefix('minha-assinatura')->name('assinatura.pagamento.')->group(fn () => App\Http\Controllers\Api\AssinaturaPagamentoController::rotas());

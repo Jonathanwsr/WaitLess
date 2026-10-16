@@ -16,6 +16,8 @@ class BeneficiosPlanos
         ['icone' => 'sparkles', 'titulo' => 'Ofertas e serviços exclusivos', 'texto' => 'Acesso aos serviços, reservas e promoções marcados como "Só Premium".'],
         ['icone' => 'ticket', 'titulo' => 'Cupons exclusivos para assinantes', 'texto' => 'Cupons de desconto que os locais liberam só para quem é Premium.'],
         ['icone' => 'chat', 'titulo' => 'Pontos em dobro ao avaliar', 'texto' => 'Cada avaliação que você faz depois de um atendimento rende o dobro de pontos.'],
+        ['icone' => 'star', 'titulo' => 'Pontos em dobro no dia a dia', 'texto' => 'O check-in diário no app e as sugestões que você envia também rendem o dobro de pontos.'],
+        ['icone' => 'users', 'titulo' => 'Indicações valem o dobro', 'texto' => 'Quando um amigo indicado por você conclui a primeira reserva, você recebe o dobro dos pontos de indicação.'],
         ['icone' => 'bag', 'titulo' => '1 ponto a cada R$ 1 em produtos', 'texto' => 'Nas compras de produtos com entrega ou retirada (sem plano, é meio ponto por real).'],
         ['icone' => 'map', 'titulo' => 'Viagem montada automaticamente', 'texto' => 'Na mala de viagem, o roteiro inteligente sugere hospedagem, passeios e transporte de uma vez.'],
         ['icone' => 'chart', 'titulo' => 'Seu relatório pessoal', 'texto' => 'Quanto você gastou, os serviços que mais usa e os pontos que acumulou.'],
@@ -34,6 +36,8 @@ class BeneficiosPlanos
         ['icone' => 'map', 'titulo' => 'Clientes a caminho, ao vivo', 'texto' => 'Veja no mapa onde está o cliente que vem para o seu local e quanto falta para chegar.'],
         ['icone' => 'doc', 'titulo' => 'Contratos de locação', 'texto' => 'Gere contratos para as suas reservas e envie para o cliente assinar.'],
         ['icone' => 'mail', 'titulo' => 'Resumo financeiro semanal por e-mail', 'texto' => 'Toda semana, entradas, taxas e repasses dos seus locais no seu e-mail.'],
+        ['icone' => 'users', 'titulo' => 'Indicações valem o dobro', 'texto' => 'Indique outros negócios ou clientes: quando a primeira reserva do indicado é concluída, você recebe o dobro dos pontos.'],
+        ['icone' => 'star', 'titulo' => 'Tudo do Premium de cliente', 'texto' => 'Quando você reserva como cliente, também usa pontos em qualquer serviço ou reserva, ganha pontos em dobro e acessa as ofertas "Só Premium".'],
         ['icone' => 'gift', 'titulo' => '50 pontos de bônus todo mês', 'texto' => 'Para você usar como cliente em qualquer local da Lokyva.'],
     ];
 
@@ -41,6 +45,7 @@ class BeneficiosPlanos
         ['icone' => 'percent', 'titulo' => 'Isenção total da taxa no balcão', 'texto' => 'Nos pagamentos feitos no local, a plataforma não cobra taxa nenhuma.'],
         ['icone' => 'doc', 'titulo' => 'Nota fiscal automática de cada venda', 'texto' => 'A cada venda online, a nota sai sozinha para o cliente, com a sua configuração fiscal.'],
         ['icone' => 'users', 'titulo' => 'Equipe sem limite', 'texto' => 'Cadastre quantos funcionários e gerentes quiser (sem plano, o limite é de ' . PlanoService::LIMITE_FUNCIONARIOS_PLANO_GRATUITO . ' por local) e convide outros sócios.'],
+        ['icone' => 'card', 'titulo' => 'Cobrança parcelada para clientes', 'texto' => 'Monte um pacote de serviços ou uma reserva e ofereça em parcelas. O cliente vê tudo e aceita antes de qualquer cobrança.'],
         ['icone' => 'trophy', 'titulo' => 'Destaque máximo no Explorar', 'texto' => 'Prioridade máxima nas buscas e recomendações do app.'],
         ['icone' => 'gift', 'titulo' => '300 pontos de bônus todo mês', 'texto' => 'Seis vezes o bônus do Premium.'],
     ];

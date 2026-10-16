@@ -22,6 +22,9 @@ import * as SecureStore from 'expo-secure-store';
 import * as Location from 'expo-location';
 import { T } from '../../constants/ClientTheme';
 import { FavoriteButton, HeaderCliente } from '../../components/client/ui';
+import MapaExplorar from '../../components/client/MapaExplorar';
+import { SelosAtendimento, Atendimento } from '../../components/client/InfoAtendimento';
+import { useIdioma } from '../../services/idioma';
 
 const C = {
   ink: T.ink,
@@ -50,7 +53,7 @@ type MaterialIconName = React.ComponentProps<typeof MaterialIcons>['name'];
 // Cada categoria com sua própria cor (a escolhida ganha esse tom no lugar do laranja padrão do
 // app) — assim a barra de categorias não fica toda laranja, e cada área já "avisa" sua emoção:
 // beleza em rosa, saúde em azul de confiança, festas em roxo, etc.
-const CATEGORIAS: { nome: string; icone: MaterialIconName; slug: string; cor: string }[] = [
+const CATEGORIAS: { nome: string; icone: MaterialIconName; slug: string; cor: string; total?: number }[] = [
   { nome: 'Tudo', icone: 'apps', slug: 'tudo', cor: C.ink },
   { nome: 'Beleza', icone: 'content-cut', slug: 'beleza', cor: '#E8467C' },
   { nome: 'Barbearia', icone: 'storefront', slug: 'barbearia', cor: '#1F6F8B' },
@@ -108,6 +111,9 @@ interface ItemExplorar {
   fila_atual?: number;
   status_funcionamento?: { aberto: boolean | null; texto: string };
   distancia?: number | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  atendimento?: Atendimento | null;
   aceita_pontos?: boolean;
   vagas_status?: 'esgotado' | 'poucas_vagas' | null;
   vagas_restantes?: number | null;
@@ -139,6 +145,7 @@ const brl = (v: unknown) => `R$ ${Number(v || 0).toFixed(2).replace('.', ',')}`;
 
 export default function Descubra() {
   const router = useRouter();
+  const { t: tr } = useIdioma();
   const params = useLocalSearchParams();
   const { width } = useWindowDimensions();
 
@@ -163,6 +170,9 @@ export default function Descubra() {
   const [pagina, setPagina] = useState(1);
   const [ultimaPagina, setUltimaPagina] = useState(1);
   const [temPremium, setTemPremium] = useState(false);
+  // Quantos resultados ficam perto de quem busca (o backend já os coloca primeiro na relevância).
+  const [perto, setPerto] = useState(0);
+  const [visao, setVisao] = useState<'lista' | 'mapa'>('lista');
   const [promocoesDestaque, setPromocoesDestaque] = useState<PromocaoDestaque[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [carregandoMais, setCarregandoMais] = useState(false);
@@ -205,6 +215,28 @@ export default function Descubra() {
   useEffect(() => {
     carregarFavoritos();
   }, [carregarFavoritos]);
+
+  // Categorias vindas do backend (mesma lista do site e dos formulários do sócio), com totais.
+  // Sem rede, continua com a lista fixa acima.
+  const [categorias, setCategorias] = useState(CATEGORIAS);
+  useEffect(() => {
+    (async () => {
+      try {
+        const token = await AsyncStorage.getItem('@waitless_token');
+        const res = await fetch(`${API_URL}/explorar/categorias`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+        const json = await res.json();
+        const grupos: { slug: string; nome: string; icone: string; cor: string; total: number }[] = Array.isArray(json?.grupos) ? json.grupos : [];
+        if (res.ok && grupos.length) {
+          const validos = grupos
+            .filter((g) => g.icone in (MaterialIcons.glyphMap || {}))
+            .sort((a, b) => Number(b.total > 0) - Number(a.total > 0));
+          setCategorias([CATEGORIAS[0], ...validos.map((g) => ({ nome: g.nome, icone: g.icone as MaterialIconName, slug: g.slug, cor: g.cor, total: g.total }))]);
+        }
+      } catch {
+        // mantém a lista fixa
+      }
+    })();
+  }, []);
 
   // Cards dos 27 estados com a contagem real de lojas, serviços e reservas.
   useEffect(() => {
@@ -274,6 +306,7 @@ export default function Descubra() {
         setPagina(json.current_page ?? paginaAlvo);
         setUltimaPagina(json.last_page ?? 1);
         setTemPremium(!!json.meta?.tem_premium);
+        setPerto(Number(json.meta?.perto_de_voce) || 0);
         if (primeira) setPromocoesDestaque(json.promocoes_destaque || []);
       } catch {
         if (primeira) setItens([]);
@@ -375,9 +408,9 @@ export default function Descubra() {
   const precoBloco = (item: ItemExplorar) => {
     if (tipoAtivo === 'estabelecimentos') {
       return Number(item.valor) > 0 ? (
-        <Text style={s.preco}><Text style={s.precoPre}>a partir de </Text>{brl(item.valor)}</Text>
+        <Text style={s.preco}><Text style={s.precoPre}>{tr('a partir de ')}</Text>{brl(item.valor)}</Text>
       ) : (
-        <Text style={s.precoPre}>Consulte os serviços</Text>
+        <Text style={s.precoPre}>{tr('Consulte os serviços')}</Text>
       );
     }
     return (
@@ -419,6 +452,7 @@ export default function Descubra() {
           </View>
         </View>
         <Text style={s.cartaoSub} numberOfLines={1}>{subtitulo(item)}</Text>
+        {tipoAtivo === 'servicos' && <SelosAtendimento atendimento={item.atendimento} max={2} style={{ marginTop: 6 }} />}
 
         <View style={s.linhaMeta}><Nota item={item} /></View>
 
@@ -436,9 +470,9 @@ export default function Descubra() {
 
         <View style={s.cartaoRodape}>
           <View>
-            <Text style={s.precoPre}>{item.tem_promocao ? 'Por apenas' : tipoAtivo === 'reservas' ? 'Diária' : 'A partir de'}</Text>
+            <Text style={s.precoPre}>{tr(item.tem_promocao ? 'Por apenas' : tipoAtivo === 'reservas' ? 'Diária' : 'A partir de')}</Text>
             {tipoAtivo === 'estabelecimentos' && !(Number(item.valor) > 0) ? (
-              <Text style={s.precoPre}>Consulte os serviços</Text>
+              <Text style={s.precoPre}>{tr('Consulte os serviços')}</Text>
             ) : (
               <View style={s.precoLinha}>
                 <Text style={s.preco}>{brl(item.valor)}</Text>
@@ -448,7 +482,7 @@ export default function Descubra() {
           </View>
           <View style={s.online}>
             <Ionicons name="calendar-outline" size={13} color={C.success} />
-            <Text style={s.onlineTxt}>{tipoAtivo === 'reservas' ? 'Reserva online' : 'Agendamento online'}</Text>
+            <Text style={s.onlineTxt}>{tr(tipoAtivo === 'reservas' ? 'Reserva online' : 'Agendamento online')}</Text>
           </View>
         </View>
       </View>
@@ -475,7 +509,7 @@ export default function Descubra() {
             <Ionicons name="search" size={18} color={C.faint} />
             <TextInput
               style={s.buscaInput}
-              placeholder="Buscar serviços, locais, reservas..."
+              placeholder={tr('Buscar serviços, locais, reservas...')}
               placeholderTextColor={C.faint}
               value={busca}
               onChangeText={setBusca}
@@ -501,7 +535,7 @@ export default function Descubra() {
             return (
               <TouchableOpacity key={t.value} style={[s.chip, on && s.chipAtivo]} onPress={() => setTipoAtivo(t.value)} activeOpacity={0.85}>
                 <Ionicons name={t.icone as never} size={15} color={on ? '#fff' : C.ink} />
-                <Text style={[s.chipTxt, on && s.chipTxtOn]}>{t.label}</Text>
+                <Text style={[s.chipTxt, on && s.chipTxtOn]}>{tr(t.label)}</Text>
               </TouchableOpacity>
             );
           })}
@@ -510,22 +544,22 @@ export default function Descubra() {
             <Text style={[s.chipTxt, ordem === 'relevancia' && { color: C.accent }]}>Mais relevantes</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[s.chip, comPromocao && s.chipAtivo]} onPress={() => setComPromocao(!comPromocao)} activeOpacity={0.8}>
-            <Text style={[s.chipTxt, comPromocao && s.chipTxtOn]}>Promoções</Text>
+            <Text style={[s.chipTxt, comPromocao && s.chipTxtOn]}>{tr('Promoções')}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[s.chip, soPremium && s.chipAtivo]} onPress={() => setSoPremium(!soPremium)} activeOpacity={0.8}>
-            <Text style={[s.chipTxt, soPremium && s.chipTxtOn]}>Premium</Text>
+            <Text style={[s.chipTxt, soPremium && s.chipTxtOn]}>{tr('Premium')}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[s.chip, ordem === 'avaliacao' && s.chipAtivo]} onPress={() => setOrdem(ordem === 'avaliacao' ? 'relevancia' : 'avaliacao')} activeOpacity={0.8}>
-            <Text style={[s.chipTxt, ordem === 'avaliacao' && s.chipTxtOn]}>Nota</Text>
+            <Text style={[s.chipTxt, ordem === 'avaliacao' && s.chipTxtOn]}>{tr('Nota')}</Text>
             <Ionicons name="chevron-down" size={12} color={ordem === 'avaliacao' ? '#fff' : C.muted} />
           </TouchableOpacity>
           <TouchableOpacity style={[s.chip, (ordem === 'preco_asc' || ordem === 'preco_desc') && s.chipAtivo]} onPress={() => setOrdem(ordem === 'preco_asc' ? 'preco_desc' : 'preco_asc')} activeOpacity={0.8}>
-            <Text style={[s.chipTxt, (ordem === 'preco_asc' || ordem === 'preco_desc') && s.chipTxtOn]}>Preço</Text>
+            <Text style={[s.chipTxt, (ordem === 'preco_asc' || ordem === 'preco_desc') && s.chipTxtOn]}>{tr('Preço')}</Text>
             <Ionicons name="chevron-down" size={12} color={(ordem === 'preco_asc' || ordem === 'preco_desc') ? '#fff' : C.muted} />
           </TouchableOpacity>
           {!!coords && (
             <TouchableOpacity style={[s.chip, ordem === 'distancia' && s.chipAtivo]} onPress={() => setOrdem(ordem === 'distancia' ? 'relevancia' : 'distancia')} activeOpacity={0.8}>
-              <Text style={[s.chipTxt, ordem === 'distancia' && s.chipTxtOn]}>Distância</Text>
+              <Text style={[s.chipTxt, ordem === 'distancia' && s.chipTxtOn]}>{tr('Distância')}</Text>
               <Ionicons name="chevron-down" size={12} color={ordem === 'distancia' ? '#fff' : C.muted} />
             </TouchableOpacity>
           )}
@@ -546,7 +580,7 @@ export default function Descubra() {
                 activeOpacity={0.85}
               >
                 <Ionicons name={a.icone} size={18} color={on ? '#fff' : C.ink} />
-                <Text style={{ fontSize: 14, fontWeight: '700', color: on ? '#fff' : C.ink }}>{a.nome}</Text>
+                <Text style={{ fontSize: 14, fontWeight: '700', color: on ? '#fff' : C.ink }}>{tr(a.nome)}</Text>
               </TouchableOpacity>
             );
           })}
@@ -556,9 +590,9 @@ export default function Descubra() {
         {estadosOrdenados.length > 0 && (
           <>
             <View style={s.estadosTopo}>
-              <Text style={s.estadosTitulo}>Explore por estado</Text>
+              <Text style={s.estadosTitulo}>{tr('Explore por estado')}</Text>
               {!!estadoAtivo && (
-                <TouchableOpacity onPress={() => setEstadoAtivo('')}><Text style={s.estadosLimpar}>Ver todos</Text></TouchableOpacity>
+                <TouchableOpacity onPress={() => setEstadoAtivo('')}><Text style={s.estadosLimpar}>{tr('Ver todos')}</Text></TouchableOpacity>
               )}
             </View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.estadosLista}>
@@ -582,14 +616,14 @@ export default function Descubra() {
 
         {/* CATEGORIAS */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.categorias}>
-          {CATEGORIAS.map((cat) => {
+          {categorias.map((cat) => {
             const on = categoriaAtiva === cat.slug;
             return (
               <TouchableOpacity key={cat.slug} style={s.categoria} onPress={() => setCategoriaAtiva(cat.slug)} activeOpacity={0.8}>
                 <View style={[s.categoriaIcone, { backgroundColor: on ? cat.cor : `${cat.cor}1F` }]}>
                   <MaterialIcons name={cat.icone} size={24} color={on ? '#fff' : cat.cor} />
                 </View>
-                <Text style={[s.categoriaTxt, on && { color: cat.cor, fontWeight: '700' }]}>{cat.nome}</Text>
+                <Text style={[s.categoriaTxt, on && { color: cat.cor, fontWeight: '700' }]}>{tr(cat.nome)}</Text>
               </TouchableOpacity>
             );
           })}
@@ -603,10 +637,10 @@ export default function Descubra() {
         ) : itens.length === 0 ? (
           <View style={s.vazio}>
             <View style={s.vazioIcone}><Ionicons name="search-outline" size={28} color={C.faint} /></View>
-            <Text style={s.vazioTitulo}>Nada encontrado</Text>
-            <Text style={s.vazioTxt}>Não há resultados para esta busca. Tente outros filtros ou outra categoria.</Text>
+            <Text style={s.vazioTitulo}>{tr('Nada encontrado')}</Text>
+            <Text style={s.vazioTxt}>{tr('Não há resultados para esta busca. Tente outros filtros ou outra categoria.')}</Text>
             <TouchableOpacity style={s.vazioBtn} onPress={limpar} activeOpacity={0.85}>
-              <Text style={s.vazioBtnTxt}>Limpar filtros</Text>
+              <Text style={s.vazioBtnTxt}>{tr('Limpar filtros')}</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -614,8 +648,8 @@ export default function Descubra() {
             {promocoesDestaque.length > 0 && (
               <View style={s.secao}>
                 <View style={s.secaoTopo}>
-                  <Text style={s.secaoTitulo}>Promoções em destaque</Text>
-                  <View style={s.secaoPilula}><Ionicons name="pricetag" size={11} color={C.accent} /><Text style={s.secaoPilulaTxt}>Oferta</Text></View>
+                  <Text style={s.secaoTitulo}>{tr('Promoções em destaque')}</Text>
+                  <View style={s.secaoPilula}><Ionicons name="pricetag" size={11} color={C.accent} /><Text style={s.secaoPilulaTxt}>{tr('Oferta')}</Text></View>
                 </View>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }}>
                   {promocoesDestaque.map((promo) => (
@@ -636,8 +670,8 @@ export default function Descubra() {
             {destaques.length > 0 && (
               <View style={s.secao}>
                 <View style={s.secaoTopo}>
-                  <Text style={s.secaoTitulo}>Destaques premium</Text>
-                  <View style={s.secaoPilula}><Ionicons name="star" size={11} color={C.accent} /><Text style={s.secaoPilulaTxt}>Recomendados</Text></View>
+                  <Text style={s.secaoTitulo}>{tr('Destaques premium')}</Text>
+                  <View style={s.secaoPilula}><Ionicons name="star" size={11} color={C.accent} /><Text style={s.secaoPilulaTxt}>{tr('Recomendados')}</Text></View>
                 </View>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }}>
                   {destaques.map((item) => (
@@ -650,11 +684,12 @@ export default function Descubra() {
                       <View style={{ padding: 12 }}>
                         {item.vagas_status && (
                           <View style={{ marginBottom: 4 }}>
-                            <Selo texto={item.vagas_status === 'esgotado' ? 'Esgotado hoje' : 'Últimas vagas'} tom={item.vagas_status === 'esgotado' ? 'perigo' : 'aviso'} />
+                            <Selo texto={tr(item.vagas_status === 'esgotado' ? 'Esgotado hoje' : 'Últimas vagas')} tom={item.vagas_status === 'esgotado' ? 'perigo' : 'aviso'} />
                           </View>
                         )}
                         <Text style={s.cartaoNome} numberOfLines={1}>{item.nome}</Text>
                         <Text style={s.cartaoSub} numberOfLines={1}>{subtitulo(item)}</Text>
+        {tipoAtivo === 'servicos' && <SelosAtendimento atendimento={item.atendimento} max={2} style={{ marginTop: 6 }} />}
                         <View style={[s.linhaMeta, { marginTop: 8 }]}>
                           <Nota item={item} />
                           {!!localizacaoTxt(item) && <Text style={s.metaTxt} numberOfLines={1}>{localizacaoTxt(item)}</Text>}
@@ -669,14 +704,37 @@ export default function Descubra() {
 
             <View style={[s.secao, { paddingHorizontal: 20 }]}>
               <View style={s.secaoTopo2}>
-                <Text style={s.secaoTitulo}>{temPremium && ordem === 'relevancia' ? 'Para você' : 'Resultados'}</Text>
-                <Text style={s.contagem}>{total} {total === 1 ? 'resultado' : 'resultados'}</Text>
+                <Text style={s.secaoTitulo}>{tr(perto > 0 && ordem === 'relevancia' ? 'Perto de você primeiro' : temPremium && ordem === 'relevancia' ? 'Para você' : 'Resultados')}</Text>
+                <Text style={s.contagem}>{total} {tr(total === 1 ? 'resultado' : 'resultados')}{perto > 0 ? ` · ${perto} ${tr('perto')}` : ''}</Text>
               </View>
-              {lista.map(renderCartao)}
+              {itens.length > 0 && (
+                <View style={s.visao} accessibilityRole="tablist">
+                  {([['lista', 'Lista', 'list'], ['mapa', 'Mapa', 'map']] as const).map(([id, rotulo, icone]) => (
+                    <TouchableOpacity key={id} style={[s.visaoBtn, visao === id && s.visaoBtnOn]} onPress={() => setVisao(id)} activeOpacity={0.85} accessibilityRole="tab" accessibilityState={{ selected: visao === id }}>
+                      <Ionicons name={icone} size={15} color={visao === id ? C.ink : C.muted} />
+                      <Text style={[s.visaoTxt, visao === id && { color: C.ink }]}>{tr(rotulo)}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+              {visao === 'mapa' && itens.length > 0 ? (
+                <MapaExplorar
+                  centro={coords}
+                  pinos={itens.map((i) => ({
+                    chave: String(i.id),
+                    nome: i.nome || tr('Sem nome'),
+                    subtitulo: i.nome_local || [i.cidade, i.estado].filter(Boolean).join(' - '),
+                    preco: Number(i.valor) > 0 ? `${tipoAtivo === 'estabelecimentos' ? tr('a partir de ') : ''}${brl(i.valor)}` : null,
+                    foto: i.foto_perfil || null,
+                    latitude: i.latitude, longitude: i.longitude, distancia: i.distancia,
+                  }))}
+                  aoAbrir={(chave) => { const it = itens.find((i) => String(i.id) === chave); if (it) abrir(it); }}
+                />
+              ) : lista.map(renderCartao)}
 
               {pagina < ultimaPagina && (
                 <TouchableOpacity style={s.maisBtn} onPress={() => buscar(pagina + 1)} disabled={carregandoMais} activeOpacity={0.85}>
-                  {carregandoMais ? <ActivityIndicator color={C.ink} /> : <Text style={s.maisBtnTxt}>Carregar mais</Text>}
+                  {carregandoMais ? <ActivityIndicator color={C.ink} /> : <Text style={s.maisBtnTxt}>{tr('Carregar mais')}</Text>}
                 </TouchableOpacity>
               )}
             </View>
@@ -691,43 +749,43 @@ export default function Descubra() {
           <View style={s.sheet}>
             <View style={s.grip} />
             <View style={s.sheetTopo}>
-              <Text style={s.sheetTitulo}>Filtros</Text>
-              <TouchableOpacity onPress={limpar}><Text style={s.sheetLimpar}>Limpar</Text></TouchableOpacity>
+              <Text style={s.sheetTitulo}>{tr('Filtros')}</Text>
+              <TouchableOpacity onPress={limpar}><Text style={s.sheetLimpar}>{tr('Limpar')}</Text></TouchableOpacity>
             </View>
 
-            <Text style={s.sheetRotulo}>Ordenar por</Text>
+            <Text style={s.sheetRotulo}>{tr('Ordenar por')}</Text>
             <View style={s.sheetChips}>
               {ORDENS.filter((o) => o.value !== 'distancia' || coords).map((o) => (
                 <TouchableOpacity key={o.value} style={[s.chip, ordem === o.value && s.chipOn]} onPress={() => setOrdem(o.value)} activeOpacity={0.8}>
-                  <Text style={[s.chipTxt, ordem === o.value && s.chipTxtOn]}>{o.label}</Text>
+                  <Text style={[s.chipTxt, ordem === o.value && s.chipTxtOn]}>{tr(o.label)}</Text>
                 </TouchableOpacity>
               ))}
             </View>
 
-            <Text style={s.sheetRotulo}>Faixa de preço (R$)</Text>
+            <Text style={s.sheetRotulo}>{tr('Faixa de preço (R$)')}</Text>
             <View style={s.precoInputs}>
-              <TextInput style={s.precoInput} placeholder="Mínimo" placeholderTextColor={C.faint} keyboardType="numeric" value={precoMin} onChangeText={setPrecoMin} />
-              <Text style={{ color: C.faint }}>até</Text>
-              <TextInput style={s.precoInput} placeholder="Máximo" placeholderTextColor={C.faint} keyboardType="numeric" value={precoMax} onChangeText={setPrecoMax} />
+              <TextInput style={s.precoInput} placeholder={tr('Mínimo')} placeholderTextColor={C.faint} keyboardType="numeric" value={precoMin} onChangeText={setPrecoMin} />
+              <Text style={{ color: C.faint }}>{tr('até')}</Text>
+              <TextInput style={s.precoInput} placeholder={tr('Máximo')} placeholderTextColor={C.faint} keyboardType="numeric" value={precoMax} onChangeText={setPrecoMax} />
             </View>
 
             <View style={s.switchLinha}>
               <View style={{ flex: 1 }}>
-                <Text style={s.switchTitulo}>Somente promoções</Text>
-                <Text style={s.switchSub}>Itens e locais com desconto ativo</Text>
+                <Text style={s.switchTitulo}>{tr('Somente promoções')}</Text>
+                <Text style={s.switchSub}>{tr('Itens e locais com desconto ativo')}</Text>
               </View>
               <Switch value={comPromocao} onValueChange={setComPromocao} trackColor={{ true: C.accent, false: C.line }} thumbColor="#fff" />
             </View>
             <View style={s.switchLinha}>
               <View style={{ flex: 1 }}>
-                <Text style={s.switchTitulo}>Somente donos premium</Text>
-                <Text style={s.switchSub}>Anunciantes verificados com plano premium</Text>
+                <Text style={s.switchTitulo}>{tr('Somente donos premium')}</Text>
+                <Text style={s.switchSub}>{tr('Anunciantes verificados com plano premium')}</Text>
               </View>
               <Switch value={soPremium} onValueChange={setSoPremium} trackColor={{ true: C.accent, false: C.line }} thumbColor="#fff" />
             </View>
 
             <TouchableOpacity style={s.aplicar} onPress={() => setPainelFiltros(false)} activeOpacity={0.85}>
-              <Text style={s.aplicarTxt}>Ver resultados</Text>
+              <Text style={s.aplicarTxt}>{tr('Ver resultados')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -830,6 +888,10 @@ const s = StyleSheet.create({
   seloTxt: { fontSize: 11, fontWeight: '700' },
   cartaoRodape: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: C.line },
   precoLinha: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
+  visao: { flexDirection: 'row', backgroundColor: '#F1F1F3', borderRadius: 14, padding: 4, marginBottom: 12, alignSelf: 'flex-start' },
+  visaoBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 36, paddingHorizontal: 16, borderRadius: 10 },
+  visaoBtnOn: { backgroundColor: '#fff', shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4, shadowOffset: { width: 0, height: 1 }, elevation: 2 },
+  visaoTxt: { fontSize: 13, fontWeight: '800', color: T.muted },
   preco: { fontSize: 20, fontWeight: '800', color: T.primary, letterSpacing: -0.4 },
   precoPre: { fontSize: 11, fontWeight: '500', color: C.muted },
   precoAntigo: { fontSize: 12, color: C.faint, textDecorationLine: 'line-through' },

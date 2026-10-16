@@ -18,6 +18,7 @@ import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppColors } from '../../constants/AppColors';
 import { alertar } from '../../services/alertar';
+import { SugestoesRamo } from '../../components/owner/SeletorCategoria';
 
 export default function CriarEstabelecimento() {
   const router = useRouter();
@@ -254,6 +255,9 @@ export default function CriarEstabelecimento() {
             <View style={styles.inputWrap}>
               <Feather name="tag" size={18} color={AppColors.textFaint} style={styles.inputIcon} />
               <TextInput style={styles.input} value={ramoAtuacao} onChangeText={setRamoAtuacao} placeholder="Ex: Salão de Beleza, Restaurante" placeholderTextColor={AppColors.textFaint} />
+            </View>
+            <View style={{ marginTop: 8 }}>
+              <SugestoesRamo valor={ramoAtuacao} onEscolher={setRamoAtuacao} />
             </View>
           </View>
 

@@ -68,7 +68,7 @@ trait GerenciaLocacaoAvulsa
     {
         $dados = $request->validate([
             'nome'                     => 'required|string|max:255',
-            'categoria'                => 'required|string|max:100',
+            'categoria'                => \App\Support\Categorias::regraReserva(),
             'descricao'                => 'nullable|string',
             'valor_diaria'             => 'required|numeric|min:0',
             'valor_semanal'            => 'nullable|numeric|min:0',
@@ -157,7 +157,7 @@ trait GerenciaLocacaoAvulsa
      */
     private function maxFotosParaCategoria(?string $categoria): int
     {
-        $imoveis = ItemAluguel::CATEGORIAS_LOCACAO_AVULSA['Imóveis'] ?? [];
+        $imoveis = array_merge(ItemAluguel::CATEGORIAS_LOCACAO_AVULSA['Imóveis'] ?? [], array_keys(\App\Support\Categorias::reservas()['Hospedagem'] ?? []));
         return in_array($categoria, $imoveis, true) ? 10 : 5;
     }
 

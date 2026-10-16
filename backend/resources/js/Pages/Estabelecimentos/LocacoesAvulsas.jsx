@@ -102,7 +102,7 @@ function grupoDaCategoria(categoria, categorias) {
     return null;
 }
 
-function ModalFormulario({ aberto, onFechar, itemEditando, categorias, politicas = [] }) {
+function ModalFormulario({ aberto, onFechar, itemEditando, categorias, politicas = [], rotulos = {} }) {
     const editando = !!itemEditando;
 
     // recursos_oferecidos guarda tanto as comodidades do checklist fixo (como texto) quanto
@@ -234,7 +234,7 @@ function ModalFormulario({ aberto, onFechar, itemEditando, categorias, politicas
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div className="sm:col-span-2">
                             <label className="text-xs font-bold text-gray-500 uppercase block mb-1.5">Nome</label>
-                            <input type="text" value={data.nome} onChange={e => setData('nome', e.target.value)}
+                            <input type="text" value={data.nome} onChange={e => setData('nome', e.target.value.toUpperCase())}
                                 className="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF5A00]/30" placeholder="Ex: Apartamento na praia, Honda CG 160..." />
                             {errors.nome && <p className="text-xs text-red-600 mt-1">{errors.nome}</p>}
                         </div>
@@ -246,7 +246,7 @@ function ModalFormulario({ aberto, onFechar, itemEditando, categorias, politicas
                                 <option value="">Selecione...</option>
                                 {Object.entries(categorias).map(([grupo, opcoes]) => (
                                     <optgroup label={grupo} key={grupo}>
-                                        {opcoes.map(op => <option key={op} value={op}>{op.replace(/_/g, ' ')}</option>)}
+                                        {opcoes.map(op => <option key={op} value={op}>{rotulos[op] || op.replace(/_/g, ' ')}</option>)}
                                     </optgroup>
                                 ))}
                             </select>
@@ -547,7 +547,7 @@ function ModalFormulario({ aberto, onFechar, itemEditando, categorias, politicas
     );
 }
 
-export default function LocacoesAvulsas({ auth, itens = [], emUsoAgora = [], proximasReservas = [], politicas = [], categorias = {} }) {
+export default function LocacoesAvulsas({ auth, itens = [], emUsoAgora = [], proximasReservas = [], politicas = [], categorias = {}, rotulosCategorias = {} }) {
     const [modalAberto, setModalAberto] = useState(false);
     const [itemEditando, setItemEditando] = useState(null);
 
@@ -683,7 +683,7 @@ export default function LocacoesAvulsas({ auth, itens = [], emUsoAgora = [], pro
                 )}
             </div>
 
-            <ModalFormulario aberto={modalAberto} onFechar={fecharModal} itemEditando={itemEditando} categorias={categorias} politicas={politicas} />
+            <ModalFormulario aberto={modalAberto} onFechar={fecharModal} itemEditando={itemEditando} categorias={categorias} politicas={politicas} rotulos={rotulosCategorias} />
         </AuthenticatedLayout>
     );
 }

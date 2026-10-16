@@ -9,7 +9,17 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class ItemAluguel extends Model
 {
-    use SoftDeletes;
+    use SoftDeletes, \App\Models\Concerns\NomeEmMaiusculas;
+
+    /** Sem coordenadas, a reserva fica fora das buscas por distância: completa pelo endereço (ou pelo local), depois da resposta. */
+    protected static function booted(): void
+    {
+        static::saved(function (ItemAluguel $i) {
+            if ((!$i->latitude || !$i->longitude) && ($i->cidade || $i->local_id) && app(\App\Services\GeocodificacaoService::class)->ativo()) {
+                dispatch(fn () => app(\App\Services\GeocodificacaoService::class)->preencherItem($i->fresh() ?? $i))->afterResponse();
+            }
+        });
+    }
 
     protected $table = 'itens_aluguel';
 

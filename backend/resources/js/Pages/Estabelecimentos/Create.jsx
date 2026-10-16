@@ -6,7 +6,7 @@ import TextInput from '@/Components/TextInput';
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
 import { useState, useEffect } from 'react';
 
-export default function Create() {
+export default function Create({ ramosAtuacao = {} }) {
     const { flash } = usePage().props;
     const [friendlyError, setFriendlyError] = useState(null);
     const [loadingCep, setLoadingCep] = useState(false);
@@ -289,34 +289,11 @@ export default function Create() {
                                         className="mt-1 block w-full border-gray-300 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 focus:border-indigo-500 dark:focus:border-indigo-600 focus:ring-indigo-500 dark:focus:ring-indigo-600 rounded-md shadow-sm py-2.5 sm:py-3"
                                     >
                                         <option value="">Selecione o ramo de atuação...</option>
-                                        <option value="Barbearia">Barbearia</option>
-                                        <option value="Salão de Beleza">Salão de Beleza</option>
-                                        <option value="Clínica Médica/Odontológica">Clínica Médica / Odontológica</option>
-                                        <option value="Restaurante/Lanchonete">Restaurante / Lanchonete</option>
-                                        <option value="Oficina Mecânica">Oficina Mecânica</option>
-                                        <option value="Pet Shop">Pet Shop</option>
-                                        <option value="Estética">Estética / Spa</option>
-                                        <option value="Locadora de Veículos">Locadora de Veículos</option>
-                                        <option value="Locadora de Carros de Luxo">Locadora de Carros de Luxo</option>
-<option value="Locadora de Carros Elétricos">Locadora de Carros Elétricos</option>
-<option value="Locadora de Utilitários e Vans">Locadora de Utilitários e Vans</option>
-<option value="Locadora de Caminhões e Carga">Locadora de Caminhões e Carga</option>
-<option value="Locadora de Motocicletas">Locadora de Motocicletas</option>
-<option value="Locadora de Veículos para Aplicativo">Locadora de Veículos para Aplicativo</option>
-<option value="Locadora de Veículos Blindados">Locadora de Veículos Blindados</option>
-<option value="Assinatura de Veículos a Longo Prazo">Assinatura de Veículos a Longo Prazo</option>
-<option value="Locadora de Quadriciclos e Off-Road">Locadora de Quadriciclos e Off-Road</option>
-<option value="Complexo Esportivo">Complexo Esportivo</option>
-<option value="Arena de Beach Tennis">Arena de Beach Tennis</option>
-<option value="Estúdio de Pilates e Funcional">Estúdio de Pilates e Funcional</option>
-<option value="Academia de Ginástica e Musculação">Academia de Ginástica e Musculação</option>
-<option value="Escola de Futebol e Futsal">Escola de Futebol e Futsal</option>
-<option value="Clube de Tênis e Squash">Clube de Tênis e Squash</option>
-<option value="Centro de Treinamento de Artes Marciais">Centro de Treinamento de Artes Marciais</option>
-<option value="Parque de Esportes Radicais e Skate">Parque de Esportes Radicais e Skate</option>
-<option value="Loja de Artigos Esportivos">Loja de Artigos Esportivos</option>
-<option value="Clube Social e Recreativo">Clube Social e Recreativo</option>
-                                        <option value="Outros">Outros</option>
+                                        {Object.entries(ramosAtuacao).map(([grupo, ramos]) => (
+                                            <optgroup key={grupo} label={grupo}>
+                                                {ramos.map((r) => <option key={r} value={r}>{r}</option>)}
+                                            </optgroup>
+                                        ))}
                                     </select>
                                     <InputError message={errors.ramo_atuacao} className="mt-2" />
                                 </div>

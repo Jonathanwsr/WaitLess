@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 class Servico extends Model
 {
 
-      use SoftDeletes;
+      use SoftDeletes, \App\Models\Concerns\NomeEmMaiusculas;
 
     protected $guarded = ['id'];
 
@@ -22,7 +22,20 @@ class Servico extends Model
         'valor_desconto' => 'decimal:2',
         'aceita_pontos' => 'boolean',
         'maximo_pontos_permitidos' => 'integer',
+        'atende_24h' => 'boolean',
+        'taxa_deslocamento' => 'decimal:2',
+        'raio_atendimento_km' => 'integer',
+        'tempo_chegada_minutos' => 'integer',
+        'garantia_dias' => 'integer',
     ];
+
+    /** Onde atende, 24h, taxa, tipo de preço, selos... — vai junto em toda tela que mostra o serviço. */
+    protected $appends = ['atendimento'];
+
+    public function getAtendimentoAttribute(): array
+    {
+        return \App\Support\CamposServico::paraTela($this);
+    }
 
     public function estabelecimento()
     {

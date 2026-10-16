@@ -30,7 +30,7 @@ class PromocaoVinculadaTest extends TestCase
         $estabelecimento = Estabelecimento::create(['nome' => 'Salao Promo ' . uniqid()]);
 
         return Servico::create([
-            'estabelecimento_id' => $estabelecimento->id, 'nome' => 'Corte Premium', 'tipo_servico' => 'Outro',
+            'estabelecimento_id' => $estabelecimento->id, 'nome' => 'CORTE PREMIUM', 'tipo_servico' => 'Outro',
             'valor' => 80, 'duracao_minutos' => 40, 'ativo' => true,
         ]);
     }
@@ -41,13 +41,13 @@ class PromocaoVinculadaTest extends TestCase
         $servico = $this->criarServico();
 
         $response = $this->actingAs($admin)->post('/admin/promocoes', [
-            'nome' => 'Corte com desconto', 'tipo' => 'oferta_assinantes', 'publico_alvo' => 'todos',
+            'nome' => 'CORTE COM DESCONTO', 'tipo' => 'oferta_assinantes', 'publico_alvo' => 'todos',
             'data_inicio' => now()->toDateString(), 'ativo' => true,
             'servico_id' => $servico->id,
         ]);
 
         $response->assertRedirect();
-        $promo = Promocao::where('nome', 'Corte com desconto')->first();
+        $promo = Promocao::where('nome', 'CORTE COM DESCONTO')->first();
         $this->assertNotNull($promo);
         $this->assertSame($servico->id, $promo->servico_id);
         $this->assertNull($promo->item_aluguel_id);
@@ -58,10 +58,10 @@ class PromocaoVinculadaTest extends TestCase
         $admin = $this->criarAdmin();
         $servico = $this->criarServico();
         $estabelecimento = Estabelecimento::create(['nome' => 'Loc Promo ' . uniqid()]);
-        $item = ItemAluguel::create(['estabelecimento_id' => $admin->id, 'nome' => 'Bicicleta', 'categoria' => 'equipamento', 'valor_diaria' => 50, 'ativo' => true, 'disponivel' => true]);
+        $item = ItemAluguel::create(['estabelecimento_id' => $admin->id, 'nome' => 'BICICLETA', 'categoria' => 'equipamento', 'valor_diaria' => 50, 'ativo' => true, 'disponivel' => true]);
 
         $response = $this->actingAs($admin)->post('/admin/promocoes', [
-            'nome' => 'Promo invalida', 'tipo' => 'oferta_assinantes', 'publico_alvo' => 'todos',
+            'nome' => 'PROMO INVALIDA', 'tipo' => 'oferta_assinantes', 'publico_alvo' => 'todos',
             'data_inicio' => now()->toDateString(), 'ativo' => true,
             'servico_id' => $servico->id, 'item_aluguel_id' => $item->id,
         ]);
@@ -76,7 +76,7 @@ class PromocaoVinculadaTest extends TestCase
         $servico = $this->criarServico();
 
         Promocao::create([
-            'nome' => 'Oferta do mes', 'tipo' => 'oferta_assinantes', 'publico_alvo' => 'todos',
+            'nome' => 'OFERTA DO MES', 'tipo' => 'oferta_assinantes', 'publico_alvo' => 'todos',
             'data_inicio' => now()->subDay()->toDateString(), 'ativo' => true,
             'servico_id' => $servico->id, 'criado_por' => $admin->id,
         ]);
@@ -85,7 +85,7 @@ class PromocaoVinculadaTest extends TestCase
         // rota web espelhada pela mesma lógica: usamos a tela do cliente diretamente
         $dados = \App\Http\Controllers\Api\ClientePromocaoController::montarLista($cliente);
 
-        $promo = collect($dados)->firstWhere('nome', 'Oferta do mes');
+        $promo = collect($dados)->firstWhere('nome', 'OFERTA DO MES');
         $this->assertNotNull($promo);
         $this->assertSame('servico', $promo['vinculo']['tipo']);
         $this->assertSame($servico->id, $promo['vinculo']['id']);
@@ -100,13 +100,13 @@ class PromocaoVinculadaTest extends TestCase
         $servico->update(['ativo' => false]);
 
         Promocao::create([
-            'nome' => 'Oferta expirada de item', 'tipo' => 'oferta_assinantes', 'publico_alvo' => 'todos',
+            'nome' => 'OFERTA EXPIRADA DE ITEM', 'tipo' => 'oferta_assinantes', 'publico_alvo' => 'todos',
             'data_inicio' => now()->subDay()->toDateString(), 'ativo' => true,
             'servico_id' => $servico->id, 'criado_por' => $admin->id,
         ]);
 
         $dados = \App\Http\Controllers\Api\ClientePromocaoController::montarLista($cliente);
-        $promo = collect($dados)->firstWhere('nome', 'Oferta expirada de item');
+        $promo = collect($dados)->firstWhere('nome', 'OFERTA EXPIRADA DE ITEM');
 
         $this->assertNotNull($promo);
         $this->assertNull($promo['vinculo']);
@@ -120,7 +120,7 @@ class PromocaoVinculadaTest extends TestCase
         $response = $this->actingAs($admin)->get('/admin/promocoes/buscar-itens?q=Corte');
 
         $response->assertOk();
-        $response->assertJsonFragment(['tipo' => 'servico', 'nome' => 'Corte Premium']);
+        $response->assertJsonFragment(['tipo' => 'servico', 'nome' => 'CORTE PREMIUM']);
     }
 
     public function test_explorar_so_mostra_promocao_vinculada_compativel_com_a_aba_ativa(): void
@@ -130,7 +130,7 @@ class PromocaoVinculadaTest extends TestCase
         $servico = $this->criarServico();
 
         Promocao::create([
-            'nome' => 'Oferta de servico no explorar', 'tipo' => 'oferta_assinantes', 'publico_alvo' => 'todos',
+            'nome' => 'OFERTA DE SERVICO NO EXPLORAR', 'tipo' => 'oferta_assinantes', 'publico_alvo' => 'todos',
             'data_inicio' => now()->subDay()->toDateString(), 'ativo' => true,
             'servico_id' => $servico->id, 'criado_por' => $admin->id,
         ]);

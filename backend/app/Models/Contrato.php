@@ -22,7 +22,8 @@ class Contrato extends Model
         return $this->belongsTo(Aluguel::class, 'aluguel_id');
     }
 
-    protected $fillable = ['aluguel_id', 'numero_contrato', 'titulo', 'arquivo_pdf', 'arquivo_docx', 'hash_documento', 'plataforma_assinatura', 'assinado', 'url_assinatura', 'enviado_em'];
+    protected $fillable = ['aluguel_id', 'numero_contrato', 'titulo', 'arquivo_pdf', 'arquivo_docx', 'hash_documento', 'plataforma_assinatura', 'assinado', 'url_assinatura', 'enviado_em', 'descricao',
+        'data_assinatura', 'ip_assinatura', 'dispositivo_assinatura', 'hash_assinatura'];
 
 
 

@@ -262,7 +262,7 @@ export default function ProdutosEntrega() {
               <TouchableOpacity onPress={() => setFormulario(null)} hitSlop={10}><Ionicons name="close" size={24} color={O.ink} /></TouchableOpacity>
             </View>
 
-            <Campo rotulo="Nome do produto" valor={formulario.valores.nome} onChange={(t) => setCampo('nome', t)} />
+            <Campo rotulo="Nome do produto" valor={formulario.valores.nome} onChange={(t) => setCampo('nome', t.toUpperCase())} />
             <Rotulo>Categoria</Rotulo>
             <Chips opcoes={dados?.categorias || []} valor={formulario.valores.categoria} aoMudar={(v) => setCampo('categoria', v)} />
 

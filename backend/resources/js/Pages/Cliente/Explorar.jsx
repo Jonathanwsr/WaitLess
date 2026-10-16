@@ -8,8 +8,21 @@ import {
     Search, MapPin, Calendar, Star, ArrowRight, ImageOff, Layers,
     Scissors, Home, Car, Laptop, PartyPopper, Store, Briefcase,
     Tag, ChevronDown, ChevronLeft, ChevronRight, Heart, ShoppingCart, Check,
-    HeartPulse, Plane, GraduationCap, Dog, Wrench, UserRound, Lock
+    HeartPulse, Plane, GraduationCap, Dog, Wrench, UserRound, Lock,
+    BedDouble, UtensilsCrossed, Mountain, Sparkles, Dumbbell, Camera, Hammer, ShoppingBag, DoorOpen, Flower2,
+    List, Map as MapIcon, Truck,
 } from 'lucide-react';
+import MapaExplorar from '@/Components/Explorar/MapaExplorar';
+import { useIdioma } from '@/i18n';
+import { SelosAtendimento } from '@/Components/Servicos/InfoAtendimento';
+
+// Ícone de cada grupo (o backend manda o nome do MaterialIcons usado no app).
+const ICONES_CATEGORIA = {
+    hotel: BedDouble, restaurant: UtensilsCrossed, hiking: Mountain, 'directions-car': Car, 'content-cut': Scissors,
+    storefront: Store, spa: Flower2, 'local-hospital': HeartPulse, 'fitness-center': Dumbbell, pets: Dog, 'car-repair': Wrench,
+    celebration: PartyPopper, 'photo-camera': Camera, handyman: Hammer, 'shopping-bag': ShoppingBag, school: GraduationCap,
+    build: Wrench, 'meeting-room': DoorOpen, 'business-center': Briefcase, 'local-shipping': Truck,
+};
 
 const ESTADOS_BR = [
     ['AC', 'Acre'], ['AL', 'Alagoas'], ['AP', 'Amapá'], ['AM', 'Amazonas'], ['BA', 'Bahia'], ['CE', 'Ceará'],
@@ -19,9 +32,10 @@ const ESTADOS_BR = [
     ['RO', 'Rondônia'], ['RR', 'Roraima'], ['SC', 'Santa Catarina'], ['SP', 'São Paulo'], ['SE', 'Sergipe'], ['TO', 'Tocantins'],
 ];
 
-export default function Explorar({ auth, estabelecimentos, itens_aluguel, promocoesDestaque = [], filtros = {} }) {
+export default function Explorar({ auth, estabelecimentos, itens_aluguel, promocoesDestaque = [], filtros = {}, categoriasExplorar = [] }) {
     // 💡 IMPORTANTE: Pegamos o ID do usuário logado para saber de quem são os favoritos
     const user = usePage().props.auth.user;
+    const { t, locale } = useIdioma();
     const userId = user?.id;
 
     const [tipoBusca, setTipoBusca] = useState(filtros.tipo_busca || 'servicos');
@@ -33,6 +47,14 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, promoc
     const [apenasPromocoes, setApenasPromocoes] = useState(!!filtros.apenas_promocoes);
     const [estado, setEstado] = useState(filtros.estado || '');
     const [carregando, setCarregando] = useState(false);
+    // Lista ou mapa (lembra a escolha neste navegador).
+    const [modoVisao, setModoVisao] = useState(() => {
+        try { return localStorage.getItem('explorar_visao') === 'mapa' ? 'mapa' : 'lista'; } catch { return 'lista'; }
+    });
+    const trocarVisao = (modo) => {
+        setModoVisao(modo);
+        try { localStorage.setItem('explorar_visao', modo); } catch { /* sem armazenamento */ }
+    };
     const [imageErrors, setImageErrors] = useState({});
     
     // Estado local para otimizar a interface ao favoritar
@@ -47,24 +69,13 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, promoc
     // Mapeamento EXATO com o banco de dados
     // Cada categoria com sua própria cor (a ativa usa esse tom, não sempre o laranja da marca) —
     // mesmas cores usadas nas categorias de serviço do painel do lojista e no app do cliente.
+    // Categorias vindas do backend (mesma lista do app e dos formulários do sócio). Cada uma junta
+    // tipos de serviço, ramos de local e categorias de reserva; as vazias vão para o fim.
     const categorias = [
         { nome: 'todas', label: 'Todos', icon: Layers, cor: '#282828' },
-
-        // --- Categorias de Locações / Aluguéis ---
-        { nome: 'casa', label: 'Imóveis & Espaços', icon: Home, cor: '#0EA5A4' },
-        { nome: 'carro', label: 'Aluguel de Veículos', icon: Car, cor: '#4F46E5' },
-        { nome: 'equipamento', label: 'Equipamentos', icon: Wrench, cor: '#475569' },
-
-        // --- Categorias de Serviços / Estabelecimentos ---
-        { nome: 'Saúde e Bem-Estar', label: 'Saúde & Bem-Estar', icon: HeartPulse, cor: '#2563EB' },
-        { nome: 'Beleza e Estética', label: 'Beleza', icon: Scissors, cor: '#E8467C' },
-        { nome: 'Turismo e Viagens', label: 'Turismo', icon: Plane, cor: '#0284C7' },
-        { nome: 'Tecnologia', label: 'Tecnologia', icon: Laptop, cor: '#0369A1' },
-        { nome: 'Educação e Cursos', label: 'Educação', icon: GraduationCap, cor: '#1D4ED8' },
-        { nome: 'Eventos e Entretenimento', label: 'Eventos', icon: PartyPopper, cor: '#9333EA' },
-        { nome: 'Pets e Animais', label: 'Pets', icon: Dog, cor: '#D97706' },
-        { nome: 'Serviços Profissionais', label: 'Profissionais', icon: Briefcase, cor: '#475569' },
-        { nome: 'Automotivo', label: 'Oficinas', icon: Car, cor: '#4F46E5' },
+        ...[...categoriasExplorar]
+            .sort((a, b) => (b.total > 0) - (a.total > 0))
+            .map((c) => ({ nome: c.slug, label: c.nome, icon: ICONES_CATEGORIA[c.icone] || Sparkles, cor: c.cor, total: c.total })),
     ];
 
     // 👇 ESTA FUNÇÃO É A MÁGICA QUE VERIFICA SE JÁ VEIO FAVORITADO DO BANCO 👇
@@ -233,7 +244,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, promoc
 
     return (
         <AuthenticatedLayout user={auth.user}>
-            <Head title="Explorar" />
+            <Head title={t('Explorar')} />
 
             <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 relative">
                 
@@ -294,7 +305,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, promoc
                             <Search className="w-5 h-5 text-zinc-400" />
                             <input
                                 type="text"
-                                placeholder="O que você está procurando?"
+                                placeholder={t('O que você está procurando?')}
                                 className="flex-1 bg-transparent border-0 ring-0 focus:ring-0 outline-none text-sm placeholder-zinc-500"
                                 value={busca}
                                 onChange={(e) => setBusca(e.target.value)}
@@ -305,7 +316,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, promoc
                             <MapPin className="w-5 h-5 text-zinc-400" />
                             <input
                                 type="text"
-                                placeholder="Onde?"
+                                placeholder={t('Onde?')}
                                 className="flex-1 bg-transparent border-0 ring-0 focus:ring-0 outline-none text-sm placeholder-zinc-500"
                                 value={enderecoManual}
                                 onChange={(e) => setEnderecoManual(e.target.value)}
@@ -329,7 +340,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, promoc
                             className="bg-[#FF5A00] hover:bg-[#E04F00] transition-colors text-white font-semibold px-10 py-4 md:py-3 rounded-2xl flex items-center justify-center gap-2 text-sm"
                         >
                             <Search className="w-5 h-5" />
-                            Buscar
+                            {t('Buscar')}
                         </motion.button>
                     </motion.form>
                 </div>
@@ -360,7 +371,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, promoc
                                     }`}
                                 >
                                     <Icon className="w-4 h-4" />
-                                    {label}
+                                    {t(label)}
                                 </motion.button>
                             ))}
                         </motion.div>
@@ -374,7 +385,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, promoc
                                     className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-2xl py-2.5 pl-4 pr-10 text-sm font-medium focus:ring-2 focus:ring-[#FF5A00] appearance-none cursor-pointer"
                                     aria-label="Filtrar por estado"
                                 >
-                                    <option value="">Todos os estados</option>
+                                    <option value="">{t('Todos os estados')}</option>
                                     {ESTADOS_BR.map(([uf, nome]) => (
                                         <option key={uf} value={uf}>{nome} ({uf})</option>
                                     ))}
@@ -393,7 +404,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, promoc
                                 }`}
                             >
                                 <Tag className="w-4 h-4" />
-                                Apenas Promoções
+                                {t('Apenas Promoções')}
                             </motion.button>
 
                             <div className="relative">
@@ -405,10 +416,10 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, promoc
                                     }}
                                     className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-2xl py-2.5 pl-4 pr-10 text-sm font-medium focus:ring-2 focus:ring-[#FF5A00] appearance-none cursor-pointer"
                                 >
-                                    <option value="relevancia">Relevância</option>
-                                    <option value="menor_preco">Menor preço</option>
-                                    <option value="maior_preco">Maior preço</option>
-                                    <option value="maior_desconto">Maior desconto</option>
+                                    <option value="relevancia">{t('Relevância')}</option>
+                                    <option value="menor_preco">{t('Menor preço')}</option>
+                                    <option value="maior_preco">{t('Maior preço')}</option>
+                                    <option value="maior_desconto">{t('Maior desconto')}</option>
                                 </select>
                                 <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400 pointer-events-none" />
                             </div>
@@ -441,7 +452,8 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, promoc
                                     }`}
                                 >
                                     <IconComponent className="w-4 h-4" style={{ color: active ? '#fff' : cat.cor }} />
-                                    {cat.label}
+                                    {t(cat.label)}
+                                    {cat.total > 0 && <span className={`text-[11px] font-bold ${active ? 'text-white/80' : 'text-zinc-400'}`}>{cat.total}</span>}
                                 </motion.button>
                             );
                         })}
@@ -452,7 +464,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, promoc
                             <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#FF5A00]/10 text-[#FF5A00] font-bold">
                                 <MapPin className="w-4 h-4" /> {ESTADOS_BR.find(([uf]) => uf === estado)?.[1] || estado}
                             </span>
-                            <button type="button" onClick={() => handleEstadoChange('')} className="text-zinc-500 hover:text-zinc-900 font-semibold underline">Ver todos os estados</button>
+                            <button type="button" onClick={() => handleEstadoChange('')} className="text-zinc-500 hover:text-zinc-900 font-semibold underline">{t('Ver todos os estados')}</button>
                         </div>
                     )}
 
@@ -460,7 +472,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, promoc
                     {promocoesDestaque.length > 0 && (
                         <div className="mb-8">
                             <h3 className="text-sm font-black text-zinc-900 dark:text-white mb-3 flex items-center gap-2">
-                                <Tag className="w-4 h-4 text-[#FF5A00]" /> Promoções em destaque
+                                <Tag className="w-4 h-4 text-[#FF5A00]" /> {t('Promoções em destaque')}
                             </h3>
                             <div className="flex gap-4 overflow-x-auto pb-2 -mx-1 px-1">
                                 {promocoesDestaque.map((promo) => {
@@ -484,7 +496,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, promoc
                                                 <p className="font-black text-sm text-zinc-900 dark:text-white truncate">{promo.nome}</p>
                                                 <p className="text-xs text-zinc-500 truncate">{promo.vinculo.nome}</p>
                                                 <div className="flex items-center gap-1.5 mt-2 text-[#FF5A00] text-xs font-bold group-hover:gap-2.5 transition-all">
-                                                    Ver oferta <ArrowRight className="w-3.5 h-3.5" />
+                                                    {t('Ver oferta')} <ArrowRight className="w-3.5 h-3.5" />
                                                 </div>
                                             </div>
                                         </Link>
@@ -494,7 +506,44 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, promoc
                         </div>
                     )}
 
-                    {/* Resultados com Animação de Stagger */}
+                    {/* Lista ou mapa */}
+                    {!carregando && listaResultados.length > 0 && (
+                        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                            <p className="text-sm text-zinc-500">
+                                {dadosPaginados?.total ?? listaResultados.length} {t((dadosPaginados?.total ?? listaResultados.length) === 1 ? 'resultado' : 'resultados')}
+                            </p>
+                            <div className="inline-flex rounded-2xl bg-zinc-100 p-1 dark:bg-zinc-800" role="tablist" aria-label="Ver resultados como">
+                                {[['lista', 'Lista', List], ['mapa', 'Mapa', MapIcon]].map(([id, rotulo, Icone]) => (
+                                    <button key={id} type="button" role="tab" aria-selected={modoVisao === id} onClick={() => trocarVisao(id)}
+                                        className={`inline-flex min-h-[40px] items-center gap-2 rounded-xl px-4 text-sm font-bold transition ${modoVisao === id ? 'bg-white text-zinc-900 shadow dark:bg-zinc-900 dark:text-white' : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'}`}>
+                                        <Icone className="h-4 w-4" /> {t(rotulo)}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {modoVisao === 'mapa' && !carregando && listaResultados.length > 0 ? (
+                        <MapaExplorar
+                            itens={listaResultados.map((item) => {
+                                const tipoItem = isEstabelecimentos ? 'estabelecimento' : (item.valor_diaria !== undefined ? 'item_aluguel' : 'servico');
+                                const preco = isEstabelecimentos ? item.preco_minimo : (item.preco_final_cliente ?? item.valor_final ?? item.valor_diaria ?? item.valor);
+                                return {
+                                    id: `${tipoItem}-${item.id}`,
+                                    nome: item.nome || item.name,
+                                    subtitulo: isEstabelecimentos ? [item.cidade, item.estado].filter(Boolean).join(' - ') : (item.estabelecimento?.name || item.estabelecimento?.nome || ''),
+                                    preco: preco != null && Number(preco) > 0 ? `${isEstabelecimentos ? t('a partir de ') : ''}${Number(preco).toLocaleString(locale, { style: 'currency', currency: 'BRL' })}` : null,
+                                    foto: isEstabelecimentos ? item.foto_perfil : (item.fotos?.[0] || item.estabelecimento?.foto_perfil),
+                                    latitude: item.latitude,
+                                    longitude: item.longitude,
+                                    link: item.bloqueado ? route('assinatura.status')
+                                        : isEstabelecimentos ? route('estabelecimentos.loja', item.id)
+                                        : tipoItem === 'servico' ? route('cliente.servicos.show', item.id) : route('itens.detalhes', item.id),
+                                };
+                            })}
+                        />
+                    ) : (
+                    /* Resultados com Animação de Stagger */
                     <AnimatePresence mode="wait">
                         {carregando ? (
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -519,9 +568,9 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, promoc
                                         <div className="mx-auto w-20 h-20 bg-zinc-50 dark:bg-zinc-800 rounded-full flex items-center justify-center mb-6">
                                             <ImageOff className="w-10 h-10 text-zinc-300 dark:text-zinc-600" />
                                         </div>
-                                        <h3 className="text-2xl font-semibold mb-2">Nada encontrado</h3>
+                                        <h3 className="text-2xl font-semibold mb-2">{t('Nada encontrado')}</h3>
                                         <p className="text-zinc-500 mb-8 max-w-sm mx-auto">
-                                            Tente ajustar os filtros ou buscar por outros termos na sua região.
+                                            {t('Tente ajustar os filtros ou buscar por outros termos na sua região.')}
                                         </p>
                                         <motion.button
                                             whileHover={{ scale: 1.05 }}
@@ -533,7 +582,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, promoc
                                             }}
                                             className="px-8 py-3.5 bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 rounded-2xl hover:bg-black dark:hover:bg-white transition-colors font-medium shadow-sm"
                                         >
-                                            Limpar Filtros
+                                            {t('Limpar Filtros')}
                                         </motion.button>
                                     </motion.div>
                                 ) : (
@@ -629,15 +678,15 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, promoc
 
                                                         {item.vagas_status && (
                                                             <div className={`absolute top-14 left-4 z-20 text-xs font-bold px-3 py-1.5 rounded-2xl shadow-sm ${item.vagas_status === 'esgotado' ? 'bg-red-600 text-white' : 'bg-amber-400 text-zinc-900'}`}>
-                                                                {item.vagas_status === 'esgotado' ? 'Esgotado hoje' : `Últimas vagas hoje (${item.vagas_restantes})`}
+                                                                {item.vagas_status === 'esgotado' ? t('Esgotado hoje') : t('Últimas vagas hoje ({n})', { n: item.vagas_restantes })}
                                                             </div>
                                                         )}
 
                                                         {item.bloqueado && (
                                                             <div className="absolute inset-0 bg-black/50 flex flex-col items-center justify-center text-white text-center px-4 z-10">
                                                                 <Lock className="w-7 h-7 mb-2" />
-                                                                <span className="text-xs font-black uppercase tracking-wider">Exclusivo Premium</span>
-                                                                <span className="text-[10px] text-white/80 mt-1">Toque para assinar</span>
+                                                                <span className="text-xs font-black uppercase tracking-wider">{t('Exclusivo Premium')}</span>
+                                                                <span className="text-[10px] text-white/80 mt-1">{t('Toque para assinar')}</span>
                                                             </div>
                                                         )}
                                                     </div>
@@ -666,6 +715,8 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, promoc
                                                             </span>
                                                         )}
 
+                                                        {tipoItem === 'servico' && <SelosAtendimento atendimento={item.atendimento} max={2} className="-mt-1 mb-3" />}
+
                                                         <div className="flex items-center gap-1.5 text-sm text-zinc-500 mb-6">
                                                             <MapPin className="w-4 h-4" />
                                                             <span className="line-clamp-1">
@@ -677,7 +728,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, promoc
 
                                                         <div className="flex items-end justify-between pt-4 border-t border-zinc-100 dark:border-zinc-800">
                                                             <div>
-                                                                <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">A partir de</span>
+                                                                <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">{tipoItem === 'servico' && item.atendimento?.sob_orcamento ? 'Sob orçamento · a partir de' : tipoItem === 'servico' && item.atendimento?.preco_sufixo ? item.atendimento.tipo_preco_rotulo : t('A partir de')}</span>
                                                                 <div className="text-2xl font-black text-zinc-900 dark:text-white mt-0.5">
                                                                     <span className="text-sm font-bold mr-1 text-zinc-400">R$</span>
                                                                     {Number(isEstabelecimentos ? item.preco_minimo : item.preco_final_cliente || item.valor_diaria).toFixed(2).replace('.', ',')}
@@ -688,7 +739,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, promoc
                                                                 {tipoItem === 'servico' && (
                                                                     <button
                                                                         onClick={(e) => handleAdicionarCarrinho(e, item)}
-                                                                        title={carrinhoAdicionados[item.id] ? 'Adicionado ao carrinho' : 'Adicionar ao carrinho'}
+                                                                        title={t(carrinhoAdicionados[item.id] ? 'Adicionado ao carrinho' : 'Adicionar ao carrinho')}
                                                                         className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-all shadow-sm ${
                                                                             carrinhoAdicionados[item.id]
                                                                                 ? 'bg-emerald-50 border-emerald-200 text-emerald-600'
@@ -712,6 +763,7 @@ export default function Explorar({ auth, estabelecimentos, itens_aluguel, promoc
                             </motion.div>
                         )}
                     </AnimatePresence>
+                    )}
 
                     {/* Controles de Paginação */}
                     {linksPaginacao.length > 3 && !carregando && (

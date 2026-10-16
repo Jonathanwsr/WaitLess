@@ -742,3 +742,39 @@ Broadcast::routes(['prefix' => 'mobile', 'middleware' => ['auth:sanctum']]);
 
 
 });
+
+// Contrato da reserva para o cliente no app (texto + links temporários de PDF/Word).
+Route::middleware('auth:sanctum')->prefix('mobile')->group(function () {
+    Route::get('/contratos/{contrato}', [\App\Http\Controllers\Api\ContratoArquivoController::class, 'mostrar'])->whereNumber('contrato');
+    Route::post('/contratos/{contrato}/aceitar', [\App\Http\Controllers\Api\ContratoArquivoController::class, 'aceitar'])->whereNumber('contrato')->middleware('throttle:10,1');
+});
+
+// Planejamento de Viagem: Guia do Local e Roteiros (app em /api/mobile/... e também em /api/...).
+Route::middleware('auth:sanctum')->group(function () {
+    Route::prefix('mobile')->name('mobile.viagem.')->group(fn () => App\Http\Controllers\Api\RoteiroController::rotas());
+    Route::name('api.viagem.')->group(fn () => App\Http\Controllers\Api\RoteiroController::rotas());
+});
+Route::middleware('throttle:60,1')->group(function () {
+    Route::get('/roteiros/compartilhado/{token}', [App\Http\Controllers\Api\RoteiroController::class, 'compartilhado']);
+    Route::get('/mobile/roteiros/compartilhado/{token}', [App\Http\Controllers\Api\RoteiroController::class, 'compartilhado']);
+});
+
+// Ofertas Exclusivas via Mensagem (app do sócio): ?estabelecimento_id=
+Route::middleware('auth:sanctum')->prefix('mobile/proprietario')->group(function () {
+    Route::get('/ofertas-favoritos', [App\Http\Controllers\Api\OfertaFavoritosController::class, 'painel']);
+    Route::post('/ofertas-favoritos', [App\Http\Controllers\Api\OfertaFavoritosController::class, 'enviar'])->middleware('throttle:10,1');
+});
+
+// Catálogo de categorias (serviços, ramos de local, reservas e grupos do Explorar) — público.
+Route::get('/categorias', fn () => response()->json(\App\Support\Categorias::catalogo() + ['explorar_totais' => \App\Support\Categorias::explorarComTotais()]));
+Route::get('/mobile/categorias', fn () => response()->json(\App\Support\Categorias::catalogo() + ['explorar_totais' => \App\Support\Categorias::explorarComTotais()]));
+
+// Adicionais (produtos) para um serviço ou reserva — app do cliente.
+Route::middleware('throttle:60,1')->group(function () {
+    Route::get('/produtos/adicionais', [App\Http\Controllers\Api\ProdutoController::class, 'adicionais']);
+    Route::get('/mobile/produtos/adicionais', [App\Http\Controllers\Api\ProdutoController::class, 'adicionais'])->middleware('auth:sanctum');
+    Route::get('/mobile/produtos/adicionais-vendidos', [App\Http\Controllers\Api\ProdutoController::class, 'adicionaisVendidos'])->middleware('auth:sanctum');
+});
+
+// Pagamento da assinatura no app (mesmos métodos do site).
+Route::middleware('auth:sanctum')->prefix('mobile/assinatura')->name('mobile.assinatura.pagamento.')->group(fn () => App\Http\Controllers\Api\AssinaturaPagamentoController::rotas());

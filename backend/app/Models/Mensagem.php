@@ -19,4 +19,15 @@ class Mensagem extends Model
     {
         return $this->belongsTo(Conversa::class);
     }
+
+    /** Ofertas exclusivas enviadas a quem favoritou o local. */
+    public function cupom()
+    {
+        return $this->belongsTo(Cupom::class);
+    }
+
+    public function oferta()
+    {
+        return $this->belongsTo(OfertaFavoritos::class, 'oferta_id');
+    }
 }

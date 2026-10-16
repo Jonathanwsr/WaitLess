@@ -54,4 +54,16 @@ return [
         'url_endpoint' => env('IMAGEKIT_URL_ENDPOINT'),
     ],
 
+    // Endereço → coordenadas (Guia do Local, roteiros e busca por proximidade).
+    'mapbox' => [
+        'token' => env('MAPBOX_ACCESS_TOKEN'),
+        'geocodificar' => env('MAPBOX_GEOCODIFICAR', true),
+    ],
+
+    // APIs públicas da Wikimedia (Guia do Local): identificação exigida pela política de uso.
+    'wikimedia' => [
+        'user_agent' => env('WIKIMEDIA_USER_AGENT', 'LOKYVA/1.0 (TCC UNIFACOL; jonathan.rocha@unifacol.edu.br)'),
+        'timeout' => (int) env('WIKIMEDIA_TIMEOUT', 5),
+    ],
+
 ];

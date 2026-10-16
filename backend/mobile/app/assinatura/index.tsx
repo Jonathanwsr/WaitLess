@@ -23,6 +23,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { Plano, PLANOS_SOCIO, PLANOS_CLIENTE } from '../../constants/planos';
 import { alertar } from '../../services/alertar';
 import * as Clipboard from 'expo-clipboard';
+import PagamentoAssinatura from '../../components/client/PagamentoAssinatura';
 
 const COLORS = {
   primary: '#FF7A00',
@@ -61,6 +62,7 @@ interface StatusAssinatura {
   premium?: boolean;
   dados_usuario: {
     pontos_saldo: number;
+    cpf_cnpj?: string | null;
     asaas_subscription_id: string | null;
     asaas_subscription_status: string | null;
     plano_assinatura: string;
@@ -403,6 +405,9 @@ export default function AssinaturaScreen() {
             </TouchableOpacity>
           )}
         </View>
+
+        {/* PAGAMENTO: forma padrão e faturas reais do Asaas */}
+        {(hasSubscription || !!status?.detalhes_fatura) && <PagamentoAssinatura cpfInicial={status?.dados_usuario?.cpf_cnpj || ''} />}
 
         {/* OFERTA DE PLANOS */}
         {(!hasSubscription || mostrarPlanos) && (

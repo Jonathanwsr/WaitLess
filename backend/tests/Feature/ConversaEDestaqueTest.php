@@ -97,7 +97,7 @@ class ConversaEDestaqueTest extends TestCase
     {
         [, $estab] = $this->local();
         [, $outroLocal] = $this->local();
-        $funcionarioAlheio = Funcionario::create(['estabelecimento_id' => $outroLocal->id, 'nome' => 'Fulano', 'ativo' => true]);
+        $funcionarioAlheio = Funcionario::create(['estabelecimento_id' => $outroLocal->id, 'nome' => 'FULANO', 'ativo' => true]);
         $cliente = $this->usuario();
 
         Sanctum::actingAs($cliente);
@@ -155,7 +155,7 @@ class ConversaEDestaqueTest extends TestCase
     {
         $dono = $this->usuario('socio');
         ItemAluguel::create([
-            'estabelecimento_id' => $dono->id, 'nome' => 'Quadra', 'categoria' => 'quadra',
+            'estabelecimento_id' => $dono->id, 'nome' => 'QUADRA', 'categoria' => 'quadra',
             'periodo_faturamento_padrao' => 'diaria', 'valor_diaria' => 80, 'quantidade' => 1,
             'ativo' => true, 'disponivel' => true, 'sempre_disponivel' => true, 'aceita_pontos' => true,
         ]);
@@ -184,9 +184,9 @@ class ConversaEDestaqueTest extends TestCase
 
         $nomes = collect($this->actingAs($this->usuario())->getJson('/entregas/catalogo?busca=produto&estado=SP')->json('data'))
             ->pluck('nome')
-            ->filter(fn ($n) => str_starts_with($n, 'Produto destaque') || str_starts_with($n, 'Produto comum'))
+            ->filter(fn ($n) => str_starts_with($n, 'PRODUTO DESTAQUE') || str_starts_with($n, 'PRODUTO COMUM'))
             ->values();
 
-        $this->assertStringStartsWith('Produto destaque', $nomes[0]);
+        $this->assertStringStartsWith('PRODUTO DESTAQUE', $nomes[0]);
     }
 }

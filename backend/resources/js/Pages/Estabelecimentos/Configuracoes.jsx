@@ -1,4 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import CamposAtendimento, { camposAtendimentoVazios, camposAtendimentoDe, camposAtendimentoParaEnvio } from '@/Components/Servicos/CamposAtendimento';
 import InputError from '@/Components/InputError';
 import InputLabel from '@/Components/InputLabel';
 import PrimaryButton from '@/Components/PrimaryButton';
@@ -47,7 +48,7 @@ function carregarRascunhoItem() {
     }
 }
 
-export default function Configuracoes({ auth, estabelecimento, meusEstabelecimentos, funcionarios, servicos, itensAluguel = [], itens_aluguel = [], produtos = [], categoriasServicos = [], horariosFuncionamento = [] }) {
+export default function Configuracoes({ auth, estabelecimento, meusEstabelecimentos, funcionarios, servicos, itensAluguel = [], itens_aluguel = [], produtos = [], categoriasServicos = [], horariosFuncionamento = [], ramosAtuacao: ramosAgrupados = {}, categoriasReserva = {} }) {
     // ==========================================
     // 1. RECUPERA A ABA ATIVA DO LOCALSTORAGE
     // ==========================================
@@ -116,14 +117,9 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'
     ];
 
-    const ramosAtuacao = [
-        'Academia e Crossfit', 'Açougue e Casa de Carnes', 'Advocacia e Escritórios', 'Agência de Turismo', 'Aluguel de Equipamentos',
-        'Aluguel de Imóveis', 'Aluguel de Roupas e Fantasias', 'Aluguel de Veículos', 'Artesanato e Costura', 'Assistência Técnica',
-        'Auto Escola', 'Bar e Pub', 'Barbearia', 'Cafeteria e Casa de Chá', 'Centro Automotivo', 'Clínica de Estética',
-        'Clínica Médica', 'Clínica Odontológica', 'Clínica Veterinária', 'Coworking', 'E-commerce e Loja Virtual',
-        'Espaço de Eventos', 'Estúdio de Fotografia', 'Farmácia e Drogaria', 'Hospedagem e Hotelaria',
-        'Imobiliária', 'Logística e Fretes', 'Oficina Mecânica', 'Pet Shop', 'Restaurante', 'Salão de Beleza', 'Outros'
-    ].sort();
+    // Ramos e categorias de reserva vêm da lista oficial do backend (config/categorias.php).
+    // O ramo já gravado continua aparecendo mesmo que tenha um nome antigo.
+    const ramosAtuacao = Object.values(ramosAgrupados).flat();
 
     // ==========================================
     // 3. BUSCA DE ENDEREÇO E COORDENADAS
@@ -402,6 +398,8 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
         aceita_pontos: false,
         maximo_pontos_permitidos: '',
         produtos_vinculados: [],
+        // Onde atende, 24h, raio, taxa de deslocamento, tipo de preço, o que inclui...
+        ...camposAtendimentoVazios,
     });
 
     useEffect(() => {
@@ -483,6 +481,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
             valor: data.gratuito ? 0 : data.valor,
             tem_promocao: data.gratuito ? false : data.tem_promocao,
             horario_a_combinar: data.horario_a_combinar ? 1 : 0,
+            ...camposAtendimentoParaEnvio(data),
             fotos_existentes: quadradosFotos.filter(f => typeof f === 'string' && f !== null),
             fotos: quadradosFotos.filter(f => f instanceof File),
             _method: isEditingServico ? 'put' : 'post'
@@ -543,6 +542,7 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
             aceita_pontos: servico.aceita_pontos === 1 || servico.aceita_pontos === true,
             maximo_pontos_permitidos: servico.maximo_pontos_permitidos ?? '',
             produtos_vinculados: produtos.filter(p => p.servico_id === servico.id).map(p => p.id),
+            ...camposAtendimentoDe(servico),
         });
 
         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1196,7 +1196,14 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                     onChange={e => formDetalhes.setData('ramo_atuacao', e.target.value)}
                                                 >
                                                     <option value="">Selecione a categoria...</option>
-                                                    {ramosAtuacao.map(ramo => <option key={ramo} value={ramo}>{ramo}</option>)}
+                                                    {formDetalhes.data.ramo_atuacao && !ramosAtuacao.includes(formDetalhes.data.ramo_atuacao) && (
+                                                        <option value={formDetalhes.data.ramo_atuacao}>{formDetalhes.data.ramo_atuacao}</option>
+                                                    )}
+                                                    {Object.entries(ramosAgrupados).map(([grupo, ramos]) => (
+                                                        <optgroup key={grupo} label={grupo}>
+                                                            {ramos.map(ramo => <option key={ramo} value={ramo}>{ramo}</option>)}
+                                                        </optgroup>
+                                                    ))}
                                                 </select>
                                                 <InputError message={formDetalhes.errors.ramo_atuacao} />
                                             </div>
@@ -1492,13 +1499,16 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                     <InputLabel value="Categoria do Serviço *" />
                                                     <select className="mt-1 w-full border-gray-300 rounded-lg shadow-sm focus:border-[#FF5A00]" value={formServico.data.tipo_servico ?? ''} onChange={e => formServico.setData('tipo_servico', e.target.value)} required>
                                                         <option value="">Selecione...</option>
-                                                        {categoriasServicos.map((c) => (
-                                                            <option key={c.valor} value={c.valor}>{c.valor}</option>
+                                                        {/* Agrupadas (Veículos e socorro, Casa e reparos, Saúde...) para achar rápido. */}
+                                                        {Object.entries(categoriasServicos.reduce((g, c) => { (g[c.grupo || 'Outros'] ||= []).push(c); return g; }, {})).map(([grupo, lista]) => (
+                                                            <optgroup key={grupo} label={grupo}>
+                                                                {lista.map((c) => <option key={c.valor} value={c.valor}>{c.valor}</option>)}
+                                                            </optgroup>
                                                         ))}
                                                     </select>
                                                     <p className="text-xs text-gray-400 mt-1">É essa categoria que aparece nos filtros do Explorar para o cliente.</p>
                                                 </div>
-                                                <div><InputLabel value="Nome do Serviço *" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formServico.data.nome ?? ''} onChange={e => formServico.setData('nome', e.target.value)} required /></div>
+                                                <div><InputLabel value="Nome do Serviço *" /><TextInput className="w-full mt-1 focus:border-[#FF5A00]" value={formServico.data.nome ?? ''} onChange={e => formServico.setData('nome', e.target.value.toUpperCase())} required /></div>
                                                 <div>
                                                     <InputLabel value={formServico.data.gratuito ? 'Valor (R$)' : 'Valor (R$) *'} />
                                                     <TextInput
@@ -1534,6 +1544,8 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                         {funcionarios.map(f => <option key={f.id} value={f.id}>{f.nome}</option>)}
                                                     </select>
                                                 </div>
+
+                                                <CamposAtendimento dados={formServico.data} setData={formServico.setData} errors={formServico.errors} />
 
                                                 <div className="md:col-span-2 border-t border-gray-100 pt-6">
                                                     <InputLabel value="Fotos de Demonstração do Serviço" />
@@ -1801,25 +1813,17 @@ export default function Configuracoes({ auth, estabelecimento, meusEstabelecimen
                                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
                                                     <div>
                                                         <InputLabel value="Nome do Item *" />
-                                                        <TextInput maxLength={100} className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.nome ?? ''} onChange={e => formItem.setData('nome', e.target.value)} required />
+                                                        <TextInput maxLength={100} className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.nome ?? ''} onChange={e => formItem.setData('nome', e.target.value.toUpperCase())} required />
                                                     </div>
                                                     <div>
                                                         <InputLabel value="Categoria *" />
                                                         <select className="mt-1 w-full py-3 border-gray-300 rounded-xl text-sm focus:border-[#FF5A00]" value={formItem.data.categoria ?? ''} onChange={e => formItem.setData('categoria', e.target.value)} required>
-                                                            <option value="casa">Casa / Espaço</option>
-                                                            <option value="carro">Carro / Frota</option>
-                                                            <option value="casa">Restaurante / Mesa</option>
-                                                            <option value="barco">Barco / Passeio Náutico</option>
-<option value="bicicleta">Bicicleta / Equipamento Esportivo</option>
-<option value="moto">Moto / Motocicleta</option>
-<option value="motorhome">Motorhome / Trailer</option>
-<option value="coworking">Coworking / Estação de Trabalho</option>
-<option value="sala_reuniao">Sala de Reunião</option>
-<option value="pesque_pague">Pesque-Pague / Área de Pesca</option>
-<option value="parque">Parque / Área Recreativa</option>
-<option value="area_camping">Camping / Área para Acampamento</option>
-<option value="turismo">Atrativo Turístico / Visitação</option>
-                                                            <option value="equipamento">Equipamento / Máquina</option>
+                                                            <option value="">Selecione...</option>
+                                                            {Object.entries(categoriasReserva).map(([grupo, opcoes]) => (
+                                                                <optgroup key={grupo} label={grupo}>
+                                                                    {Object.entries(opcoes).map(([valor, rotulo]) => <option key={valor} value={valor}>{rotulo}</option>)}
+                                                                </optgroup>
+                                                            ))}
                                                         </select>
                                                     </div>
                                                     <div><InputLabel value="Quantidade Estoque *" /><TextInput type="number" className="mt-1 w-full focus:border-[#FF5A00]" value={formItem.data.quantidade ?? ''} onChange={e => formItem.setData('quantidade', e.target.value)} required /></div>

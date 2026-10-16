@@ -59,12 +59,12 @@ class ProdutoController extends Controller
                 ], 403);
             }
 
-            $dados = $request->except('fotos');
+            $dados = $request->except(['fotos', 'vinculo_modo', 'agendamento_id']);
             $dados['usuario_id'] = Auth::id();
             $dados['estabelecimento_id'] = $request->estabelecimento_id;
-            $dados['servico_id']     = $request->input('servico_id');
-            $dados['agendamento_id'] = $request->input('agendamento_id');
-            $dados['aluguel_id']     = $request->input('aluguel_id');
+            // "Onde este produto aparece": só na loja, em todo o local, em um serviço ou em uma reserva.
+            $dados = array_merge($dados, app(\App\Services\ProdutosAdicionaisService::class)
+                ->normalizarVinculo($request->all(), (int) $request->estabelecimento_id, Auth::user()));
 
             $caminhosFotos = [];
 
@@ -147,7 +147,14 @@ class ProdutoController extends Controller
             }
 
             // Fotos tratadas à parte: arquivos e listas não vão direto para o campo `fotos`.
-            $dados = $request->except(['fotos', 'fotos_existentes', 'fotos_mantidas', '_method']);
+            $dados = $request->except(['fotos', 'fotos_existentes', 'fotos_mantidas', '_method', 'vinculo_modo', 'agendamento_id']);
+            if ($request->hasAny(['vinculo_modo', 'atrelado_reservas', 'servico_id', 'aluguel_id'])) {
+                $dados = array_merge($dados, app(\App\Services\ProdutosAdicionaisService::class)->normalizarVinculo(
+                    $request->all() + ['atrelado_reservas' => $produto->atrelado_reservas],
+                    (int) ($request->input('estabelecimento_id') ?: $produto->estabelecimento_id),
+                    Auth::user()
+                ));
+            }
 
             $fotos = $this->fotosDaEdicao($request, $produto);
             if ($fotos instanceof \Illuminate\Http\JsonResponse) {
@@ -177,6 +184,8 @@ class ProdutoController extends Controller
             $produto->update($dados);
             return response()->json($produto);
 
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json(['error' => $e->validator->errors()->first()], 422);
         } catch (\Exception $e) {
             return response()->json(['error' => 'Não conseguimos atualizar este produto agora.'], 400);
         }
@@ -237,10 +246,8 @@ class ProdutoController extends Controller
             ->orderBy('nome')
             ->get(['id', 'nome', 'estabelecimento_id']);
 
-        $listaReservas = \App\Models\ItemAluguel::catalogo()
-            ->where('estabelecimento_id', $usuarioId)
-            ->orderBy('nome')
-            ->get(['id', 'nome', 'categoria']);
+        // Reservas de qualquer tipo: as dos locais do sócio e as avulsas dele.
+        $listaReservas = app(\App\Services\ProdutosAdicionaisService::class)->reservasDoSocio(Auth::user());
 
         // Tela única de produtos: aba "Com serviço ou reserva" (estes produtos) e aba "Entrega e retirada"
         // (produtos_entrega), que só sócio/proprietário/admin podem gerenciar.
@@ -271,9 +278,9 @@ class ProdutoController extends Controller
         $estabelecimentosIds = DB::table('estabelecimento_usuario')->where('usuario_id', $usuarioId)->pluck('estabelecimento_id');
 
         $servicos = \App\Models\Servico::whereIn('estabelecimento_id', $estabelecimentosIds)->where('ativo', true)->orderBy('nome')->get(['id', 'nome', 'estabelecimento_id']);
-        $reservas = \App\Models\ItemAluguel::catalogo()->where('estabelecimento_id', $usuarioId)->orderBy('nome')->get(['id', 'nome', 'categoria']);
+        $reservas = app(\App\Services\ProdutosAdicionaisService::class)->reservasDoSocio(Auth::user());
         $nomeServico = $servicos->pluck('nome', 'id');
-        $nomeReserva = $reservas->pluck('nome', 'id');
+        $nomeReserva = collect($reservas)->pluck('nome', 'id');
 
         $produtos = Produto::whereIn('estabelecimento_id', $estabelecimentosIds)
             ->orWhere('usuario_id', $usuarioId)
@@ -282,6 +289,7 @@ class ProdutoController extends Controller
             ->map(function (Produto $p) use ($nomeServico, $nomeReserva) {
                 $p->setAttribute('servico_nome', $p->servico_id ? ($nomeServico[$p->servico_id] ?? null) : null);
                 $p->setAttribute('reserva_nome', $p->aluguel_id ? ($nomeReserva[$p->aluguel_id] ?? null) : null);
+                $p->setAttribute('vinculo_modo', \App\Services\ProdutosAdicionaisService::modoDe($p));
 
                 return $p;
             });
@@ -292,6 +300,28 @@ class ProdutoController extends Controller
             'servicos' => $servicos,
             'reservas' => $reservas,
         ]);
+    }
+
+    /**
+     * Adicionais que o cliente pode escolher para um serviço (?servico_id=) ou uma reserva (?item_aluguel_id=).
+     */
+    public function adicionais(Request $request)
+    {
+        $dados = $request->validate([
+            'servico_id' => 'nullable|integer|required_without:item_aluguel_id',
+            'item_aluguel_id' => 'nullable|integer|required_without:servico_id',
+        ]);
+
+        return response()->json(['produtos' => app(\App\Services\ProdutosAdicionaisService::class)
+            ->disponiveis($dados['servico_id'] ?? null, $dados['item_aluguel_id'] ?? null, $request->user())->values()]);
+    }
+
+    /** Relatório do sócio: adicionais vendidos junto com serviços e reservas (web e app). */
+    public function adicionaisVendidos(Request $request)
+    {
+        $dados = $request->validate(['dias' => 'nullable|integer|in:7,30,90']);
+
+        return response()->json(app(\App\Services\ResultadosSocioService::class)->adicionaisVendidos($request->user(), (int) ($dados['dias'] ?? 30)));
     }
 
     /**

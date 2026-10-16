@@ -138,6 +138,9 @@ class ClienteAgendamentoMobileController extends Controller
             'cartao.mes'       => 'required_with:cartao|integer|between:1,12',
             'cartao.ano'       => 'required_with:cartao|integer|min:26|max:2099',
             'cartao.cvv'       => 'required_with:cartao|digits_between:3,4',
+            // Produtos adicionais: [{id, quantidade}] ou "3,5".
+            'extras'           => 'nullable|array|max:30',
+            'extras_ids'       => 'nullable|string|max:500',
         ]);
 
         $estabelecimento = Estabelecimento::findOrFail($estabelecimentoId);
@@ -157,6 +160,9 @@ class ClienteAgendamentoMobileController extends Controller
         }
         if (!empty($configServico['horario_a_combinar'])) {
             return response()->json(['error' => 'Este serviço é com horário a combinar: fale com o proprietário pelo chat ou telefone para marcar.', 'horario_a_combinar' => true], 422);
+        }
+        if (\App\Support\CamposServico::exigeEndereco($servico) && mb_strlen(trim((string) $request->input('endereco_atendimento'))) < 8) {
+            return response()->json(['error' => 'Informe onde você está (rua, número, bairro e cidade) — este serviço vai até você.', 'campo' => 'endereco_atendimento'], 422);
         }
 
         // 🚫 VAGAS: até `servicos.vagas_por_horario` clientes no mesmo dia+horário (ver VagasServicoService).
@@ -252,6 +258,17 @@ class ClienteAgendamentoMobileController extends Controller
             // Serviço gratuito (ou que zerou com cupom/pontos/desconto): não existe o
             // que cobrar, então não faz sentido gerar PIX/boleto/cartão — a reserva
             // já nasce confirmada, sem passar pelo gateway de pagamento.
+            // Adicionais escolhidos (só os oferecidos para este serviço, com estoque), somados ao total.
+            $adicionaisService = app(\App\Services\ProdutosAdicionaisService::class);
+            $adicionais = $adicionaisService->orcar(
+                \App\Services\ProdutosAdicionaisService::normalizarPedido($request->input('extras', $validated['extras_ids'] ?? null)),
+                (int) $servico->id, null, Auth::user()
+            );
+            $valorTotal = round($valorTotal + $adicionais['total'], 2);
+            // Serviço que vai até o cliente (guincho, borracharia móvel, a domicílio): taxa de deslocamento.
+            $enderecoAtendimento = trim((string) $request->input('endereco_atendimento')) ?: null;
+            $taxaDeslocamento = \App\Support\CamposServico::taxaDoAgendamento($servico, $enderecoAtendimento);
+            $valorTotal = round($valorTotal + $taxaDeslocamento, 2);
             $ehGratuito = $valorTotal <= 0;
 
             $valorTaxaApp = ($isPresencial || $ehGratuito) ? 0 : round($valorTotal * \App\Support\Taxas::fracao(), 2);
@@ -269,12 +286,16 @@ class ClienteAgendamentoMobileController extends Controller
                 'status'             => $ehGratuito ? 'confirmado' : ($isPresencial ? 'pendente' : 'aguardando_pagamento'),
                 'status_pagamento'   => $ehGratuito ? 'pago' : ($isPresencial ? 'presencial' : 'pendente'),
                 'valor_final'        => $valorTotal,
+                'endereco_atendimento' => \App\Support\CamposServico::vaiAteOCliente($servico) ? $enderecoAtendimento : null,
+                'taxa_deslocamento'  => $taxaDeslocamento ?: null,
                 'pontos_utilizados'  => $pontosAplicados,
                 'valor_desconto_pontos' => $pontosAplicados > 0 ? $valorDescontoPontos : null,
                 'cupom_id'           => $cupomAplicado?->id,
                 'valor_desconto_cupom' => $cupomAplicado ? $valorDescontoCupom : null,
                 'codigo_verificacao' => $codigoPin,
             ]);
+
+            $adicionaisService->registrar($adicionais, $agendamento, Auth::user());
 
             if ($pontosAplicados > 0) {
                 $user->decrement('pontos_saldo', $pontosAplicados);
@@ -391,6 +412,9 @@ class ClienteAgendamentoMobileController extends Controller
         } catch (CobrancaRecusadaException $e) {
             DB::rollBack();
             return response()->json(['error' => $e->getMessage(), 'cobranca_recusada' => true], 422);
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json(['error' => collect($e->errors())->flatten()->first(), 'errors' => $e->errors()], 422);
         } catch (CarteiraAsaasNaoConfiguradaException $e) {
             DB::rollBack();
             return response()->json(['error' => 'Este estabelecimento ainda não recebe pagamentos online. Escolha pagar no local.'], 422);
@@ -440,6 +464,8 @@ class ClienteAgendamentoMobileController extends Controller
             'pontos_utilizados'    => 'nullable|integer|min:0',
             'cupom_codigo'         => 'nullable|string|max:60',
             'viagem_id'            => 'nullable|integer|exists:viagens,id',
+            'extras'               => 'nullable|array|max:30',
+            'extras_ids'           => 'nullable|string|max:500',
         ]);
 
         $item = DB::table('itens_aluguel')->where('id', $itemId)->where('ativo', true)->first();
@@ -556,6 +582,14 @@ class ClienteAgendamentoMobileController extends Controller
             $taxaServico = round($valorBrutoComDesconto * \App\Support\Taxas::fracao(), 2);
             $valorTotalFinal = $valorBrutoComDesconto + $valorCaucao + $taxaServico;
 
+            // Adicionais escolhidos para esta reserva, somados ao total.
+            $adicionaisService = app(\App\Services\ProdutosAdicionaisService::class);
+            $adicionais = $adicionaisService->orcar(
+                \App\Services\ProdutosAdicionaisService::normalizarPedido($request->input('extras', $validated['extras_ids'] ?? null)),
+                null, (int) $item->id, Auth::user()
+            );
+            $valorTotalFinal = round($valorTotalFinal + $adicionais['total'], 2);
+
             if ($pontosAplicados > 0) {
                 $user->decrement('pontos_saldo', $pontosAplicados);
             }
@@ -607,6 +641,8 @@ class ClienteAgendamentoMobileController extends Controller
                 'cidade_entrega'       => $validated['cidade_entrega'] ?? null,
                 'estado_entrega'       => $validated['estado_entrega'] ?? null,
             ]);
+
+            $adicionaisService->registrar($adicionais, \App\Models\Aluguel::findOrFail($aluguelId), Auth::user());
 
             if ($pontosAplicados > 0) {
                 DB::table('historico_pontos')->insert([
@@ -682,6 +718,9 @@ class ClienteAgendamentoMobileController extends Controller
         } catch (CobrancaRecusadaException $e) {
             DB::rollBack();
             return response()->json(['error' => $e->getMessage(), 'cobranca_recusada' => true], 422);
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json(['error' => collect($e->errors())->flatten()->first(), 'errors' => $e->errors()], 422);
         } catch (CarteiraAsaasNaoConfiguradaException $e) {
             DB::rollBack();
             return response()->json(['error' => 'Este anfitrião ainda não recebe pagamentos online. Escolha pagar no local.'], 422);

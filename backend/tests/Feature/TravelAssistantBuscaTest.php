@@ -32,16 +32,16 @@ class TravelAssistantBuscaTest extends TestCase
         $socioProximo = $this->criarSocio('Socio Proximo');
         $socioLonge = $this->criarSocio('Socio Longe');
 
-        ItemAluguel::create(['estabelecimento_id' => $socioProximo->id, 'nome' => 'Item perto', 'categoria' => 'equipamento', 'valor_diaria' => 50, 'ativo' => true, 'disponivel' => true, 'latitude' => -7.75, 'longitude' => -35.60, 'cidade' => 'Campina Grande']);
-        ItemAluguel::create(['estabelecimento_id' => $socioLonge->id, 'nome' => 'Item longe', 'categoria' => 'equipamento', 'valor_diaria' => 50, 'ativo' => true, 'disponivel' => true, 'latitude' => -22.90, 'longitude' => -43.20, 'cidade' => 'Rio de Janeiro']);
+        ItemAluguel::create(['estabelecimento_id' => $socioProximo->id, 'nome' => 'ITEM PERTO', 'categoria' => 'equipamento', 'valor_diaria' => 50, 'ativo' => true, 'disponivel' => true, 'latitude' => -7.75, 'longitude' => -35.60, 'cidade' => 'Campina Grande']);
+        ItemAluguel::create(['estabelecimento_id' => $socioLonge->id, 'nome' => 'ITEM LONGE', 'categoria' => 'equipamento', 'valor_diaria' => 50, 'ativo' => true, 'disponivel' => true, 'latitude' => -22.90, 'longitude' => -43.20, 'cidade' => 'Rio de Janeiro']);
 
         $response = $this->actingAs($cliente)->get('/api/travel-assistant/search?latitude=-7.749271714498118&longitude=-35.60678145818741&raio_km=20');
 
         $response->assertOk();
         $response->assertInertia(function ($page) {
             $nomes = collect($page->toArray()['props']['recomendacoes_locais'] ?? [])->pluck('nome');
-            $this->assertTrue($nomes->contains('Item perto'));
-            $this->assertFalse($nomes->contains('Item longe'));
+            $this->assertTrue($nomes->contains('ITEM PERTO'));
+            $this->assertFalse($nomes->contains('ITEM LONGE'));
         });
     }
 
@@ -51,7 +51,7 @@ class TravelAssistantBuscaTest extends TestCase
         $token = $viajante->createToken('teste')->plainTextToken;
 
         $socio = $this->criarSocio('Socio Mobile');
-        ItemAluguel::create(['estabelecimento_id' => $socio->id, 'nome' => 'Item perto mobile', 'categoria' => 'equipamento', 'valor_diaria' => 50, 'ativo' => true, 'disponivel' => true, 'latitude' => -7.75, 'longitude' => -35.60, 'cidade' => 'Campina Grande']);
+        ItemAluguel::create(['estabelecimento_id' => $socio->id, 'nome' => 'ITEM PERTO MOBILE', 'categoria' => 'equipamento', 'valor_diaria' => 50, 'ativo' => true, 'disponivel' => true, 'latitude' => -7.75, 'longitude' => -35.60, 'cidade' => 'Campina Grande']);
 
         $response = $this->withHeader('Authorization', "Bearer {$token}")
             ->get('/api/mobile/travel-assistant/search?latitude=-7.749271714498118&longitude=-35.60678145818741&raio_km=20');

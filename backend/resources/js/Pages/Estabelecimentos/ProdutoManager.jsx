@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Head } from '@inertiajs/react';
 import axios from 'axios';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import VinculoProduto, { modoInicial } from '@/Components/Produtos/VinculoProduto';
+import AdicionaisVendidos from '@/Components/Produtos/AdicionaisVendidos';
 import {
   ShoppingBagIcon,
   PlusIcon,
@@ -101,6 +103,7 @@ export default function ProdutoManager({ auth, estabelecimentoId, estabeleciment
     somente_premium: false,
     servico_id: '',
     aluguel_id: '',
+    vinculo_modo: 'loja',
     fotos_existentes: []
   });
 
@@ -139,7 +142,8 @@ export default function ProdutoManager({ auth, estabelecimentoId, estabeleciment
     const { name, value, type, checked } = e.target;
     setFormData(prev => ({
       ...prev,
-      [name]: type === 'checkbox' ? checked : value
+      // Nome do produto sempre em MAIÚSCULAS (o servidor também converte).
+      [name]: type === 'checkbox' ? checked : (name === 'nome' ? value.toUpperCase() : value)
     }));
   };
 
@@ -227,6 +231,7 @@ export default function ProdutoManager({ auth, estabelecimentoId, estabeleciment
       somente_premium: produto.somente_premium == 1 || produto.somente_premium === true,
       servico_id: produto.servico_id || '',
       aluguel_id: produto.aluguel_id || '',
+      vinculo_modo: modoInicial(produto),
       fotos_existentes: parsedFotos
     });
 
@@ -240,7 +245,7 @@ export default function ProdutoManager({ auth, estabelecimentoId, estabeleciment
     setFormData({
       id: null, nome: '', descricao: '', cor: '', tamanho: '', categoria: '', sub_categoria: '',
       valor_normal: '', valor_promocional: '', estoque_disponivel: 0,
-      estabelecimento_id: defaultEstabelecimentoId, promocao: false, atrelado_reservas: false, somente_premium: false, servico_id: '', aluguel_id: '', fotos_existentes: []
+      estabelecimento_id: defaultEstabelecimentoId, promocao: false, atrelado_reservas: false, somente_premium: false, servico_id: '', aluguel_id: '', vinculo_modo: 'loja', fotos_existentes: []
     });
   };
 
@@ -682,19 +687,18 @@ export default function ProdutoManager({ auth, estabelecimentoId, estabeleciment
 
                 {/* VÍNCULOS E REGRAS */}
                 <div className="flex flex-col gap-8 bg-gray-50 p-6 md:p-8 rounded-3xl border border-gray-200">
-                  <h4 className="font-bold text-gray-900 flex items-center gap-2 text-lg"><BriefcaseIcon className="w-6 h-6 text-gray-500" /> Regras e Integrações</h4>
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <label className="flex items-start gap-4 cursor-pointer bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:border-blue-300 transition-colors">
-                      <div className="pt-1">
-                        <input type="checkbox" name="atrelado_reservas" checked={formData.atrelado_reservas} onChange={handleInputChange} className="w-5 h-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500" />
-                      </div>
-                      <div>
-                        <span className="font-bold text-sm text-gray-900 block flex items-center gap-2"><LinkIcon className="w-4 h-4 text-blue-500"/> Permitir Vínculo a Serviços/Reservas</span>
-                        <span className="text-xs text-gray-500 mt-1 block leading-relaxed">Permite que os clientes adicionem este produto como um "Item Extra" durante o agendamento ou aluguel.</span>
-                      </div>
-                    </label>
+                  <VinculoProduto
+                    modo={formData.vinculo_modo}
+                    servicoId={formData.servico_id}
+                    aluguelId={formData.aluguel_id}
+                    servicos={servicosDisponiveis}
+                    reservas={listaReservas}
+                    estabelecimentoId={formData.estabelecimento_id}
+                    nomeProduto={formData.nome}
+                    onChange={(v) => setFormData((prev) => ({ ...prev, ...v }))}
+                  />
 
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <label className="flex items-start gap-4 cursor-pointer bg-white p-4 rounded-2xl border border-gray-100 shadow-sm hover:border-amber-300 transition-colors">
                       <div className="pt-1">
                         <input type="checkbox" name="somente_premium" checked={formData.somente_premium} onChange={handleInputChange} className="w-5 h-5 text-amber-500 rounded border-gray-300 focus:ring-amber-500" />
@@ -704,41 +708,6 @@ export default function ProdutoManager({ auth, estabelecimentoId, estabeleciment
                         <span className="text-xs text-gray-500 mt-1 block leading-relaxed">Oculta o produto do público geral. Somente clientes com planos de assinatura ativos poderão comprar.</span>
                       </div>
                     </label>
-                  </div>
-
-                  {/* Vínculo a Serviço e/ou Reserva */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
-                    <div>
-                      <label className="block text-sm font-bold text-gray-900 mb-2">Vincular a um serviço</label>
-                      <select
-                        name="servico_id"
-                        className="w-full border-gray-200 rounded-xl p-3.5 text-sm focus:border-[#FF5A00] focus:ring-[#FF5A00] shadow-sm outline-none bg-white"
-                        value={formData.servico_id}
-                        onChange={handleInputChange}
-                      >
-                        <option value="">Nenhum</option>
-                        {servicosDisponiveis && servicosDisponiveis
-                          .filter((servico) => !servico.estabelecimento_id || String(servico.estabelecimento_id) === String(formData.estabelecimento_id))
-                          .map((servico) => (
-                            <option key={servico.id} value={servico.id}>{servico.nome}</option>
-                          ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-bold text-gray-900 mb-2">Vincular a uma reserva (locação)</label>
-                      <select
-                        name="aluguel_id"
-                        className="w-full border-gray-200 rounded-xl p-3.5 text-sm focus:border-[#FF5A00] focus:ring-[#FF5A00] shadow-sm outline-none bg-white"
-                        value={formData.aluguel_id}
-                        onChange={handleInputChange}
-                      >
-                        <option value="">Nenhuma</option>
-                        {listaReservas.map((reserva) => (
-                          <option key={reserva.id} value={reserva.id}>{reserva.nome}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <p className="md:col-span-2 text-xs text-gray-500 flex items-center gap-1"><InformationCircleIcon className="w-4 h-4" /> O produto vinculado aparece como item adicional para o cliente na hora de agendar o serviço ou reservar. Sem vínculo, é uma venda avulsa.</p>
                   </div>
                 </div>
 
@@ -755,6 +724,8 @@ export default function ProdutoManager({ auth, estabelecimentoId, estabeleciment
               </form>
             </div>
           )}
+
+          {!showForm && produtos.length > 0 && <AdicionaisVendidos />}
 
           {/* FILTRO POR VÍNCULO: com serviço, com reserva ou avulso */}
           {!showForm && produtos.length > 0 && (
@@ -898,9 +869,14 @@ export default function ProdutoManager({ auth, estabelecimentoId, estabeleciment
                           <LinkIcon className="w-3 h-3"/> Reserva: {reservaVinculada.nome}
                         </div>
                       )}
-                      {!servicoVinculado && !reservaVinculada && (
+                      {!servicoVinculado && !reservaVinculada && modoInicial(produto) === 'local' && (
+                        <div className="mt-1 mb-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1.5 rounded-md border border-indigo-100 flex items-center gap-1.5 w-fit">
+                          <LinkIcon className="w-3 h-3"/> Adicional em todo o local
+                        </div>
+                      )}
+                      {!servicoVinculado && !reservaVinculada && modoInicial(produto) !== 'local' && (
                         <div className="mt-1 mb-1 text-[10px] font-bold text-gray-500 bg-gray-50 px-2.5 py-1.5 rounded-md border border-gray-100 w-fit">
-                          Venda avulsa (sem vínculo)
+                          Só na loja (venda avulsa)
                         </div>
                       )}
 

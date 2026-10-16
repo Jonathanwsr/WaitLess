@@ -38,14 +38,14 @@ class ContratoParaClienteMail extends Mailable
     {
         $anexos = [];
 
-        if ($this->contrato->arquivo_pdf && Storage::disk('public')->exists($this->contrato->arquivo_pdf)) {
-            $anexos[] = Attachment::fromStorageDisk('public', $this->contrato->arquivo_pdf)
+        if ($disco = \App\Services\Locacao\ContratoReservaService::discoDo($this->contrato->arquivo_pdf)) {
+            $anexos[] = Attachment::fromStorageDisk($disco, $this->contrato->arquivo_pdf)
                 ->as('contrato.pdf')
                 ->withMime('application/pdf');
         }
 
-        if ($this->contrato->arquivo_docx && Storage::disk('public')->exists($this->contrato->arquivo_docx)) {
-            $anexos[] = Attachment::fromStorageDisk('public', $this->contrato->arquivo_docx)
+        if ($disco = \App\Services\Locacao\ContratoReservaService::discoDo($this->contrato->arquivo_docx)) {
+            $anexos[] = Attachment::fromStorageDisk($disco, $this->contrato->arquivo_docx)
                 ->as('contrato.docx')
                 ->withMime('application/vnd.openxmlformats-officedocument.wordprocessingml.document');
         }

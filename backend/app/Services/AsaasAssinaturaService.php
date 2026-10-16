@@ -85,6 +85,14 @@ class AsaasAssinaturaService
             throw new Exception("Falha no gateway Asaas: " . $erroAsaas);
         }
 
+        // Tela "Pagamento": guarda a forma padrão e, se for cartão, só bandeira/final/validade.
+        if ($assinatura->exists) {
+            $assinatura->forceFill(['metodo_pagamento' => $billingType])->save();
+            if ($billingType === 'CREDIT_CARD' && $cartao) {
+                \App\Services\Assinatura\PagamentoAssinaturaService::registrarCartaoAoAssinar($assinatura, $cartao);
+            }
+        }
+
         return $response->json();
     }
 

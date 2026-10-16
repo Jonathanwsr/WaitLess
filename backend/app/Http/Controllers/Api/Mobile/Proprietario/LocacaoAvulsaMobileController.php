@@ -51,7 +51,8 @@ class LocacaoAvulsaMobileController extends Controller
             'em_uso_agora' => $emUsoAgora,
             'proximas_reservas' => $this->proximasReservasDoDono($itens->pluck('id')),
             'politicas'   => \App\Services\Locacao\PoliticaCancelamentoService::opcoes(),
-            'categorias'  => ItemAluguel::CATEGORIAS_LOCACAO_AVULSA,
+            'categorias'  => \App\Support\Categorias::reservasPorGrupo(),
+            'rotulos'     => \App\Support\Categorias::rotulosReserva(),
         ]);
     }
 

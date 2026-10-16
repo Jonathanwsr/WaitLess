@@ -309,7 +309,7 @@ export default function ProdutoEntregaManager({ produtos, estabelecimentos, func
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <div className="sm:col-span-2">
                                     <Campo label="Nome do produto">
-                                        <input className={inputClass} value={data.nome} onChange={(e) => setData('nome', e.target.value)} maxLength={255} placeholder="Ex: Botijão de Gás P13" required />
+                                        <input className={inputClass} value={data.nome} onChange={(e) => setData('nome', e.target.value.toUpperCase())} maxLength={255} placeholder="Ex: BOTIJÃO DE GÁS P13" required />
                                     </Campo>
                                     {errors.nome && <p className="text-xs text-red-600 mt-1">{errors.nome}</p>}
                                 </div>

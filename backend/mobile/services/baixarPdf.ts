@@ -6,7 +6,7 @@ import { API_MOBILE, pegarToken } from './entregasApi';
  * Baixa um PDF autenticado da API mobile e abre a folha de compartilhamento (salvar, enviar, imprimir).
  * Lança Error com mensagem amigável quando o download falha.
  */
-export async function baixarPdf(caminho: string, nomeArquivo: string): Promise<void> {
+export async function baixarPdf(caminho: string, nomeArquivo: string, opcoes: { titulo?: string; erro?: string } = {}): Promise<void> {
   const token = await pegarToken();
   const destino = `${FileSystem.cacheDirectory}${nomeArquivo.replace(/[^A-Za-z0-9_.-]/g, '_')}`;
 
@@ -15,10 +15,10 @@ export async function baixarPdf(caminho: string, nomeArquivo: string): Promise<v
   });
 
   if (r.status !== 200) {
-    throw new Error('Não foi possível baixar o comprovante agora. Tente novamente.');
+    throw new Error(opcoes.erro || 'Não foi possível baixar o comprovante agora. Tente novamente.');
   }
 
   if (await Sharing.isAvailableAsync()) {
-    await Sharing.shareAsync(r.uri, { mimeType: 'application/pdf', UTI: 'com.adobe.pdf', dialogTitle: 'Comprovante' });
+    await Sharing.shareAsync(r.uri, { mimeType: 'application/pdf', UTI: 'com.adobe.pdf', dialogTitle: opcoes.titulo || 'Comprovante' });
   }
 }

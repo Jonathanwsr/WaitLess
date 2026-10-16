@@ -1,4 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import InfoAtendimento, { SelosAtendimento } from '@/Components/Servicos/InfoAtendimento';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
@@ -136,7 +137,9 @@ export default function ServicoDetalhe({
     const [pontos, setPontos] = useState(0);
     const descontoPontos = pontos / pontosPorReal;
     const descontoPromocao = servico.valor - servico.valor_com_promocao;
-    const valorFinal = Math.max(0, servico.valor_com_promocao - descontoPontos);
+    // Serviço que só acontece onde o cliente está: a taxa de deslocamento entra no total.
+    const taxaDeslocamento = servico.atendimento?.modalidade === 'a_domicilio' ? Number(servico.atendimento.taxa_deslocamento || 0) : 0;
+    const valorFinal = Math.max(0, servico.valor_com_promocao - descontoPontos) + taxaDeslocamento;
 
     const formas = servico.tipo_pagamento === 'online' ? FORMAS.online
         : servico.tipo_pagamento === 'presencial' ? FORMAS.presencial
@@ -244,6 +247,7 @@ export default function ServicoDetalhe({
                                     <p className="text-xs font-bold uppercase tracking-wider text-gray-400">{servico.tipo_servico || estabelecimento.ramo_atuacao}</p>
                                     <h1 className="mt-1 text-2xl font-black leading-tight text-gray-900 sm:text-3xl">{servico.nome}</h1>
                                     <p className="mt-1 text-sm text-gray-500">em <b className="text-gray-700">{estabelecimento.nome}</b></p>
+                                    <SelosAtendimento atendimento={servico.atendimento} max={4} className="mt-2" />
                                 </div>
                                 {servico.somente_premium && <span className="shrink-0 rounded-full bg-gray-900 px-3 py-1 text-[11px] font-black uppercase text-white">Só Premium</span>}
                             </div>
@@ -416,7 +420,10 @@ export default function ServicoDetalhe({
                         {/* RESUMO E AGENDAR */}
                         <section className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm sm:p-6">
                             <dl className="space-y-1.5 text-sm">
-                                <div className="flex justify-between text-gray-500"><dt>Valor do serviço</dt><dd>{brl(servico.valor)}</dd></div>
+                                <div className="flex justify-between text-gray-500"><dt>{servico.atendimento?.tipo_preco && servico.atendimento.tipo_preco !== 'fixo' ? `Valor do serviço (${servico.atendimento.tipo_preco_rotulo.toLowerCase()})` : 'Valor do serviço'}</dt><dd>{brl(servico.valor)}</dd></div>
+                                {servico.atendimento?.taxa_deslocamento > 0 && (
+                                    <div className="flex justify-between text-gray-500"><dt>Taxa de deslocamento{servico.atendimento.modalidade === 'ambos' ? ' (se for até você)' : ''}</dt><dd>+ {brl(servico.atendimento.taxa_deslocamento)}</dd></div>
+                                )}
                                 {descontoPromocao > 0 && <div className="flex justify-between text-emerald-700"><dt>Promoção</dt><dd>- {brl(descontoPromocao)}</dd></div>}
                                 {descontoPontos > 0 && <div className="flex justify-between text-emerald-700"><dt>Pontos ({pontos.toLocaleString('pt-BR')})</dt><dd>- {brl(descontoPontos)}</dd></div>}
                                 <div className="flex items-center justify-between border-t border-gray-100 pt-2">
@@ -457,6 +464,8 @@ export default function ServicoDetalhe({
                         </section>
                     </div>
                 </div>
+
+                <InfoAtendimento atendimento={servico.atendimento} />
 
                 {/* SOBRE */}
                 <section className="rounded-3xl border border-gray-100 bg-white p-5 shadow-sm sm:p-6">

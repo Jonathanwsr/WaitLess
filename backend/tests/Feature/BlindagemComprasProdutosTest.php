@@ -48,7 +48,7 @@ class BlindagemComprasProdutosTest extends TestCase
     private function produto(User $vendedor, Estabelecimento $estab, array $extra = []): ProdutoEntrega
     {
         return ProdutoEntrega::create(array_merge([
-            'usuario_id' => $vendedor->id, 'estabelecimento_id' => $estab->id, 'nome' => 'Gás P13', 'categoria' => 'Gás e água',
+            'usuario_id' => $vendedor->id, 'estabelecimento_id' => $estab->id, 'nome' => 'GÁS P13', 'categoria' => 'Gás e água',
             'valor' => 100, 'estoque_disponivel' => 10, 'ativo' => true, 'taxa_entrega' => 0,
             'aceita_entrega' => true, 'aceita_retirada' => true,
             'endereco_cep' => '01000000', 'endereco_rua' => 'R', 'endereco_numero' => '1',
@@ -74,21 +74,21 @@ class BlindagemComprasProdutosTest extends TestCase
     {
         [$vendedor, $estab] = $this->vendedor();
         $cliente = $this->usuario('cliente', 'Cliente');
-        $this->produto($vendedor, $estab, ['nome' => 'Água Mineral Crystal']);
-        $this->produto($vendedor, $estab, ['nome' => 'Pão de Açúcar']);
+        $this->produto($vendedor, $estab, ['nome' => 'ÁGUA MINERAL CRYSTAL']);
+        $this->produto($vendedor, $estab, ['nome' => 'PÃO DE AÇÚCAR']);
 
-        $this->assertSame(['Água Mineral Crystal'], $this->nomesDoCatalogo($cliente, ['busca' => 'AGUA mineral', 'estabelecimento_id' => $estab->id]));
-        $this->assertSame(['Pão de Açúcar'], $this->nomesDoCatalogo($cliente, ['busca' => 'pao acucar', 'estabelecimento_id' => $estab->id]));
+        $this->assertSame(['ÁGUA MINERAL CRYSTAL'], $this->nomesDoCatalogo($cliente, ['busca' => 'AGUA mineral', 'estabelecimento_id' => $estab->id]));
+        $this->assertSame(['PÃO DE AÇÚCAR'], $this->nomesDoCatalogo($cliente, ['busca' => 'pao acucar', 'estabelecimento_id' => $estab->id]));
     }
 
     public function test_busca_exige_todas_as_palavras_e_procura_na_descricao_e_no_local(): void
     {
         [$vendedor, $estab] = $this->vendedor();
         $cliente = $this->usuario('cliente', 'Cliente');
-        $this->produto($vendedor, $estab, ['nome' => 'Botijão de gás', 'descricao' => 'Entrega rápida no bairro']);
-        $this->produto($vendedor, $estab, ['nome' => 'Galão de água', 'descricao' => 'Água de 20 litros']);
+        $this->produto($vendedor, $estab, ['nome' => 'BOTIJÃO DE GÁS', 'descricao' => 'Entrega rápida no bairro']);
+        $this->produto($vendedor, $estab, ['nome' => 'GALÃO DE ÁGUA', 'descricao' => 'Água de 20 litros']);
 
-        $this->assertSame(['Botijão de gás'], $this->nomesDoCatalogo($cliente, ['busca' => 'botijao rapida', 'estabelecimento_id' => $estab->id]));
+        $this->assertSame(['BOTIJÃO DE GÁS'], $this->nomesDoCatalogo($cliente, ['busca' => 'botijao rapida', 'estabelecimento_id' => $estab->id]));
         $this->assertSame([], $this->nomesDoCatalogo($cliente, ['busca' => 'botijao litros', 'estabelecimento_id' => $estab->id]));
         $this->assertCount(2, $this->nomesDoCatalogo($cliente, ['busca' => 'mercearia', 'estabelecimento_id' => $estab->id]));
     }
@@ -97,19 +97,19 @@ class BlindagemComprasProdutosTest extends TestCase
     {
         [$vendedor, $estab] = $this->vendedor();
         $cliente = $this->usuario('cliente', 'Cliente');
-        $this->produto($vendedor, $estab, ['nome' => 'Kit churrasco com carvão']);
-        $this->produto($vendedor, $estab, ['nome' => 'Carvão vegetal 5kg']);
+        $this->produto($vendedor, $estab, ['nome' => 'KIT CHURRASCO COM CARVÃO']);
+        $this->produto($vendedor, $estab, ['nome' => 'CARVÃO VEGETAL 5KG']);
 
         $nomes = $this->nomesDoCatalogo($cliente, ['busca' => 'carvao', 'estabelecimento_id' => $estab->id]);
 
-        $this->assertSame('Carvão vegetal 5kg', $nomes[0]);
+        $this->assertSame('CARVÃO VEGETAL 5KG', $nomes[0]);
     }
 
     public function test_curingas_do_like_nao_viram_busca_por_tudo(): void
     {
         [$vendedor, $estab] = $this->vendedor();
         $cliente = $this->usuario('cliente', 'Cliente');
-        $this->produto($vendedor, $estab, ['nome' => 'Arroz 5kg']);
+        $this->produto($vendedor, $estab, ['nome' => 'ARROZ 5KG']);
 
         $this->assertSame([], $this->nomesDoCatalogo($cliente, ['busca' => '%%', 'estabelecimento_id' => $estab->id]));
     }
@@ -118,12 +118,12 @@ class BlindagemComprasProdutosTest extends TestCase
     {
         [$vendedor, $estab] = $this->vendedor();
         $cliente = $this->usuario('cliente', 'Cliente');
-        $this->produto($vendedor, $estab, ['nome' => 'Caro em promoção', 'valor' => 200, 'tem_promocao' => true, 'valor_promocional' => 10]);
-        $this->produto($vendedor, $estab, ['nome' => 'Barato', 'valor' => 50]);
+        $this->produto($vendedor, $estab, ['nome' => 'CARO EM PROMOÇÃO', 'valor' => 200, 'tem_promocao' => true, 'valor_promocional' => 10]);
+        $this->produto($vendedor, $estab, ['nome' => 'BARATO', 'valor' => 50]);
 
         $nomes = $this->nomesDoCatalogo($cliente, ['ordenar' => 'menor_preco', 'estabelecimento_id' => $estab->id]);
 
-        $this->assertSame(['Caro em promoção', 'Barato'], $nomes);
+        $this->assertSame(['CARO EM PROMOÇÃO', 'BARATO'], $nomes);
     }
 
     public function test_so_uma_compra_por_minuto_por_conta(): void
@@ -307,15 +307,15 @@ class BlindagemComprasProdutosTest extends TestCase
         $gratis = $this->usuario('socio', 'Gratis');
         $estab->proprietarios()->attach($gratis->id, ['tipo' => 'socio']);
         $cliente = $this->usuario('cliente', 'Cliente');
-        $this->produto($premium, $estab, ['nome' => 'Do premium']);
-        $this->produto($gratis, $estab, ['nome' => 'Do gratuito']);
+        $this->produto($premium, $estab, ['nome' => 'DO PREMIUM']);
+        $this->produto($gratis, $estab, ['nome' => 'DO GRATUITO']);
 
-        $this->assertSame(['Do premium'], $this->nomesDoCatalogo($cliente, ['apenas_premium' => 1, 'estabelecimento_id' => $estab->id]));
+        $this->assertSame(['DO PREMIUM'], $this->nomesDoCatalogo($cliente, ['apenas_premium' => 1, 'estabelecimento_id' => $estab->id]));
 
         $itens = collect($this->actingAs($cliente)->getJson('/entregas/catalogo?estabelecimento_id=' . $estab->id)->json('data'))->keyBy('nome');
-        $this->assertTrue($itens['Do premium']['vendedor_premium']);
-        $this->assertFalse($itens['Do gratuito']['vendedor_premium']);
-        $this->assertArrayNotHasKey('plano_assinatura', $itens['Do premium']['vendedor']);
+        $this->assertTrue($itens['DO PREMIUM']['vendedor_premium']);
+        $this->assertFalse($itens['DO GRATUITO']['vendedor_premium']);
+        $this->assertArrayNotHasKey('plano_assinatura', $itens['DO PREMIUM']['vendedor']);
     }
 
     public function test_premium_vencido_nao_conta(): void
@@ -323,7 +323,7 @@ class BlindagemComprasProdutosTest extends TestCase
         [$vendedor, $estab] = $this->vendedor();
         $vendedor->update(['plano_expira_em' => now()->subDay()]);
         $cliente = $this->usuario('cliente', 'Cliente');
-        $this->produto($vendedor, $estab, ['nome' => 'Plano vencido']);
+        $this->produto($vendedor, $estab, ['nome' => 'PLANO VENCIDO']);
 
         $this->assertSame([], $this->nomesDoCatalogo($cliente, ['apenas_premium' => 1, 'estabelecimento_id' => $estab->id]));
     }
@@ -332,22 +332,22 @@ class BlindagemComprasProdutosTest extends TestCase
     {
         [$vendedor, $estab] = $this->vendedor();
         $cliente = $this->usuario('cliente', 'Cliente');
-        $this->produto($vendedor, $estab, ['nome' => 'Água promo', 'categoria' => 'Bebidas', 'valor' => 50, 'tem_promocao' => true, 'valor_promocional' => 20]);
-        $this->produto($vendedor, $estab, ['nome' => 'Água cheia', 'categoria' => 'Bebidas', 'valor' => 20]);
-        $this->produto($vendedor, $estab, ['nome' => 'Gás promo', 'categoria' => 'Gás e água', 'valor' => 120, 'tem_promocao' => true, 'valor_promocional' => 100]);
+        $this->produto($vendedor, $estab, ['nome' => 'ÁGUA PROMO', 'categoria' => 'Bebidas', 'valor' => 50, 'tem_promocao' => true, 'valor_promocional' => 20]);
+        $this->produto($vendedor, $estab, ['nome' => 'ÁGUA CHEIA', 'categoria' => 'Bebidas', 'valor' => 20]);
+        $this->produto($vendedor, $estab, ['nome' => 'GÁS PROMO', 'categoria' => 'Gás e água', 'valor' => 120, 'tem_promocao' => true, 'valor_promocional' => 100]);
 
-        $this->assertSame(['Água promo'], $this->nomesDoCatalogo($cliente, [
+        $this->assertSame(['ÁGUA PROMO'], $this->nomesDoCatalogo($cliente, [
             'categoria' => 'Bebidas', 'apenas_promocoes' => 1, 'preco_max' => 25, 'estabelecimento_id' => $estab->id,
         ]));
-        $this->assertSame(['Gás promo'], $this->nomesDoCatalogo($cliente, ['preco_min' => 90, 'estabelecimento_id' => $estab->id]));
+        $this->assertSame(['GÁS PROMO'], $this->nomesDoCatalogo($cliente, ['preco_min' => 90, 'estabelecimento_id' => $estab->id]));
     }
 
     public function test_ordenar_por_mais_vendidos(): void
     {
         [$vendedor, $estab] = $this->vendedor();
         $cliente = $this->usuario('cliente', 'Cliente');
-        $pouco = $this->produto($vendedor, $estab, ['nome' => 'Pouco vendido']);
-        $muito = $this->produto($vendedor, $estab, ['nome' => 'Muito vendido']);
+        $pouco = $this->produto($vendedor, $estab, ['nome' => 'POUCO VENDIDO']);
+        $muito = $this->produto($vendedor, $estab, ['nome' => 'MUITO VENDIDO']);
         foreach ([$muito, $muito, $pouco] as $p) {
             PedidoEntrega::create([
                 'codigo_pedido' => 'ENT-' . uniqid(), 'codigo_confirmacao' => '111111', 'cliente_id' => $cliente->id,
@@ -359,6 +359,6 @@ class BlindagemComprasProdutosTest extends TestCase
 
         $nomes = $this->nomesDoCatalogo($cliente, ['ordenar' => 'mais_vendidos', 'estabelecimento_id' => $estab->id]);
 
-        $this->assertSame(['Muito vendido', 'Pouco vendido'], $nomes);
+        $this->assertSame(['MUITO VENDIDO', 'POUCO VENDIDO'], $nomes);
     }
 }

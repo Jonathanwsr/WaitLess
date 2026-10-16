@@ -377,7 +377,10 @@ class MobileAgendamentoController extends Controller
                 'hora' => Carbon::parse($proximoAgendamento->hora_agendamento)->format('H:i'),
                 'servico' => $proximoAgendamento->servico->nome ?? 'Serviço não informado',
                 'profissional' => $proximoAgendamento->funcionario->name ?? 'Qualquer Profissional',
-                'tipo' => 'Agendado'
+                'tipo' => 'Agendado',
+                // Serviço que vai até o cliente (guincho, a domicílio): onde atender.
+                'endereco_atendimento' => $proximoAgendamento->endereco_atendimento,
+                'taxa_deslocamento' => (float) $proximoAgendamento->taxa_deslocamento ?: null,
             ];
         } elseif ($triagem && $triagem->status === 'aguardando') {
             $proximoServicoData = [
@@ -1189,6 +1192,8 @@ class MobileAgendamentoController extends Controller
             $agendamento->posicao_fila = $posicaoFila;
             // Pagamento parcelado (cobrança enviada pelo local), se este agendamento fizer parte de uma.
             $agendamento->cobranca = app(\App\Services\CobrancaParceladaService::class)->resumoDoPedido('agendamento_id', $agendamento->id);
+            // Produtos adicionais comprados junto com o serviço.
+            $agendamento->itens_extras = app(\App\Services\ProdutosAdicionaisService::class)->daReserva($agendamento);
             return response()->json($agendamento, 200);
 
         } catch (\Exception $e) {
@@ -1205,7 +1210,7 @@ class MobileAgendamentoController extends Controller
     public function showAluguelMobile($id)
     {
         try {
-            $aluguel = Aluguel::with(['item', 'proprietario'])->find($id);
+            $aluguel = Aluguel::with(['item', 'proprietario', 'contratoDocumento'])->find($id);
 
             if (!$aluguel) {
                 return response()->json(['error' => 'Locação não encontrada.'], 404);
@@ -1245,6 +1250,10 @@ class MobileAgendamentoController extends Controller
                 'forma_pagamento'    => $aluguel->forma_pagamento,
                 'valor_caucao'       => (float) ($aluguel->valor_caucao ?? 0),
                 'cancelamento'       => app(\App\Services\Locacao\PoliticaCancelamentoService::class)->resumoParaCliente($aluguel),
+                'itens_extras'       => app(\App\Services\ProdutosAdicionaisService::class)->daReserva($aluguel),
+                // Contrato gerado pelo proprietário (texto + links temporários de PDF/Word).
+                'contrato'           => app(\App\Services\Locacao\ContratoReservaService::class)->paraTela($aluguel->contratoDocumento),
+                'exige_contrato'     => (bool) ($item->exige_contrato ?? false),
                 'item' => $item ? [
                     'nome'                 => $item->nome,
                     'descricao'            => $item->descricao,

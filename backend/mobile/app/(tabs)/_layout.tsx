@@ -4,6 +4,7 @@ if (typeof globalThis.DOMException === 'undefined') {
 }
 // ----------------------------------------------
 import type { ColorValue } from 'react-native';
+import { useIdioma } from '../../services/idioma';
 import React, { useEffect, useState } from 'react';
 import { Tabs, Redirect } from 'expo-router';
 import { obterPapel, ehCliente, rotaInicialDoPapel } from '../../services/papel';
@@ -21,6 +22,7 @@ const aba = (ativo: IconeAba, inativo: IconeAba) => ({ color, focused }: { color
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
   const [papel, setPapel] = useState<string | null>(null);
+  const { t } = useIdioma();
 
   useEffect(() => {
     obterPapel().then(setPapel);
@@ -57,13 +59,13 @@ export default function TabLayout() {
         },
       }}
     >
-      <Tabs.Screen name="home" options={{ title: 'Início', tabBarIcon: aba('home', 'home-outline') }} />
-      <Tabs.Screen name="explorar" options={{ title: 'Descubra', tabBarIcon: aba('compass', 'compass-outline') }} />
-      <Tabs.Screen name="entregas" options={{ title: 'Entregas', tabBarIcon: aba('bicycle', 'bicycle-outline') }} />
-      <Tabs.Screen name="carteira" options={{ title: 'Carteira', tabBarIcon: aba('wallet', 'wallet-outline') }} />
-      <Tabs.Screen name="caixa-entrada" options={{ title: 'Mensagens', tabBarIcon: aba('chatbubble', 'chatbubble-outline') }} />
-      <Tabs.Screen name="reservas" options={{ title: 'Reservas', tabBarIcon: aba('calendar', 'calendar-outline') }} />
-      <Tabs.Screen name="mais" options={{ title: 'Mais', tabBarIcon: aba('menu', 'menu-outline') }} />
+      <Tabs.Screen name="home" options={{ title: t('Início'), tabBarIcon: aba('home', 'home-outline') }} />
+      <Tabs.Screen name="explorar" options={{ title: t('Descubra'), tabBarIcon: aba('compass', 'compass-outline') }} />
+      <Tabs.Screen name="entregas" options={{ title: t('Entregas'), tabBarIcon: aba('bicycle', 'bicycle-outline') }} />
+      <Tabs.Screen name="carteira" options={{ title: t('Carteira'), tabBarIcon: aba('wallet', 'wallet-outline') }} />
+      <Tabs.Screen name="caixa-entrada" options={{ title: t('Mensagens'), tabBarIcon: aba('chatbubble', 'chatbubble-outline') }} />
+      <Tabs.Screen name="reservas" options={{ title: t('Reservas'), tabBarIcon: aba('calendar', 'calendar-outline') }} />
+      <Tabs.Screen name="mais" options={{ title: t('Mais'), tabBarIcon: aba('menu', 'menu-outline') }} />
     </Tabs>
   );
 }

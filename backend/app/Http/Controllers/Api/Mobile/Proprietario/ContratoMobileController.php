@@ -56,8 +56,9 @@ class ContratoMobileController extends Controller
                 'item' => $c->aluguel?->item?->nome,
                 'enviado_em' => $c->enviado_em?->toIso8601String(),
                 'criado_em' => $c->created_at?->toIso8601String(),
-                'pdf_url' => $c->arquivo_pdf ? Storage::disk('public')->url($c->arquivo_pdf) : null,
-                'docx_url' => $c->arquivo_docx ? Storage::disk('public')->url($c->arquivo_docx) : null,
+                'pdf_url' => $c->arquivo_pdf ? app(\App\Services\Locacao\ContratoReservaService::class)->linkParaCompartilhar($c) : null,
+                'docx_url' => $c->arquivo_docx ? app(\App\Services\Locacao\ContratoReservaService::class)->link($c, 'docx', 60 * 24 * 7) : null,
+                'aceito_em' => $c->assinado ? $c->data_assinatura?->toIso8601String() : null,
             ]);
 
         $pendentes = Aluguel::whereIn('estabelecimento_id', $donos)

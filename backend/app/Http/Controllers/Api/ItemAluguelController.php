@@ -114,7 +114,7 @@ class ItemAluguelController extends Controller
         return [
             'estabelecimento_id' => 'required|integer',
             'nome' => 'required|string|max:255',
-            'categoria' => 'required|string|max:50',
+            'categoria' => \App\Support\Categorias::regraReserva(),
             'quantidade' => 'required|integer|min:1',
             'marca' => 'nullable|string|max:100',
             'modelo' => 'nullable|string|max:100',

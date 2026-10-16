@@ -17,6 +17,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { obterEcho } from '../../services/echo';
+import CartaoOferta, { OfertaMensagem } from '../../components/client/CartaoOferta';
 
 const COLORS = {
   primary: '#282828',
@@ -38,6 +39,7 @@ interface Mensagem {
   horario: string;
   data: string;
   is_mine: boolean;
+  oferta?: OfertaMensagem | null;
 }
 
 interface ConversaAtiva {
@@ -156,7 +158,9 @@ export default function ConversaScreen() {
     }
   };
 
-  const renderItem = ({ item }: { item: Mensagem }) => (
+  const renderItem = ({ item }: { item: Mensagem }) => item.oferta ? (
+    <CartaoOferta oferta={item.oferta} minha={item.is_mine} horario={item.horario} />
+  ) : (
     <View style={[styles.bolha, item.is_mine ? styles.bolhaMinha : styles.bolhaDeles]}>
       <Text style={[styles.bolhaTexto, item.is_mine && styles.bolhaTextoMinha]}>{item.conteudo}</Text>
       <Text style={[styles.bolhaHorario, item.is_mine && styles.bolhaHorarioMinha]}>{item.horario}</Text>

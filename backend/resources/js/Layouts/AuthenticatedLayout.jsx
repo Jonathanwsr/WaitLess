@@ -2,11 +2,15 @@ import { useState, useEffect, useRef, useLayoutEffect } from 'react';
 import axios from 'axios';
 import Dropdown from '@/Components/Dropdown';
 import { Link, usePage, router } from '@inertiajs/react';
+import { useIdioma } from '@/i18n';
+import SeletorIdioma from '@/Components/SeletorIdioma';
 import { CalendarDaysIcon, ShieldCheckIcon, BanknotesIcon, ClipboardDocumentListIcon, ArrowUturnLeftIcon, StarIcon, GlobeAltIcon, BellIcon, GiftIcon, UsersIcon, ChartBarIcon, WalletIcon, MapIcon, QueueListIcon, KeyIcon, ShoppingBagIcon, TicketIcon, DocumentTextIcon, Cog6ToothIcon, SparklesIcon, ArrowsRightLeftIcon, AcademicCapIcon, BuildingStorefrontIcon, LockClosedIcon, LightBulbIcon, TruckIcon, TvIcon, BoltIcon } from '@heroicons/react/24/solid';
 
 export default function AuthenticatedLayout({ header, children }) {
     const { auth, alertaCarteiraAsaas, menuEstabelecimentoId, menuPremium, menuPremiumSocio, avisosUsuario } = usePage().props;
     const urlAtual = (usePage().url || '').split('?')[0];
+    // Idioma das telas do cliente (menu do cliente traduzido).
+    const { t } = useIdioma();
 
     /**
      * Item do menu ativo: a rota exata ou qualquer subtela dela (criar, editar, detalhes, abas),
@@ -364,43 +368,43 @@ export default function AuthenticatedLayout({ header, children }) {
                     {/* LINKS DE CLIENTES COMUNS */}
                     {!isGestor && !isFuncionario && (
                         <>
-                            <SectionTitle title="Área do Cliente" />
+                            <SectionTitle title={t('Área do Cliente')} />
                             
                             <Link href={route('home')} title="Home" className={`${baseLinkClass} ${estaAtivo('home') ? activeLinkClass : inactiveLinkClass}`}>
                                 <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
-                                <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Home</span>
+                                <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>{t('Home')}</span>
                             </Link>
 
                             <Link href={route('cliente.explorar')} title="Explorar Lojas" className={`${baseLinkClass} ${estaAtivo('cliente.explorar') ? activeLinkClass : inactiveLinkClass}`}>
                                 <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                                <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Explorar Lojas</span>
+                                <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>{t('Explorar Lojas')}</span>
                             </Link>
 
                             {route().has('entregas.index') && (
                                 <Link href={route('entregas.index')} title="Produtos" className={`${baseLinkClass} ${estaAtivo('entregas.*') ? activeLinkClass : inactiveLinkClass}`}>
                                     <TruckIcon className="w-6 h-6 shrink-0" />
-                                    <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Produtos</span>
+                                    <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>{t('Produtos')}</span>
                                 </Link>
                             )}
 
                             <Link href={route('mensagens.index')} title="Mensagens" className={`${baseLinkClass} ${estaAtivo('mensagens.index') ? activeLinkClass : inactiveLinkClass}`}>
                                 <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8-1.045 0-2.047-.157-2.978-.446L3 21l1.5-4.5C3.55 15.19 3 13.65 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path></svg>
-                                <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Mensagens</span>
+                                <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>{t('Mensagens')}</span>
                             </Link>
 
                             <Link href={route('cliente.ofertas_premium')} title="Ofertas Premium" className={`${baseLinkClass} ${estaAtivo('cliente.ofertas_premium') ? activeLinkClass : inactiveLinkClass}`}>
                                 <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 16L3 8l5.5 4L12 4l3.5 8L21 8l-2 8H5zm0 0h14v2H5v-2z"></path></svg>
-                                <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Ofertas Premium</span>
+                                <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>{t('Ofertas Premium')}</span>
                             </Link>
 
                             <Link href={route('cliente.promocoes')} title="Promoções" className={`${baseLinkClass} ${estaAtivo('cliente.promocoes') ? activeLinkClass : inactiveLinkClass}`}>
                                 <GiftIcon className="w-6 h-6 shrink-0" />
-                                <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Promoções</span>
+                                <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>{t('Promoções')}</span>
                             </Link>
 
                              <Link href={route('dashboard')} title="Agendamentos" className={`${baseLinkClass} ${estaAtivo('dashboard') ? activeLinkClass : inactiveLinkClass}`}>
                                 <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-                                <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Agendamentos</span>
+                                <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>{t('Agendamentos')}</span>
                             </Link>
 
 <Link 
@@ -412,7 +416,7 @@ export default function AuthenticatedLayout({ header, children }) {
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path>
     </svg>
     <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>
-        Meus Favoritos
+        {t('Meus Favoritos')}
     </span>
 </Link>
 
@@ -420,14 +424,14 @@ export default function AuthenticatedLayout({ header, children }) {
                             
                             <Link href={route('cliente.carrinho')} title="Carrinho" className={`${baseLinkClass} ${estaAtivo('cliente.carrinho') ? activeLinkClass : inactiveLinkClass}`}>
                                 <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path></svg>
-                                <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Carrinho / Pendentes</span>
+                                <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>{t('Carrinho / Pendentes')}</span>
                             </Link>
 
                             <Link href={route('avaliacoes.geral')} title="Minhas Avaliações" className={`${baseLinkClass} ${estaAtivo('avaliacoes.geral') ? activeLinkClass : inactiveLinkClass}`}>
     <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"></path>
     </svg>
-    <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Minhas Avaliações</span>
+    <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>{t('Minhas Avaliações')}</span>
 </Link>
 
                            
@@ -443,28 +447,28 @@ export default function AuthenticatedLayout({ header, children }) {
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"></path>
     </svg>
     <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>
-        Status da Assinatura
+        {t('Status da Assinatura')}
     </span>
 </Link>
 
                             {route().has('cobrancas.minhas') && (
                                 <Link href={route('cobrancas.minhas')} title="Pagamentos mensais" className={`${baseLinkClass} ${estaAtivo('cobrancas.minhas') ? activeLinkClass : inactiveLinkClass}`}>
                                     <BanknotesIcon className="w-6 h-6 shrink-0" />
-                                    <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Pagamentos mensais</span>
+                                    <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>{t('Pagamentos mensais')}</span>
                                 </Link>
                             )}
 
                             {route().has('entregas.assinaturas.page') && (
                                 <Link href={route('entregas.assinaturas.page')} title="Assinaturas de entrega" className={`${baseLinkClass} ${estaAtivo('entregas.assinaturas.page') ? activeLinkClass : inactiveLinkClass}`}>
                                     <CalendarDaysIcon className="w-6 h-6 shrink-0" />
-                                    <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Assinaturas</span>
+                                    <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>{t('Assinaturas')}</span>
                                 </Link>
                             )}
 
                             {route().has('notas-fiscais.index') && (
                                 <Link href={route('notas-fiscais.index')} title="Notas Fiscais" className={`${baseLinkClass} ${estaAtivo('notas-fiscais.index') ? activeLinkClass : inactiveLinkClass}`}>
                                     <DocumentTextIcon className="w-6 h-6 shrink-0" />
-                                    <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>Notas Fiscais</span>
+                                    <span className={`transition-all duration-300 whitespace-nowrap ${textVisibilityClass}`}>{t('Notas Fiscais')}</span>
                                 </Link>
                             )}
 
@@ -755,9 +759,15 @@ export default function AuthenticatedLayout({ header, children }) {
                                                     <svg className="w-[22px] h-[22px] text-[#4F5B67]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
                                                         <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                                                     </svg>
-                                                    Editar Perfil
+                                                    {t('Editar Perfil')}
                                                 </div>
                                             </Dropdown.Link>
+
+                                            {/* Idioma (telas do cliente) */}
+                                            <div className="flex items-center justify-between gap-2 px-4 py-2" onClick={(e) => e.stopPropagation()}>
+                                                <span className="text-xs font-bold uppercase tracking-wide text-[#4F5B67]">{t('Idioma')}</span>
+                                                <SeletorIdioma compacto />
+                                            </div>
                                             
                                             {/* Divisória Interna Suave */}
                                             <div className="border-t border-[#EAE3DE] my-1.5 mx-2"></div>
@@ -768,7 +778,7 @@ export default function AuthenticatedLayout({ header, children }) {
                                                     <svg className="w-[22px] h-[22px] text-[#9A423D]" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2.5">
                                                         <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                                                     </svg>
-                                                    Sair
+                                                    {t('Sair')}
                                                 </div>
                                             </Dropdown.Link>
                                             

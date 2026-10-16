@@ -159,9 +159,12 @@ class ClienteExplorarController extends Controller
 
 
             if ($categoria && $categoria !== 'todas') {
-
-                $queryEstabelecimentos->where('ramo_atuacao', $categoria);
-
+                // Grupo do Explorar (serve também para os filtros antigos, ramos e tipos de serviço).
+                if ($grupo = \App\Support\Categorias::grupo($categoria)) {
+                    \App\Support\Categorias::filtrarLocais($queryEstabelecimentos, $grupo);
+                } else {
+                    $queryEstabelecimentos->where('ramo_atuacao', $categoria);
+                }
             }
 
 
@@ -290,9 +293,11 @@ class ClienteExplorarController extends Controller
 
 
             if ($categoria && $categoria !== 'todas') {
-
-                $queryItens->where('categoria', $categoria);
-
+                if ($grupo = \App\Support\Categorias::grupo($categoria)) {
+                    \App\Support\Categorias::filtrarReservas($queryItens, $grupo);
+                } else {
+                    $queryItens->where('categoria', $categoria);
+                }
             }
 
 
@@ -755,6 +760,9 @@ class ClienteExplorarController extends Controller
 
         return Inertia::render('Cliente/Explorar', [
 
+            // Chips de categoria (mesma lista do app), com quantos itens existem em cada uma.
+            'categoriasExplorar' => \App\Support\Categorias::explorarComTotais(),
+
             'estabelecimentos' => $estabelecimentos,
 
             'itens_aluguel'    => $itens,
@@ -870,7 +878,7 @@ class ClienteExplorarController extends Controller
     {
         $query = \App\Models\Servico::query()
             ->where('ativo', true)
-            ->with('estabelecimento:id,nome,foto_perfil,cidade,estado,ramo_atuacao')
+            ->with('estabelecimento:id,nome,foto_perfil,cidade,estado,ramo_atuacao,latitude,longitude')
             ->whereHas('estabelecimento', fn ($q) => $q->where('ativo', true));
 
         if ($busca) {
@@ -882,8 +890,10 @@ class ClienteExplorarController extends Controller
             });
         }
 
-        if ($categoria && $categoria !== 'todas') {
-            $query->whereHas('estabelecimento', fn ($e) => $e->where('ramo_atuacao', $categoria));
+        if ($categoria && $categoria !== 'todas' && ($grupo = \App\Support\Categorias::grupo($categoria))) {
+            \App\Support\Categorias::filtrarServicos($query, $grupo);
+        } elseif ($categoria && $categoria !== 'todas') {
+            $query->where(fn ($q) => $q->where('servicos.tipo_servico', $categoria)->orWhereHas('estabelecimento', fn ($e) => $e->where('ramo_atuacao', $categoria)));
         }
 
         if ($uf) {
@@ -930,6 +940,9 @@ class ClienteExplorarController extends Controller
             $estab = $servico->estabelecimento;
             if ($estab) {
                 $estab->setAttribute('name', $estab->nome);
+                // Posição no mapa do Explorar: a do local.
+                $servico->setAttribute('latitude', $estab->latitude);
+                $servico->setAttribute('longitude', $estab->longitude);
             }
 
             $resumo = $vagas->resumoHoje($servico);

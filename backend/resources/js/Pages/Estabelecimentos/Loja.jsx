@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import AdicionaisEscolha from '@/Components/Produtos/AdicionaisEscolha';
+import InfoAtendimento, { SelosAtendimento } from '@/Components/Servicos/InfoAtendimento';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import {
@@ -43,6 +45,8 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
     const [dataSelecionada, setDataSelecionada] = useState('');
     const [horaSelecionada, setHoraSelecionada] = useState('');
     const [extrasSelecionados, setExtrasSelecionados] = useState([]); // Array de produtos extras
+    // Adicionais escolhidos no componente: { itens: [{id, quantidade}], total, quantidade }.
+    const [adicionais, setAdicionais] = useState({ itens: [], total: 0, quantidade: 0 });
     const [adicionandoAoCarrinho, setAdicionandoAoCarrinho] = useState(false);
 
     const servicos = servicosPaginados.data;
@@ -248,10 +252,7 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
     const calcularTotalServico = () => {
         if (!servicoSelecionado) return 0;
         const valorBase = Number(servicoSelecionado.valor || 0);
-        const valorExtras = extrasSelecionados.reduce((acc, extra) => {
-            return acc + Number(extra.valor_promocional || extra.valor_final || extra.valor_normal || 0);
-        }, 0);
-        return valorBase + valorExtras;
+        return valorBase + adicionais.total;
     };
 
     const produtosExtras = servicoSelecionado
@@ -588,6 +589,7 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
                                                             <h4 className="font-bold text-gray-900 text-lg leading-tight group-hover:text-[#FF5A00] transition-colors line-clamp-2">
                                                                 {servico.nome}
                                                             </h4>
+                                                            <SelosAtendimento atendimento={servico.atendimento} max={2} className="mt-2" />
                                                             <p className="text-gray-500 text-xs mt-2 line-clamp-2 leading-relaxed">
                                                                 {servico.descricao || "Avaliação completa com profissionais dedicados ao seu bem estar."}
                                                             </p>
@@ -868,6 +870,7 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
                                         <span>{servicoSelecionado.duracao_minutos} minutos</span>
                                     </div>
                                 </div>
+                                <InfoAtendimento atendimento={servicoSelecionado.atendimento} className="mb-6" />
 
                                 <p className="text-gray-600 text-base leading-relaxed mb-8">
                                     {servicoSelecionado.descricao || "Este serviço não possui uma descrição detalhada cadastrada. Em caso de dúvida, entre em contato para mais informações."}
@@ -945,56 +948,8 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
                                                 </span>
                                             </div>
 
-                                            {/* 👉 NOVO BLOCO: PRODUTOS EXTRAS / VINCULADOS AO SERVIÇO */}
-                                            {produtosExtras.length > 0 && (
-                                                <div className="mt-8 pt-8 border-t border-gray-100 animate-in fade-in slide-in-from-bottom-2">
-                                                    <h4 className="text-lg font-bold text-gray-900 mb-1 flex items-center gap-2">
-                                                        <ShoppingBagIcon className="w-5 h-5 text-[#FF5A00]" />
-                                                        Turbine seu agendamento
-                                                    </h4>
-                                                    <p className="text-sm text-gray-500 mb-6">Adicione produtos recomendados para retirar no dia do serviço.</p>
-
-                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                                        {produtosExtras.map(extra => {
-                                                            let fotoCapa = 'https://placehold.co/100x100/e2e8f0/828ea8?text=Sem+Foto';
-                                                            try {
-                                                                const parsed = JSON.parse(extra.fotos);
-                                                                if (parsed.length > 0) fotoCapa = parsed[0].startsWith('http') ? parsed[0] : `/storage/${parsed[0]}`;
-                                                            } catch(e) {}
-
-                                                            const valorProduto = Number(extra.valor_promocional || extra.valor_final || extra.valor_normal);
-                                                            const isSelected = extrasSelecionados.some(e => e.id === extra.id);
-
-                                                            return (
-                                                                <div
-                                                                    key={extra.id}
-                                                                    onClick={() => toggleExtra(extra)}
-                                                                    className={`flex items-center gap-4 bg-white border p-3 rounded-2xl shadow-sm cursor-pointer transition-colors ${isSelected ? 'border-[#FF5A00] bg-orange-50/30' : 'border-gray-200 hover:border-orange-300'}`}
-                                                                >
-                                                                    <div className="w-16 h-16 bg-gray-100 rounded-xl overflow-hidden shrink-0 border border-gray-100 relative">
-                                                                        <img src={fotoCapa} alt={extra.nome} className="w-full h-full object-cover" />
-                                                                        {isSelected && (
-                                                                            <div className="absolute inset-0 bg-[#FF5A00]/20 flex items-center justify-center">
-                                                                                <CheckCircleIcon className="w-8 h-8 text-[#FF5A00] bg-white rounded-full" />
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-                                                                    <div className="flex-1 min-w-0">
-                                                                        <h5 className="font-bold text-gray-900 text-sm truncate">{extra.nome}</h5>
-                                                                        <p className="text-xs text-gray-500 truncate mb-1">{extra.categoria} {extra.tamanho ? `• ${extra.tamanho}` : ''}</p>
-                                                                        <div className="font-black text-[#FF5A00] text-sm">
-                                                                            + R$ {valorProduto.toFixed(2).replace('.', ',')}
-                                                                        </div>
-                                                                    </div>
-                                                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors shrink-0 ${isSelected ? 'bg-[#FF5A00] text-white' : 'bg-gray-100 text-gray-400'}`}>
-                                                                        {isSelected ? <CheckIcon className="w-5 h-5" /> : <PlusIcon className="w-5 h-5" />}
-                                                                    </div>
-                                                                </div>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                </div>
-                                            )}
+                                            {/* Adicionais (produtos) para este serviço: o cliente escolhe e ajusta a quantidade */}
+                                            <AdicionaisEscolha key={servicoSelecionado.id} servicoId={servicoSelecionado.id} onChange={setAdicionais} contexto="agendamento" />
                                         </>
                                     );
                                 })()}
@@ -1020,9 +975,8 @@ export default function Loja({ auth, estabelecimento, servicosPaginados, statusF
                                             servico_id: servicoSelecionado.id,
                                             data: dataSelecionada || undefined,
                                             hora: horaSelecionada || undefined,
-                                            extras_ids: extrasSelecionados.map(e => e.id).join(',') || undefined,
-                                            valor_extras: extrasSelecionados.reduce((acc, e) => acc + Number(e.valor_promocional || e.valor_final || e.valor_normal), 0) || undefined,
-                                            nomes_extras: extrasSelecionados.map(e => e.nome).join(', ') || undefined
+                                            // Cada unidade vira um id na lista (ex.: 2 unidades do produto 5 → "5,5").
+                                            extras_ids: adicionais.itens.flatMap((i) => Array(i.quantidade).fill(i.id)).join(',') || undefined
                                         })}
                                         className={`flex-1 sm:flex-none text-center font-bold py-3.5 sm:py-4 px-6 sm:px-10 rounded-2xl shadow-lg transition-all text-sm sm:text-base w-full ${(!dataSelecionada || !horaSelecionada) ? 'bg-gray-900 text-white hover:bg-black shadow-gray-900/20 pointer-events-none opacity-50' : 'bg-green-600 text-white hover:bg-green-700 hover:scale-[1.02] shadow-green-600/30'}`}
                                     >

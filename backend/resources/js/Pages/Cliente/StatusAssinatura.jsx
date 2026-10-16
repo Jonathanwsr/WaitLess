@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, router } from '@inertiajs/react';
 import axios from 'axios';
+import PagamentoAssinatura from '@/Components/Assinatura/PagamentoAssinatura';
 
 // Visual de cada plano (cores, selo e frase). Preço e benefícios vêm do servidor (BeneficiosPlanos).
 const VISUAL_PLANOS = {
@@ -349,6 +350,9 @@ export default function StatusAssinatura({ auth, statusAssinatura, planos: plano
                             )}
                         </div>
                     </div>
+
+                    {/* Pagamento: forma padrão e faturas reais do Asaas */}
+                    {(hasSubscription || statusAssinatura?.detalhes_fatura) && <PagamentoAssinatura cpfInicial={statusAssinatura?.dados_usuario?.cpf_cnpj || ''} />}
 
                     {/* Oferta de Planos (Aparece se não tem plano, ou se clicou em Mudar de Plano) */}
                     {(!hasSubscription || showPlans) && (

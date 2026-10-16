@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Produto extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, \App\Models\Concerns\NomeEmMaiusculas;
 
     protected $fillable = [
         'nome', 'descricao', 'cor', 'tamanho', 'usuario_id', 'estabelecimento_id', 

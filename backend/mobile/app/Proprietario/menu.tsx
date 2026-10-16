@@ -49,6 +49,7 @@ export default function MenuSocio() {
         { icone: 'receipt-outline', titulo: 'Comprovantes de recebimento', descricao: 'Busque por período e baixe o de quem quiser', rota: '/Proprietario/PagamentosRecebidos' },
         { icone: 'document-text-outline', titulo: 'Notas fiscais', descricao: 'Notas da comissão Lokyva, das suas vendas e da assinatura', rota: '/Proprietario/NotasFiscais' },
         { icone: 'clipboard-outline', titulo: 'Pedidos', descricao: 'Produtos e reservas, situação e quem atende', rota: '/Proprietario/PedidosGestao' },
+        { icone: 'heart-outline', titulo: 'Ofertas para quem favoritou', descricao: 'Mande cupom e aviso direto no chat de quem segue o seu local', rota: '/Proprietario/OfertasFavoritos' },
         { icone: 'flash-outline', titulo: 'Flash Deals', descricao: 'Desconto relâmpago para vagas ociosas, avisado a quem está perto', rota: '/Proprietario/FlashDeals' },
         { icone: 'cash-outline', titulo: 'Cobranças parceladas', descricao: 'Cobre serviços ou reservas em parcelas', rota: '/Proprietario/Cobrancas' },
         { icone: 'stats-chart-outline', titulo: 'Painel de vendas', descricao: 'Faturamento, mais vendidos e horários', rota: '/Proprietario/PainelVendas' },

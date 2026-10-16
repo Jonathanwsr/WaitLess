@@ -51,17 +51,17 @@ class ComprovanteEGestaoPedidosTest extends TestCase
     private function cobrancaAceita(User $socio, Estabelecimento $estab, User $cliente): Cobranca
     {
         $servico = Servico::create([
-            'estabelecimento_id' => $estab->id, 'nome' => 'Corte', 'tipo_servico' => 'Outro',
+            'estabelecimento_id' => $estab->id, 'nome' => 'CORTE', 'tipo_servico' => 'Outro',
             'valor' => 90, 'duracao_minutos' => 30, 'ativo' => true,
         ]);
-        $funcionario = Funcionario::create(['estabelecimento_id' => $estab->id, 'nome' => 'Carlos', 'ativo' => true]);
+        $funcionario = Funcionario::create(['estabelecimento_id' => $estab->id, 'nome' => 'CARLOS', 'ativo' => true]);
 
         $cobranca = Cobranca::create([
             'codigo' => 'COB-' . strtoupper(substr(uniqid(), -8)), 'estabelecimento_id' => $estab->id, 'criado_por_usuario_id' => $socio->id,
             'cliente_id' => $cliente->id, 'modo' => 'presencial', 'valor_total' => 90, 'taxa_percentual' => 0,
             'status' => 'aceita', 'aceita_em' => now(),
         ]);
-        $cobranca->itens()->create(['servico_id' => $servico->id, 'funcionario_id' => $funcionario->id, 'descricao' => 'Corte', 'valor' => 90]);
+        $cobranca->itens()->create(['servico_id' => $servico->id, 'funcionario_id' => $funcionario->id, 'descricao' => 'CORTE', 'valor' => 90]);
         $cobranca->parcelas()->create(['numero' => 1, 'valor' => 45, 'vencimento' => now()->toDateString(), 'status' => 'pago', 'forma_pagamento' => 'presencial', 'pago_em' => now(), 'baixa_manual' => true]);
         $cobranca->parcelas()->create(['numero' => 2, 'valor' => 45, 'vencimento' => now()->addMonth()->toDateString(), 'status' => 'pendente', 'forma_pagamento' => 'presencial']);
 
@@ -104,20 +104,20 @@ class ComprovanteEGestaoPedidosTest extends TestCase
         $descricao = app(\App\Services\CobrancaParceladaService::class)->descricaoParaFatura($cobranca);
 
         $this->assertStringContainsString($estab->nome, $descricao);
-        $this->assertStringContainsString('Corte', $descricao);
+        $this->assertStringContainsString('CORTE', $descricao);
     }
 
     public function test_painel_de_pedidos_mostra_produtos_e_reservas_com_quem_atende(): void
     {
         [$socio, $estab] = $this->socio();
         $cliente = $this->usuario('cliente', 'Cliente');
-        $funcionario = Funcionario::create(['estabelecimento_id' => $estab->id, 'nome' => 'Ana', 'ativo' => true]);
+        $funcionario = Funcionario::create(['estabelecimento_id' => $estab->id, 'nome' => 'ANA', 'ativo' => true]);
         $servico = Servico::create([
-            'estabelecimento_id' => $estab->id, 'nome' => 'Barba', 'tipo_servico' => 'Outro',
+            'estabelecimento_id' => $estab->id, 'nome' => 'BARBA', 'tipo_servico' => 'Outro',
             'valor' => 40, 'duracao_minutos' => 30, 'ativo' => true,
         ]);
         $produto = ProdutoEntrega::create([
-            'usuario_id' => $socio->id, 'estabelecimento_id' => $estab->id, 'nome' => 'Pomada', 'categoria' => 'Outros',
+            'usuario_id' => $socio->id, 'estabelecimento_id' => $estab->id, 'nome' => 'POMADA', 'categoria' => 'Outros',
             'valor' => 30, 'estoque_disponivel' => 5, 'ativo' => true, 'taxa_entrega' => 0,
             'aceita_entrega' => true, 'aceita_retirada' => true,
             'endereco_cep' => '01000000', 'endereco_rua' => 'R', 'endereco_numero' => '1',
@@ -140,7 +140,7 @@ class ComprovanteEGestaoPedidosTest extends TestCase
         $resposta->assertOk();
         $tipos = collect($resposta->json('pedidos'))->pluck('tipo')->sort()->values()->all();
         $this->assertSame(['produto', 'reserva'], $tipos);
-        $this->assertTrue(collect($resposta->json('pedidos'))->every(fn ($p) => $p['quem_atende'] === 'Ana'));
+        $this->assertTrue(collect($resposta->json('pedidos'))->every(fn ($p) => $p['quem_atende'] === 'ANA'));
         $this->assertSame(2, $resposta->json('resumo.em_aberto'));
     }
 
@@ -172,7 +172,7 @@ class ComprovanteEGestaoPedidosTest extends TestCase
         $this->assertSame('application/pdf', $pdf->headers->get('content-type'));
 
         \Laravel\Sanctum\Sanctum::actingAs($cliente);
-        $this->getJson('/api/mobile/minhas-cobrancas')->assertOk()->assertJsonPath('cobrancas.0.itens.0.funcionario.nome', 'Carlos');
+        $this->getJson('/api/mobile/minhas-cobrancas')->assertOk()->assertJsonPath('cobrancas.0.itens.0.funcionario.nome', 'CARLOS');
         $this->get('/api/mobile/minhas-cobrancas/' . $cobranca->id . '/comprovante-pdf')->assertOk();
         $this->getJson('/api/mobile/gestao/pedidos')->assertForbidden();
 
@@ -198,7 +198,7 @@ class ComprovanteEGestaoPedidosTest extends TestCase
         $this->assertFalse($props['progresso']['produto']);
 
         ProdutoEntrega::create([
-            'usuario_id' => $socio->id, 'estabelecimento_id' => $estab->id, 'nome' => 'Água 20L', 'categoria' => 'Gás e água',
+            'usuario_id' => $socio->id, 'estabelecimento_id' => $estab->id, 'nome' => 'ÁGUA 20L', 'categoria' => 'Gás e água',
             'valor' => 15, 'estoque_disponivel' => 5, 'ativo' => true, 'taxa_entrega' => 0,
             'aceita_entrega' => true, 'aceita_retirada' => true,
             'endereco_cep' => '01000000', 'endereco_rua' => 'R', 'endereco_numero' => '1',
@@ -212,26 +212,26 @@ class ComprovanteEGestaoPedidosTest extends TestCase
     {
         [$socio, $estab] = $this->socio();
         $servico = Servico::create([
-            'estabelecimento_id' => $estab->id, 'nome' => 'Corte', 'tipo_servico' => 'Outro',
+            'estabelecimento_id' => $estab->id, 'nome' => 'CORTE', 'tipo_servico' => 'Outro',
             'valor' => 50, 'duracao_minutos' => 30, 'ativo' => true,
         ]);
         \Laravel\Sanctum\Sanctum::actingAs($socio);
 
         $id = $this->postJson('/api/mobile/produtos', [
-            'estabelecimento_id' => $estab->id, 'nome' => 'Pomada', 'valor_normal' => 30, 'estoque_disponivel' => 4,
+            'estabelecimento_id' => $estab->id, 'nome' => 'POMADA', 'valor_normal' => 30, 'estoque_disponivel' => 4,
             'servico_id' => $servico->id, 'is_promocao' => 0,
         ])->assertCreated()->json('id');
 
         $this->getJson('/api/mobile/meus-produtos')->assertOk()
-            ->assertJsonPath('produtos.0.servico_nome', 'Corte')
-            ->assertJsonPath('servicos.0.nome', 'Corte');
+            ->assertJsonPath('produtos.0.servico_nome', 'CORTE')
+            ->assertJsonPath('servicos.0.nome', 'CORTE');
 
-        $this->postJson("/api/mobile/produtos/{$id}", ['nome' => 'Pomada modeladora', 'valor_normal' => 35])->assertOk();
-        $this->assertSame('Pomada modeladora', \App\Models\Produto::find($id)->nome);
+        $this->postJson("/api/mobile/produtos/{$id}", ['nome' => 'POMADA MODELADORA', 'valor_normal' => 35])->assertOk();
+        $this->assertSame('POMADA MODELADORA', \App\Models\Produto::find($id)->nome);
         $this->assertEquals(35, (float) \App\Models\Produto::find($id)->valor_final);
 
         \Laravel\Sanctum\Sanctum::actingAs($this->usuario('socio', 'Outro'));
-        $this->postJson("/api/mobile/produtos/{$id}", ['nome' => 'Invadido'])->assertForbidden();
+        $this->postJson("/api/mobile/produtos/{$id}", ['nome' => 'INVADIDO'])->assertForbidden();
         $this->deleteJson("/api/mobile/produtos/{$id}")->assertForbidden();
 
         \Laravel\Sanctum\Sanctum::actingAs($socio);
@@ -243,14 +243,14 @@ class ComprovanteEGestaoPedidosTest extends TestCase
     {
         [$socio, $estab] = $this->socio();
         $produto = \App\Models\Produto::create([
-            'nome' => 'Kit', 'usuario_id' => $socio->id, 'estabelecimento_id' => $estab->id,
+            'nome' => 'KIT', 'usuario_id' => $socio->id, 'estabelecimento_id' => $estab->id,
             'valor_normal' => 20, 'valor_final' => 20, 'estoque_disponivel' => 3,
             'fotos' => ['https://ik.test/a.jpg', 'https://ik.test/b.jpg'],
         ]);
         \Laravel\Sanctum\Sanctum::actingAs($socio);
 
         // Sem mexer em fotos: continuam iguais.
-        $this->postJson("/api/mobile/produtos/{$produto->id}", ['nome' => 'Kit 2'])->assertOk();
+        $this->postJson("/api/mobile/produtos/{$produto->id}", ['nome' => 'KIT 2'])->assertOk();
         $this->assertSame(['https://ik.test/a.jpg', 'https://ik.test/b.jpg'], $produto->fresh()->fotos);
 
         // Remove uma e tenta "colar" uma URL de fora: só fica a que já era do produto.

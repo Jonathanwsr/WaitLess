@@ -156,6 +156,20 @@ export default function MinhasViagens() {
             </TouchableOpacity>
           </View>
 
+          {/* Planejamento: Guia do Local e Roteiros dia a dia */}
+          <View style={s.atalhos}>
+            <TouchableOpacity style={s.atalho} activeOpacity={0.88} onPress={() => router.push('/src/screens/GuiaLocal' as never)} accessibilityRole="button">
+              <LinearGradient colors={['#0EA5E9', '#2563EB']} style={s.atalhoIcone}><Ionicons name="book" size={20} color="#fff" /></LinearGradient>
+              <Text style={s.atalhoTitulo}>Guia do Local</Text>
+              <Text style={s.atalhoTxt}>Dicas, pontos turísticos e o que tem por perto</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.atalho} activeOpacity={0.88} onPress={() => router.push('/src/screens/MeusRoteiros' as never)} accessibilityRole="button">
+              <LinearGradient colors={['#10B981', '#047857']} style={s.atalhoIcone}><Ionicons name="map" size={20} color="#fff" /></LinearGradient>
+              <Text style={s.atalhoTitulo}>Meus Roteiros</Text>
+              <Text style={s.atalhoTxt}>Dia a dia com mapa, PDF e reservar tudo</Text>
+            </TouchableOpacity>
+          </View>
+
           {carregando && <ActivityIndicator color={T.primary} size="large" style={{ marginTop: 30 }} />}
           {!!erro && <View style={s.erro}><Ionicons name="alert-circle" size={18} color="#B91C1C" /><Text style={s.erroTxt}>{erro}</Text></View>}
 
@@ -241,6 +255,11 @@ const s = StyleSheet.create({
   codigoInput: { flex: 1, fontSize: 14, fontWeight: '700', letterSpacing: 0.5, color: T.ink, paddingVertical: 8 },
   codigoBtn: { backgroundColor: T.ink, borderRadius: 14, paddingHorizontal: 18, height: 40, justifyContent: 'center', minWidth: 76, alignItems: 'center' },
   codigoBtnTxt: { color: '#fff', fontWeight: '800' },
+  atalhos: { flexDirection: 'row', gap: 10 },
+  atalho: { flex: 1, backgroundColor: T.card, borderRadius: 22, padding: 14, minHeight: 130, ...sombra },
+  atalhoIcone: { width: 42, height: 42, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  atalhoTitulo: { fontSize: 15, fontWeight: '900', color: T.ink, marginTop: 10 },
+  atalhoTxt: { fontSize: 11, color: T.muted, marginTop: 2, lineHeight: 15 },
   erro: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FEE2E2', borderRadius: 14, padding: 12 },
   erroTxt: { flex: 1, color: '#B91C1C', fontWeight: '700', fontSize: 13 },
   secaoLinha: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6 },

@@ -41,3 +41,10 @@ Schedule::command('assinaturas:voltar-gratuito')->dailyAt('00:30');
 
 // Carteiras que ficaram aguardando o Asaas liberar novas subcontas: tenta abrir sozinho.
 Schedule::command('carteira:abrir-pendentes')->hourly()->withoutOverlapping();
+Schedule::command('locacoes:geocodificar --limite=200')->dailyAt('03:30')->withoutOverlapping();
+
+// Backup diário do PostgreSQL (mantém os 7 mais recentes em storage/app/private/backups).
+Schedule::command('backup:banco')->dailyAt('02:15')->withoutOverlapping();
+
+// Lembretes de véspera (push + e-mail) para agendamentos e reservas das próximas 24h.
+Schedule::command('lembretes:enviar')->hourly()->withoutOverlapping();

@@ -87,6 +87,9 @@ class ClienteAgendamentoController extends Controller
             'cupom_codigo'     => 'nullable|string|max:60',
             'viagem_id'        => 'nullable|integer|exists:viagens,id',
             'funcionario_id'   => 'nullable|integer',
+            // Produtos adicionais escolhidos junto com o serviço ("3,5" ou lista de {id, quantidade}).
+            'extras_ids'       => 'nullable|string|max:500',
+            'extras'           => 'nullable|array|max:30',
         ]);
 
         $dataHoraAgendada = Carbon::parse($validated['data_agendamento'] . ' ' . $validated['hora_agendamento']);
@@ -95,6 +98,9 @@ class ClienteAgendamentoController extends Controller
         $servico = $estabelecimento->servicos()->findOrFail($validated['servico_id']);
         if ($servico->horarioACombinar()) {
             return back()->withErrors(['hora_agendamento' => 'Este serviço é com horário a combinar: fale com o proprietário pelo chat ou telefone para marcar.']);
+        }
+        if (\App\Support\CamposServico::exigeEndereco($servico) && mb_strlen(trim((string) $request->input('endereco_atendimento'))) < 8) {
+            return back()->withErrors(['endereco_atendimento' => 'Informe onde você está (rua, número, bairro e cidade) — este serviço vai até você.']);
         }
 
         $configuracoes = is_string($servico->configuracoes) ? json_decode($servico->configuracoes, true) : ($servico->configuracoes ?? []);
@@ -207,6 +213,18 @@ class ClienteAgendamentoController extends Controller
                 }
             }
 
+            // Adicionais escolhidos: conferidos (só os oferecidos para este serviço, com estoque) e somados ao total.
+            $adicionaisService = app(\App\Services\ProdutosAdicionaisService::class);
+            $adicionais = $adicionaisService->orcar(
+                \App\Services\ProdutosAdicionaisService::normalizarPedido($request->input('extras', $validated['extras_ids'] ?? null)),
+                $servico->id, null, Auth::user()
+            );
+            $valorTotal = round($valorTotal + $adicionais['total'], 2);
+            // Serviço que vai até o cliente (guincho, borracharia móvel, a domicílio): taxa de deslocamento.
+            $enderecoAtendimento = trim((string) $request->input('endereco_atendimento')) ?: null;
+            $taxaDeslocamento = \App\Support\CamposServico::taxaDoAgendamento($servico, $enderecoAtendimento);
+            $valorTotal = round($valorTotal + $taxaDeslocamento, 2);
+
             // Serviço gratuito (ou que zerou com cupom/pontos/desconto): não existe o
             // que cobrar, então não faz sentido gerar PIX/boleto/cartão — a reserva
             // já nasce confirmada, sem passar pelo gateway de pagamento.
@@ -224,12 +242,16 @@ class ClienteAgendamentoController extends Controller
                 'status'             => $ehGratuito ? 'confirmado' : ($isPresencial ? 'pendente' : 'aguardando_pagamento'),
                 'status_pagamento'   => $ehGratuito ? 'pago' : ($isPresencial ? 'presencial' : 'pendente'),
                 'valor_final'        => $valorTotal,
+                'endereco_atendimento' => \App\Support\CamposServico::vaiAteOCliente($servico) ? $enderecoAtendimento : null,
+                'taxa_deslocamento'  => $taxaDeslocamento ?: null,
                 'pontos_utilizados'  => $pontosAplicados,
                 'valor_desconto_pontos' => $pontosAplicados > 0 ? $valorDescontoPontos : null,
                 'cupom_id'           => $cupomAplicado?->id,
                 'valor_desconto_cupom' => $cupomAplicado ? $valorDescontoCupom : null,
                 'codigo_verificacao' => $codigoPin,
             ]);
+
+            $adicionaisService->registrar($adicionais, $agendamento, Auth::user());
 
             if ($pontosNecessarios > 0) {
                 DB::table('historico_pontos')->insert([

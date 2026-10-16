@@ -1,4 +1,5 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import AdicionaisEscolha from '@/Components/Produtos/AdicionaisEscolha';
 import { Head, Link, useForm, router, usePage } from '@inertiajs/react';
 import { useState, useMemo, useEffect } from 'react';
 import axios from 'axios';
@@ -70,7 +71,12 @@ export default function DetalhesItem({ auth, item, ficha = null, avaliacoes = { 
         cupom_codigo: '',
         parcelas: 1,
         viagem_id: '',
+        extras: [],
     });
+
+    // Adicionais (produtos) escolhidos para esta reserva: { itens: [{id, quantidade}], total, quantidade }.
+    const [adicionais, setAdicionais] = useState({ itens: [], total: 0, quantidade: 0 });
+    useEffect(() => { setData('extras', adicionais.itens); }, [adicionais]);
 
     // Veio do "Reservar" da agenda de uma viagem colaborativa — se outro
     // membro do grupo já reservou este mesmo item, sai com desconto de grupo.
@@ -109,6 +115,7 @@ export default function DetalhesItem({ auth, item, ficha = null, avaliacoes = { 
                     pessoas: data.pessoas,
                     quantidade: 1,
                     cupom_codigo: data.cupom_codigo || null,
+                    extras: adicionais.itens,
                 });
                 if (cancelado) return;
                 setCotacao(resposta);
@@ -122,7 +129,7 @@ export default function DetalhesItem({ auth, item, ficha = null, avaliacoes = { 
             }
         }, 350);
         return () => { cancelado = true; clearTimeout(timer); };
-    }, [pagandoNoCartao, data.data_inicio, data.data_fim, data.pessoas, data.cupom_codigo]);
+    }, [pagandoNoCartao, data.data_inicio, data.data_fim, data.pessoas, data.cupom_codigo, adicionais.total]);
 
     // --- LÓGICA DE CÁLCULO DINÂMICO DE DATAS E PREÇO ---
     const checkIn = new Date(data.data_inicio);
@@ -872,6 +879,17 @@ export default function DetalhesItem({ auth, item, ficha = null, avaliacoes = { 
                                                 <span>{precoComCupomFormatado}</span>
                                             </div>
                                         )}
+                                        {adicionais.quantidade > 0 && (
+                                            <div className="flex justify-between items-center text-gray-600 font-medium mt-2">
+                                                <span>Adicionais ({adicionais.quantidade})</span>
+                                                <span>+ {brl(adicionais.total)}</span>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Produtos adicionais oferecidos para esta reserva */}
+                                    <div className="mb-6 -mt-2">
+                                        <AdicionaisEscolha itemId={item.id} onChange={setAdicionais} contexto="reserva" />
                                     </div>
 
                                     {periodoEsgotado && (

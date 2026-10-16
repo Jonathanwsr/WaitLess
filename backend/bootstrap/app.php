@@ -42,6 +42,11 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('financeiro:relatorio-semanal')->weeklyOn(1, '07:00');
     })
     ->withExceptions(function (Exceptions $exceptions) {
+        // Monitoramento: erro 500 de verdade → e-mail para ALERTA_ERROS_EMAIL (com trava anti-repetição).
+        $exceptions->report(function (\Throwable $e) {
+            \App\Support\AlertaDeErros::avisar($e);
+        });
+
         // API/JSON: resposta padronizada, em português e sem vazar detalhes internos.
         $exceptions->render(function (\Throwable $e, Request $request) {
             if (\App\Support\RespostaDeErro::deveResponderJson($request)) {

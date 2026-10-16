@@ -121,6 +121,11 @@ class EstabelecimentoCatalogoMobileController extends Controller
 
             $user = Auth::user();
             $servico = Servico::findOrFail($request->servico_id);
+            $enderecoAtendimento = trim((string) $request->input('endereco_atendimento')) ?: null;
+            if (\App\Support\CamposServico::exigeEndereco($servico) && mb_strlen((string) $enderecoAtendimento) < 8) {
+                DB::rollBack();
+                return response()->json(['error' => 'Informe onde você está (rua, número, bairro e cidade) — este serviço vai até você.', 'campo' => 'endereco_atendimento'], 422);
+            }
             // Valor com a promoção cadastrada no serviço.
             $valorFinal = app(\App\Services\PrecificacaoService::class)->comPromocao((float) $servico->valor, (bool) ($servico->tem_promocao ?? false), $servico->tipo_desconto ?? null, $servico->valor_desconto ?? null);
 
@@ -136,6 +141,9 @@ class EstabelecimentoCatalogoMobileController extends Controller
                 $valorDescontoCupom = $cupomService->calcularDesconto($cupomAplicado, $valorFinal);
                 $valorFinal = max(0, $valorFinal - $valorDescontoCupom);
             }
+            // Serviço que vai até o cliente: taxa de deslocamento (fora do desconto do cupom).
+            $taxaDeslocamento = \App\Support\CamposServico::taxaDoAgendamento($servico, $enderecoAtendimento);
+            $valorFinal = round($valorFinal + $taxaDeslocamento, 2);
 
             $pin = (string) mt_rand(1000, 9999);
 
@@ -149,6 +157,8 @@ class EstabelecimentoCatalogoMobileController extends Controller
                 'status'             => 'aguardando_pagamento',
                 'status_pagamento'   => 'pendente',
                 'valor_final'        => $valorFinal,
+                'endereco_atendimento' => \App\Support\CamposServico::vaiAteOCliente($servico) ? $enderecoAtendimento : null,
+                'taxa_deslocamento'  => $taxaDeslocamento ?: null,
                 'cupom_id'           => $cupomAplicado?->id,
                 'valor_desconto_cupom' => $cupomAplicado ? $valorDescontoCupom : null,
                 'codigo_verificacao' => $pin

@@ -91,8 +91,8 @@ class CrossSellViagemTest extends TestCase
     public function test_disparo_oferece_o_melhor_veiculo_da_cidade_e_manda_push(): void
     {
         $hotel = $this->item($this->usuario('socio'), 'hotel');
-        $this->item($this->usuario('socio'), 'carro', ['avaliacao_media' => 3.5, 'nome' => 'Carro Fraco']);
-        $melhor = $this->item($this->usuario('socio'), 'carro', ['avaliacao_media' => 4.9, 'nome' => 'Carro Top']);
+        $this->item($this->usuario('socio'), 'carro', ['avaliacao_media' => 3.5, 'nome' => 'CARRO FRACO']);
+        $melhor = $this->item($this->usuario('socio'), 'carro', ['avaliacao_media' => 4.9, 'nome' => 'CARRO TOP']);
         $cliente = $this->usuario();
         // Check-in amanhã: o horário "2 dias antes" já passou, então a oferta vale para agora.
         $aluguel = $this->reservar($cliente, $hotel, now()->addDay()->toDateString(), now()->addDays(3)->toDateString());
@@ -103,7 +103,7 @@ class CrossSellViagemTest extends TestCase
         $this->assertSame('enviada', $oferta->status);
         $this->assertSame('item_aluguel', $oferta->alvo_tipo);
         $this->assertSame($melhor->id, $oferta->alvo_id);
-        Http::assertSent(fn ($r) => str_contains($r->url(), 'exp.host') && str_contains($r['body'], 'Carro Top'));
+        Http::assertSent(fn ($r) => str_contains($r->url(), 'exp.host') && str_contains($r['body'], 'CARRO TOP'));
     }
 
     public function test_sem_veiculo_na_cidade_fica_sem_oferta(): void
@@ -129,9 +129,9 @@ class CrossSellViagemTest extends TestCase
     public function test_chegada_na_cidade_oferece_restaurante_e_spa_uma_vez(): void
     {
         $hotel = $this->item($this->usuario('socio'), 'hotel');
-        $restaurante = Estabelecimento::create(['nome' => 'Cantina', 'ramo_atuacao' => 'Restaurante', 'cidade' => $this->cidade, 'estado' => 'RS', 'ativo' => true, 'avaliacao_media' => 4.8]);
-        $spa = Estabelecimento::create(['nome' => 'Spa Serra', 'ramo_atuacao' => 'Spa', 'cidade' => $this->cidade, 'estado' => 'RS', 'ativo' => true]);
-        $massagem = Servico::create(['estabelecimento_id' => $spa->id, 'nome' => 'Massagem relaxante', 'tipo_servico' => 'Outro', 'valor' => 180, 'duracao_minutos' => 60, 'ativo' => true]);
+        $restaurante = Estabelecimento::create(['nome' => 'CANTINA', 'ramo_atuacao' => 'Restaurante', 'cidade' => $this->cidade, 'estado' => 'RS', 'ativo' => true, 'avaliacao_media' => 4.8]);
+        $spa = Estabelecimento::create(['nome' => 'SPA SERRA', 'ramo_atuacao' => 'Spa', 'cidade' => $this->cidade, 'estado' => 'RS', 'ativo' => true]);
+        $massagem = Servico::create(['estabelecimento_id' => $spa->id, 'nome' => 'MASSAGEM RELAXANTE', 'tipo_servico' => 'Outro', 'valor' => 180, 'duracao_minutos' => 60, 'ativo' => true]);
         $cliente = $this->usuario();
         $this->reservar($cliente, $hotel, now('America/Sao_Paulo')->toDateString(), now()->addDays(2)->toDateString());
 
@@ -173,8 +173,8 @@ class CrossSellViagemTest extends TestCase
     public function test_conversao_por_agendamento_no_restaurante(): void
     {
         $cliente = $this->usuario();
-        $restaurante = Estabelecimento::create(['nome' => 'Bistrô', 'cidade' => $this->cidade]);
-        $servico = Servico::create(['estabelecimento_id' => $restaurante->id, 'nome' => 'Mesa', 'tipo_servico' => 'Outro', 'valor' => 0, 'duracao_minutos' => 60, 'ativo' => true]);
+        $restaurante = Estabelecimento::create(['nome' => 'BISTRÔ', 'cidade' => $this->cidade]);
+        $servico = Servico::create(['estabelecimento_id' => $restaurante->id, 'nome' => 'MESA', 'tipo_servico' => 'Outro', 'valor' => 0, 'duracao_minutos' => 60, 'ativo' => true]);
         $hotel = $this->item($this->usuario('socio'), 'hotel');
         $aluguel = $this->reservar($cliente, $hotel, now()->addDays(20)->toDateString(), now()->addDays(21)->toDateString());
         $oferta = OfertaViagem::create([

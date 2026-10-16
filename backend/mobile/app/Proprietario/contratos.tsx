@@ -8,13 +8,14 @@ import {
 } from '../../components/owner/ui';
 import { useCarga } from '../../components/owner/useCarga';
 import PremiumGate from '../../components/owner/PremiumGate';
+import ComoFuncionamContratos from '../../components/owner/ComoFuncionamContratos';
 import { useAviso } from '../../components/owner/Aviso';
 import { alertar } from '../../services/alertar';
 
 interface Modelo { id: number; titulo: string; conteudo: string; tipo_reserva: string; padrao: boolean }
 interface Gerado {
   id: number; numero: string; titulo: string; cliente: string | null; item: string | null;
-  enviado_em: string | null; criado_em: string | null; pdf_url: string | null; docx_url: string | null;
+  enviado_em: string | null; criado_em: string | null; pdf_url: string | null; docx_url: string | null; aceito_em?: string | null;
 }
 interface Pendente { id: number; codigo: string; item: string | null; cliente: string | null; data_inicio: string; data_fim: string; valor_total: number }
 
@@ -63,8 +64,11 @@ export default function ContratosSocio() {
           { icone: 'create-outline', texto: 'Modelos personalizados com dados preenchidos automaticamente' },
           { icone: 'download-outline', texto: 'PDF e Word prontos para cada reserva' },
           { icone: 'mail-outline', texto: 'Envio por e-mail ao cliente com um toque' },
+          { icone: 'eye-outline', texto: 'O cliente lê e baixa o contrato nos detalhes da reserva' },
         ]}
-      />
+      >
+        <ComoFuncionamContratos />
+      </PremiumGate>
     );
   }
 
@@ -133,6 +137,8 @@ export default function ContratosSocio() {
             <Pilula texto="Premium" tom="alerta" />
           </View>
 
+          <ComoFuncionamContratos abertoInicial={modelos.length === 0} />
+
           {dados.locais.length > 1 && (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 12 }}>
               {dados.locais.map((l) => {
@@ -186,7 +192,7 @@ export default function ContratosSocio() {
                         <Text style={s.itemTitulo} numberOfLines={1}>{c.titulo}</Text>
                         <Text style={s.itemSub}>{c.cliente || 'Cliente'} · {c.numero}</Text>
                       </View>
-                      {c.enviado_em ? <Pilula texto="Enviado" tom="positivo" /> : <Pilula texto="Não enviado" />}
+                      {c.aceito_em ? <Pilula texto="Aceito" tom="positivo" /> : c.enviado_em ? <Pilula texto="Enviado" tom="positivo" /> : <Pilula texto="Não enviado" />}
                     </View>
                     <View style={s.acoes}>
                       {!!c.pdf_url && (

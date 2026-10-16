@@ -6,7 +6,8 @@ import { O } from '../../constants/OwnerTheme';
 import { OwnerScreen } from './ui';
 
 /** Convite para assinar o Premium, mostrado no lugar de telas exclusivas para assinantes. */
-export default function PremiumGate({ titulo, texto, beneficios, icone = 'sparkles' }: {
+export default function PremiumGate({ titulo, texto, beneficios, icone = 'sparkles', children }: {
+  children?: React.ReactNode;
   titulo: string;
   texto: string;
   beneficios: { icone: string; texto: string }[];
@@ -34,6 +35,7 @@ export default function PremiumGate({ titulo, texto, beneficios, icone = 'sparkl
           <Ionicons name="sparkles" size={18} color="#fff" />
           <Text style={s.ctaTxt}>Seja Premium</Text>
         </TouchableOpacity>
+        {!!children && <View style={{ alignSelf: 'stretch', marginTop: 20 }}>{children}</View>}
       </View>
     </OwnerScreen>
   );

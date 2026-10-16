@@ -18,6 +18,9 @@ use Exception;
 
 class ClienteExplorarMobileController extends Controller
 {
+    /** Até essa distância um resultado conta como "perto de você" (cidade e arredores). */
+    private const RAIO_PERTO_KM = 30;
+
     private function calcularValorComDesconto(float $valorBase, bool $temPromocao, ?string $tipoDesconto, $valorDesconto): float
     {
         if (!$temPromocao || !$valorDesconto) return $valorBase;
@@ -171,7 +174,7 @@ class ClienteExplorarMobileController extends Controller
         $base = match ($tipoBusca) {
             'estabelecimentos' => $this->listarEstabelecimentos($premium, $busca, $categoriaFiltro, $lat, $lng),
             'servicos' => $this->listarServicos($premium, $busca, $categoriaFiltro, $lat, $lng, $clienteEhPremium),
-            default => $this->listarReservas($premium, $busca, $categoriaFiltro, $clienteEhPremium),
+            default => $this->listarReservas($premium, $busca, $categoriaFiltro, $clienteEhPremium, $lat, $lng),
         };
 
         $filtrar = function ($lista) use ($tipoBusca, $area, $precoMin, $precoMax, $notaMin, $soPromocao, $soPremium, $semEspera, $soAvulsas) {
@@ -206,6 +209,9 @@ class ClienteExplorarMobileController extends Controller
             // Sem nada na cidade e com fallback: segue com a lista geral, avisando o app.
         }
 
+        $pertoPrimeiro = $lat !== null && $lng !== null && !$estado && !$cidade;
+        $perto = $pertoPrimeiro ? $lista->filter(fn ($i) => isset($i['distancia']) && $i['distancia'] !== null && $i['distancia'] <= self::RAIO_PERTO_KM)->count() : 0;
+
         $lista = match ($ordem) {
             'preco_asc' => $lista->sortBy(fn ($i) => (float) $i['valor']),
             'preco_desc' => $lista->sortByDesc(fn ($i) => (float) $i['valor']),
@@ -214,8 +220,11 @@ class ClienteExplorarMobileController extends Controller
             'recentes' => $lista->sortByDesc(fn ($i) => $i['created_at'] ?? ''),
             // Relevância: donos premium primeiro, depois quem aceita pontos, depois quem aceita pagamento
             // online (e, em cada grupo, online antes), depois nota e volume de avaliações. Mesma regra da web.
-            default => $lista->sort(function ($a, $b) {
+            // Para quem está viajando: o que fica perto (até RAIO_PERTO_KM) vem primeiro; o ranking continua
+            // valendo dentro de cada bloco. Só quando o app mandou a localização e não há filtro de estado.
+            default => $lista->sort(function ($a, $b) use ($pertoPrimeiro) {
                 $chave = fn ($i) => [
+                    (int) ($pertoPrimeiro && isset($i['distancia']) && $i['distancia'] !== null && $i['distancia'] <= self::RAIO_PERTO_KM),
                     (int) !empty($i['destaque_premium']),
                     (int) (($i['destaque_pontos'] ?? 0) > 0),
                     (int) !empty($i['aceita_pagamento_online']),
@@ -237,6 +246,9 @@ class ClienteExplorarMobileController extends Controller
         return response()->json(array_merge($paginador->toArray(), [
             'meta' => [
                 'tem_premium' => $lista->contains(fn ($i) => !empty($i['destaque_premium'])),
+                // Quantos resultados ficam perto de quem está buscando (o app mostra "X perto de você").
+                'perto_de_voce' => $perto,
+                'raio_perto_km' => self::RAIO_PERTO_KM,
                 'ordem' => $ordem,
                 'escopo' => $cidade ? $escopo : 'geral',
                 'cidade' => $cidade,
@@ -342,7 +354,14 @@ class ClienteExplorarMobileController extends Controller
                   ->orWhereRaw(self::semAcento('ramo_atuacao'), [$termo]);
             });
         }
-        if ($categoria) $query->where('ramo_atuacao', 'ilike', "%{$categoria}%");
+        if ($categoria) {
+            // Grupo do Explorar (ou filtro antigo/ramo/tipo que pertença a um grupo); senão, busca pelo texto.
+            if ($grupo = \App\Support\Categorias::grupo($categoria)) {
+                \App\Support\Categorias::filtrarLocais($query, $grupo);
+            } else {
+                $query->where('ramo_atuacao', 'ilike', "%{$categoria}%");
+            }
+        }
 
         $premiumIds = $premium->idsEstabelecimentosPremium();
         $pontosPorLocal = $premium->pontosPorEstabelecimento();
@@ -376,6 +395,8 @@ class ClienteExplorarMobileController extends Controller
                 'fila_atual' => (int) ($filas[$est->id] ?? 0),
                 'status_funcionamento' => \App\Support\StatusFuncionamento::de($est->horariosFuncionamento),
                 'distancia' => $this->distanciaKm($lat, $lng, $est->latitude, $est->longitude),
+                'latitude' => $est->latitude !== null ? (float) $est->latitude : null,
+                'longitude' => $est->longitude !== null ? (float) $est->longitude : null,
                 'destaque_premium' => $premiumIds->contains($est->id),
                 // Quantos serviços/reservas do dono aceitam pontos: sobe na lista logo depois dos premium.
                 'destaque_pontos' => (int) ($pontosPorLocal[$est->id] ?? 0),
@@ -399,8 +420,11 @@ class ClienteExplorarMobileController extends Controller
                   ->orWhereHas('estabelecimento', fn ($e) => $e->whereRaw(self::semAcento('nome'), [$termo])->orWhereRaw(self::semAcento('cidade'), [$termo]));
             });
         }
-        if ($categoria) {
-            $query->whereHas('estabelecimento', fn ($e) => $e->where('ramo_atuacao', 'ilike', "%{$categoria}%"));
+        if ($categoria && ($grupo = \App\Support\Categorias::grupo($categoria))) {
+            \App\Support\Categorias::filtrarServicos($query, $grupo);
+        } elseif ($categoria) {
+            $query->where(fn ($q) => $q->where('servicos.tipo_servico', $categoria)
+                ->orWhereHas('estabelecimento', fn ($e) => $e->where('ramo_atuacao', 'ilike', "%{$categoria}%")));
         }
 
         $premiumIds = $premium->idsEstabelecimentosPremium();
@@ -418,6 +442,8 @@ class ClienteExplorarMobileController extends Controller
                 'id' => $s->id,
                 'nome' => $s->nome,
                 'descricao' => $s->descricao,
+                // Onde atende, 24h, "vai até você", tipo de preço (selos do card).
+                'atendimento' => \App\Support\CamposServico::paraTela($s),
                 'fotos' => $fotos,
                 'foto_perfil' => $fotos[0] ?? $est->foto_perfil,
                 'estabelecimento_id' => $est->id,
@@ -438,6 +464,8 @@ class ClienteExplorarMobileController extends Controller
                 'bloqueado' => (bool) $s->somente_premium && !$clienteEhPremium,
                 'somente_premium' => (bool) $s->somente_premium,
                 'distancia' => $this->distanciaKm($lat, $lng, $est->latitude, $est->longitude),
+                'latitude' => $est->latitude !== null ? (float) $est->latitude : null,
+                'longitude' => $est->longitude !== null ? (float) $est->longitude : null,
                 'destaque_premium' => $premiumIds->contains($est->id),
                 // Quantos serviços/reservas do dono aceitam pontos: sobe na lista logo depois dos premium.
                 'destaque_pontos' => (int) ($pontosPorLocal[$est->id] ?? 0),
@@ -449,7 +477,7 @@ class ClienteExplorarMobileController extends Controller
         })->values();
     }
 
-    private function listarReservas(DestaquePremiumService $premium, ?string $busca, ?string $categoria, bool $clienteEhPremium)
+    private function listarReservas(DestaquePremiumService $premium, ?string $busca, ?string $categoria, bool $clienteEhPremium, ?float $lat = null, ?float $lng = null)
     {
         $query = ItemAluguel::with(['estabelecimento'])->catalogo()->whereHas('estabelecimento');
 
@@ -462,7 +490,13 @@ class ClienteExplorarMobileController extends Controller
                   ->orWhereRaw(self::semAcento('descricao'), [$termo]);
             });
         }
-        if ($categoria) $query->where('categoria', 'ilike', "%{$categoria}%");
+        if ($categoria) {
+            if ($grupo = \App\Support\Categorias::grupo($categoria)) {
+                \App\Support\Categorias::filtrarReservas($query, $grupo, 'itens_aluguel.categoria');
+            } else {
+                $query->where('categoria', 'ilike', "%{$categoria}%");
+            }
+        }
 
         $premiumUsuarios = $premium->idsUsuariosPremium();
         $pontosPorDono = $premium->pontosPorUsuario();
@@ -471,7 +505,10 @@ class ClienteExplorarMobileController extends Controller
 
         $disponibilidade = app(\App\Services\Locacao\DisponibilidadeService::class);
 
-        return $query->get()->map(function ($item) use ($premium, $premiumUsuarios, $pontosPorDono, $donosComEstabelecimento, $clienteEhPremium, $disponibilidade) {
+        // Reserva sem coordenada própria usa a do local a que pertence (para a distância e o "perto de você").
+        $locaisDosItens = \App\Models\Estabelecimento::whereIn('id', $query->clone()->whereNotNull('local_id')->pluck('local_id'))->get(['id', 'latitude', 'longitude'])->keyBy('id');
+
+        return $query->get()->map(function ($item) use ($premium, $premiumUsuarios, $pontosPorDono, $donosComEstabelecimento, $clienteEhPremium, $disponibilidade, $lat, $lng, $locaisDosItens) {
             $fotos = $this->decodificarFotos($item->fotos);
             $base = (float) $item->valor_diaria;
             $comDesconto = $this->calcularValorComDesconto($base, (bool) $item->tem_promocao, $item->tipo_desconto, $item->valor_desconto);
@@ -498,7 +535,9 @@ class ClienteExplorarMobileController extends Controller
                 'direto_dono' => !$donosComEstabelecimento->contains($item->estabelecimento_id),
                 'bloqueado' => (bool) $item->somente_premium && !$clienteEhPremium,
                 'somente_premium' => (bool) $item->somente_premium,
-                'distancia' => null,
+                'distancia' => $this->distanciaKm($lat, $lng, $item->latitude ?? $locaisDosItens->get((int) $item->local_id)?->latitude, $item->longitude ?? $locaisDosItens->get((int) $item->local_id)?->longitude),
+                'latitude' => ($v = $item->latitude ?? $locaisDosItens->get((int) $item->local_id)?->latitude) !== null ? (float) $v : null,
+                'longitude' => ($v = $item->longitude ?? $locaisDosItens->get((int) $item->local_id)?->longitude) !== null ? (float) $v : null,
                 'destaque_premium' => $premiumUsuarios->contains($item->estabelecimento_id),
                 'destaque_pontos' => (int) ($pontosPorDono[$item->estabelecimento_id] ?? 0),
                 'aceita_pagamento_online' => $premium->aceitaPagamentoOnline((int) $item->estabelecimento_id, 'usuario'),
@@ -582,7 +621,8 @@ class ClienteExplorarMobileController extends Controller
             ->orderByDesc('total')
             ->get();
 
-        return response()->json(['status' => 'success', 'data' => $categorias]);
+        // `data` continua igual (versões antigas do app); `grupos` são as categorias novas, com totais.
+        return response()->json(['status' => 'success', 'data' => $categorias, 'grupos' => \App\Support\Categorias::explorarComTotais()]);
     }
 
     public function porCidade($cidade)

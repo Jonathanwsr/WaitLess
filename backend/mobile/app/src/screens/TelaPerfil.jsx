@@ -17,6 +17,7 @@ import { useFocusEffect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { alertar } from '../../../services/alertar';
 import { irParaLoginSemVoltar } from '../../../services/sessao';
+import { useIdioma, IDIOMAS } from '../../../services/idioma';
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://waitless-g1yc.onrender.com/api/mobile';
 
@@ -73,6 +74,7 @@ const PAPEL_LABEL = {
 
 export default function TelaPerfil() {
   const router = useRouter();
+  const { t, idioma, mudarIdioma } = useIdioma();
 
   const [usuario, setUsuario] = useState(null);
   const [carregando, setCarregando] = useState(true);
@@ -261,44 +263,44 @@ export default function TelaPerfil() {
           {!souEquipe && (
             <View style={styles.statBox}>
               <Text style={styles.statValue}>{planoExibicao}</Text>
-              <Text style={styles.statLabel}>Plano atual</Text>
+              <Text style={styles.statLabel}>{t('Plano atual')}</Text>
             </View>
           )}
         </View>
 
-        <Text style={styles.sectionTitle}>Informações pessoais</Text>
+        <Text style={styles.sectionTitle}>{t('Informações pessoais')}</Text>
         <View style={styles.cardGroup}>
-          <ListItem icon="person-outline" title="Nome completo" value={nomeExibicao} />
-          <ListItem icon="mail-outline" title="E-mail" value={emailExibicao} />
-          {!!usuario?.telefone && <ListItem icon="call-outline" title="Telefone" value={formatarTelefone(usuario.telefone)} />}
-          {!!usuario?.data_nascimento && <ListItem icon="calendar-outline" title="Nascimento" value={formatarData(usuario.data_nascimento)} />}
+          <ListItem icon="person-outline" title={t('Nome completo')} value={nomeExibicao} />
+          <ListItem icon="mail-outline" title={t('E-mail')} value={emailExibicao} />
+          {!!usuario?.telefone && <ListItem icon="call-outline" title={t('Telefone')} value={formatarTelefone(usuario.telefone)} />}
+          {!!usuario?.data_nascimento && <ListItem icon="calendar-outline" title={t('Nascimento')} value={formatarData(usuario.data_nascimento)} />}
           {!!mascararDocumento(usuario?.cpf_cnpj) && <ListItem icon="card-outline" title="CPF / CNPJ" value={mascararDocumento(usuario.cpf_cnpj)} />}
-          {!!enderecoCompleto && <ListItem icon="home-outline" title="Endereço" value={enderecoCompleto} />}
-          {!!localizacao && <ListItem icon="location-outline" title="Cidade" value={localizacao} />}
-          {!!usuario?.profissao && <ListItem icon="briefcase-outline" title="Profissão" value={usuario.profissao} />}
-          {!!usuario?.idiomas && <ListItem icon="language-outline" title="Idiomas" value={usuario.idiomas} />}
-          {!!usuario?.onde_estudei && <ListItem icon="school-outline" title="Onde estudei" value={usuario.onde_estudei} />}
-          {!!usuario?.onde_moro && <ListItem icon="map-outline" title="Onde moro" value={usuario.onde_moro} />}
-          {!!usuario?.membro_desde && <ListItem icon="time-outline" title="Membro desde" value={formatarData(usuario.membro_desde)} />}
-          <ListItem icon="create-outline" title="Editar informações" onPress={() => router.push('/src/screens/EditarPerfil')} isLast />
+          {!!enderecoCompleto && <ListItem icon="home-outline" title={t('Endereço')} value={enderecoCompleto} />}
+          {!!localizacao && <ListItem icon="location-outline" title={t('Cidade')} value={localizacao} />}
+          {!!usuario?.profissao && <ListItem icon="briefcase-outline" title={t('Profissão')} value={usuario.profissao} />}
+          {!!usuario?.idiomas && <ListItem icon="language-outline" title={t('Idiomas')} value={usuario.idiomas} />}
+          {!!usuario?.onde_estudei && <ListItem icon="school-outline" title={t('Onde estudei')} value={usuario.onde_estudei} />}
+          {!!usuario?.onde_moro && <ListItem icon="map-outline" title={t('Onde moro')} value={usuario.onde_moro} />}
+          {!!usuario?.membro_desde && <ListItem icon="time-outline" title={t('Membro desde')} value={formatarData(usuario.membro_desde)} />}
+          <ListItem icon="create-outline" title={t('Editar informações')} onPress={() => router.push('/src/screens/EditarPerfil')} isLast />
         </View>
 
         {!!usuario?.sobre_mim && (
           <>
-            <Text style={styles.sectionTitle}>Sobre mim</Text>
+            <Text style={styles.sectionTitle}>{t('Sobre mim')}</Text>
             <View style={[styles.cardGroup, styles.aboutCard]}>
               <Text style={styles.aboutText}>{usuario.sobre_mim}</Text>
             </View>
           </>
         )}
 
-        <Text style={styles.sectionTitle}>Conta e assinatura</Text>
+        <Text style={styles.sectionTitle}>{t('Conta e assinatura')}</Text>
         <View style={styles.cardGroup}>
-          <ListItem icon="people-outline" title="Tipo de usuário" value={papelExibicao} />
+          <ListItem icon="people-outline" title={t('Tipo de usuário')} value={papelExibicao} />
           {!souEquipe && (
             <ListItem
               icon="ribbon-outline"
-              title="Minha assinatura"
+              title={t('Minha assinatura')}
               value={planoExibicao}
               valueColor={COLORS.textDark}
               onPress={() => router.push('/assinatura')}
@@ -308,56 +310,56 @@ export default function TelaPerfil() {
             <>
           <ListItem
             icon="sparkles-outline"
-            title="Meus pontos"
+            title={t('Meus pontos')}
             value={`${usuario?.pontos_saldo ?? 0} pts`}
             valueColor={COLORS.textDark}
             onPress={() => router.push('/src/screens/MeusPontos')}
           />
               <ListItem
             icon="people-outline"
-            title="Convide amigos e ganhe pontos"
+            title={t('Convide amigos e ganhe pontos')}
             onPress={() => router.push('/src/screens/Indicacao')}
           />
               <ListItem
             icon="gift-outline"
-            title="Promoções"
+            title={t('Promoções')}
             onPress={() => router.push('/src/screens/Promocoes')}
           />
               <ListItem
             icon="time-outline"
-            title="Meus agendamentos"
+            title={t('Meus agendamentos')}
             onPress={() => router.push('/src/screens/MeusAgendamentos')}
           />
               <ListItem
             icon="chatbubble-ellipses-outline"
-            title="Meus comentários"
+            title={t('Meus comentários')}
             onPress={() => router.push('/src/screens/MeusComentarios')}
           />
           <ListItem
             icon="return-up-back-outline"
-            title="Meus estornos"
+            title={t('Meus estornos')}
             onPress={() => router.push('/src/screens/MeusEstornosScreen')}
           />
           <ListItem
             icon="cash-outline"
-            title="Pagamentos mensais"
+            title={t('Pagamentos mensais')}
             onPress={() => router.push('/src/screens/MinhasCobrancas')}
           />
           <ListItem
             icon="heart-outline"
-            title="Meus favoritos"
+            title={t('Meus favoritos')}
             onPress={() => router.push('/src/screens/FavoritosDashboard')}
           />
               <ListItem
             icon="airplane-outline"
-            title="Planejar viagem"
-            subValue="Organize seus roteiros e orçamento"
+            title={t('Planejar viagem')}
+            subValue={t('Organize seus roteiros e orçamento')}
             onPress={() => router.push('/src/screens/PlanTripScreen')}
           />
           <ListItem
             icon="map-outline"
-            title="Minhas viagens em grupo"
-            subValue="Roteiro inteligente, reservas e gastos divididos"
+            title={t('Minhas viagens em grupo')}
+            subValue={t('Roteiro inteligente, reservas e gastos divididos')}
             onPress={() => router.push('/src/screens/MinhasViagens')}
           />
             </>
@@ -365,53 +367,68 @@ export default function TelaPerfil() {
           {souDono && (
             <ListItem
               icon="storefront-outline"
-              title="Painel do proprietário"
-              subValue="Locais, equipe e reservas"
+              title={t('Painel do proprietário')}
+              subValue={t('Locais, equipe e reservas')}
               onPress={() => router.push('/Proprietario/dashboard')}
             />
           )}
           <ListItem
             icon="flash-outline"
-            title="Ganhe pontos usando o app"
-            subValue="Check-in diário e sugestões"
+            title={t('Ganhe pontos usando o app')}
+            subValue={t('Check-in diário e sugestões')}
             onPress={() => router.push('/src/screens/Gamificacao')}
           />
           <ListItem
             icon="chatbubbles-outline"
-            title="Mensagens"
+            title={t('Mensagens')}
             onPress={() => router.push(souCliente ? '/(tabs)/caixa-entrada' : '/mensagens')}
           />
           <ListItem
             icon="headset-outline"
-            title="Suporte"
+            title={t('Suporte')}
             onPress={() => router.push('/src/screens/TelaSuporte')}
           />
           <ListItem
             icon="document-text-outline"
-            title="Termos e Compromissos"
+            title={t('Termos e Compromissos')}
             onPress={() => router.push('/src/screens/TermosCompromisso')}
             isLast
           />
         </View>
 
-        <Text style={styles.sectionTitle}>Ações da conta</Text>
+        <Text style={styles.sectionTitle}>{t('Idioma do app')}</Text>
+        <View style={[styles.cardGroup, { flexDirection: 'row', gap: 8, padding: 10 }]} accessibilityRole="radiogroup">
+          {IDIOMAS.map((i) => (
+            <TouchableOpacity
+              key={i.id}
+              onPress={() => mudarIdioma(i.id)}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: idioma === i.id }}
+              style={{ flex: 1, minHeight: 46, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: idioma === i.id ? '#FF7A00' : '#F4F4F6' }}
+            >
+              <Text style={{ fontSize: 13, fontWeight: '800', color: idioma === i.id ? '#fff' : '#282828' }}>{i.bandeira} {i.rotulo}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <Text style={styles.sectionTitle}>{t('Ações da conta')}</Text>
         <View style={styles.cardGroup}>
           <ListItem
             icon="log-out-outline"
-            title={saindo ? 'Saindo...' : 'Sair da conta'}
-            subValue="Fazer logout do aplicativo"
+            title={saindo ? t('Saindo...') : t('Sair da conta')}
+            subValue={t('Fazer logout do aplicativo')}
             onPress={saindo ? undefined : handleLogout}
           />
           <ListItem
             icon="lock-closed-outline"
-            title="Alterar senha"
-            subValue="Troque a senha da sua conta"
+            title={t('Alterar senha')}
+            subValue={t('Troque a senha da sua conta')}
             onPress={() => router.push('/src/screens/ContaSeguranca')}
           />
           <ListItem
             icon="trash-outline"
-            title="Apagar minha conta"
-            subValue="Só sem pendências (pagamentos, pedidos, estornos, reservas)"
+            title={t('Apagar minha conta')}
+            subValue={t('Só sem pendências (pagamentos, pedidos, estornos, reservas)')}
             titleColor={COLORS.danger}
             onPress={() => router.push('/src/screens/ContaSeguranca')}
             isLast

@@ -144,10 +144,12 @@ class MensagemController extends Controller
                 : (!$conversa->aluguel_id && $conversa->estabelecimento_id ? route('estabelecimentos.loja', $conversa->estabelecimento_id) : null),
         ];
 
-        $mensagens = $conversa->mensagens()->orderBy('created_at', 'asc')->get()->map(function($msg) use ($user) {
+        $mensagens = $conversa->mensagens()->with(['cupom', 'oferta'])->orderBy('created_at', 'asc')->get()->map(function($msg) use ($user, $conversa) {
             return [
                 'id' => $msg->id,
                 'conteudo' => $msg->conteudo,
+                // Oferta exclusiva para quem favoritou: o chat mostra o cartão do cupom.
+                'oferta' => \App\Services\OfertaFavoritosService::cartao($msg, (int) $conversa->usuario_id),
                 'horario' => $msg->created_at->format('H:i'),
                 'data' => $msg->created_at->format('d/m/Y'),
                 'is_mine' => $msg->remetente_id === $user->id

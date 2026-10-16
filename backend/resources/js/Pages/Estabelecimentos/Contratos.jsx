@@ -3,6 +3,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import InputLabel from '@/Components/InputLabel';
 import TextInput from '@/Components/TextInput';
 import PrimaryButton from '@/Components/PrimaryButton';
+import ComoFuncionamContratos from '@/Components/Contratos/ComoFuncionamContratos';
 import { Head, useForm, Link, router, usePage } from '@inertiajs/react';
 import { 
     DocumentTextIcon, DocumentCheckIcon, PlusIcon, 
@@ -357,6 +358,9 @@ Regido pela Lei nº 8.245/1991 (Lei do Inquilinato) e pelo Código Civil Brasile
                 )}
 
                 <div className="max-w-6xl mx-auto mt-6 px-4 sm:px-6 lg:px-8">
+                    <div className="mb-6">
+                        <ComoFuncionamContratos aberto={listaTemplates.length === 0} />
+                    </div>
                     
                     {/* TABS (Segmented Control) */}
                     <div className="flex p-1 space-x-1 bg-gray-200/60 rounded-xl max-w-md mb-8 shadow-inner">
@@ -681,7 +685,11 @@ Regido pela Lei nº 8.245/1991 (Lei do Inquilinato) e pelo Código Civil Brasile
                                                         </div>
                                                     </td>
                                                     <td className="px-6 py-4">
-                                                        {contrato.enviado_em ? (
+                                                        {contrato.assinado ? (
+                                                            <span className="inline-flex items-center gap-1.5 bg-indigo-50 text-indigo-700 text-[10px] font-black px-2.5 py-1.5 rounded-md uppercase tracking-wider border border-indigo-200" title={contrato.data_assinatura ? `Aceito em ${new Date(contrato.data_assinatura).toLocaleString('pt-BR')}` : undefined}>
+                                                                <CheckCircleIcon className="w-3.5 h-3.5"/> Aceito pelo cliente
+                                                            </span>
+                                                        ) : contrato.enviado_em ? (
                                                             <span className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 text-[10px] font-black px-2.5 py-1.5 rounded-md uppercase tracking-wider border border-emerald-200">
                                                                 <CheckCircleIcon className="w-3.5 h-3.5"/> Enviado
                                                             </span>
@@ -693,13 +701,13 @@ Regido pela Lei nº 8.245/1991 (Lei do Inquilinato) e pelo Código Civil Brasile
                                                     </td>
                                                     <td className="px-6 py-4 text-right space-x-2 flex items-center justify-end">
                                                         {contrato.arquivo_pdf && (
-                                                            <a href={'/storage/' + contrato.arquivo_pdf} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center w-8 h-8 text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition" title="Baixar PDF">
+                                                            <a href={contrato.pdf_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center w-8 h-8 text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition" title="Baixar PDF">
                                                                 <span className="text-[10px] font-black tracking-tighter">PDF</span>
                                                             </a>
                                                         )}
 
                                                         {contrato.arquivo_docx && (
-                                                            <a href={'/storage/' + contrato.arquivo_docx} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center w-8 h-8 text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition" title="Baixar Word (DOCX)">
+                                                            <a href={contrato.docx_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center justify-center w-8 h-8 text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition" title="Baixar Word (DOCX)">
                                                                 <span className="text-[10px] font-black tracking-tighter">DOC</span>
                                                             </a>
                                                         )}
@@ -719,7 +727,7 @@ Regido pela Lei nº 8.245/1991 (Lei do Inquilinato) e pelo Código Civil Brasile
 
                                                         {contrato.aluguel?.locatario?.telefone && contrato.arquivo_pdf && (
                                                             <a
-                                                                href={`https://api.whatsapp.com/send?phone=55${contrato.aluguel.locatario.telefone.replace(/\D/g, '')}&text=${encodeURIComponent(`Olá, ${contrato.aluguel.locatario.name}! Segue o seu contrato referente à reserva na Lokyva: ${window.location.origin}/storage/${contrato.arquivo_pdf}`)}`}
+                                                                href={`https://api.whatsapp.com/send?phone=55${contrato.aluguel.locatario.telefone.replace(/\D/g, '')}&text=${encodeURIComponent(`Olá, ${contrato.aluguel.locatario.name}! Segue o seu contrato referente à reserva na Lokyva: ${contrato.link_whatsapp}`)}`}
                                                                 target="_blank"
                                                                 rel="noopener noreferrer"
                                                                 className="inline-flex items-center justify-center w-8 h-8 text-green-600 bg-green-50 rounded-lg hover:bg-green-100 transition"
@@ -807,25 +815,24 @@ export default function Contratos(props) {
         return (
             <AuthenticatedLayout user={props.auth?.user}>
                 <Head title="Contratos" />
-                <div className="max-w-2xl mx-auto px-4 py-16 text-center">
-                    <div className="mx-auto w-20 h-20 rounded-full bg-orange-100 flex items-center justify-center mb-6">
-                        <SparklesIcon className="w-10 h-10 text-[#FF5A00]" />
+                <div className="max-w-5xl mx-auto px-4 py-10 sm:px-6">
+                    <div className="rounded-3xl bg-gradient-to-br from-[#FF7A00] to-[#E8590C] p-6 text-white shadow-lg sm:p-10">
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-1 text-xs font-bold"><SparklesIcon className="h-4 w-4" /> Recurso Premium</span>
+                        <h1 className="mt-4 text-3xl font-black tracking-tight sm:text-4xl">Contratos para as suas reservas</h1>
+                        <p className="mt-3 max-w-2xl text-white/90 leading-relaxed">
+                            Crie modelos de contrato, gere o documento de cada reserva em PDF e Word com os dados preenchidos sozinhos e envie para o cliente.
+                            Veja abaixo como funciona, e assine um plano Premium de sócio para liberar.
+                        </p>
+                        <Link
+                            href={route('assinatura.status')}
+                            className="mt-6 inline-flex min-h-[44px] items-center gap-2 rounded-2xl bg-white px-6 py-3 font-black text-[#E8590C] shadow transition hover:bg-orange-50"
+                        >
+                            <SparklesIcon className="h-5 w-5" /> Ver planos e liberar contratos
+                        </Link>
                     </div>
-                    <h1 className="text-3xl font-black text-gray-900 tracking-tight">Contratos é um recurso Premium</h1>
-                    <p className="mt-4 text-gray-500 leading-relaxed">
-                        Com o plano Premium você cria modelos de contrato, gera o documento de cada reserva em PDF e Word e envia direto para o e-mail do cliente.
-                    </p>
-                    <ul className="mt-8 space-y-3 text-left max-w-md mx-auto text-gray-700 font-medium">
-                        <li className="flex items-start gap-3"><DocumentTextIcon className="w-5 h-5 text-[#FF5A00] shrink-0 mt-0.5" /> Modelos de contrato personalizados com variáveis automáticas</li>
-                        <li className="flex items-start gap-3"><ArrowDownTrayIcon className="w-5 h-5 text-[#FF5A00] shrink-0 mt-0.5" /> Geração em PDF e Word para cada reserva</li>
-                        <li className="flex items-start gap-3"><CheckCircleIcon className="w-5 h-5 text-[#FF5A00] shrink-0 mt-0.5" /> Envio por e-mail ao cliente com um clique</li>
-                    </ul>
-                    <Link
-                        href={route('assinatura.status')}
-                        className="mt-10 inline-flex items-center gap-2 px-8 py-4 rounded-2xl bg-[#FF5A00] hover:bg-[#e04f00] text-white font-bold shadow-lg transition"
-                    >
-                        <SparklesIcon className="w-5 h-5" /> Seja Premium
-                    </Link>
+                    <div className="mt-6">
+                        <ComoFuncionamContratos aberto />
+                    </div>
                 </div>
             </AuthenticatedLayout>
         );

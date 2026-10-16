@@ -3,6 +3,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import axios from 'axios';
+import ContratoDaReserva from '@/Components/Contratos/ContratoDaReserva';
 import {
   ArrowLeft, Calendar, Wallet, MapPin,
   ShieldCheck, Download, Navigation, XCircle,
@@ -564,57 +565,8 @@ export default function DetalheAgendamento({ auth, dados }) {
                 </div>
               )}
 
-              {/* 📝 CARD DE CONTRATO DIGITAL (Apenas se o estabelecimento exigir) */}
-              {dados.exige_contrato && (
-                <div className="bg-white rounded-3xl border border-blue-200 p-6 sm:p-8 shadow-sm bg-gradient-to-br from-white to-blue-50/30">
-                  <div className="flex items-center justify-between mb-4">
-                    <h4 className="font-bold text-gray-900 flex items-center gap-2 text-lg">
-                      <FileSignature className="w-6 h-6 text-blue-600" />
-                      Documentação e Contrato
-                    </h4>
-                    {dados.status_contrato === 'assinado' ? (
-                      <span className="bg-green-100 text-green-700 text-[10px] font-black px-2.5 py-1 rounded-md uppercase tracking-wider flex items-center gap-1">
-                        <CheckCircle2 className="w-3 h-3"/> Assinado
-                      </span>
-                    ) : (
-                      <span className="bg-amber-100 text-amber-700 text-[10px] font-black px-2.5 py-1 rounded-md uppercase tracking-wider flex items-center gap-1">
-                        <Loader className="w-3 h-3 animate-spin"/> Pendente
-                      </span>
-                    )}
-                  </div>
-
-                  <p className="text-sm text-gray-600 mb-6">
-                    {dados.status_contrato === 'assinado'
-                      ? 'O contrato de locação já foi assinado digitalmente e possui validade jurídica. Você pode baixar uma cópia do documento oficial em PDF no botão abaixo.'
-                      : 'O proprietário enviou um contrato digital para esta reserva. Para liberar o seu atendimento/produto, você deve assinar o documento através do link seguro.'}
-                  </p>
-
-                  <div className="flex flex-col sm:flex-row gap-3">
-                    {dados.status_contrato === 'assinado' ? (
-                      <a
-                        href={`/contratos/baixar/${dados.contrato_id}`}
-                        target="_blank"
-                        className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 text-sm"
-                      >
-                        <Download className="w-4 h-4"/> Baixar PDF Assinado
-                      </a>
-                    ) : (
-                      <>
-                        <a
-                          href={dados.url_assinatura}
-                          target="_blank"
-                          className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-xl transition-all shadow-md flex items-center justify-center gap-2 text-sm flex-1"
-                        >
-                          <FileText className="w-4 h-4"/> Assinar Contrato Agora
-                        </a>
-                        <button className="bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 font-bold py-3 px-6 rounded-xl transition-all shadow-sm text-sm">
-                          Dúvidas sobre o texto?
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              )}
+              {/* Contrato da reserva: o cliente lê e baixa (qualquer reserva, avulsa ou de um local) */}
+              {dados.tipo === 'aluguel' && <ContratoDaReserva contrato={dados.contrato} exigeContrato={!!dados.exige_contrato} />}
 
               {/* Card Código de Verificação (Check-in) */}
               {dados.codigo_verificacao && !isCancelado && (

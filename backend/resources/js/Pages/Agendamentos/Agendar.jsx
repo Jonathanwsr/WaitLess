@@ -1,8 +1,10 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+import InfoAtendimento from '@/Components/Servicos/InfoAtendimento';
 import InputError from '@/Components/InputError';
 import { Head, useForm, usePage, Link, router } from '@inertiajs/react';
 import { useState, useEffect } from 'react';
 import axios from 'axios';
+import AdicionaisEscolha from '@/Components/Produtos/AdicionaisEscolha';
 import {
     CheckCircleIcon,
     ClockIcon,
@@ -51,7 +53,8 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
     // ESTADOS PARA CONTROLE DE PREÇO, CUPOM E PRODUTOS (Carrinho)
     const [qtdLocal, setQtdLocal] = useState(1);
     const [cupomAtivo, setCupomAtivo] = useState(null);
-    const [listaProdutosExtras, setListaProdutosExtras] = useState(produtosExtras || []);
+    // Adicionais (produtos) escolhidos para o serviço: { itens: [{id, quantidade}], total, quantidade }.
+    const [adicionais, setAdicionais] = useState({ itens: [], total: 0, quantidade: 0 });
 
     // CUPOM (input manual) E PONTOS DE FIDELIDADE
     const [cupomInput, setCupomInput] = useState('');
@@ -73,11 +76,8 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
     const aceitaPontos = servicoAceitaPontos || pontosPeloPremium;
     const maximoPontosPermitidos = !pontosPeloPremium && servicoAceitaPontos ? (servicoSelecionado?.maximo_pontos_permitidos || null) : null;
 
-    // Calcula o valor total apenas dos produtos extras escolhidos que ainda estão na lista
-    const valorDosExtras = listaProdutosExtras.reduce((acc, produto) => {
-        const valorProduto = Number(produto.valor_promocional || produto.valor_final || produto.valor_normal || 0);
-        return acc + valorProduto;
-    }, 0);
+    // Valor dos adicionais (entra depois dos descontos, igual ao backend).
+    const valorDosExtras = adicionais.total;
 
     const { data, setData, post, processing, errors } = useForm({
         servico_id: '',
@@ -92,6 +92,8 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
         cupom_codigo: '',
         pontos_utilizados: 0,
         viagem_id: '',
+        // Serviço que vai até o cliente (guincho, borracharia móvel, a domicílio).
+        endereco_atendimento: '',
         extras_ids: extras_ids || '' // IDs dos produtos sendo enviados pro Backend
     });
 
@@ -184,21 +186,8 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
         if (mudouAlgo) setData(newState);
     }, []);
 
-    // BUSCA OS DADOS COMPLETOS DOS PRODUTOS SE ELES ESTIVEREM NA URL
-    useEffect(() => {
-        if (data.extras_ids && listaProdutosExtras.length === 0 && estabelecimento?.id) {
-            const idsExtras = data.extras_ids.split(',').map(id => Number(id));
-
-            axios.get(`/estabelecimentos/${estabelecimento.id}/produtos/cliente`)
-                .then(response => {
-                    if (Array.isArray(response.data)) {
-                        const produtosComprados = response.data.filter(p => idsExtras.includes(p.id));
-                        setListaProdutosExtras(produtosComprados);
-                    }
-                })
-                .catch(err => console.error("Erro ao carregar detalhes dos produtos:", err));
-        }
-    }, [data.extras_ids, estabelecimento?.id]);
+    // Adicionais escolhidos vão no pedido como lista {id, quantidade}.
+    useEffect(() => { setData('extras', adicionais.itens); }, [adicionais]);
 
     useEffect(() => {
         if (data.data_agendamento) {
@@ -210,8 +199,8 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
 
     useEffect(() => {
         if (servicoSelecionado) {
-            // SOMA O VALOR DO SERVIÇO COM O VALOR DOS EXTRAS
-            let valorCalculado = (precoComPromocao(servicoSelecionado) * qtdLocal) + valorDosExtras;
+            // Valor do serviço; os adicionais entram depois dos descontos (mesma conta do backend).
+            let valorCalculado = (precoComPromocao(servicoSelecionado) * qtdLocal);
 
             // PONTOS DE FIDELIDADE (saldo global) — aplicados antes do cupom
             let pontosAplicaveis = 0;
@@ -232,6 +221,12 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
             }
 
             if (valorCalculado < 0) valorCalculado = 0;
+            valorCalculado += valorDosExtras;
+            // Taxa de deslocamento (mesma regra do backend): sempre no "vai até o cliente"; no "ambos", só com endereço.
+            const at = servicoSelecionado.atendimento;
+            if (at?.taxa_deslocamento > 0 && (at.modalidade === 'a_domicilio' || (at.modalidade === 'ambos' && (data.endereco_atendimento || '').trim()))) {
+                valorCalculado += Number(at.taxa_deslocamento);
+            }
             setData(prev => ({
                 ...prev,
                 valor_final: valorCalculado,
@@ -239,7 +234,7 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
                 pontos_utilizados: pontosAplicaveis,
             }));
         }
-    }, [qtdLocal, servicoSelecionado, cupomAtivo, valorDosExtras, usarPontos, aceitaPontos, saldoPontosUsuario, maximoPontosPermitidos, pontosDesejados]);
+    }, [qtdLocal, servicoSelecionado, cupomAtivo, valorDosExtras, usarPontos, aceitaPontos, saldoPontosUsuario, maximoPontosPermitidos, pontosDesejados, data.endereco_atendimento]);
 
     useEffect(() => {
         if (flash.success && flash.success.includes('PIN')) {
@@ -361,13 +356,6 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
     const alterarQuantidade = (valor) => {
         const novaQtd = qtdLocal + valor;
         if (novaQtd >= 1) setQtdLocal(novaQtd);
-    };
-
-    // Remove o produto extra do carrinho e da URL logicamente
-    const removerExtra = (idRemover) => {
-        const novaLista = listaProdutosExtras.filter(produto => produto.id !== idRemover);
-        setListaProdutosExtras(novaLista);
-        setData('extras_ids', novaLista.map(e => e.id).join(','));
     };
 
     const selecionarMetodoPagamento = (forma, metodo) => {
@@ -756,53 +744,27 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
                                                 </div>
                                             </div>
 
-                                            {/* 👉 NOVO: EXIBIÇÃO COMPLETA DOS PRODUTOS EXTRAS NO CARRINHO */}
-                                            {listaProdutosExtras.length > 0 && (
-                                                <div className="mt-6 pt-2 pb-2">
-                                                    <h4 className="text-sm font-bold text-gray-900 mb-4 flex items-center gap-2">
-                                                        <ShoppingBagIcon className="w-5 h-5 text-[#FF5A00]" />
-                                                        Você também está adquirindo:
-                                                    </h4>
-                                                    <div className="space-y-4">
-                                                        {listaProdutosExtras.map(extra => {
-                                                            const valorExtra = Number(extra.valor_promocional || extra.valor_final || extra.valor_normal || 0);
-                                                            let fotoExtra = 'https://placehold.co/100x100/e2e8f0/828ea8?text=Item';
-                                                            try {
-                                                                const parsed = JSON.parse(extra.fotos);
-                                                                if (parsed && parsed.length > 0) fotoExtra = parsed[0].startsWith('http') ? parsed[0] : `/storage/${parsed[0]}`;
-                                                            } catch(e) {}
+                                            {/* Adicionais (produtos) para este serviço: escolha, quantidade e valor */}
+                                            <AdicionaisEscolha servicoId={servicoSelecionado.id} inicial={extras_ids || new URLSearchParams(window.location.search).get('extras_ids') || ''} onChange={setAdicionais} contexto="serviço" />
 
-                                                            return (
-                                                                <div key={extra.id} className="flex gap-4 bg-orange-50/40 border border-orange-100 p-4 rounded-2xl relative shadow-sm">
-                                                                    <div className="w-16 h-16 rounded-xl overflow-hidden shrink-0 bg-white border border-orange-100">
-                                                                        <img src={fotoExtra} alt={extra.nome} className="w-full h-full object-cover" />
-                                                                    </div>
-                                                                    <div className="flex-1 min-w-0 pr-8">
-                                                                        <h5 className="text-sm font-bold text-gray-900 truncate mb-1">{extra.nome}</h5>
-                                                                        <p className="text-[11px] text-gray-500 line-clamp-2 leading-relaxed mb-2">
-                                                                            {extra.descricao || 'Produto adicional selecionado no catálogo.'}
-                                                                        </p>
-                                                                        <div className="flex items-center justify-between mt-auto">
-                                                                            <span className="text-[10px] font-bold text-gray-500 bg-white px-2 py-0.5 rounded border border-gray-100">Qtd: 1</span>
-                                                                            <span className="text-sm font-black text-[#FF5A00]">
-                                                                                + {formatarMoeda(valorExtra)}
-                                                                            </span>
-                                                                        </div>
-                                                                    </div>
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => removerExtra(extra.id)}
-                                                                        className="absolute top-3 right-3 text-gray-400 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-colors"
-                                                                        title="Remover este produto"
-                                                                    >
-                                                                        <XMarkIcon className="w-5 h-5" />
-                                                                    </button>
-                                                                </div>
-                                                            );
-                                                        })}
-                                                    </div>
+                                            {/* Serviço que vai até o cliente: onde atender (+ taxa de deslocamento) */}
+                                            {servicoSelecionado.atendimento?.pede_endereco && (
+                                                <div className="mt-6 pt-6 border-t border-gray-100">
+                                                    <label htmlFor="endereco_atendimento" className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-2 block">
+                                                        {servicoSelecionado.atendimento.exige_endereco ? 'Onde você está? *' : 'Quer atendimento no seu endereço? (opcional)'}
+                                                    </label>
+                                                    <textarea id="endereco_atendimento" rows="2" maxLength={255} value={data.endereco_atendimento}
+                                                        onChange={(e) => setData('endereco_atendimento', e.target.value)}
+                                                        placeholder="Rua, número, bairro, cidade e um ponto de referência"
+                                                        className="w-full rounded-xl border-gray-200 text-sm focus:border-[#FF5A00] focus:ring-[#FF5A00]" />
+                                                    <p className="mt-1 text-xs text-gray-500">
+                                                        {servicoSelecionado.atendimento.raio_atendimento_km ? `Atende até ${servicoSelecionado.atendimento.raio_atendimento_km} km. ` : ''}
+                                                        {servicoSelecionado.atendimento.taxa_deslocamento > 0 ? `Taxa de deslocamento: ${formatarMoeda(servicoSelecionado.atendimento.taxa_deslocamento)} (já somada ao total).` : 'Sem taxa de deslocamento.'}
+                                                    </p>
+                                                    <InputError message={errors.endereco_atendimento} className="mt-1" />
                                                 </div>
                                             )}
+                                            <InfoAtendimento atendimento={servicoSelecionado.atendimento} className="mt-6" />
 
                                             {/* ESCOLHA DO PROFISSIONAL */}
                                             {funcionarios.length > 0 && (
@@ -929,10 +891,10 @@ export default function Agendar({ auth, estabelecimento, servicos = [], produtos
                                                 <span>{precoComPromocao(servicoSelecionado) < (Number(servicoSelecionado.valor) || 0) && <span className="mr-2 text-xs text-gray-400 line-through">{formatarMoeda((Number(servicoSelecionado.valor) || 0) * qtdLocal)}</span>}{formatarMoeda(precoComPromocao(servicoSelecionado) * qtdLocal)}</span>
                                             </div>
 
-                                            {listaProdutosExtras.length > 0 && (
+                                            {adicionais.quantidade > 0 && (
                                                 <div className="flex justify-between items-center text-sm text-gray-600 mb-3">
                                                     <span className="flex items-center gap-1.5">
-                                                        <ShoppingBagIcon className="w-4 h-4 text-gray-400"/> Adicionais ({listaProdutosExtras.length})
+                                                        <ShoppingBagIcon className="w-4 h-4 text-gray-400"/> Adicionais ({adicionais.quantidade})
                                                     </span>
                                                     <span className="font-bold text-gray-900">+{formatarMoeda(valorDosExtras)}</span>
                                                 </div>

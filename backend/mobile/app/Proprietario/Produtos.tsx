@@ -6,22 +6,24 @@ import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { OwnerScreen, Card, Rotulo, Vazio, Erro, Segmentado, api, BASE, tokenDoUsuario, brl } from '../../components/owner/ui';
 import { useCarga } from '../../components/owner/useCarga';
+import AdicionaisVendidos from '../../components/owner/AdicionaisVendidos';
 import { useAviso } from '../../components/owner/Aviso';
 import { O } from '../../constants/OwnerTheme';
 import { alertar } from '../../services/alertar';
+import VinculoProduto, { ModoVinculo, modoDoProduto } from '../../components/owner/VinculoProduto';
 
 type Produto = {
   id: number; nome: string; descricao?: string | null; categoria?: string | null;
   valor_normal: string | number; valor_promocional?: string | number | null; valor_final?: string | number | null;
   is_promocao?: boolean | number; estoque_disponivel: number; somente_premium?: boolean | number;
-  estabelecimento_id: number; servico_id?: number | null; aluguel_id?: number | null;
+  estabelecimento_id: number; servico_id?: number | null; aluguel_id?: number | null; vinculo_modo?: string | null; atrelado_reservas?: boolean | number | null;
   servico_nome?: string | null; reserva_nome?: string | null; fotos?: string[] | string | null;
 };
 type Dados = {
   produtos: Produto[];
   estabelecimentos: { id: number; nome: string }[];
   servicos: { id: number; nome: string; estabelecimento_id: number }[];
-  reservas: { id: number; nome: string }[];
+  reservas: { id: number; nome: string; categoria_rotulo?: string; avulsa?: boolean; estabelecimento_id?: number | null }[];
 };
 
 const TIPOS = [
@@ -39,6 +41,7 @@ const VINCULOS = [
 const FORM_VAZIO = {
   id: null as number | null, nome: '', descricao: '', categoria: '', valor_normal: '', valor_promocional: '', is_promocao: false,
   estoque_disponivel: '', estabelecimento_id: null as number | null, servico_id: null as number | null, aluguel_id: null as number | null,
+  vinculo_modo: 'loja' as ModoVinculo,
   somente_premium: false, fotos: [] as string[],
 };
 
@@ -89,7 +92,7 @@ export default function Produtos() {
     id: p.id, nome: p.nome, descricao: p.descricao || '', categoria: p.categoria || '',
     valor_normal: String(p.valor_normal ?? ''), valor_promocional: p.valor_promocional ? String(p.valor_promocional) : '',
     is_promocao: !!Number(p.is_promocao), estoque_disponivel: String(p.estoque_disponivel ?? ''),
-    estabelecimento_id: p.estabelecimento_id, servico_id: p.servico_id ?? null, aluguel_id: p.aluguel_id ?? null,
+    estabelecimento_id: p.estabelecimento_id, servico_id: p.servico_id ?? null, aluguel_id: p.aluguel_id ?? null, vinculo_modo: modoDoProduto(p),
     somente_premium: !!Number(p.somente_premium), fotos: listaDeFotos(p.fotos).slice(0, 5),
   });
 
@@ -116,6 +119,7 @@ export default function Produtos() {
         is_promocao: form.is_promocao ? '1' : '0', estoque_disponivel: form.estoque_disponivel || '0',
         estabelecimento_id: String(form.estabelecimento_id), somente_premium: form.somente_premium ? '1' : '0',
         servico_id: form.servico_id ? String(form.servico_id) : '', aluguel_id: form.aluguel_id ? String(form.aluguel_id) : '',
+        vinculo_modo: form.vinculo_modo,
       };
       Object.entries(campos).forEach(([k, v]) => corpo.append(k, v));
       // Fotos: as que já estavam no produto vão como "mantidas"; as escolhidas agora são enviadas.
@@ -196,6 +200,8 @@ export default function Produtos() {
             )}
           </Card>
 
+          {tipo !== 'entrega' && <AdicionaisVendidos />}
+
           <Segmentado opcoes={TIPOS} valor={tipo} aoMudar={setTipo} />
 
           {tipo === 'entrega' ? (
@@ -257,7 +263,8 @@ export default function Produtos() {
                     <View style={s.vinculos}>
                       {!!p.servico_nome && <View style={[s.selo, { backgroundColor: O.infoBg }]}><Text style={[s.seloTxt, { color: O.info }]}>Serviço: {p.servico_nome}</Text></View>}
                       {!!p.reserva_nome && <View style={[s.selo, { backgroundColor: O.successBg }]}><Text style={[s.seloTxt, { color: O.success }]}>Reserva: {p.reserva_nome}</Text></View>}
-                      {!p.servico_id && !p.aluguel_id && <View style={[s.selo, { backgroundColor: O.soft }]}><Text style={s.seloTxt}>Venda avulsa</Text></View>}
+                      {modoDoProduto(p) === 'local' && <View style={[s.selo, { backgroundColor: O.infoBg }]}><Text style={[s.seloTxt, { color: O.info }]}>Adicional em todo o local</Text></View>}
+                      {modoDoProduto(p) === 'loja' && <View style={[s.selo, { backgroundColor: O.soft }]}><Text style={s.seloTxt}>Só na loja</Text></View>}
                       {!!Number(p.somente_premium) && <View style={[s.selo, { backgroundColor: O.warningBg }]}><Text style={[s.seloTxt, { color: O.warning }]}>Só premium</Text></View>}
                     </View>
                     <View style={s.acoes}>
@@ -291,7 +298,7 @@ export default function Produtos() {
                 ))}
               </View>
 
-              <Campo rotulo="Nome do produto" valor={form.nome} onChange={(v) => setForm({ ...form, nome: v })} />
+              <Campo rotulo="Nome do produto" valor={form.nome} onChange={(v) => setForm({ ...form, nome: v.toUpperCase() })} />
               <Campo rotulo="Categoria" valor={form.categoria} onChange={(v) => setForm({ ...form, categoria: v })} />
               <Campo rotulo="Descrição" valor={form.descricao} onChange={(v) => setForm({ ...form, descricao: v })} multiline />
               <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -302,21 +309,17 @@ export default function Produtos() {
               {form.is_promocao && <Campo rotulo="Preço promocional (R$)" valor={form.valor_promocional} onChange={(v) => setForm({ ...form, valor_promocional: v })} teclado="decimal-pad" />}
               <View style={s.switch}><Text style={s.forte}>Só para clientes premium</Text><Switch value={form.somente_premium} onValueChange={(v) => setForm({ ...form, somente_premium: v })} trackColor={{ false: O.line, true: O.accent }} /></View>
 
-              <Rotulo>Vincular a um serviço</Rotulo>
-              <View style={s.chipsWrap}>
-                <TouchableOpacity onPress={() => setForm({ ...form, servico_id: null })} style={[s.chipP, !form.servico_id && s.chipAtivo]}><Text style={[s.chipTxt, !form.servico_id && s.chipTxtAtivo]}>Nenhum</Text></TouchableOpacity>
-                {servicosDoLocal.map((sv) => (
-                  <TouchableOpacity key={sv.id} onPress={() => setForm({ ...form, servico_id: sv.id })} style={[s.chipP, form.servico_id === sv.id && s.chipAtivo]}><Text style={[s.chipTxt, form.servico_id === sv.id && s.chipTxtAtivo]}>{sv.nome}</Text></TouchableOpacity>
-                ))}
+              <View style={{ marginTop: 6 }}>
+                <VinculoProduto
+                  modo={form.vinculo_modo}
+                  servicoId={form.servico_id}
+                  aluguelId={form.aluguel_id}
+                  servicos={servicosDoLocal}
+                  reservas={(dados?.reservas || []).filter((r) => r.avulsa || !r.estabelecimento_id || r.estabelecimento_id === form.estabelecimento_id)}
+                  nomeProduto={form.nome}
+                  onChange={(v) => setForm({ ...form, ...v })}
+                />
               </View>
-              <Rotulo>Vincular a uma reserva</Rotulo>
-              <View style={s.chipsWrap}>
-                <TouchableOpacity onPress={() => setForm({ ...form, aluguel_id: null })} style={[s.chipP, !form.aluguel_id && s.chipAtivo]}><Text style={[s.chipTxt, !form.aluguel_id && s.chipTxtAtivo]}>Nenhuma</Text></TouchableOpacity>
-                {(dados?.reservas || []).map((r) => (
-                  <TouchableOpacity key={r.id} onPress={() => setForm({ ...form, aluguel_id: r.id })} style={[s.chipP, form.aluguel_id === r.id && s.chipAtivo]}><Text style={[s.chipTxt, form.aluguel_id === r.id && s.chipTxtAtivo]}>{r.nome}</Text></TouchableOpacity>
-                ))}
-              </View>
-              <Text style={s.meta}>Vinculado, o produto aparece como adicional na hora de agendar ou reservar. Sem vínculo, é uma venda avulsa.</Text>
 
               {(
                 <>

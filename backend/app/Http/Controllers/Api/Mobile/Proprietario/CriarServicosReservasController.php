@@ -99,6 +99,8 @@ class CriarServicosReservasController extends Controller
     {
         $this->verificarPermissao();
 
+        // Campos de atendimento (onde atende, 24h, raio, taxa de deslocamento, tipo de preço...).
+        $request->validate(\App\Support\CamposServico::regras(), \App\Support\CamposServico::mensagens());
         $validated = $request->validate([
             'nome'                 => 'required|string|max:255',
             'tipo_servico'         => 'required|string|max:255',
@@ -166,7 +168,7 @@ class CriarServicosReservasController extends Controller
                     }
                 }
 
-                $servico = Servico::create([
+                $servico = Servico::create(\App\Support\CamposServico::doRequest($request) + [
                     'estabelecimento_id'   => $est_id,
                     'nome'                 => $validated['nome'],
                     'tipo_servico'         => $validated['tipo_servico'],
@@ -217,6 +219,8 @@ class CriarServicosReservasController extends Controller
         }
         $this->garantirQueGerenciaEstabelecimento((int) $servico->estabelecimento_id);
 
+        // Campos de atendimento (onde atende, 24h, raio, taxa de deslocamento, tipo de preço...).
+        $request->validate(\App\Support\CamposServico::regras(), \App\Support\CamposServico::mensagens());
         $validated = $request->validate([
             'nome'                 => 'required|string|max:255',
             'tipo_servico'         => 'required|string|max:255',
@@ -283,7 +287,7 @@ class CriarServicosReservasController extends Controller
                 $dadosParaAtualizar['fotos'] = json_encode($urlsFotos);
             }
 
-            $servico->update($dadosParaAtualizar);
+            $servico->update($dadosParaAtualizar + \App\Support\CamposServico::doRequest($request));
 
             $this->vincularProdutosExistentes(
                 $validated['produtos_vinculados'] ?? [],
@@ -412,7 +416,7 @@ class CriarServicosReservasController extends Controller
             'estabelecimento_id' => 'required|exists:estabelecimentos,id',
             'servico_id'         => 'nullable|exists:servicos,id',
             'nome'               => 'required|string|max:255',
-            'categoria'          => 'required|string|max:50',
+            'categoria'          => \App\Support\Categorias::regraReserva(),
             'quantidade'         => 'required|integer|min:1',
             'marca'              => 'nullable|string|max:255',
             'modelo'             => 'nullable|string|max:255',

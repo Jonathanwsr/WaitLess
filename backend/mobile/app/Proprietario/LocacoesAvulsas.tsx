@@ -149,6 +149,7 @@ export default function LocacoesAvulsas() {
   const [proximasReservas, setProximasReservas] = useState<ProximaReserva[]>([]);
   const [politicas, setPoliticas] = useState<Politica[]>([]);
   const [categorias, setCategorias] = useState<Categorias>({});
+  const [rotulos, setRotulos] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
 
@@ -209,6 +210,7 @@ export default function LocacoesAvulsas() {
       setProximasReservas(json.proximas_reservas || []);
       setPoliticas(json.politicas || []);
       setCategorias(json.categorias || {});
+      setRotulos(json.rotulos || {});
     } catch (e) {
       setErro('Não foi possível carregar suas locações agora.');
     } finally {
@@ -558,7 +560,8 @@ export default function LocacoesAvulsas() {
             <TextInput
               style={styles.input}
               value={form.nome}
-              onChangeText={(v) => setForm((f) => ({ ...f, nome: v }))}
+              autoCapitalize="characters"
+              onChangeText={(v) => setForm((f) => ({ ...f, nome: v.toUpperCase() }))}
               placeholder="Ex: Apartamento na praia, Honda CG 160..."
               placeholderTextColor="#A0A2A8"
             />
@@ -566,7 +569,7 @@ export default function LocacoesAvulsas() {
             <Text style={styles.label}>Categoria</Text>
             <TouchableOpacity style={styles.selectBtn} onPress={() => setCategoriaModalVisivel(true)}>
               <Text style={[styles.selectBtnText, !form.categoria && { color: '#A0A2A8' }]}>
-                {form.categoria ? form.categoria.replace(/_/g, ' ') : 'Selecione uma categoria'}
+                {form.categoria ? (rotulos[form.categoria] || form.categoria.replace(/_/g, ' ')) : 'Selecione uma categoria'}
               </Text>
               <Feather name="chevron-down" size={18} color="#6A6C72" />
             </TouchableOpacity>
@@ -948,7 +951,7 @@ export default function LocacoesAvulsas() {
                           setCategoriaModalVisivel(false);
                         }}
                       >
-                        <Text style={styles.categoriaOpcaoText}>{op.replace(/_/g, ' ')}</Text>
+                        <Text style={styles.categoriaOpcaoText}>{rotulos[op] || op.replace(/_/g, ' ')}</Text>
                       </TouchableOpacity>
                     ))}
                   </View>

@@ -26,6 +26,8 @@ import { alternarFavoritoRemoto } from '../../../services/favoritos';
 import { alertar } from '../../../services/alertar';
 import { mostrarToast } from '../../../services/toast';
 import { compartilharLocal } from '../../../services/compartilhar';
+import AdicionaisEscolha, { ResumoAdicionais } from '../../../components/client/AdicionaisEscolha';
+import InfoAtendimento, { SelosAtendimento, taxaDoAtendimento, Atendimento } from '../../../components/client/InfoAtendimento';
 
 const COLORS = {
   primary: '#FF7A00',
@@ -62,6 +64,7 @@ interface Estabelecimento {
 
 interface Servico {
   id: number;
+  atendimento?: Atendimento | null;
   estabelecimento_id: number;
   nome: string;
   descricao?: string;
@@ -332,6 +335,9 @@ export default function ExplorarDetalhes() {
   const [calendarioAberto, setCalendarioAberto] = useState(false);
 
   const [formaPagamento, setFormaPagamento] = useState<'online_agora' | 'presencial'>('online_agora');
+  const [adicionais, setAdicionais] = useState<ResumoAdicionais>({ itens: [], total: 0, quantidade: 0 });
+  // Serviço que vai até o cliente (guincho, borracharia móvel, a domicílio): onde atender.
+  const [enderecoAtendimento, setEnderecoAtendimento] = useState('');
   // Sócio sem carteira Asaas: só pagamento no local.
   const [aceitaOnline, setAceitaOnline] = useState(true);
   const [termosAceitos, setTermosAceitos] = useState(false);
@@ -577,7 +583,9 @@ export default function ExplorarDetalhes() {
   const descontoCupomPreview = cupomAtivo
     ? Math.min(subtotalAposPontos, cupomAtivo.tipo === 'percentual' ? subtotalAposPontos * (cupomAtivo.valor / 100) : cupomAtivo.valor)
     : 0;
-  const totalFinalPreview = Math.max(0, subtotalAposPontos - descontoCupomPreview);
+  // Adicionais (produtos) entram depois dos descontos, como no servidor.
+  const taxaDeslocamentoPreview = ehAluguel ? 0 : taxaDoAtendimento(servico?.atendimento, enderecoAtendimento);
+  const totalFinalPreview = Math.max(0, subtotalAposPontos - descontoCupomPreview) + adicionais.total + taxaDeslocamentoPreview;
 
   // Parcelas calculadas pelo servidor para o valor atual (só quando paga no cartão agora).
   const pagandoNoCartao = formaPagamento === 'online_agora' && metodoPagamento === 'cartao';
@@ -756,6 +764,8 @@ export default function ExplorarDetalhes() {
             pontos_utilizados: pontosAplicaveisPreview || undefined,
             cupom_codigo: cupomAtivo?.codigo || undefined,
             viagem_id: viagemId ? Number(viagemId) : undefined,
+            extras: adicionais.itens,
+            endereco_atendimento: enderecoAtendimento.trim() || undefined,
             ...pagamentoOnline,
           }),
         });
@@ -789,6 +799,7 @@ export default function ExplorarDetalhes() {
             pontos_utilizados: pontosAplicaveisPreview || undefined,
             cupom_codigo: cupomAtivo?.codigo || undefined,
             viagem_id: viagemId ? Number(viagemId) : undefined,
+            extras: adicionais.itens,
             ...pagamentoOnline,
           }),
         });
@@ -1042,8 +1053,12 @@ export default function ExplorarDetalhes() {
 
           <View style={s.precoLinha}>
             <Text style={s.preco}>R$ {precoExibido.toFixed(2).replace('.', ',')}</Text>
-            <Text style={s.precoUn}>{ehAluguel ? `/ ${tipoPeriodo === 'diaria' ? 'dia' : tipoPeriodo === 'semanal' ? 'semana' : 'mês'}` : `/ ${servico?.duracao_minutos || 30} min`}</Text>
+            <Text style={s.precoUn}>{ehAluguel ? `/ ${tipoPeriodo === 'diaria' ? 'dia' : tipoPeriodo === 'semanal' ? 'semana' : 'mês'}` : servico?.atendimento?.preco_sufixo ? servico.atendimento.preco_sufixo : `/ ${servico?.duracao_minutos || 30} min`}</Text>
           </View>
+          {!ehAluguel && servico?.atendimento && servico.atendimento.tipo_preco !== 'fixo' && (
+            <Text style={s.precoUn}>{servico.atendimento.sob_orcamento ? 'Sob orçamento · valor inicial' : servico.atendimento.tipo_preco_rotulo}</Text>
+          )}
+          {!ehAluguel && <SelosAtendimento atendimento={servico?.atendimento} max={4} style={{ marginTop: 8 }} />}
           {!!parcelaPrevia && (
             <Text style={s.parcelaPrevia}>
               Parcelas estimadas: <Text style={s.parcelaPreviaForte}>{parcelaPrevia.parcelas}x de R$ {parcelaPrevia.valor_parcela.toFixed(2).replace('.', ',')}</Text> sem juros no cartão
@@ -1056,6 +1071,7 @@ export default function ExplorarDetalhes() {
               <Text style={s.descricao}>{descricaoItem}</Text>
             </>
           )}
+          {!ehAluguel && <InfoAtendimento atendimento={servico?.atendimento} />}
 
           {/* LOCAL */}
           {estabelecimento && (
@@ -1548,6 +1564,35 @@ export default function ExplorarDetalhes() {
             </>
           )}
 
+          {/* Produtos adicionais oferecidos para este serviço/reserva */}
+          <AdicionaisEscolha
+            key={ehAluguel ? `r${itemAluguel?.id}` : `s${servico?.id}`}
+            servicoId={!ehAluguel ? servico?.id : null}
+            itemId={ehAluguel ? itemAluguel?.id : null}
+            contexto={ehAluguel ? 'reserva' : 'serviço'}
+            onChange={setAdicionais}
+          />
+
+          {/* Serviço que vai até o cliente: onde atender (+ taxa de deslocamento) */}
+          {!ehAluguel && !!servico?.atendimento?.pede_endereco && (
+            <>
+              <Text style={s.secao}>{servico.atendimento.exige_endereco ? 'Onde você está?' : 'Atendimento no seu endereço? (opcional)'}</Text>
+              <TextInput
+                style={s.enderecoInput}
+                multiline
+                maxLength={255}
+                value={enderecoAtendimento}
+                onChangeText={setEnderecoAtendimento}
+                placeholder="Rua, número, bairro, cidade e um ponto de referência"
+                placeholderTextColor={T.faint}
+              />
+              <Text style={s.enderecoDica}>
+                {servico.atendimento.raio_atendimento_km ? `Atende até ${servico.atendimento.raio_atendimento_km} km. ` : ''}
+                {servico.atendimento.taxa_deslocamento ? `Taxa de deslocamento: R$ ${Number(servico.atendimento.taxa_deslocamento).toFixed(2).replace('.', ',')}${servico.atendimento.modalidade === 'ambos' ? ' (só se informar o endereço)' : ''} — já somada ao total.` : 'Sem taxa de deslocamento.'}
+              </Text>
+            </>
+          )}
+
           {/* 2. PAGAMENTO */}
           <Text style={s.secao}>Forma de pagamento</Text>
           {[
@@ -1875,6 +1920,8 @@ const s = StyleSheet.create({
   secao: { fontSize: 18, fontWeight: '800', color: T.ink, marginTop: 24, marginBottom: 12, letterSpacing: -0.3 },
   opcional: { fontSize: 13, fontWeight: '500', color: T.muted },
   descricao: { fontSize: 14, color: T.muted, lineHeight: 22 },
+  enderecoInput: { backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, borderColor: '#E5E7EB', padding: 14, minHeight: 70, fontSize: 14, color: T.ink, textAlignVertical: 'top' },
+  enderecoDica: { fontSize: 12, color: T.muted, marginTop: 6, lineHeight: 17 },
 
   loja: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: T.card, borderRadius: 20, padding: 12, marginTop: 20, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 3 },
   lojaFoto: { width: 48, height: 48, borderRadius: 24, backgroundColor: T.line },

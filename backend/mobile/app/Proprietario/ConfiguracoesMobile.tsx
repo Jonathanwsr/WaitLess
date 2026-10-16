@@ -13,12 +13,14 @@ import {
   Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons, Feather } from '@expo/vector-icons';
+import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import CamposAtendimento, { SeletorCategoriaServico, CAMPOS_ATENDIMENTO_VAZIOS, camposAtendimentoDe, CamposAtendimentoForm } from '../../components/owner/CamposAtendimento';
 import { alertar } from '../../services/alertar';
+import { SugestoesRamo, SeletorCategoriaReserva } from '../../components/owner/SeletorCategoria';
 
 // Configuração Base da API
 // EXPO_PUBLIC_API_URL já termina em "/mobile" — as rotas de gestão de
@@ -82,7 +84,7 @@ export default function ConfiguracoesMobile() {
   // FORM 3: SERVIÇOS
   // ==========================================
   // Categoria é obrigatória e vem do servidor (mesma lista dos filtros do Explorar do cliente).
-  const [categoriasServicos, setCategoriasServicos] = useState<{ valor: string; icone: string; cor: string }[]>([]);
+  const [categoriasServicos, setCategoriasServicos] = useState<{ valor: string; icone: string; cor: string; grupo?: string }[]>([]);
   const [editandoServicoId, setEditandoServicoId] = useState<number | null>(null);
   const [formServico, setFormServico] = useState({
     id: null as any, nome: '', tipo_servico: '', descricao: '', valor: '', gratuito: false, duracao_minutos: '30', vagas_por_horario: '1',
@@ -93,6 +95,7 @@ export default function ConfiguracoesMobile() {
     somente_premium: false, tem_promocao: false, tipo_desconto: 'percentual', valor_desconto: '',
     aceita_pontos: false, maximo_pontos_permitidos: '',
     produtos_vinculados: [] as number[],
+    ...CAMPOS_ATENDIMENTO_VAZIOS,
   });
   const [novoHorarioServico, setNovoHorarioServico] = useState('');
 
@@ -379,6 +382,7 @@ export default function ConfiguracoesMobile() {
     somente_premium: false, tem_promocao: false, tipo_desconto: 'percentual', valor_desconto: '',
     aceita_pontos: false, maximo_pontos_permitidos: '',
     produtos_vinculados: [] as number[],
+    ...CAMPOS_ATENDIMENTO_VAZIOS,
   };
 
   const cancelarEdicaoServico = () => {
@@ -407,6 +411,7 @@ export default function ConfiguracoesMobile() {
       valor_desconto: s.valor_desconto != null ? String(s.valor_desconto) : '',
       aceita_pontos: !!s.aceita_pontos,
       maximo_pontos_permitidos: s.maximo_pontos_permitidos != null ? String(s.maximo_pontos_permitidos) : '',
+      ...camposAtendimentoDe(s),
       horario_a_combinar: (() => {
         try {
           let cfg = s.configuracoes;
@@ -664,7 +669,7 @@ export default function ConfiguracoesMobile() {
                 />
                 <Text style={styles.ajudaCampo}>Aparece na vitrine para o cliente · {(formDetalhes.bio || '').length}/1000</Text>
               </View>
-              <View style={styles.inputGroup}><Text style={styles.labelSmall}>Ramo de Atuação</Text><TextInput style={styles.input} value={formDetalhes.ramo_atuacao} onChangeText={(t) => setFormDetalhes({ ...formDetalhes, ramo_atuacao: t })} placeholder="Ex: Barbearia, Quadra..." /></View>
+              <View style={styles.inputGroup}><Text style={styles.labelSmall}>Ramo de Atuação</Text><TextInput style={styles.input} value={formDetalhes.ramo_atuacao} onChangeText={(t) => setFormDetalhes({ ...formDetalhes, ramo_atuacao: t })} placeholder="Ex: Barbearia, Quadra..." /><View style={{ marginTop: 8 }}><SugestoesRamo valor={formDetalhes.ramo_atuacao} onEscolher={(v) => setFormDetalhes({ ...formDetalhes, ramo_atuacao: v })} /></View></View>
 
               <View style={styles.divider} />
               <Text style={styles.sectionSubTitle}>Endereço (Busca por CEP)</Text>
@@ -756,24 +761,9 @@ export default function ConfiguracoesMobile() {
               <Text style={styles.cardTitle}>{editandoServicoId ? 'Editar Serviço' : 'Adicionar Novo Serviço'}</Text>
 
               <Text style={styles.labelSmall}>Categoria do Serviço *</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 4 }}>
-                {categoriasServicos.map((c) => {
-                  const isSel = formServico.tipo_servico === c.valor;
-                  return (
-                    <TouchableOpacity
-                      key={c.valor}
-                      onPress={() => setFormServico({ ...formServico, tipo_servico: c.valor })}
-                      style={[styles.chip, styles.chipCategoria, isSel && { backgroundColor: c.cor, borderColor: c.cor }]}
-                    >
-                      <Ionicons name={c.icone as any} size={14} color={isSel ? '#FFF' : c.cor} style={{ marginRight: 5 }} />
-                      <Text style={[styles.chipText, isSel && styles.chipTextActive, isSel && { color: '#FFF' }]}>{c.valor}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-              {categoriasServicos.length === 0 && <Text style={styles.labelSmall}>Carregando categorias…</Text>}
+              <SeletorCategoriaServico categorias={categoriasServicos} valor={formServico.tipo_servico} aoEscolher={(v) => setFormServico({ ...formServico, tipo_servico: v })} />
 
-              <TextInput style={styles.input} placeholder="Nome do Serviço (Ex: Corte de Cabelo)" value={formServico.nome} onChangeText={(t) => setFormServico({ ...formServico, nome: t })} />
+              <TextInput style={styles.input} placeholder="Nome do Serviço (Ex: Corte de Cabelo)" value={formServico.nome} autoCapitalize="characters" onChangeText={(t) => setFormServico({ ...formServico, nome: t.toUpperCase() })} />
               <TextInput style={styles.input} placeholder="Descrição (Opcional)" value={formServico.descricao} onChangeText={(t) => setFormServico({ ...formServico, descricao: t })} />
 
               <View style={styles.rowGrid}>
@@ -868,6 +858,12 @@ export default function ConfiguracoesMobile() {
                 <TextInput style={styles.input} placeholder="Máximo de Pontos Permitidos" keyboardType="numeric" value={formServico.maximo_pontos_permitidos} onChangeText={(t) => setFormServico({ ...formServico, maximo_pontos_permitidos: t })} />
               )}
 
+              {/* Onde atende, 24h, raio, taxa de deslocamento, tipo de preço, o que inclui... */}
+              <CamposAtendimento
+                valor={formServico as unknown as CamposAtendimentoForm}
+                aoMudar={(v) => setFormServico({ ...formServico, ...v })}
+              />
+
               {produtos.length > 0 && (
                 <>
                   <Text style={styles.labelSmall}>Vincular Produtos já Cadastrados</Text>
@@ -908,7 +904,7 @@ export default function ConfiguracoesMobile() {
                       <Text style={styles.listItemTitle}>{s.nome}</Text>
                       {!!s.tipo_servico && (
                         <View style={[styles.badge, { backgroundColor: '#F0F0F2' }]}>
-                          <Ionicons name={(categoriasServicos.find((c) => c.valor === s.tipo_servico)?.icone || 'pricetag-outline') as any} size={11} color="#6A6C72" />
+                          <MaterialIcons name={(categoriasServicos.find((c) => c.valor === s.tipo_servico)?.icone || 'label') as any} size={11} color="#6A6C72" />
                           <Text style={[styles.badgeText, { color: '#6A6C72' }]}>{s.tipo_servico}</Text>
                         </View>
                       )}
@@ -938,17 +934,13 @@ export default function ConfiguracoesMobile() {
               <View style={styles.rowGrid}>
                 <View style={styles.gridCol}>
                   <InputLabel text="Categoria *" />
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{gap: 8, marginTop: 4}}>
-                    {[ {id: 'casa', label:'Espaço/Imóvel'}, {id:'carro', label:'Veículo'}, {id:'equipamento', label:'Equipamento'} ].map(cat => (
-                      <TouchableOpacity key={cat.id} onPress={() => setFormItem({...formItem, categoria: cat.id})} style={[styles.chip, formItem.categoria === cat.id && styles.chipActive]}>
-                        <Text style={[styles.chipText, formItem.categoria === cat.id && styles.chipTextActive]}>{cat.label}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
+                  <View style={{ marginTop: 4 }}>
+                    <SeletorCategoriaReserva valor={formItem.categoria} onEscolher={(v) => setFormItem({ ...formItem, categoria: v })} />
+                  </View>
                 </View>
               </View>
 
-              <TextInput style={styles.input} placeholder="Título da Locação *" value={formItem.nome} onChangeText={(t) => setFormItem({ ...formItem, nome: t })} />
+              <TextInput style={styles.input} placeholder="Título da Locação *" value={formItem.nome} autoCapitalize="characters" onChangeText={(t) => setFormItem({ ...formItem, nome: t.toUpperCase() })} />
 
               <View style={styles.rowGrid}>
                 <View style={styles.gridCol}><TextInput style={styles.input} placeholder="Qtd Estoque" keyboardType="numeric" value={formItem.quantidade} onChangeText={(t) => setFormItem({ ...formItem, quantidade: t })} /></View>

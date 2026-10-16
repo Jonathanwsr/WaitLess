@@ -17,7 +17,7 @@ class EstabelecimentoController extends Controller
 {
     public function create()
     {
-        return Inertia::render('Estabelecimentos/Create');
+        return Inertia::render('Estabelecimentos/Create', ['ramosAtuacao' => \App\Support\Categorias::ramos()]);
     }
 
     public function store(Request $request)
@@ -277,6 +277,8 @@ class EstabelecimentoController extends Controller
             'servicos'             => $servicos,
             'produtos'             => $produtos,
             'categoriasServicos'   => \App\Support\Categorias::servicos(),
+            'ramosAtuacao'         => \App\Support\Categorias::ramos(),
+            'categoriasReserva'    => \App\Support\Categorias::reservas(),
         ]);
     }
 

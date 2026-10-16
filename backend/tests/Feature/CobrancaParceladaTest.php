@@ -53,7 +53,7 @@ class CobrancaParceladaTest extends TestCase
     private function servico(Estabelecimento $estab, float $valor = 90): Servico
     {
         return Servico::create([
-            'estabelecimento_id' => $estab->id, 'nome' => 'Corte', 'tipo_servico' => 'Outro',
+            'estabelecimento_id' => $estab->id, 'nome' => 'CORTE', 'tipo_servico' => 'Outro',
             'valor' => $valor, 'duracao_minutos' => 30, 'ativo' => true,
         ]);
     }
@@ -312,7 +312,7 @@ class CobrancaParceladaTest extends TestCase
 
         $resposta->assertCreated();
         $this->assertEquals(75, (float) $resposta->json('cobranca.valor_total'));
-        $this->assertStringContainsString('Reserva: Corte', $resposta->json('cobranca.itens.0.descricao'));
+        $this->assertStringContainsString('Reserva: CORTE', $resposta->json('cobranca.itens.0.descricao'));
     }
 
     public function test_parcelas_acima_do_limite_do_valor_sao_recusadas(): void

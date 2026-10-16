@@ -59,6 +59,7 @@ class MensagemEnviada implements ShouldBroadcast
             'conversa_id'   => $this->mensagem->conversa_id,
             'conteudo'      => $this->mensagem->conteudo,
             'remetente_id'  => $this->mensagem->remetente_id,
+            'tipo'          => $this->mensagem->tipo ?? 'texto',
             'created_at'    => $this->mensagem->created_at?->toIso8601String(),
         ];
     }

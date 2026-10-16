@@ -54,7 +54,9 @@ class LocacaoAvulsaController extends Controller
             'emUsoAgora' => $emUsoAgora,
             'proximasReservas' => $proximasReservas,
             'politicas'  => \App\Services\Locacao\PoliticaCancelamentoService::opcoes(),
-            'categorias' => ItemAluguel::CATEGORIAS_LOCACAO_AVULSA,
+            // Lista oficial (config/categorias.php), no mesmo formato grupo => [categorias].
+            'categorias' => \App\Support\Categorias::reservasPorGrupo(),
+            'rotulosCategorias' => \App\Support\Categorias::rotulosReserva(),
         ]);
     }
 

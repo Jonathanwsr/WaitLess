@@ -385,6 +385,8 @@ class ConfiguracoesMobileController extends Controller
     // ==========================================
     public function storeServico(Request $request)
     {
+        // Campos de atendimento (onde atende, 24h, raio, taxa de deslocamento, tipo de preço...).
+        $request->validate(\App\Support\CamposServico::regras(), \App\Support\CamposServico::mensagens());
         $validated = $request->validate([
             'nome' => 'required|string|max:255',
             'tipo_servico' => ['required', 'string', Rule::in(\App\Support\Categorias::valores())],
@@ -429,7 +431,7 @@ class ConfiguracoesMobileController extends Controller
             'horario_a_combinar' => $request->boolean('horario_a_combinar'),
         ];
 
-        $servico = Servico::create([
+        $servico = Servico::create(\App\Support\CamposServico::doRequest($request) + [
             'estabelecimento_id' => $estabelecimentoId,
             'nome' => $validated['nome'],
             'tipo_servico' => $validated['tipo_servico'] ?? null,
@@ -451,6 +453,8 @@ class ConfiguracoesMobileController extends Controller
             return response()->json(['status' => 'error', 'message' => 'Você não tem permissão para editar este serviço.'], 403);
         }
 
+        // Campos de atendimento (onde atende, 24h, raio, taxa de deslocamento, tipo de preço...).
+        $request->validate(\App\Support\CamposServico::regras(), \App\Support\CamposServico::mensagens());
         $validated = $request->validate([
             'nome'                      => 'sometimes|string|max:255',
             'tipo_servico'              => ['sometimes', 'string', Rule::in(\App\Support\Categorias::valores())],
@@ -477,7 +481,7 @@ class ConfiguracoesMobileController extends Controller
         }
 
         try {
-            $servico->update($validated);
+            $servico->update($validated + \App\Support\CamposServico::doRequest($request));
             return response()->json(['message' => 'Serviço atualizado com sucesso!', 'servico' => $servico]);
         } catch (Exception $e) {
             return $this->respostaErro($e, 'updateServico');
